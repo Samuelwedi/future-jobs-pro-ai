@@ -1,19 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Calendar as BigCalendar, momentLocalizer, Views, Event, stringOrDate } from 'react-big-calendar';
+import { Calendar as BigCalendar, momentLocalizer, Views } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { DndProvider, useDrop } from 'react-dnd';
+import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
   Box, Container, Typography, Paper, Dialog, DialogTitle, DialogContent,
-  TextField, Button, Select, MenuItem, FormControl, InputLabel, Chip, IconButton, Alert,
+  TextField, Button, Select, MenuItem, FormControl, InputLabel, Chip, IconButton,
 } from '@mui/material';
 import { Add, Delete, DragIndicator } from '@mui/icons-material';
-import { api } from '../services/api';   // <-- same Axios client as other web pages
 
 const localizer = momentLocalizer(moment);
 
-// ---------- Type Definitions ----------
+// Types
 interface Shift {
   id: string;
   company_id: string;
@@ -41,7 +40,6 @@ interface Employee {
   last_name: string;
 }
 
-// ---------- Drag-and-Drop Event Wrapper ----------
 const DraggableEvent = ({ event }: any) => (
   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, height: '100%' }}>
     <DragIndicator sx={{ fontSize: 16, color: 'rgba(255,255,255,0.6)' }} />
@@ -49,9 +47,7 @@ const DraggableEvent = ({ event }: any) => (
   </Box>
 );
 
-// ---------- Main Component ----------
 export default function SchedulePage() {
-  // ----- State -----
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -68,39 +64,38 @@ export default function SchedulePage() {
   const [formNotes, setFormNotes] = useState('');
   const [formEmployees, setFormEmployees] = useState<string[]>([]);
 
-  const companyId = '967483e9-dd14-4c97-92d4-841182d4359d';   // TODO: get from auth context
-  const userId = '8d4a3818-06e2-4e11-9cc8-9770f4c0e15c';     // TODO: get from auth context
+  const companyId = '967483e9-dd14-4c97-92d4-841182d4359d';
+  const userId = '8d4a3818-06e2-4e11-9cc8-9770f4c0e15c';
 
-  // ----- Data Fetching -----
   const fetchShifts = useCallback(async () => {
     const start = moment().startOf('week').format('YYYY-MM-DD');
     const end = moment().endOf('week').format('YYYY-MM-DD');
     try {
-      const res = await api.get<{ success: boolean; shifts: Shift[] }>(
-        `/schedule/shifts?companyId=${companyId}&start=${start}&end=${end}`
-      );
-      setShifts(res.shifts || []);
+      const res = await fetch(`/api/schedule/shifts?companyId=${companyId}&start=${start}&end=${end}`);
+      const data = await res.json();
+      setShifts(data.shifts || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
 
   const fetchProjects = async () => {
     try {
-      const res = await api.get<{ success: boolean; projects: Project[] }>('/projects/active');
-      setProjects(res.projects || []);
+      const res = await fetch('/api/projects/active');
+      const data = await res.json();
+      setProjects(data.projects || []);
     } catch (e) { console.error(e); }
   };
 
   const fetchEmployees = async () => {
     try {
-      const res = await api.get<{ success: boolean; users: Employee[] }>(`/users/company/${companyId}`);
-      setEmployees(res.users || []);
+      const res = await fetch(`/api/users/company/${companyId}`);
+      const data = await res.json();
+      setEmployees(data.users || []);
     } catch (e) { console.error(e); }
   };
 
   useEffect(() => { fetchShifts(); fetchProjects(); fetchEmployees(); }, [fetchShifts]);
 
-  // ----- Dialog Handlers -----
   const openCreateDialog = (date: Date) => {
     setEditingShift(null);
     setSelectedDate(moment(date));
@@ -123,15 +118,21 @@ export default function SchedulePage() {
   const handleSave = async () => {
     try {
       if (editingShift) {
-        await api.put(`/schedule/shifts/${editingShift.id}`, {
-          name: formName, start_time: formStart, end_time: formEnd, notes: formNotes
+        await fetch(`/api/schedule/shifts/${editingShift.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: formName, start_time: formStart, end_time: formEnd, notes: formNotes }),
         });
       } else {
-        await api.post('/schedule/shifts', {
-          companyId, projectId: formProjectId, name: formName,
-          date: selectedDate?.format('YYYY-MM-DD'), startTime: formStart,
-          endTime: formEnd, notes: formNotes, createdBy: userId,
-          employeeIds: formEmployees,
+        await fetch('/api/schedule/shifts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyId, projectId: formProjectId, name: formName,
+            date: selectedDate?.format('YYYY-MM-DD'), startTime: formStart,
+            endTime: formEnd, notes: formNotes, createdBy: userId,
+            employeeIds: formEmployees,
+          }),
         });
       }
       setDialogOpen(false);
@@ -141,12 +142,11 @@ export default function SchedulePage() {
 
   const handleDelete = async (shiftId: string) => {
     if (!window.confirm('Delete this shift?')) return;
-    await api.delete(`/schedule/shifts/${shiftId}`);
+    await fetch(`/api/schedule/shifts/${shiftId}`, { method: 'DELETE' });
     fetchShifts();
   };
 
-  // ----- Convert shifts to calendar events -----
-  const events: Event[] = shifts.map(s => ({
+  const events = shifts.map(s => ({
     id: s.id,
     title: `${s.name} (${s.project_name || 'Project'})`,
     start: moment(`${s.date} ${s.start_time}`).toDate(),
@@ -154,13 +154,16 @@ export default function SchedulePage() {
     resource: s,
   }));
 
-  // ----- Calendar Drag‑and‑Drop (move event = change date/time) -----
   const handleEventDrop = async ({ event, start, end }: any) => {
     const shift = event.resource as Shift;
     const newDate = moment(start).format('YYYY-MM-DD');
     const newStart = moment(start).format('HH:mm');
     const newEnd = moment(end).format('HH:mm');
-    await api.put(`/schedule/shifts/${shift.id}`, { date: newDate, start_time: newStart, end_time: newEnd });
+    await fetch(`/api/schedule/shifts/${shift.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: newDate, start_time: newStart, end_time: newEnd }),
+    });
     fetchShifts();
   };
 
@@ -178,7 +181,15 @@ export default function SchedulePage() {
             step={30}
             timeslots={2}
             style={{ height: 650, color: '#FFF' }}
-            eventPropGetter={() => ({ style: { backgroundColor: '#00D4FF', color: '#0A0A0A', borderRadius: 6, border: 'none', fontSize: 13 } })}
+            eventPropGetter={() => ({
+              style: {
+                backgroundColor: '#00D4FF',
+                color: '#0A0A0A',
+                borderRadius: 6,
+                border: 'none',
+                fontSize: 13,
+              },
+            })}
             onSelectSlot={(slotInfo) => openCreateDialog(slotInfo.start)}
             onSelectEvent={(event) => openEditDialog(event.resource as Shift)}
             selectable
