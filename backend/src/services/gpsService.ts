@@ -1,13 +1,12 @@
 // ============================================
-// GPS TRACKING SERVICE
-// Real‑time location tracking and breadcrumb trails
-// Created by: Samuel B.
+// GPS TRACKING SERVICE (with Geofence Alerts)
+// Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
 import { pool } from '../config/database';
 import { recordUserEvent } from './adaptiveAIService';
+import { sendPushNotification } from './notificationService';
 
-// ---- Types ----
 interface GPSPoint {
   userId: string;
   timeEntryId: string;
@@ -26,11 +25,11 @@ interface GPSPoint {
 
 interface BreadcrumbTrail {
   points: GPSPoint[];
-  totalDistance: number;   // miles
-  totalTime: number;       // minutes
+  totalDistance: number;
+  totalTime: number;
   startTime: Date;
   endTime: Date;
-  averageSpeed: number;    // mph
+  averageSpeed: number;
 }
 
 // ============================================
@@ -42,9 +41,12 @@ export async function recordGPSPoint(
 
   console.log(`📍 [Samuel B. GPS] Recording point for user ${point.userId}`);
 
-  // Check if inside the project geofence
+  // Check geofence
   const geofenceStatus = await checkGeofence(point.projectId, point.latitude, point.longitude);
   const isMoving = point.speed ? point.speed > 2 : false;
+
+  // Get the previous geofence status for this time entry
+  const previousStatus = await getPreviousGeofenceStatus(point.userId, point.timeEntryId);
 
   const fullPoint: GPSPoint = {
     ...point,
@@ -55,7 +57,8 @@ export async function recordGPSPoint(
 
   // Insert into database
   await pool.query(
-    `INSERT INTO gps_tracking (user_id, time_entry_id, project_id, latitude, longitude, accuracy, altitude, speed, heading, battery_level, is_moving, geofence_status, recorded_at)
+    `INSERT INTO gps_tracking (user_id, time_entry_id, project_id, latitude, longitude, accuracy,
+      altitude, speed, heading, battery_level, is_moving, geofence_status, recorded_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
     [
       fullPoint.userId, fullPoint.timeEntryId, fullPoint.projectId,
@@ -72,14 +75,50 @@ export async function recordGPSPoint(
     eventType: 'location_update',
     eventData: { speed: point.speed, geofenceStatus },
     latitude: point.latitude,
-    longitude: point.longitude
+    longitude: point.longitude,
   });
+
+  // 🚨 Geofence alert: status changed from previous point
+  if (previousStatus && previousStatus !== geofenceStatus && geofenceStatus !== 'unknown') {
+    console.log(`🚨 Geofence change: ${previousStatus} → ${geofenceStatus} for user ${point.userId}`);
+
+    const title = geofenceStatus === 'inside'
+      ? '📍 Arrived on Site'
+      : '🚪 Left Job Site';
+
+    const body = geofenceStatus === 'inside'
+      ? 'You have entered the job site area.'
+      : 'You have left the job site area.';
+
+    await sendPushNotification(point.userId, title, body, {
+      type: 'geofence',
+      status: geofenceStatus,
+      projectId: point.projectId,
+    });
+  }
 
   return fullPoint;
 }
 
 // ============================================
-// 2. Check if coordinates are inside the job site
+// 2. Get previous geofence status for the active time entry
+// ============================================
+async function getPreviousGeofenceStatus(
+  userId: string,
+  timeEntryId: string
+): Promise<string | null> {
+  const result = await pool.query(
+    `SELECT geofence_status FROM gps_tracking
+     WHERE user_id = $1 AND time_entry_id = $2
+     ORDER BY recorded_at DESC LIMIT 1`,
+    [userId, timeEntryId]
+  );
+  if (result.rows.length === 0) return null;
+  return result.rows[0].geofence_status;
+}
+
+// ============================================
+// 3. Check if coordinates are inside the job site
 // ============================================
 async function checkGeofence(
   projectId: string,
@@ -97,14 +136,14 @@ async function checkGeofence(
   if (!project.latitude || !project.longitude) return 'unknown';
 
   const distance = calculateDistance(latitude, longitude, project.latitude, project.longitude);
-  const distanceMeters = distance * 1609.34;   // miles → meters
-  const GEOFENCE_RADIUS = 100;                 // 100 metres
+  const distanceMeters = distance * 1609.34;
+  const GEOFENCE_RADIUS = 100; // metres
 
   return distanceMeters <= GEOFENCE_RADIUS ? 'inside' : 'outside';
 }
 
 // ============================================
-// 3. Generate a full breadcrumb trail
+// 4. Generate a full breadcrumb trail
 // ============================================
 export async function generateBreadcrumbTrail(timeEntryId: string): Promise<BreadcrumbTrail> {
 
@@ -142,7 +181,7 @@ export async function generateBreadcrumbTrail(timeEntryId: string): Promise<Brea
 }
 
 // ============================================
-// 4. Calculate how confident we are that the worker really arrived
+// 5. Arrival confidence (unchanged)
 // ============================================
 export async function getArrivalConfidence(timeEntryId: string): Promise<{ score: number; evidence: string[] }> {
 
@@ -163,7 +202,6 @@ export async function getArrivalConfidence(timeEntryId: string): Promise<{ score
     evidence.push('❌ Never entered geofence');
   }
 
-  // Detect arrival pattern (moving → stopped inside geofence)
   let arrivalDetected = false;
   for (let i = 1; i < trail.points.length; i++) {
     if (trail.points[i-1].isMoving && !trail.points[i].isMoving && trail.points[i].geofenceStatus === 'inside') {
@@ -173,7 +211,6 @@ export async function getArrivalConfidence(timeEntryId: string): Promise<{ score
   }
   if (arrivalDetected) { confidence += 30; evidence.push('✅ Arrival pattern detected'); }
 
-  // Time spent on site
   if (insidePoints.length >= 2) {
     const onsiteMin = (new Date(insidePoints[insidePoints.length-1].timestamp).getTime() -
                        new Date(insidePoints[0].timestamp).getTime()) / 60000;
@@ -184,7 +221,7 @@ export async function getArrivalConfidence(timeEntryId: string): Promise<{ score
 }
 
 // ============================================
-// 5. Get locations of all currently working employees in a company
+// 6. Get active employee locations (unchanged)
 // ============================================
 export async function getActiveEmployeeLocations(companyId: string): Promise<any[]> {
   const result = await pool.query(
@@ -208,11 +245,11 @@ export async function getActiveEmployeeLocations(companyId: string): Promise<any
 // Helper: Haversine distance (miles)
 // ============================================
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 3959; // Earth radius in miles
+  const R = 3959;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-console.log('🗺️  GPS Tracking Service loaded – Future Jobs Pro AI by Samuel B.');
+console.log('🗺️  GPS Tracking Service (with geofence alerts) loaded – Future Jobs Pro AI by Samuel B.');

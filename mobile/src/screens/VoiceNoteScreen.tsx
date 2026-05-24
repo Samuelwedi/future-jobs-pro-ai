@@ -4,12 +4,12 @@ import {
   ActivityIndicator, Platform, ScrollView,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import * as Haptics from 'expo-haptics';
 
-// Response type from voice processing
 interface VoiceNoteResponse {
   success: boolean;
   voiceNoteId: string;
@@ -30,6 +30,9 @@ interface VoiceNoteResponse {
 export default function VoiceNoteScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
+  const { user } = useAuth();
+
+  // ---------- SAFE PARAMS ----------
   const projectId: string = route?.params?.projectId || '';
   const timeEntryId: string = route?.params?.timeEntryId || '';
 
@@ -39,7 +42,7 @@ export default function VoiceNoteScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<VoiceNoteResponse | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
- const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -97,9 +100,19 @@ export default function VoiceNoteScreen() {
   const processRecording = async (audioUri: string) => {
     setIsProcessing(true);
     try {
-      const response = await api.uploadFile<VoiceNoteResponse>('/voice/process', audioUri, 'audio');
+      const extraFields: Record<string, string> = {
+        userId: user?.id || '',
+        projectId,
+        timeEntryId,
+      };
+
+      const response = await api.uploadFileWithData<VoiceNoteResponse>(
+        '/voice/process',
+        audioUri,
+        extraFields,
+        'audio'
+      );
       setResult(response);
-      // Record AI event
       api.recordAIEvent('voice_note', {
         transcript: response.transcript,
         duration: response.duration,
@@ -124,17 +137,37 @@ export default function VoiceNoteScreen() {
     else Alert.alert('Info', 'Return to previous screen.');
   };
 
+  // ---------- Fallback when no project ----------
+  if (!projectId) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>Please select a project first</Text>
+        <TouchableOpacity style={styles.backButton} onPress={goBack}>
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // ---------- Permission checks ----------
   if (hasPermission === null) {
     return (
-      <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /><Text style={styles.loadingText}>Requesting microphone permission...</Text></View>
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#00D4FF" />
+        <Text style={styles.loadingText}>Requesting microphone permission...</Text>
+      </View>
     );
   }
   if (hasPermission === false) {
     return (
-      <View style={styles.center}><MaterialIcons name="mic-off" size={64} color="#F44336" /><Text style={styles.errorText}>Microphone access required</Text></View>
+      <View style={styles.center}>
+        <MaterialIcons name="mic-off" size={64} color="#F44336" />
+        <Text style={styles.errorText}>Microphone access required</Text>
+      </View>
     );
   }
 
+  // ---------- Processing state ----------
   if (isProcessing) {
     return (
       <View style={styles.center}>
@@ -145,6 +178,7 @@ export default function VoiceNoteScreen() {
     );
   }
 
+  // ---------- Result view ----------
   if (result) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.resultContent}>
@@ -188,6 +222,7 @@ export default function VoiceNoteScreen() {
     );
   }
 
+  // ---------- Main recording view ----------
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -223,6 +258,7 @@ export default function VoiceNoteScreen() {
   );
 }
 
+// ---------- Styles (same as before) ----------
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
@@ -237,7 +273,9 @@ const styles = StyleSheet.create({
   recordButton: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' },
   recordHint: { color: '#888', fontSize: 14, marginTop: 15 },
   loadingText: { color: '#FFF', marginTop: 20, fontSize: 16 },
-  errorText: { color: '#FFF', fontSize: 18, marginBottom: 30 },
+  errorText: { color: '#FFF', fontSize: 18, marginBottom: 30, textAlign: 'center' },
+  backButton: { backgroundColor: '#00D4FF', paddingHorizontal: 32, paddingVertical: 12, borderRadius: 8 },
+  backButtonText: { color: '#0A0A0A', fontSize: 16, fontWeight: '600' },
   processingTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold', marginTop: 20 },
   processingText: { color: '#888', fontSize: 16, marginTop: 10 },
   resultContent: { padding: 20, paddingBottom: 40 },

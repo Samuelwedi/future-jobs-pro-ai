@@ -188,7 +188,10 @@ async function updateUserPatterns(userId: string): Promise<void> {
     const locMap = new Map<string, { lat: number; lng: number; count: number; lastSeen: Date }>();
     events.forEach(e => {
       if (e.location_lat && e.location_lng) {
-        const key = `${e.location_lat.toFixed(4)},${e.location_lng.toFixed(4)}`;
+       const lat = parseFloat(e.location_lat);
+const lng = parseFloat(e.location_lng);
+if (isNaN(lat) || isNaN(lng)) return;
+const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
         const existing = locMap.get(key);
         if (existing) {
           existing.count++;

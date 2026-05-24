@@ -13,16 +13,6 @@ router.get('/suggestions/:userId', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/suggestions/:suggestionId/dismiss', async (req: Request, res: Response) => {
-  try {
-    await dismissSuggestion(req.params.suggestionId as string);
-    res.json({ success: true, message: 'Suggestion dismissed' });
-  } catch (error: any) {
-    console.error('❌ Dismiss error:', error.message);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
 router.post('/event', async (req: Request, res: Response) => {
   try {
     const { recordUserEvent } = await import('../services/adaptiveAIService');
@@ -30,6 +20,16 @@ router.post('/event', async (req: Request, res: Response) => {
     res.json({ success: true, message: 'Event recorded for AI learning' });
   } catch (error: any) {
     console.error('Error recording event:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/suggestions/:suggestionId/dismiss', async (req: Request, res: Response) => {
+  try {
+    await dismissSuggestion(req.params.suggestionId as string);
+    res.json({ success: true, message: 'Suggestion dismissed' });
+  } catch (error: any) {
+    console.error('❌ Dismiss error:', error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 });

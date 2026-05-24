@@ -1,41 +1,49 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Future Jobs Pro AI",
+    "slug": "future-jobs-pro-ai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0A0A0A"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.samuel33.mobile",
+      "supportsTablet": false,
+      "bundleIdentifier": "com.samuel33.futurejobspro",
+      "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Allow Future Jobs Pro AI to use your camera for job site photos",
+        "NSLocationWhenInUseUsageDescription": "Allow Future Jobs Pro AI to use your location for GPS tracking",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Future Jobs Pro AI to use your location for GPS tracking",
+        "NSMicrophoneUsageDescription": "Allow Future Jobs Pro AI to use your microphone for voice notes"
       }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/icon_android.png",
+        "backgroundColor": "#0A0A0A"
       },
+      "package": "com.samuel33.futurejobspro",
+      "versionCode": 1,
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/icon.png"
     },
     "plugins": [
       "expo-secure-store"
     ],
     "extra": {
       "eas": {
-        "projectId": "ef7756af-c06c-40b6-876c-7599503faef7"
+        "projectId": "bcc71783-5078-4ef3-8760-56b83cc4508f"
       }
     }
   }

@@ -1,16 +1,16 @@
 // ============================================
-// MOBILE API SERVICE
+// MOBILE API SERVICE (with DELETE support)
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
 import axios, { AxiosInstance } from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
+import { getOnlineStatus, queueAction } from './offlineService';
 
-// YOUR NGROK URL – CHANGE THIS WHEN DEPLOYING
 const DEV_API_URL = 'https://balancing-treble-prevent.ngrok-free.dev/api';
 const PROD_API_URL = 'https://api.futurejobspro.com/api';
-
 export const API_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
 
 class ApiService {
@@ -55,26 +55,68 @@ class ApiService {
   }
 
   async post<T>(url: string, data?: any): Promise<T> {
+    const online = getOnlineStatus();
+    if (!online) {
+      console.log('📴 Offline – queuing action:', url);
+      await queueAction({ method: 'POST', url, data });
+      throw new Error('Offline – action queued for later');
+    }
     const response = await this.client.post<T>(url, data);
     return response.data;
   }
 
-  async uploadFile<T>(url: string, fileUri: string, fieldName = 'file'): Promise<T> {
+  async put<T>(url: string, data?: any): Promise<T> {
+    const online = getOnlineStatus();
+    if (!online) {
+      console.log('📴 Offline – queuing action:', url);
+      await queueAction({ method: 'PUT', url, data });
+      throw new Error('Offline – action queued for later');
+    }
+    const response = await this.client.put<T>(url, data);
+    return response.data;
+  }
+
+  async delete<T>(url: string): Promise<T> {
+    const online = getOnlineStatus();
+    if (!online) {
+      console.log('📴 Offline – queuing action:', url);
+      await queueAction({ method: 'DELETE', url });
+      throw new Error('Offline – action queued for later');
+    }
+    const response = await this.client.delete<T>(url);
+    return response.data;
+  }
+
+  async uploadFileWithData<T>(
+    url: string,
+    fileUri: string,
+    extraFields: Record<string, string>,
+    fieldName = 'photo'
+  ): Promise<T> {
+    const online = getOnlineStatus();
+    if (!online) {
+      console.log('📴 Offline – queuing upload:', url);
+      const permanentUri = (FileSystem as any).documentDirectory + `offline-${Date.now()}.jpg`;
+      await FileSystem.copyAsync({ from: fileUri, to: permanentUri });
+      await queueAction({ method: 'POST', url, data: extraFields, fileUri: permanentUri, fieldName });
+      throw new Error('Offline – upload queued for later');
+    }
+
     const formData = new FormData();
-    const filename = fileUri.split('/').pop() || 'file.jpg';
+    const filename = fileUri.split('/').pop() || 'photo.jpg';
     const match = /\.(\w+)$/.exec(filename);
     const type = match ? `image/${match[1]}` : 'image/jpeg';
-
-    formData.append(fieldName, {
-      uri: fileUri,
-      name: filename,
-      type,
-    } as any);
+    formData.append(fieldName, { uri: fileUri, name: filename, type } as any);
+    Object.entries(extraFields).forEach(([key, value]) => formData.append(key, value));
 
     const response = await this.client.post<T>(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
+  }
+
+  async uploadFile<T>(url: string, fileUri: string, fieldName = 'file'): Promise<T> {
+    return this.uploadFileWithData<T>(url, fileUri, {}, fieldName);
   }
 
   async recordAIEvent(eventType: string, eventData: any, location?: { lat: number; lng: number }): Promise<void> {
@@ -104,9 +146,7 @@ class ApiService {
 
   private async getCurrentUserId(): Promise<string> {
     const userData = await SecureStore.getItemAsync('userData');
-    if (userData) {
-      return JSON.parse(userData).id;
-    }
+    if (userData) return JSON.parse(userData).id;
     return 'anonymous';
   }
 }

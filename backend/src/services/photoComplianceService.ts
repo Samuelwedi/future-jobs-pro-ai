@@ -11,7 +11,6 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import OpenAI from 'openai';
 
-// Only initialise OpenAI if a valid API key is present
 let openai: OpenAI | null = null;
 if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here') {
   openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -19,7 +18,6 @@ if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_ap
   console.log('⚠️  OpenAI API key not set – photo AI analysis is disabled.');
 }
 
-// Types
 interface PhotoMetadata {
   fileName: string;
   fileSize: number;
@@ -58,7 +56,6 @@ export async function analyzePhotoCompliance(
   const issues: string[] = [];
   const suggestions: string[] = [];
 
-  // Basic metadata
   const image = sharp(photoPath);
   const metadata = await image.metadata();
   const stats = fs.statSync(photoPath);
@@ -119,8 +116,6 @@ export async function analyzePhotoCompliance(
 
   // ----- CHECK 4: GPS Location (40 points, if expected location given) -----
   if (expectedLatitude !== undefined && expectedLongitude !== undefined) {
-    // In a real implementation, we'd extract GPS from EXIF.
-    // Here we simulate distance (always pass for now).
     const distanceFromExpected = 0.02; // miles
     if (distanceFromExpected > 0.1) {
       const deduction = 40;
@@ -133,7 +128,7 @@ export async function analyzePhotoCompliance(
     }
   }
 
-  // ----- CHECK 5: AI Content Analysis (optional, only if OpenAI key is present) -----
+  // ----- CHECK 5: AI Content Analysis (optional) -----
   if (openai) {
     try {
       const aiAnalysis = await analyzeWithAI(photoPath);
@@ -242,14 +237,22 @@ export async function savePhotoToDatabase(
   longitude?: number
 ) {
   const query = `
-    INSERT INTO photos (user_id, project_id, time_entry_id, s3_key, latitude, longitude, taken_at, compliance_score, verification_hash, ai_tags)
-    VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8,$9)
+    INSERT INTO photos (
+      user_id, project_id, time_entry_id, s3_key, latitude, longitude,
+      taken_at, compliance_score, verification_hash, ai_tags
+    ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8, $9)
     RETURNING id
   `;
   const result = await pool.query(query, [
-    userId, projectId, timeEntryId, photoPath, latitude || null, longitude || null,
-    complianceResult.score, complianceResult.verificationHash,
-    JSON.stringify(complianceResult.issues)
+    userId,
+    projectId,
+    timeEntryId,
+    photoPath,
+    latitude || null,
+    longitude || null,
+    complianceResult.score,
+    complianceResult.verificationHash,
+    complianceResult.issues   // ✅ plain array, no JSON.stringify
   ]);
   console.log(`✅ Photo saved with ID: ${result.rows[0].id}`);
   return result.rows[0];

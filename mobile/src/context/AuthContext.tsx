@@ -1,6 +1,12 @@
+// ============================================
+// AUTH CONTEXT (with push notification registration)
+// Future Jobs Pro AI – Created by Samuel B.
+// ============================================
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { api } from '../services/api';
+import { registerForPushNotifications } from '../services/notificationService';
 
 interface User {
   id: string;
@@ -10,6 +16,7 @@ interface User {
   role: 'boss' | 'manager' | 'employee';
   companyId: string;
   companyName?: string;
+  kioskEnabled?: boolean;
 }
 
 interface AuthContextType {
@@ -42,7 +49,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const token = await api.getToken();
       const userData = await SecureStore.getItemAsync('userData');
-      if (token && userData) setUser(JSON.parse(userData));
+      if (token && userData) {
+        const parsed = JSON.parse(userData);
+        setUser(parsed);
+        // Register push notifications for the existing logged‑in user
+        registerForPushNotifications(parsed.id).catch(() => {});
+      }
     } catch (error) {
       console.error('Auth check failed:', error);
     } finally {
@@ -53,9 +65,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (email: string, password: string) => {
     const response = await api.post<{ token: string; user: User }>('/auth/login', { email, password });
     await api.setToken(response.token);
+
+    // Fetch kiosk enabled status for the company
+    try {
+      const kioskRes = await api.get<{ kiosk_enabled: boolean }>(`/kiosk/status/${response.user.companyId}`);
+      response.user.kioskEnabled = kioskRes.kiosk_enabled;
+    } catch (e) {
+      response.user.kioskEnabled = false;
+    }
+
     await SecureStore.setItemAsync('userData', JSON.stringify(response.user));
     setUser(response.user);
     await api.recordAIEvent('login', { email });
+    // Register push notifications after login
+    registerForPushNotifications(response.user.id).catch(() => {});
   };
 
   const logout = async () => {
@@ -71,6 +94,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     await SecureStore.setItemAsync('userData', JSON.stringify(response.user));
     setUser(response.user);
     await api.recordAIEvent('register', { email: data.email, role: data.role });
+    // Register push notifications after registration
+    registerForPushNotifications(response.user.id).catch(() => {});
   };
 
   return (

@@ -1,13 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, ActivityIndicator, RefreshControl, Platform,
+  Dimensions, Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
+import { useLang } from '../context/LanguageContext';
+import { useVoiceCommand } from '../context/VoiceCommandContext';
 import { api } from '../services/api';
-import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface AISuggestion {
   id: string;
@@ -18,6 +24,8 @@ interface AISuggestion {
 
 export default function HomeScreen() {
   const { user, logout } = useAuth();
+  const { t } = useLang();
+  const { isListening, startListening, stopListening } = useVoiceCommand();
   const navigation = useNavigation<any>();
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
@@ -26,6 +34,12 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTimeEntry, setActiveTimeEntry] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Live Pulse data (simulated – replace with real API later)
+  const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
 
   useEffect(() => {
     (async () => {
@@ -37,242 +51,309 @@ export default function HomeScreen() {
     })();
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-      loadAISuggestions();
-    }, [])
-  );
+  // Pulse animation
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 1000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, []);
+
+  // Elapsed timer when clocked in
+  useEffect(() => {
+    if (isClockedIn && activeTimeEntry?.clockIn) {
+      const start = new Date(activeTimeEntry.clockIn).getTime();
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setElapsedSeconds(0);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [isClockedIn, activeTimeEntry]);
+
+  useFocusEffect(useCallback(() => {
+    loadData();
+    loadAISuggestions();
+  }, []));
 
   const loadData = async () => {
     try {
       const res = await api.get<any>('/projects/active');
       setProjects(res.projects || []);
-    } catch (e) {
-      console.error('Failed to load projects:', e);
-    } finally {
-      setIsLoading(false);
-    }
+      setLivePulse(prev => ({ ...prev, activeProjects: (res.projects || []).length }));
+    } catch (e) { console.error(e); }
+    finally { setIsLoading(false); }
   };
 
   const loadAISuggestions = async () => {
     try {
       const res = await api.getAISuggestions();
       setAiSuggestions(res.suggestions || []);
-    } catch (e) {
-      console.error('Failed to load AI suggestions:', e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   const handleClockIn = async () => {
-    if (!selectedProject) {
-      Alert.alert('Select Project', 'Please select a project first');
-      return;
-    }
+    if (!selectedProject) { Alert.alert('Select a project first'); return; }
     try {
-      const payload: any = {
-        userId: user?.id,
-        projectId: selectedProject.id,
-        latitude: currentLocation?.coords.latitude || 0,
-        longitude: currentLocation?.coords.longitude || 0,
-      };
+      const payload: any = { userId: user?.id, projectId: selectedProject.id, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 };
       const res = await api.post('/time-entries/clock-in', payload);
-      setIsClockedIn(true);
-      setActiveTimeEntry(res);
+      setIsClockedIn(true); setActiveTimeEntry(res);
       await api.recordAIEvent('clock_in', { projectId: selectedProject.id });
-      Alert.alert('✅ Clocked In', `You're now on the clock at ${selectedProject.name}`);
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Clock in failed');
-    }
+    } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
   const handleClockOut = async () => {
     try {
-      await api.post('/time-entries/clock-out', {
-        userId: user?.id,
-        timeEntryId: activeTimeEntry.timeEntryId,
-        latitude: currentLocation?.coords.latitude || 0,
-        longitude: currentLocation?.coords.longitude || 0,
-      });
-      setIsClockedIn(false);
-      setActiveTimeEntry(null);
+      await api.post('/time-entries/clock-out', { userId: user?.id, timeEntryId: activeTimeEntry.timeEntryId, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 });
+      setIsClockedIn(false); setActiveTimeEntry(null);
       await api.recordAIEvent('clock_out', { timeEntryId: activeTimeEntry.timeEntryId });
-      Alert.alert('✅ Clocked Out', 'Great work today!');
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Clock out failed');
-    }
+    } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
   const dismissSuggestion = async (id: string) => {
     await api.dismissSuggestion(id);
-    setAiSuggestions((prev) => prev.filter((s) => s.id !== id));
+    setAiSuggestions(prev => prev.filter(s => s.id !== id));
+  };
+
+  const formatElapsed = (secs: number) => {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
   if (isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#00D4FF" />
-      </View>
-    );
+    return <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /></View>;
   }
 
-  return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={loadData} tintColor="#00D4FF" />}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Hello, {user?.firstName}!</Text>
-          <Text style={styles.role}>
-            {user?.role === 'employee' ? '👷 Field Technician' : user?.role === 'manager' ? '📋 Manager' : '👑 Boss'}
-          </Text>
-        </View>
-        <TouchableOpacity onPress={logout}>
-          <MaterialIcons name="logout" size={24} color="#888" />
-        </TouchableOpacity>
-      </View>
+  const greeting = t('greeting', { firstName: user?.firstName || '' });
 
-      {/* AI Suggestions */}
-      {aiSuggestions.length > 0 && (
-        <View style={styles.suggestionsContainer}>
-          <Text style={styles.sectionTitle}>🤖 AI Suggestions</Text>
-          {aiSuggestions.map((s) => (
-            <View key={s.id} style={styles.suggestionCard}>
-              <View style={styles.suggestionHeader}>
-                <Text style={styles.suggestionTitle}>{s.title}</Text>
-                <TouchableOpacity onPress={() => dismissSuggestion(s.id)}>
-                  <MaterialIcons name="close" size={20} color="#888" />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.suggestionDesc}>{s.description}</Text>
+  // Quick action cards
+  const quickActions = [
+    { icon: 'photo-camera', color: '#00D4FF', gradient: ['#00D4FF', '#007AFF'], label: 'Photo', screen: 'Camera', needsProject: true },
+    { icon: 'microphone', color: '#4CAF50', gradient: ['#4CAF50', '#2E7D32'], label: 'Voice', screen: 'VoiceNote', needsProject: true, IconSet: FontAwesome5 },
+    { icon: 'timer', color: '#FF9800', gradient: ['#FF9800', '#F57C00'], label: 'Timesheet', screen: 'Timesheet' },
+    { icon: 'event', color: '#9C27B0', gradient: ['#9C27B0', '#7B1FA2'], label: 'Schedule', screen: 'Schedule' },
+    { icon: 'chatbubbles', color: '#00BCD4', gradient: ['#00BCD4', '#0097A7'], label: 'Chat', screen: 'ChatList', IconSet: Ionicons },
+    { icon: 'map', color: '#4CAF50', gradient: ['#4CAF50', '#388E3C'], label: 'Crew', screen: 'CrewTracking', IconSet: Ionicons },
+  ];
+
+  return (
+    <View style={styles.wrapper}>
+      <ScrollView
+        style={styles.container}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={loadData} tintColor="#00D4FF" />}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ===== LIVE PULSE BAR ===== */}
+        <LinearGradient colors={['#1A1A2E', '#0A0A0A']} style={styles.pulseBar}>
+          <View style={styles.pulseItem}>
+            <View style={styles.pulseDot} />
+            <Text style={styles.pulseValue}>{livePulse.activeWorkers}</Text>
+            <Text style={styles.pulseLabel}>Active</Text>
+          </View>
+          <View style={styles.pulseDivider} />
+          <View style={styles.pulseItem}>
+            <Text style={styles.pulseValue}>{livePulse.activeProjects}</Text>
+            <Text style={styles.pulseLabel}>Projects</Text>
+          </View>
+          <View style={styles.pulseDivider} />
+          <View style={styles.pulseItem}>
+            <Text style={styles.pulseValue}>${livePulse.revenueToday}</Text>
+            <Text style={styles.pulseLabel}>Today</Text>
+          </View>
+        </LinearGradient>
+
+        {/* ===== HEADER ===== */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <LinearGradient colors={['#00D4FF', '#007AFF']} style={styles.avatarGradient}>
+              <Text style={styles.avatarText}>
+                {user?.firstName?.charAt(0).toUpperCase()}{user?.lastName?.charAt(0).toUpperCase()}
+              </Text>
+            </LinearGradient>
+            <View>
+              <Text style={styles.greeting}>{greeting}</Text>
+              <Text style={styles.role}>{t(`role_${user?.role}`)}</Text>
             </View>
+          </View>
+          <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
+            <MaterialIcons name="logout" size={22} color="#888" />
+          </TouchableOpacity>
+        </View>
+
+        {/* ===== AI WHISPER BAR ===== */}
+        {aiSuggestions.length > 0 && (
+          <TouchableOpacity style={styles.aiWhisper} onPress={() => dismissSuggestion(aiSuggestions[0].id)}>
+            <MaterialIcons name="psychology" size={18} color="#00D4FF" />
+            <Text style={styles.aiWhisperText} numberOfLines={1}>{aiSuggestions[0].description}</Text>
+            <MaterialIcons name="close" size={16} color="#666" />
+          </TouchableOpacity>
+        )}
+
+        {/* ===== HERO CLOCK MODULE ===== */}
+        <View style={[styles.heroClock, isClockedIn && styles.heroClockActive]}>
+          {!isClockedIn ? (
+            <>
+              <Text style={styles.heroTitle}>Start Your Day</Text>
+              <Text style={styles.heroSubtitle}>Select a project and clock in</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.projectScroll}>
+                {projects.map(p => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={[styles.projectCard, selectedProject?.id === p.id && styles.projectCardActive]}
+                    onPress={() => setSelectedProject(p)}
+                  >
+                    <Text style={[styles.projectCardName, selectedProject?.id === p.id && styles.projectCardNameActive]}>{p.name}</Text>
+                    {p.client_name && <Text style={styles.projectCardClient}>{p.client_name}</Text>}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity style={styles.heroClockBtn} onPress={handleClockIn}>
+                <LinearGradient colors={['#4CAF50', '#2E7D32']} style={styles.heroClockBtnGradient}>
+                  <MaterialIcons name="login" size={28} color="#FFF" />
+                  <Text style={styles.heroClockBtnText}>Clock In</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Animated.View style={[styles.timerRing, { transform: [{ scale: pulseAnim }] }]}>
+                <View style={styles.timerRingInner}>
+                  <Text style={styles.timerText}>{formatElapsed(elapsedSeconds)}</Text>
+                  <Text style={styles.timerProject}>{selectedProject?.name || 'Working'}</Text>
+                </View>
+              </Animated.View>
+              <TouchableOpacity style={styles.heroClockBtn} onPress={handleClockOut}>
+                <LinearGradient colors={['#F44336', '#C62828']} style={styles.heroClockBtnGradient}>
+                  <MaterialIcons name="logout" size={28} color="#FFF" />
+                  <Text style={styles.heroClockBtnText}>Clock Out</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
+        {/* ===== QUICK ACTIONS (Horizontal Cards) ===== */}
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionsScroll}>
+          {quickActions.map((action, index) => {
+            const IconComponent = action.IconSet || MaterialIcons;
+            return (
+              <TouchableOpacity
+                key={index}
+                style={styles.actionCard}
+                onPress={() => {
+                  if (action.needsProject && !selectedProject) { Alert.alert('Select a project first'); return; }
+                  navigation.navigate(action.screen, { projectId: selectedProject?.id });
+                }}
+              >
+                <LinearGradient colors={action.gradient as [string, string]} style={styles.actionCardGradient}>
+                  <IconComponent name={action.icon as any} size={32} color="#FFF" />
+                </LinearGradient>
+                <Text style={styles.actionCardLabel}>{action.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* ===== MORE ACTIONS (Grid) ===== */}
+        <View style={styles.moreActions}>
+          {[
+            { icon: 'groups', color: '#FF9800', label: t('crew_clock'), screen: 'CrewClock' },
+            { icon: 'beach-access', color: '#00D4FF', label: t('pto'), screen: 'PTO' },
+            { icon: 'work', color: '#FF9800', label: t('projects'), screen: 'Projects' },
+            ...(user?.kioskEnabled ? [{ icon: 'touch-app', color: '#FF9800', label: 'Kiosk', screen: 'Kiosk' }] : []),
+            ...(user?.role === 'boss' || user?.role === 'manager' ? [{ icon: 'people', color: '#00D4FF', label: 'Team', screen: 'Team' }] : []),
+            { icon: 'person', color: '#00D4FF', label: t('settings'), screen: 'Profile' },
+          ].map((action, index) => (
+            <TouchableOpacity key={index} style={styles.moreActionBtn} onPress={() => navigation.navigate(action.screen)}>
+              <MaterialIcons name={action.icon as any} size={24} color={action.color} />
+              <Text style={styles.moreActionLabel}>{action.label}</Text>
+            </TouchableOpacity>
           ))}
         </View>
-      )}
 
-      {/* Clock Card */}
-      <View style={[styles.clockCard, isClockedIn && styles.clockCardActive]}>
-        <Text style={styles.clockCardTitle}>
-          {isClockedIn ? '🟢 Currently Working' : '⏰ Ready to Work?'}
-        </Text>
+        <View style={{ height: 120 }} />
+      </ScrollView>
 
-        {!isClockedIn && (
-          <>
-            <Text style={styles.selectLabel}>Select Project</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.projectList}>
-              {projects.map((p: any) => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={[styles.projectChip, selectedProject?.id === p.id && styles.projectChipSelected]}
-                  onPress={() => setSelectedProject(p)}
-                >
-                  <Text style={[styles.projectChipText, selectedProject?.id === p.id && styles.projectChipTextSelected]}>
-                    {p.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </>
-        )}
-
-        {isClockedIn && activeTimeEntry && (
-          <View style={styles.activeInfo}>
-            <Text style={styles.activeProjectName}>{selectedProject?.name}</Text>
-            <Text style={styles.activeTime}>
-              Started: {new Date(activeTimeEntry.clockIn).toLocaleTimeString()}
-            </Text>
-          </View>
-        )}
-
+      {/* ===== FLOATING BUTTONS ===== */}
+      <View style={styles.floatingContainer}>
         <TouchableOpacity
-          style={[styles.clockButton, isClockedIn && styles.clockOutButton]}
-          onPress={isClockedIn ? handleClockOut : handleClockIn}
+          style={[styles.fab, { backgroundColor: isListening ? '#F44336' : '#00D4FF', marginBottom: 12 }]}
+          onPress={isListening ? stopListening : startListening}
         >
-          <Text style={styles.clockButtonText}>
-            {isClockedIn ? '🔴 Clock Out' : '🟢 Clock In'}
-          </Text>
+          <Ionicons name={isListening ? 'mic-off' : 'mic'} size={28} color="#0A0A0A" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.fab, { backgroundColor: '#00D4FF' }]}
+          onPress={() => navigation.navigate('AIAssistant')}
+        >
+          <Ionicons name="chatbubble-ellipses" size={28} color="#0A0A0A" />
         </TouchableOpacity>
       </View>
-
-      {/* Quick Actions */}
-      <View style={styles.quickActions}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.actionGrid}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => {
-              if (!selectedProject) {
-                Alert.alert('Select Project', 'Please select a project first.');
-                return;
-              }
-              navigation.navigate('Camera', { projectId: selectedProject.id });
-            }}
-          >
-            <View style={styles.actionIcon}><MaterialIcons name="photo-camera" size={28} color="#00D4FF" /></View>
-            <Text style={styles.actionText}>Take Photo</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => {
-              if (!selectedProject) {
-                Alert.alert('Select Project', 'Please select a project first.');
-                return;
-              }
-              navigation.navigate('VoiceNote', { projectId: selectedProject.id });
-            }}
-          >
-            <View style={styles.actionIcon}><FontAwesome5 name="microphone" size={24} color="#4CAF50" /></View>
-            <Text style={styles.actionText}>Voice Note</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('Projects')}>
-            <View style={styles.actionIcon}><MaterialIcons name="work" size={28} color="#FF9800" /></View>
-            <Text style={styles.actionText}>Projects</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionButton} onPress={() => navigation.navigate('History')}>
-            <View style={styles.actionIcon}><MaterialIcons name="history" size={28} color="#9C27B0" /></View>
-            <Text style={styles.actionText}>History</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
+  wrapper: { flex: 1, backgroundColor: '#0A0A0A' },
+  container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 60, paddingBottom: 20 },
-  greeting: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF' },
-  role: { fontSize: 14, color: '#00D4FF', marginTop: 4 },
-  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#FFFFFF', marginBottom: 12 },
-  suggestionsContainer: { paddingHorizontal: 20, marginBottom: 20 },
-  suggestionCard: { backgroundColor: '#1A1A1A', borderRadius: 12, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#333' },
-  suggestionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  suggestionTitle: { fontSize: 16, fontWeight: '600', color: '#00D4FF' },
-  suggestionDesc: { fontSize: 14, color: '#888', lineHeight: 20 },
-  clockCard: { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 20, marginHorizontal: 20, marginBottom: 20, borderWidth: 1, borderColor: '#333' },
-  clockCardActive: { borderColor: '#4CAF50', borderWidth: 2 },
-  clockCardTitle: { fontSize: 18, fontWeight: '600', color: '#FFFFFF', marginBottom: 16 },
-  selectLabel: { fontSize: 14, color: '#888', marginBottom: 8 },
-  projectList: { marginBottom: 16 },
-  projectChip: { backgroundColor: '#0A0A0A', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, marginRight: 8, borderWidth: 1, borderColor: '#444' },
-  projectChipSelected: { backgroundColor: '#00D4FF20', borderColor: '#00D4FF' },
-  projectChipText: { color: '#888', fontSize: 14 },
-  projectChipTextSelected: { color: '#00D4FF', fontWeight: '600' },
-  activeInfo: { marginBottom: 16 },
-  activeProjectName: { fontSize: 18, fontWeight: '600', color: '#FFFFFF' },
-  activeTime: { fontSize: 14, color: '#4CAF50', marginTop: 4 },
-  clockButton: { backgroundColor: '#4CAF50', borderRadius: 12, padding: 16, alignItems: 'center' },
-  clockOutButton: { backgroundColor: '#F44336' },
-  clockButtonText: { fontSize: 16, fontWeight: '600', color: '#FFFFFF' },
-  quickActions: { paddingHorizontal: 20, marginBottom: 30 },
-  actionGrid: { flexDirection: 'row', justifyContent: 'space-around' },
-  actionButton: { alignItems: 'center' },
-  actionIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center', marginBottom: 8, borderWidth: 1, borderColor: '#333' },
-  actionText: { fontSize: 12, color: '#888' },
+  // Pulse Bar
+  pulseBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, marginTop: 60, borderRadius: 16, marginHorizontal: 20, marginBottom: 16, borderWidth: 1, borderColor: '#1A1A2E' },
+  pulseItem: { alignItems: 'center' },
+  pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4CAF50', marginBottom: 4 },
+  pulseValue: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  pulseLabel: { color: '#888', fontSize: 11, marginTop: 2 },
+  pulseDivider: { width: 1, height: 30, backgroundColor: '#333' },
+  // Header
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatarGradient: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  greeting: { fontSize: 18, fontWeight: 'bold', color: '#FFF' },
+  role: { fontSize: 12, color: '#00D4FF', marginTop: 2 },
+  logoutBtn: { padding: 8 },
+  // AI Whisper
+  aiWhisper: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 16, backgroundColor: '#1A1A2E', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, gap: 8, borderWidth: 1, borderColor: '#00D4FF20' },
+  aiWhisperText: { color: '#CCC', fontSize: 13, flex: 1 },
+  // Hero Clock
+  heroClock: { marginHorizontal: 20, marginBottom: 24, backgroundColor: '#1A1A1A', borderRadius: 24, padding: 28, alignItems: 'center', borderWidth: 1, borderColor: '#333' },
+  heroClockActive: { borderColor: '#4CAF50', borderWidth: 2, backgroundColor: '#0A1A0A' },
+  heroTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 6 },
+  heroSubtitle: { color: '#888', fontSize: 14, marginBottom: 20 },
+  projectScroll: { maxHeight: 80, marginBottom: 20 },
+  projectCard: { backgroundColor: '#0A0A0A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 120 },
+  projectCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
+  projectCardName: { color: '#CCC', fontSize: 14, fontWeight: '500' },
+  projectCardNameActive: { color: '#00D4FF', fontWeight: '600' },
+  projectCardClient: { color: '#888', fontSize: 11, marginTop: 2 },
+  heroClockBtn: { width: '100%' },
+  heroClockBtnGradient: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 16, borderRadius: 16, gap: 8 },
+  heroClockBtnText: { color: '#FFF', fontSize: 17, fontWeight: '600' },
+  // Timer Ring
+  timerRing: { width: 160, height: 160, borderRadius: 80, borderWidth: 4, borderColor: '#4CAF50', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
+  timerRingInner: { alignItems: 'center' },
+  timerText: { color: '#FFF', fontSize: 28, fontWeight: 'bold', fontVariant: ['tabular-nums'] },
+  timerProject: { color: '#4CAF50', fontSize: 13, marginTop: 4 },
+  // Quick Actions (Horizontal Cards)
+  sectionTitle: { color: '#FFF', fontSize: 18, fontWeight: '600', paddingHorizontal: 20, marginBottom: 14 },
+  actionsScroll: { paddingHorizontal: 16, marginBottom: 24 },
+  actionCard: { alignItems: 'center', marginRight: 16, width: 80 },
+  actionCardGradient: { width: 64, height: 64, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  actionCardLabel: { color: '#AAA', fontSize: 11, textAlign: 'center' },
+  // More Actions
+  moreActions: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 12 },
+  moreActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, gap: 10, borderWidth: 1, borderColor: '#333' },
+  moreActionLabel: { color: '#CCC', fontSize: 13 },
+  // Floating
+  floatingContainer: { position: 'absolute', bottom: 40, right: 20, zIndex: 10 },
+  fab: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#00D4FF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12 },
 });

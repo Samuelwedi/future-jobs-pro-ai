@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -13,6 +14,7 @@ interface Project {
 }
 
 export default function ProjectsScreen() {
+  const navigation = useNavigation<any>();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -37,7 +39,15 @@ export default function ProjectsScreen() {
   };
 
   const renderProject = ({ item }: { item: Project }) => (
-    <TouchableOpacity style={styles.projectCard}>
+    <TouchableOpacity
+      style={styles.projectCard}
+      onPress={() =>
+        navigation.navigate('ProjectAlbum', {
+          projectId: item.id,
+          projectName: item.name,
+        })
+      }
+    >
       <View style={styles.projectInfo}>
         <Text style={styles.projectName}>{item.name}</Text>
         <Text style={styles.clientName}>{item.client_name}</Text>
@@ -49,19 +59,29 @@ export default function ProjectsScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /></View>
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#00D4FF" />
+      </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Projects</Text>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <MaterialIcons name="arrow-back" size={24} color="#FFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Projects</Text>
+        <View style={{ width: 24 }} />
+      </View>
       <FlatList
         data={projects}
         keyExtractor={(item) => item.id}
         renderItem={renderProject}
         contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />
+        }
         ListEmptyComponent={<Text style={styles.emptyText}>No projects found</Text>}
       />
     </View>
@@ -71,9 +91,27 @@ export default function ProjectsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
-  header: { color: '#FFF', fontSize: 24, fontWeight: 'bold', paddingHorizontal: 20, paddingTop: 60, paddingBottom: 20 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  headerTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold', marginLeft: 16 },
   listContent: { paddingHorizontal: 20 },
-  projectCard: { backgroundColor: '#1A1A1A', borderRadius: 12, padding: 16, marginBottom: 12, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#333' },
+  projectCard: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
   projectInfo: { flex: 1 },
   projectName: { color: '#FFF', fontSize: 16, fontWeight: '600' },
   clientName: { color: '#888', fontSize: 14, marginTop: 4 },

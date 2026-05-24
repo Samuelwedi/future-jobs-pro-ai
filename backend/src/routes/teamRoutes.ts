@@ -1,0 +1,69 @@
+import express, { Request, Response } from 'express';
+import { inviteEmployee, getCompanyMembers, updateMemberRole, removeMember, setPassword } from '../services/teamService';
+
+const router = express.Router();
+
+// POST /api/team/invite
+router.post('/invite', async (req: Request, res: Response) => {
+  try {
+    const { companyId, email, firstName, lastName, role, invitedBy } = req.body;
+    if (!companyId || !email || !firstName || !lastName || !role || !invitedBy) {
+      return res.status(400).json({ success: false, message: 'All fields are required' });
+    }
+    const result = await inviteEmployee(companyId, email, firstName, lastName, role, invitedBy);
+    res.status(201).json({
+      success: true,
+      user: result.user,
+      tempPassword: result.tempPassword,
+      message: `Employee created. Temporary password: ${result.tempPassword}`
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// POST /api/team/set-password
+router.post('/set-password', async (req: Request, res: Response) => {
+  try {
+    const { userId, newPassword } = req.body;
+    if (!userId || !newPassword) return res.status(400).json({ success: false, message: 'userId and newPassword required' });
+    await setPassword(userId, newPassword);
+    res.json({ success: true, message: 'Password updated' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/team/members/:companyId
+router.get('/members/:companyId', async (req: Request, res: Response) => {
+  try {
+    const members = await getCompanyMembers(req.params.companyId as string);
+    res.json({ success: true, members });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// PUT /api/team/:userId/role
+router.put('/:userId/role', async (req: Request, res: Response) => {
+  try {
+    const { role, companyId } = req.body;
+    const user = await updateMemberRole(req.params.userId as string, role, companyId);
+    res.json({ success: true, user });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// DELETE /api/team/:userId
+router.delete('/:userId', async (req: Request, res: Response) => {
+  try {
+    const { companyId } = req.body;
+    await removeMember(req.params.userId as string, companyId);
+    res.json({ success: true, message: 'Member removed' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+export default router;
