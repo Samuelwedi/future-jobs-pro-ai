@@ -21,7 +21,17 @@ const PORT = process.env.PORT || 5000;
 
 // ----- Middleware -----
 app.use(helmet());
-app.use(cors({ origin: ['http://localhost:3000', 'http://localhost:19006', 'http://localhost:5173'], credentials: true }));
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:19006',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'https://future-jobs-pro-ai.vercel.app',
+    'https://balancing-treble-prevent.ngrok-free.dev',
+  ],
+  credentials: true,
+}));
 app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
