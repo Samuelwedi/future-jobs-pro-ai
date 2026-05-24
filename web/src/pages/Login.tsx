@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Container,
@@ -10,24 +11,43 @@ import {
   Alert,
 } from '@mui/material';
 
+const API_BASE = 'https://balancing-treble-prevent.ngrok-free.dev';
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
     try {
-      // Replace with your real API call later
-      if (email === 'samuel@test.com' && password === 'Test1234!') {
-        alert('Login successful (demo)');
-      } else {
-        setError('Invalid email or password');
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Login failed');
       }
-    } catch {
-      setError('Login failed. Please try again.');
+
+      // Save token
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
+      // Redirect to dashboard
+      navigate('/dashboard');
+    } catch (err: any) {
+      setError(err.message || 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -41,6 +61,7 @@ export default function Login() {
         justifyContent: 'center',
       }}
     >
+      {/* ... rest of the form stays exactly the same ... */}
       <Container maxWidth="xs">
         <Paper
           sx={{
@@ -114,6 +135,7 @@ export default function Login() {
               type="submit"
               fullWidth
               variant="contained"
+              disabled={loading}
               sx={{
                 bgcolor: '#00D4FF',
                 color: '#0A0A0A',
@@ -121,7 +143,7 @@ export default function Login() {
                 fontWeight: 'bold',
               }}
             >
-              Sign In
+              {loading ? 'Signing in...' : 'Sign In'}
             </Button>
           </Box>
 
