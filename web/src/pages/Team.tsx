@@ -21,7 +21,10 @@ export default function Team() {
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`${API_BASE}/api/team`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
+        },
       });
       if (!res.ok) throw new Error('Failed to load team');
       const data = await res.json();
@@ -84,11 +87,7 @@ export default function Team() {
                           />
                         </TableCell>
                         <TableCell>
-                          <Chip
-                            label="Active"
-                            size="small"
-                            sx={{ bgcolor: '#4CAF5020', color: '#4CAF50' }}
-                          />
+                          <Chip label="Active" size="small" sx={{ bgcolor: '#4CAF5020', color: '#4CAF50' }} />
                         </TableCell>
                       </TableRow>
                     ))

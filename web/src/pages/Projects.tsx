@@ -21,7 +21,10 @@ export default function Projects() {
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`${API_BASE}/api/projects/active`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
+        },
       });
       if (!res.ok) throw new Error('Failed to load projects');
       const data = await res.json();
@@ -71,11 +74,7 @@ export default function Projects() {
                         <TableCell sx={{ color: '#FFF' }}>{proj.name}</TableCell>
                         <TableCell sx={{ color: '#CCC' }}>{proj.client_name || '—'}</TableCell>
                         <TableCell>
-                          <Chip
-                            label="Active"
-                            size="small"
-                            sx={{ bgcolor: '#4CAF5020', color: '#4CAF50' }}
-                          />
+                          <Chip label="Active" size="small" sx={{ bgcolor: '#4CAF5020', color: '#4CAF50' }} />
                         </TableCell>
                       </TableRow>
                     ))
