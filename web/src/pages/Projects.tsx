@@ -1,21 +1,90 @@
-import React from 'react';
-import { Box, Container, Typography, Paper } from '@mui/material';
+import React, { useState, useEffect } from 'react';
+import {
+  Box, Container, Typography, Paper, Table, TableBody,
+  TableCell, TableContainer, TableHead, TableRow, Chip,
+  CircularProgress, Alert,
+} from '@mui/material';
 import { Work } from '@mui/icons-material';
 
+const API_BASE = 'https://balancing-treble-prevent.ngrok-free.dev';
+
 export default function Projects() {
+  const [projects, setProjects] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  const fetchProjects = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/api/projects/active`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to load projects');
+      const data = await res.json();
+      setProjects(data.projects || []);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
-      <Container maxWidth="sm">
-        <Paper sx={{ p: 6, bgcolor: '#1A1A1A', borderRadius: 4, border: '1px solid #333', textAlign: 'center' }}>
-          <Work sx={{ fontSize: 80, color: '#FF9800', mb: 3 }} />
-          <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 2 }}>Projects</Typography>
-          <Typography variant="body1" sx={{ color: '#AAA', lineHeight: 1.8 }}>
-            View active and completed projects – full web management coming soon.
-          </Typography>
-          <Box sx={{ mt: 4, bgcolor: '#00D4FF20', border: '1px solid #00D4FF', borderRadius: 2, px: 3, py: 1, display: 'inline-block' }}>
-            <Typography sx={{ color: '#00D4FF', fontWeight: 600 }}>🚀 Coming Soon</Typography>
-          </Box>
-        </Paper>
+    <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', py: 4 }}>
+      <Container maxWidth="lg">
+        <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>
+          <Work sx={{ mr: 1, verticalAlign: 'middle' }} />
+          Projects
+        </Typography>
+        <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>
+          Active and upcoming projects
+        </Typography>
+
+        {loading && <CircularProgress sx={{ color: '#00D4FF' }} />}
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+        {!loading && !error && (
+          <Paper sx={{ bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333', overflow: 'hidden' }}>
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ color: '#888' }}>Project Name</TableCell>
+                    <TableCell sx={{ color: '#888' }}>Client</TableCell>
+                    <TableCell sx={{ color: '#888' }}>Status</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {projects.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} sx={{ color: '#888', textAlign: 'center', py: 4 }}>
+                        No projects found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    projects.map((proj: any) => (
+                      <TableRow key={proj.id} hover>
+                        <TableCell sx={{ color: '#FFF' }}>{proj.name}</TableCell>
+                        <TableCell sx={{ color: '#CCC' }}>{proj.client_name || '—'}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label="Active"
+                            size="small"
+                            sx={{ bgcolor: '#4CAF5020', color: '#4CAF50' }}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        )}
       </Container>
     </Box>
   );
