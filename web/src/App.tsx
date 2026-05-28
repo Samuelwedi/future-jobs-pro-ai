@@ -12,6 +12,15 @@ import FAQ from './pages/FAQ';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import VoiceAssistant from './pages/VoiceAssistant';
+import Team from './pages/Team';
+import Projects from './pages/Projects';
+import Timesheet from './pages/Timesheet';
+import Chat from './pages/Chat';
+import Tasks from './pages/Tasks';
+import PTO from './pages/PTO';
+import Kiosk from './pages/Kiosk';
+import Settings from './pages/Settings';
+import NotFound from './pages/NotFound';
 
 export default function App() {
   return (
@@ -29,6 +38,15 @@ export default function App() {
         <Route path="/faq" element={<FAQ />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="/team" element={<Team />} />
+<Route path="/projects" element={<Projects />} />
+<Route path="/timesheet" element={<Timesheet />} />
+<Route path="/chat" element={<Chat />} />
+<Route path="/tasks" element={<Tasks />} />
+<Route path="/pto" element={<PTO />} />
+<Route path="/kiosk" element={<Kiosk />} />
+<Route path="/settings" element={<Settings />} />
+<Route path="*" element={<NotFound />} />
       </Routes>
     </Router>
   );
