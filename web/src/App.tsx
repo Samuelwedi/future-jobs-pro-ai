@@ -11,11 +11,13 @@ import Contact from './pages/Contact';
 import FAQ from './pages/FAQ';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
+import VoiceAssistant from './pages/VoiceAssistant';
 
 export default function App() {
   return (
     <Router>
       <Routes>
+        <Route path="/voice-assistant" element={<VoiceAssistant />} />
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
