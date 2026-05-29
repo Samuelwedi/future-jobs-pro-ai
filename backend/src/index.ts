@@ -50,32 +50,32 @@ app.get('/api/db-test', async (req: Request, res: Response) => {
 
 app.get('/', (req, res) => res.send('<h1>🚀 Future Jobs Pro AI</h1>'));
 
-// ===== REST ROUTES =====
-import authRoutes from './routes/authRoutes'; app.use('/api/auth', authRoutes);
-import aiRoutes from './routes/aiRoutes'; app.use('/api/ai', aiRoutes);
-import photoRoutes from './routes/photoRoutes'; app.use('/api/photos', photoRoutes);
-import gpsRoutes from './routes/gpsRoutes'; app.use('/api/gps', gpsRoutes);
-import voiceRoutes from './routes/voiceRoutes'; app.use('/api/voice', voiceRoutes);
-import disputeRoutes from './routes/disputeRoutes'; app.use('/api/dispute', disputeRoutes);
-import notificationRoutes from './routes/notificationRoutes'; app.use('/api/notifications', notificationRoutes);
-import stripeRoutes from './routes/stripeRoutes'; app.use('/api/stripe', stripeRoutes);
-import adminRoutes from './routes/adminRoutes'; app.use('/api/admin', adminRoutes);
-import timeEntryRoutes from './routes/timeEntryRoutes'; app.use('/api/time-entries', timeEntryRoutes);
-import projectRoutes from './routes/projectRoutes'; app.use('/api/projects', projectRoutes);
-import integrationRoutes from './routes/integrationRoutes'; app.use('/api/integrations', integrationRoutes);
-import companyRoutes from './routes/companyRoutes'; app.use('/api/companies', companyRoutes);
-import chatRoutes from './routes/chatRoutes'; app.use('/api/chat', chatRoutes);
-import userRoutes from './routes/userRoutes'; app.use('/api/users', userRoutes);
-import scheduleRoutes from './routes/scheduleRoutes'; app.use('/api/schedule', scheduleRoutes);
-import crewRoutes from './routes/crewRoutes'; app.use('/api/crew', crewRoutes);
-import assistantRoutes from './routes/assistantRoutes'; app.use('/api/assistant', assistantRoutes);
-import taskRoutes from './routes/taskRoutes'; app.use('/api/tasks', taskRoutes);
-import webhookRoutes from './routes/webhookRoutes'; app.use('/api/webhooks', webhookRoutes);
-import ptoRoutes from './routes/ptoRoutes'; app.use('/api/pto', ptoRoutes);
-import kioskRoutes from './routes/kioskRoutes'; app.use('/api/kiosk', kioskRoutes);
-import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
-import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
-import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
+// ===== REST ROUTES (all disabled for startup test) =====
+// import authRoutes from './routes/authRoutes'; app.use('/api/auth', authRoutes);
+// import aiRoutes from './routes/aiRoutes'; app.use('/api/ai', aiRoutes);
+// import photoRoutes from './routes/photoRoutes'; app.use('/api/photos', photoRoutes);
+// import gpsRoutes from './routes/gpsRoutes'; app.use('/api/gps', gpsRoutes);
+// import voiceRoutes from './routes/voiceRoutes'; app.use('/api/voice', voiceRoutes);
+// import disputeRoutes from './routes/disputeRoutes'; app.use('/api/dispute', disputeRoutes);
+// import notificationRoutes from './routes/notificationRoutes'; app.use('/api/notifications', notificationRoutes);
+// import stripeRoutes from './routes/stripeRoutes'; app.use('/api/stripe', stripeRoutes);
+// import adminRoutes from './routes/adminRoutes'; app.use('/api/admin', adminRoutes);
+// import timeEntryRoutes from './routes/timeEntryRoutes'; app.use('/api/time-entries', timeEntryRoutes);
+// import projectRoutes from './routes/projectRoutes'; app.use('/api/projects', projectRoutes);
+// import integrationRoutes from './routes/integrationRoutes'; app.use('/api/integrations', integrationRoutes);
+// import companyRoutes from './routes/companyRoutes'; app.use('/api/companies', companyRoutes);
+// import chatRoutes from './routes/chatRoutes'; app.use('/api/chat', chatRoutes);
+// import userRoutes from './routes/userRoutes'; app.use('/api/users', userRoutes);
+// import scheduleRoutes from './routes/scheduleRoutes'; app.use('/api/schedule', scheduleRoutes);
+// import crewRoutes from './routes/crewRoutes'; app.use('/api/crew', crewRoutes);
+// import assistantRoutes from './routes/assistantRoutes'; app.use('/api/assistant', assistantRoutes);
+// import taskRoutes from './routes/taskRoutes'; app.use('/api/tasks', taskRoutes);
+// import webhookRoutes from './routes/webhookRoutes'; app.use('/api/webhooks', webhookRoutes);
+// import ptoRoutes from './routes/ptoRoutes'; app.use('/api/pto', ptoRoutes);
+// import kioskRoutes from './routes/kioskRoutes'; app.use('/api/kiosk', kioskRoutes);
+// import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
+// import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
+// import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 
 // 404 & error handler
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
