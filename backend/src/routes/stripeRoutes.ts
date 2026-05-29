@@ -1,94 +1,41 @@
-// ============================================
-// STRIPE ROUTES
-// Future Jobs Pro AI – Created by Samuel B.
-// ============================================
+import express, { Request, Response } from 'express';
+import Stripe from 'stripe';
+import dotenv from 'dotenv';
 
-//import express, { Request, Response } from 'express';
-//import {
-  createCheckoutSession,
-  cancelSubscription,
-  getSubscriptionStatus,
-  getPricingPlans,
-  handleStripeWebhook,
-} from '../services/stripeService';
+dotenv.config();
 
 const router = express.Router();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2025-01-27.acacia' as any });
 
-// GET /api/stripe/plans
-router.get('/plans', async (req: Request, res: Response) => {
+// Create Stripe checkout session
+router.post('/create-checkout-session', async (req: Request, res: Response) => {
   try {
-    const plans = await getPricingPlans();
-    res.json({ success: true, plans, owner: 'Samuel B.' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to get plans' });
-  }
-});
-
-// POST /api/stripe/create-checkout
-router.post('/create-checkout', async (req: Request, res: Response) => {
-  try {
-    const { companyId, priceId, successUrl, cancelUrl } = req.body;
-    const checkoutUrl = await createCheckoutSession(companyId, priceId, successUrl, cancelUrl);
-    res.json({ success: true, checkoutUrl });
+    const { priceId, userId, companyId } = req.body;
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'subscription',
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/pricing`,
+      metadata: { userId, companyId },
+    });
+    res.json({ url: session.url });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message || 'Failed to create checkout' });
+    res.status(500).json({ error: error.message });
   }
 });
 
-// POST /api/stripe/cancel-subscription
-router.post('/cancel-subscription', async (req: Request, res: Response) => {
+// Stripe webhook
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+  const sig = req.headers['stripe-signature'] as string;
   try {
-    await cancelSubscription(req.body.subscriptionId);
-    res.json({ success: true, message: 'Subscription canceled' });
+    const event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET || '');
+    // Handle event (simplified)
+    console.log('Webhook event:', event.type);
+    res.json({ received: true });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message || 'Failed to cancel' });
+    res.status(400).send(`Webhook Error: ${error.message}`);
   }
 });
-
-// GET /api/stripe/status/:companyId
-router.get('/status/:companyId', async (req: Request, res: Response) => {
-  try {
-    const status = await getSubscriptionStatus(req.params.companyId as string);
-    res.json({ success: true, ...status });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to get status' });
-  }
-});
-
-// POST /api/stripe/webhook (for your own Stripe account)
-router.post(
-  '/webhook',
-  express.raw({ type: 'application/json' }),
-  async (req: Request, res: Response) => {
-    try {
-      const signature = req.headers['stripe-signature'] as string;
-      const result = await handleStripeWebhook(req.body, signature);
-      res.json(result);
-    } catch (error: any) {
-      console.error('Webhook error:', error);
-      res.status(400).send(`Webhook Error: ${error.message}`);
-    }
-  }
-);
-
-// POST /api/stripe/connected-webhook (for Stripe Connect accounts)
-router.post(
-  '/connected-webhook',
-  express.raw({ type: 'application/json' }),
-  async (req: Request, res: Response) => {
-    try {
-      const signature = req.headers['stripe-signature'] as string;
-      // Use the same webhook handler, which now processes connected account events
-      const result = await handleStripeWebhook(req.body, signature);
-      // Also trigger QuickBooks sync for this event
-      const { syncStripeEventToQuickBooks } = await import('../services/integrationService');
-      await syncStripeEventToQuickBooks(JSON.parse(req.body.toString()));
-      res.json(result);
-    } catch (error: any) {
-      console.error('Connected webhook error:', error);
-      res.status(400).send(`Webhook Error: ${error.message}`);
-    }
-  }
-);
 
 export default router;
