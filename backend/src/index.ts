@@ -58,7 +58,7 @@ app.get('/api/db-test', async (req: Request, res: Response) => {
     const result = await pool.query('SELECT NOW()');
     res.json({ success: true, timestamp: result.rows[0].now });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, error: JSON.stringify(error) });   // ← changed
   }
 });
 
