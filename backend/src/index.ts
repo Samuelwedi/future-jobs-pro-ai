@@ -19,7 +19,7 @@ dotenv.config();
 const app: Express = express();
 const PORT = process.env.PORT || 5000;
 
-// ----- CORS must be before other middleware that may intercept requests -----
+// ----- CORS (must be before other middleware) -----
 app.use(cors({
   origin: [
     'http://localhost:3000',
@@ -52,12 +52,13 @@ app.get('/api/health', async (req: Request, res: Response) => {
   });
 });
 
+// ----- Database Test (returns actual error) -----
 app.get('/api/db-test', async (req: Request, res: Response) => {
   try {
     const result = await pool.query('SELECT NOW()');
     res.json({ success: true, timestamp: result.rows[0].now });
-  } catch (error) {
-    res.status(500).json({ success: false });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
