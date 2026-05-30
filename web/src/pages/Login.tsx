@@ -11,7 +11,7 @@ import {
   Alert,
 } from '@mui/material';
 
-const API_BASE = 'https://balancing-treble-prevent.ngrok-free.dev';
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -38,7 +38,7 @@ export default function Login() {
         throw new Error(data.message || 'Login failed');
       }
 
-      // Save token
+      // Save token and user info
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
 
@@ -61,7 +61,6 @@ export default function Login() {
         justifyContent: 'center',
       }}
     >
-      {/* ... rest of the form stays exactly the same ... */}
       <Container maxWidth="xs">
         <Paper
           sx={{
