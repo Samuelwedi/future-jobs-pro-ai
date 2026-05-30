@@ -19,10 +19,7 @@ dotenv.config();
 const app: Express = express();
 const PORT = process.env.PORT || 5000;
 
-// ----- Middleware -----
-app.use(helmet());
-
-// ----- CORS Configuration -----
+// ----- CORS must be before other middleware that may intercept requests -----
 app.use(cors({
   origin: [
     'http://localhost:3000',
@@ -36,9 +33,8 @@ app.use(cors({
   credentials: true,
 }));
 
-// Explicitly handle preflight for all routes (fixes helmet interference)
-app.options('*', cors());
-
+// ----- Other middleware -----
+app.use(helmet());
 app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
