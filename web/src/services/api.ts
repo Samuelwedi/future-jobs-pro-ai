@@ -1,10 +1,9 @@
-const API_BASE = 'https://balancing-treble-prevent.ngrok-free.dev';
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 const getHeaders = () => {
   const token = localStorage.getItem('token');
   return {
     'Content-Type': 'application/json',
-    'ngrok-skip-browser-warning': 'true',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 };
@@ -22,7 +21,6 @@ export const api = {
     });
     return res.json();
   },
-  // If you have other methods (uploadFileWithData, etc.), keep them but use getHeaders() for consistency.
   async uploadFileWithData<T>(path: string, fileUri: string, extraFields: Record<string, string>, fileFieldName = 'photo'): Promise<T> {
     const formData = new FormData();
     formData.append(fileFieldName, { uri: fileUri, type: 'image/jpeg', name: 'photo.jpg' } as any);
@@ -32,7 +30,6 @@ export const api = {
       method: 'POST',
       body: formData,
       headers: {
-        'ngrok-skip-browser-warning': 'true',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
