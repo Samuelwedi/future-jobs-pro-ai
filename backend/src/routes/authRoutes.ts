@@ -21,7 +21,7 @@ router.post('/register', async (req: Request, res: Response) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const fullName = `${firstName} ${lastName}`;
-    const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days from now
+    const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
     const result = await pool.query(
       `INSERT INTO users (first_name, last_name, email, password_hash, role, full_name, trial_ends_at)
@@ -42,7 +42,7 @@ router.post('/register', async (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, companyId },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -58,6 +58,7 @@ router.post('/register', async (req: Request, res: Response) => {
         role: user.role,
         fullName: `${user.first_name} ${user.last_name}`,
         trialEndsAt: user.trial_ends_at,
+        companyId,  // ← ADDED
       },
     });
   } catch (error: any) {
@@ -66,7 +67,7 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/auth/login (unchanged, but now returns trial_ends_at as well)
+// POST /api/auth/login
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -88,7 +89,7 @@ router.post('/login', async (req: Request, res: Response) => {
     await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, companyId: user.company_id },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -104,6 +105,7 @@ router.post('/login', async (req: Request, res: Response) => {
         role: user.role,
         fullName: user.full_name || `${user.first_name} ${user.last_name}`,
         trialEndsAt: user.trial_ends_at,
+        companyId: user.company_id,  // ← ADDED
       },
     });
   } catch (error: any) {

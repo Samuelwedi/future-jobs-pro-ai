@@ -11,6 +11,7 @@ import {
 import { Add, Delete, DragIndicator } from '@mui/icons-material';
 
 const localizer = momentLocalizer(moment);
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 // Types
 interface Shift {
@@ -48,6 +49,7 @@ const DraggableEvent = ({ event }: any) => (
 );
 
 export default function SchedulePage() {
+  const [user, setUser] = useState<any>(null);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -64,23 +66,36 @@ export default function SchedulePage() {
   const [formNotes, setFormNotes] = useState('');
   const [formEmployees, setFormEmployees] = useState<string[]>([]);
 
-  const companyId = '967483e9-dd14-4c97-92d4-841182d4359d';
-  const userId = '8d4a3818-06e2-4e11-9cc8-9770f4c0e15c';
+  // Load user from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('user');
+      if (stored) setUser(JSON.parse(stored));
+    } catch {}
+  }, []);
+
+  const token = localStorage.getItem('token') || '';
+  const companyId = user?.companyId || '';
 
   const fetchShifts = useCallback(async () => {
+    if (!companyId) return;
     const start = moment().startOf('week').format('YYYY-MM-DD');
     const end = moment().endOf('week').format('YYYY-MM-DD');
     try {
-      const res = await fetch(`/api/schedule/shifts?companyId=${companyId}&start=${start}&end=${end}`);
+      const res = await fetch(`${API_BASE}/api/schedule/shifts?start=${start}&end=${end}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       setShifts(data.shifts || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, []);
+  }, [companyId, token]);
 
   const fetchProjects = async () => {
     try {
-      const res = await fetch('/api/projects/active');
+      const res = await fetch(`${API_BASE}/api/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       setProjects(data.projects || []);
     } catch (e) { console.error(e); }
@@ -88,13 +103,15 @@ export default function SchedulePage() {
 
   const fetchEmployees = async () => {
     try {
-      const res = await fetch(`/api/users/company/${companyId}`);
+      const res = await fetch(`${API_BASE}/api/team`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
-      setEmployees(data.users || []);
+      setEmployees(data.members || []);
     } catch (e) { console.error(e); }
   };
 
-  useEffect(() => { fetchShifts(); fetchProjects(); fetchEmployees(); }, [fetchShifts]);
+  useEffect(() => { if (companyId) { fetchShifts(); fetchProjects(); fetchEmployees(); } }, [companyId, fetchShifts]);
 
   const openCreateDialog = (date: Date) => {
     setEditingShift(null);
@@ -118,19 +135,22 @@ export default function SchedulePage() {
   const handleSave = async () => {
     try {
       if (editingShift) {
-        await fetch(`/api/schedule/shifts/${editingShift.id}`, {
+        await fetch(`${API_BASE}/api/schedule/shifts/${editingShift.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ name: formName, start_time: formStart, end_time: formEnd, notes: formNotes }),
         });
       } else {
-        await fetch('/api/schedule/shifts', {
+        await fetch(`${API_BASE}/api/schedule/shifts`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
-            companyId, projectId: formProjectId, name: formName,
-            date: selectedDate?.format('YYYY-MM-DD'), startTime: formStart,
-            endTime: formEnd, notes: formNotes, createdBy: userId,
+            name: formName,
+            date: selectedDate?.format('YYYY-MM-DD'),
+            startTime: formStart,
+            endTime: formEnd,
+            projectId: formProjectId,
+            notes: formNotes,
             employeeIds: formEmployees,
           }),
         });
@@ -142,7 +162,10 @@ export default function SchedulePage() {
 
   const handleDelete = async (shiftId: string) => {
     if (!window.confirm('Delete this shift?')) return;
-    await fetch(`/api/schedule/shifts/${shiftId}`, { method: 'DELETE' });
+    await fetch(`${API_BASE}/api/schedule/shifts/${shiftId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
     fetchShifts();
   };
 
@@ -159,9 +182,9 @@ export default function SchedulePage() {
     const newDate = moment(start).format('YYYY-MM-DD');
     const newStart = moment(start).format('HH:mm');
     const newEnd = moment(end).format('HH:mm');
-    await fetch(`/api/schedule/shifts/${shift.id}`, {
+    await fetch(`${API_BASE}/api/schedule/shifts/${shift.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ date: newDate, start_time: newStart, end_time: newEnd }),
     });
     fetchShifts();
