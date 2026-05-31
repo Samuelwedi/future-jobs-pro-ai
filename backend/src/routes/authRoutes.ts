@@ -1,10 +1,12 @@
 import express, { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import Stripe from 'stripe';
 import { pool } from '../config/database';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2025-01-27.acacia' as any });
 
 // POST /api/auth/register
 router.post('/register', async (req: Request, res: Response) => {
@@ -23,11 +25,20 @@ router.post('/register', async (req: Request, res: Response) => {
     const fullName = `${firstName} ${lastName}`;
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
+    // Create Stripe customer
+    let stripeCustomerId: string | null = null;
+    try {
+      const customer = await stripe.customers.create({ email, name: fullName });
+      stripeCustomerId = customer.id;
+    } catch (stripeErr) {
+      console.error('Stripe customer creation failed:', stripeErr);
+    }
+
     const result = await pool.query(
-      `INSERT INTO users (first_name, last_name, email, password_hash, role, full_name, trial_ends_at)
-       VALUES ($1, $2, $3, $4, 'boss', $5, $6)
-       RETURNING id, email, first_name, last_name, role, trial_ends_at`,
-      [firstName, lastName, email, passwordHash, fullName, trialEndsAt]
+      `INSERT INTO users (first_name, last_name, email, password_hash, role, full_name, trial_ends_at, stripe_customer_id)
+       VALUES ($1, $2, $3, $4, 'boss', $5, $6, $7)
+       RETURNING id, email, first_name, last_name, role, trial_ends_at, stripe_customer_id`,
+      [firstName, lastName, email, passwordHash, fullName, trialEndsAt, stripeCustomerId]
     );
 
     const user = result.rows[0];
@@ -58,7 +69,8 @@ router.post('/register', async (req: Request, res: Response) => {
         role: user.role,
         fullName: `${user.first_name} ${user.last_name}`,
         trialEndsAt: user.trial_ends_at,
-        companyId,  // ← ADDED
+        companyId,
+        hasPaymentMethod: false,
       },
     });
   } catch (error: any) {
@@ -105,7 +117,8 @@ router.post('/login', async (req: Request, res: Response) => {
         role: user.role,
         fullName: user.full_name || `${user.first_name} ${user.last_name}`,
         trialEndsAt: user.trial_ends_at,
-        companyId: user.company_id,  // ← ADDED
+        companyId: user.company_id,
+        hasPaymentMethod: !!user.stripe_payment_method_id,
       },
     });
   } catch (error: any) {

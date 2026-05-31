@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Container, Grid, Paper, Typography, Card, CardContent,
   AppBar, Toolbar, IconButton, Avatar, Chip, LinearProgress,
-  List, ListItemButton, ListItemIcon, ListItemText,
+  List, ListItemButton, ListItemIcon, ListItemText, Button,
 } from '@mui/material';
 import {
   Notifications, TrendingDown, AccessTime, Work, People,
@@ -17,6 +17,7 @@ import {
 } from 'recharts';
 
 const COLORS = ['#00D4FF', '#4CAF50', '#FF9800', '#F44336'];
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 const navItems = [
   { label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
@@ -36,21 +37,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Get user from localStorage
   const [user, setUser] = useState<any>(null);
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('user');
-      if (stored) setUser(JSON.parse(stored));
-    } catch {}
-  }, []);
-
-  const fullName = user ? (user.fullName || `${user.firstName} ${user.lastName}`) : 'User';
-  const initials = user
-    ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
-    : 'U';
-
   const [stats] = useState({
     activeJobs: 12, totalEmployees: 28, hoursToday: 142.5,
     revenueToday: 8475, marginToday: 34.2,
@@ -67,10 +54,38 @@ export default function Dashboard() {
     { name: 'On Hold', value: 3 }, { name: 'Cancelled', value: 1 },
   ];
 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('user');
+      if (stored) setUser(JSON.parse(stored));
+    } catch {}
+  }, []);
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     navigate('/login');
+  };
+
+  const fullName = user ? (user.fullName || `${user.firstName} ${user.lastName}`) : 'User';
+  const initials = user
+    ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
+    : 'U';
+
+  // Determine trial status
+  const trialEndDate = user?.trialEndsAt ? new Date(user.trialEndsAt) : null;
+  const trialActive = trialEndDate && trialEndDate > new Date();
+  const daysLeft = trialActive ? Math.ceil((trialEndDate!.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+
+  const handleAddPayment = async () => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE}/api/stripe/create-setup-session`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (data.url) window.location.href = data.url;
+    else alert('Failed to start payment setup');
   };
 
   return (
@@ -78,12 +93,8 @@ export default function Dashboard() {
       {/* ===== SIDEBAR ===== */}
       <Box
         sx={{
-          width: 260,
-          bgcolor: '#111',
-          borderRight: '1px solid #222',
-          display: 'flex',
-          flexDirection: 'column',
-          pt: 2, pb: 2, flexShrink: 0,
+          width: 260, bgcolor: '#111', borderRight: '1px solid #222',
+          display: 'flex', flexDirection: 'column', pt: 2, pb: 2, flexShrink: 0,
         }}
       >
         <Box sx={{ px: 2, mb: 3 }}>
@@ -135,6 +146,33 @@ export default function Dashboard() {
           </Toolbar>
         </AppBar>
 
+        {/* ===== TRIAL BANNER ===== */}
+        {user && (
+          <Box sx={{
+            bgcolor: trialActive ? '#1A1A2E' : '#F4433620',
+            p: 2, textAlign: 'center', borderBottom: '1px solid #333'
+          }}>
+            {trialActive ? (
+              <Typography sx={{ color: '#00D4FF' }}>
+                Trial ends in {daysLeft} day{daysLeft !== 1 ? 's' : ''}.
+                <Button href="/pricing" sx={{ ml: 2, color: '#00D4FF', textDecoration: 'underline' }}>
+                  Upgrade
+                </Button>
+              </Typography>
+            ) : (
+              <>
+                <Typography sx={{ color: '#F44336', mb: 1 }}>
+                  Your trial has expired. Please add a payment method to continue.
+                </Typography>
+                <Button variant="contained" onClick={handleAddPayment}
+                  sx={{ bgcolor: '#F44336', color: '#FFF' }}>
+                  Add Payment Method
+                </Button>
+              </>
+            )}
+          </Box>
+        )}
+
         <Container maxWidth="xl" sx={{ mt: 3, mb: 3, flex: 1 }}>
           <Box sx={{ mb: 3 }}>
             <Chip label="👑 Boss Mode" sx={{ bgcolor: '#00D4FF20', color: '#00D4FF', border: '1px solid #00D4FF40', fontWeight: 'bold' }} />
@@ -153,7 +191,9 @@ export default function Dashboard() {
                       <TrendingDown fontSize="small" sx={{ color: '#F44336' }} />
                       <Typography variant="body2" sx={{ color: '#F44336' }}>2.1%</Typography>
                     </Box>
-                    <LinearProgress variant="determinate" value={stats.marginToday} sx={{ mt: 1, height: 6, borderRadius: 3, bgcolor: '#333', '& .MuiLinearProgress-bar': { bgcolor: '#4CAF50' } }} />
+                    <LinearProgress variant="determinate" value={stats.marginToday}
+                      sx={{ mt: 1, height: 6, borderRadius: 3, bgcolor: '#333',
+                        '& .MuiLinearProgress-bar': { bgcolor: '#4CAF50' } }} />
                   </CardContent>
                 </Card>
               </Grid>

@@ -13,6 +13,7 @@ import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { pool, checkDatabaseHealth } from './config/database';
 import { saveMessage } from './services/chatService';
+import { trialCheck } from './middleware/trialMiddleware';   // ← trial enforcement
 
 dotenv.config();
 
@@ -40,6 +41,9 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// ----- Trial enforcement (must be before routes) -----
+app.use(trialCheck);
+
 // ----- Health Check -----
 app.get('/api/health', async (req: Request, res: Response) => {
   const dbHealthy = await checkDatabaseHealth();
@@ -58,7 +62,7 @@ app.get('/api/db-test', async (req: Request, res: Response) => {
     const result = await pool.query('SELECT NOW()');
     res.json({ success: true, timestamp: result.rows[0].now });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: JSON.stringify(error) });   // ← changed
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -90,6 +94,7 @@ import kioskRoutes from './routes/kioskRoutes'; app.use('/api/kiosk', kioskRoute
 import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
 import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
+import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);   // ← payment routes
 
 // 404 & error handler
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
