@@ -21,6 +21,7 @@ import PTO from './pages/PTO';
 import Kiosk from './pages/Kiosk';
 import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
+import Register from './pages/Register';
 
 export default function App() {
   return (
@@ -47,6 +48,7 @@ export default function App() {
 <Route path="/kiosk" element={<Kiosk />} />
 <Route path="/settings" element={<Settings />} />
 <Route path="*" element={<NotFound />} />
+<Route path="/register" element={<Register />} />
       </Routes>
     </Router>
   );

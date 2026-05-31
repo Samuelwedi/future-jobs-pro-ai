@@ -147,7 +147,7 @@ export default function Login() {
           </Box>
 
           <Box sx={{ mt: 2, textAlign: 'center' }}>
-            <Link href="/pricing" sx={{ color: '#00D4FF', fontSize: 14 }}>
+            <Link href="/register" sx={{ color: '#00D4FF', fontSize: 14 }}>
               Don&apos;t have an account? Start free trial
             </Link>
           </Box>
