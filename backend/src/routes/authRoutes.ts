@@ -20,11 +20,11 @@ router.post('/register', async (req: Request, res: Response) => {
       return res.status(409).json({ success: false, message: 'User already exists' });
     }
 
-    // Hash password
+    // Hash password and build full name
     const passwordHash = await bcrypt.hash(password, 10);
     const fullName = `${firstName} ${lastName}`;
 
-    // Insert user
+    // Insert user (no company yet)
     const result = await pool.query(
       `INSERT INTO users (first_name, last_name, email, password_hash, role, full_name)
        VALUES ($1, $2, $3, $4, 'boss', $5)
@@ -34,8 +34,22 @@ router.post('/register', async (req: Request, res: Response) => {
 
     const user = result.rows[0];
 
+    // Auto‑create a company for the new boss
+    const companyResult = await pool.query(
+      `INSERT INTO companies (name) VALUES ($1) ON CONFLICT DO NOTHING RETURNING id`,
+      [`${fullName}'s Company`]
+    );
+    const companyId = companyResult.rows[0]?.id;
+    if (companyId) {
+      await pool.query('UPDATE users SET company_id = $1 WHERE id = $2', [companyId, user.id]);
+    }
+
     // Generate JWT
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
     res.status(201).json({ success: true, token, user });
   } catch (error: any) {
@@ -52,25 +66,24 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Email and password are required' });
     }
 
-    // Find user
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     if (result.rows.length === 0) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
     const user = result.rows[0];
-
-    // Check password
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    // Update last login
     await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
 
-    // Generate JWT
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
 
     res.json({
       success: true,
