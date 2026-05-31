@@ -1,19 +1,33 @@
 import express, { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 
 const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
-// GET /api/projects/active – return active projects for a company
-router.get('/active', async (req: Request, res: Response) => {
+// GET /api/projects – returns projects for the logged‑in user's company
+router.get('/', async (req: Request, res: Response) => {
   try {
-    // For now, return all active projects (later we'll filter by company)
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    const companyId = userRes.rows[0].company_id;
+    if (!companyId) return res.json({ success: true, projects: [] });
+
     const result = await pool.query(
-      `SELECT * FROM projects WHERE status = 'active' ORDER BY created_at DESC`
+      'SELECT id, name, client_name, status FROM projects WHERE company_id = $1',
+      [companyId]
     );
     res.json({ success: true, projects: result.rows });
-  } catch (error) {
-    console.error('Error fetching projects:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch projects' });
+  } catch (error: any) {
+    console.error('Project fetch error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load projects' });
   }
 });
 

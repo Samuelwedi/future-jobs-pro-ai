@@ -14,27 +14,24 @@ router.post('/register', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'All fields are required' });
     }
 
-    // Check if user already exists
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ success: false, message: 'User already exists' });
     }
 
-    // Hash password and build full name
     const passwordHash = await bcrypt.hash(password, 10);
     const fullName = `${firstName} ${lastName}`;
+    const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days from now
 
-    // Insert user (no company yet)
     const result = await pool.query(
-      `INSERT INTO users (first_name, last_name, email, password_hash, role, full_name)
-       VALUES ($1, $2, $3, $4, 'boss', $5)
-       RETURNING id, email, first_name, last_name, role`,
-      [firstName, lastName, email, passwordHash, fullName]
+      `INSERT INTO users (first_name, last_name, email, password_hash, role, full_name, trial_ends_at)
+       VALUES ($1, $2, $3, $4, 'boss', $5, $6)
+       RETURNING id, email, first_name, last_name, role, trial_ends_at`,
+      [firstName, lastName, email, passwordHash, fullName, trialEndsAt]
     );
 
     const user = result.rows[0];
 
-    // Auto‑create a company for the new boss
     const companyResult = await pool.query(
       `INSERT INTO companies (name) VALUES ($1) ON CONFLICT DO NOTHING RETURNING id`,
       [`${fullName}'s Company`]
@@ -44,21 +41,32 @@ router.post('/register', async (req: Request, res: Response) => {
       await pool.query('UPDATE users SET company_id = $1 WHERE id = $2', [companyId, user.id]);
     }
 
-    // Generate JWT
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    res.status(201).json({ success: true, token, user });
+    res.status(201).json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        role: user.role,
+        fullName: `${user.first_name} ${user.last_name}`,
+        trialEndsAt: user.trial_ends_at,
+      },
+    });
   } catch (error: any) {
     console.error('Registration error:', error.message);
     res.status(500).json({ success: false, message: 'Registration failed' });
   }
 });
 
-// POST /api/auth/login
+// POST /api/auth/login (unchanged, but now returns trial_ends_at as well)
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
@@ -95,6 +103,7 @@ router.post('/login', async (req: Request, res: Response) => {
         lastName: user.last_name,
         role: user.role,
         fullName: user.full_name || `${user.first_name} ${user.last_name}`,
+        trialEndsAt: user.trial_ends_at,
       },
     });
   } catch (error: any) {

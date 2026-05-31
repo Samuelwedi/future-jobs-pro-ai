@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import { Work } from '@mui/icons-material';
 
-const API_BASE = 'https://balancing-treble-prevent.ngrok-free.dev';
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 export default function Projects() {
   const [projects, setProjects] = useState<any[]>([]);
@@ -20,10 +20,9 @@ export default function Projects() {
   const fetchProjects = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/api/projects/active`, {
+      const res = await fetch(`${API_BASE}/api/projects`, {
         headers: {
           'Authorization': `Bearer ${token}`,
-          'ngrok-skip-browser-warning': 'true',
         },
       });
       if (!res.ok) throw new Error('Failed to load projects');
@@ -65,7 +64,7 @@ export default function Projects() {
                   {projects.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={3} sx={{ color: '#888', textAlign: 'center', py: 4 }}>
-                        No projects found.
+                        No projects found. Create one to get started!
                       </TableCell>
                     </TableRow>
                   ) : (
