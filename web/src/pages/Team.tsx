@@ -6,7 +6,7 @@ import {
 } from '@mui/material';
 import { Groups } from '@mui/icons-material';
 
-const API_BASE = 'https://balancing-treble-prevent.ngrok-free.dev';
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 export default function Team() {
   const [members, setMembers] = useState<any[]>([]);
