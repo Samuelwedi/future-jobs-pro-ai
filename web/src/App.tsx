@@ -22,6 +22,7 @@ import Kiosk from './pages/Kiosk';
 import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
 import Register from './pages/Register';
+import PaymentRequired from './pages/PaymentRequired';
 
 export default function App() {
   return (
@@ -49,6 +50,7 @@ export default function App() {
 <Route path="/settings" element={<Settings />} />
 <Route path="*" element={<NotFound />} />
 <Route path="/register" element={<Register />} />
+<Route path="/payment-required" element={<PaymentRequired />} />
       </Routes>
     </Router>
   );

@@ -1,17 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableBody,
-  TableCell, TableContainer, TableHead, TableRow, Chip, Button,
+  TableCell, TableContainer, TableHead, TableRow, Chip,
+  CircularProgress, Alert,
 } from '@mui/material';
 import { BeachAccess } from '@mui/icons-material';
 
-const mockPTO = [
-  { id: 1, type: 'Vacation', startDate: '2026-06-10', endDate: '2026-06-14', status: 'Approved', days: 5 },
-  { id: 2, type: 'Sick', startDate: '2026-06-01', endDate: '2026-06-01', status: 'Pending', days: 1 },
-];
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 export default function PTO() {
-  const [requests] = useState(mockPTO);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetchPTO();
+  }, []);
+
+  const fetchPTO = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/api/pto`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 402) { window.location.href = '/payment-required'; return; }
+      if (!res.ok) throw new Error('Failed to load PTO requests');
+      const data = await res.json();
+      setRequests(data.requests || []);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', py: 4 }}>
@@ -21,46 +42,57 @@ export default function PTO() {
           Paid Time Off
         </Typography>
         <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>
-          Your PTO requests and balances
+          PTO requests across your company
         </Typography>
 
-        <Paper sx={{ bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333', overflow: 'hidden', mb: 3 }}>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ color: '#888' }}>Type</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Dates</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Days</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Status</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {requests.map((req) => (
-                  <TableRow key={req.id} hover>
-                    <TableCell sx={{ color: '#FFF' }}>{req.type}</TableCell>
-                    <TableCell sx={{ color: '#CCC' }}>{req.startDate} → {req.endDate}</TableCell>
-                    <TableCell sx={{ color: '#FFF' }}>{req.days} day{req.days > 1 ? 's' : ''}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={req.status}
-                        size="small"
-                        sx={{
-                          bgcolor: req.status === 'Approved' ? '#4CAF5020' : '#FF980020',
-                          color: req.status === 'Approved' ? '#4CAF50' : '#FF9800',
-                        }}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
+        {loading && <CircularProgress sx={{ color: '#00D4FF' }} />}
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-        <Button variant="contained" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 4, py: 1.5 }}>
-          Request New PTO
-        </Button>
+        {!loading && !error && (
+          <Paper sx={{ bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333', overflow: 'hidden' }}>
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ color: '#888' }}>Employee</TableCell>
+                    <TableCell sx={{ color: '#888' }}>Type</TableCell>
+                    <TableCell sx={{ color: '#888' }}>Dates</TableCell>
+                    <TableCell sx={{ color: '#888' }}>Status</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {requests.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} sx={{ color: '#888', textAlign: 'center', py: 4 }}>
+                        No PTO requests yet.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    requests.map((req: any) => (
+                      <TableRow key={req.id} hover>
+                        <TableCell sx={{ color: '#FFF' }}>{req.user_name}</TableCell>
+                        <TableCell sx={{ color: '#CCC' }}>{req.type}</TableCell>
+                        <TableCell sx={{ color: '#CCC' }}>
+                          {new Date(req.start_date).toLocaleDateString()} → {new Date(req.end_date).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={req.status}
+                            size="small"
+                            sx={{
+                              bgcolor: req.status === 'approved' ? '#4CAF5020' : '#FF980020',
+                              color: req.status === 'approved' ? '#4CAF50' : '#FF9800',
+                            }}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        )}
       </Container>
     </Box>
   );

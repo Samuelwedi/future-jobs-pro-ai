@@ -2,6 +2,8 @@ import React from 'react';
 import { Box, Container, Typography, Paper, Button } from '@mui/material';
 import { TouchApp, QrCode } from '@mui/icons-material';
 
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+
 export default function Kiosk() {
   return (
     <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', py: 4 }}>

@@ -8,9 +8,17 @@ const getHeaders = () => {
   };
 };
 
+// Global handler for 402 Payment Required
+const handle402 = () => {
+  // Prevent multiple redirects
+  if (window.location.pathname === '/payment-required') return;
+  window.location.href = '/payment-required';
+};
+
 export const api = {
   async get(path: string) {
     const res = await fetch(`${API_BASE}${path}`, { headers: getHeaders() });
+    if (res.status === 402) handle402();
     return res.json();
   },
   async post(path: string, body: any) {
@@ -19,6 +27,7 @@ export const api = {
       headers: getHeaders(),
       body: JSON.stringify(body),
     });
+    if (res.status === 402) handle402();
     return res.json();
   },
   async uploadFileWithData<T>(path: string, fileUri: string, extraFields: Record<string, string>, fileFieldName = 'photo'): Promise<T> {
@@ -33,6 +42,7 @@ export const api = {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
+    if (res.status === 402) handle402();
     return res.json();
   },
   async getAISuggestions(): Promise<{ suggestions: any[] }> {
