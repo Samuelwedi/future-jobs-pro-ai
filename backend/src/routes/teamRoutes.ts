@@ -1,7 +1,18 @@
 import express, { Request, Response } from 'express';
+import { pool } from '../config/database';
 import { inviteEmployee, getCompanyMembers, updateMemberRole, removeMember, setPassword } from '../services/teamService';
 
 const router = express.Router();
+
+// GET /api/team – return all members (for now)
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query('SELECT id, email, role, full_name, first_name, last_name FROM users');
+    res.json({ success: true, members: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // POST /api/team/invite
 router.post('/invite', async (req: Request, res: Response) => {
