@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Container, Grid, Paper, Typography, Card, CardContent,
@@ -9,7 +9,7 @@ import {
   Notifications, TrendingDown, AccessTime, Work, People,
   Dashboard as DashboardIcon, CalendarMonth, Assessment,
   Groups, Folder, Timer, Chat, Assignment, BeachAccess,
-  TouchApp, Settings, Logout, ChevronLeft,
+  TouchApp, Settings, Logout,
 } from '@mui/icons-material';
 import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
@@ -17,7 +17,6 @@ import {
 } from 'recharts';
 
 const COLORS = ['#00D4FF', '#4CAF50', '#FF9800', '#F44336'];
-const SIDEBAR_WIDTH = 260;
 
 const navItems = [
   { label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
@@ -36,6 +35,21 @@ const navItems = [
 export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Get user from localStorage
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('user');
+      if (stored) setUser(JSON.parse(stored));
+    } catch {}
+  }, []);
+
+  const fullName = user ? (user.fullName || `${user.firstName} ${user.lastName}`) : 'User';
+  const initials = user
+    ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
+    : 'U';
 
   const [stats] = useState({
     activeJobs: 12, totalEmployees: 28, hoursToday: 142.5,
@@ -64,17 +78,14 @@ export default function Dashboard() {
       {/* ===== SIDEBAR ===== */}
       <Box
         sx={{
-          width: SIDEBAR_WIDTH,
+          width: 260,
           bgcolor: '#111',
           borderRight: '1px solid #222',
           display: 'flex',
           flexDirection: 'column',
-          pt: 2,
-          pb: 2,
-          flexShrink: 0,
+          pt: 2, pb: 2, flexShrink: 0,
         }}
       >
-        {/* Logo */}
         <Box sx={{ px: 2, mb: 3 }}>
           <Typography sx={{ color: '#00D4FF', fontWeight: 'bold', fontSize: 18 }}>
             🚀 Future Jobs Pro
@@ -82,7 +93,6 @@ export default function Dashboard() {
           <Typography variant="caption" sx={{ color: '#666' }}>Samuel B.</Typography>
         </Box>
 
-        {/* Navigation Links */}
         <List sx={{ flex: 1 }}>
           {navItems.map((item) => {
             const isActive = location.pathname === item.path;
@@ -91,56 +101,40 @@ export default function Dashboard() {
                 key={item.path}
                 onClick={() => navigate(item.path)}
                 sx={{
-                  mx: 1,
-                  borderRadius: 2,
-                  mb: 0.5,
+                  mx: 1, borderRadius: 2, mb: 0.5,
                   color: isActive ? '#00D4FF' : '#AAA',
                   bgcolor: isActive ? 'rgba(0,212,255,0.1)' : 'transparent',
                   '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' },
                 }}
               >
-                <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>
-                  {item.icon}
-                </ListItemIcon>
+                <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{item.icon}</ListItemIcon>
                 <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 14 }} />
               </ListItemButton>
             );
           })}
         </List>
 
-        {/* Logout */}
         <ListItemButton
           onClick={handleLogout}
-          sx={{
-            mx: 1, borderRadius: 2, color: '#F44336',
-            '&:hover': { bgcolor: 'rgba(244,67,54,0.1)' },
-          }}
+          sx={{ mx: 1, borderRadius: 2, color: '#F44336', '&:hover': { bgcolor: 'rgba(244,67,54,0.1)' } }}
         >
-          <ListItemIcon sx={{ minWidth: 36, color: '#F44336' }}>
-            <Logout />
-          </ListItemIcon>
+          <ListItemIcon sx={{ minWidth: 36, color: '#F44336' }}><Logout /></ListItemIcon>
           <ListItemText primary="Logout" primaryTypographyProps={{ fontSize: 14 }} />
         </ListItemButton>
       </Box>
 
       {/* ===== MAIN CONTENT ===== */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* Top AppBar */}
         <AppBar position="static" sx={{ bgcolor: '#1A1A1A', borderBottom: '1px solid #333', boxShadow: 'none' }}>
           <Toolbar>
             <Typography variant="h6" sx={{ flexGrow: 1, color: '#FFF', fontWeight: 'bold' }}>
-              Welcome back, John Bossman
+              Welcome back, {fullName}
             </Typography>
-            <IconButton color="inherit">
-              <Notifications />
-            </IconButton>
-            <IconButton>
-              <Avatar sx={{ bgcolor: '#00D4FF', width: 40, height: 40 }}>JB</Avatar>
-            </IconButton>
+            <IconButton color="inherit"><Notifications /></IconButton>
+            <IconButton><Avatar sx={{ bgcolor: '#00D4FF', width: 40, height: 40 }}>{initials}</Avatar></IconButton>
           </Toolbar>
         </AppBar>
 
-        {/* Dashboard Content */}
         <Container maxWidth="xl" sx={{ mt: 3, mb: 3, flex: 1 }}>
           <Box sx={{ mb: 3 }}>
             <Chip label="👑 Boss Mode" sx={{ bgcolor: '#00D4FF20', color: '#00D4FF', border: '1px solid #00D4FF40', fontWeight: 'bold' }} />
@@ -159,8 +153,7 @@ export default function Dashboard() {
                       <TrendingDown fontSize="small" sx={{ color: '#F44336' }} />
                       <Typography variant="body2" sx={{ color: '#F44336' }}>2.1%</Typography>
                     </Box>
-                    <LinearProgress variant="determinate" value={stats.marginToday}
-                      sx={{ mt: 1, height: 6, borderRadius: 3, bgcolor: '#333', '& .MuiLinearProgress-bar': { bgcolor: '#4CAF50' } }} />
+                    <LinearProgress variant="determinate" value={stats.marginToday} sx={{ mt: 1, height: 6, borderRadius: 3, bgcolor: '#333', '& .MuiLinearProgress-bar': { bgcolor: '#4CAF50' } }} />
                   </CardContent>
                 </Card>
               </Grid>
