@@ -6,13 +6,13 @@
 
 import OAuthClient from 'intuit-oauth';
 import { pool } from '../config/database';
-import { decrypt } from './encryptionService';
+import { decrypt, encrypt } from './encryptionService';
 
 // OAuth client instance (used to refresh tokens)
 const qbOAuth = new OAuthClient({
   clientId: process.env.QUICKBOOKS_CLIENT_ID || 'QB_CLIENT_ID',
   clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || 'QB_CLIENT_SECRET',
-  environment: process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox',
+  environment: (process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox') as any,
   redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:5000/api/integrations/quickbooks/callback',
 });
 
@@ -39,8 +39,8 @@ async function getValidToken(companyId: string) {
     const newExpiresAt = new Date(Date.now() + expiresIn * 1000);
 
     // Update encrypted tokens in database
-    const encryptedAccess = (await import('./encryptionService')).encrypt(access_token);
-    const encryptedRefresh = refresh_token ? (await import('./encryptionService')).encrypt(refresh_token) : null;
+    const encryptedAccess = encrypt(access_token);
+    const encryptedRefresh = refresh_token ? encrypt(refresh_token) : null;
 
     await pool.query(
       `UPDATE integrations SET access_token=$1, refresh_token=$2, token_expires_at=$3 WHERE company_id=$4 AND provider='quickbooks'`,
@@ -64,7 +64,7 @@ export async function createSalesReceipt(
   const qbClient = new OAuthClient({
     clientId: process.env.QUICKBOOKS_CLIENT_ID || 'QB_CLIENT_ID',
     clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || 'QB_CLIENT_SECRET',
-    environment: process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox',
+    environment: (process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox') as any,
     redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:5000/api/integrations/quickbooks/callback',
     token: { access_token, realmId: realm_id },
   });
@@ -102,7 +102,7 @@ export async function createInvoicePayment(
   const qbClient = new OAuthClient({
     clientId: process.env.QUICKBOOKS_CLIENT_ID || 'QB_CLIENT_ID',
     clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || 'QB_CLIENT_SECRET',
-    environment: process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox',
+    environment: (process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox') as any,
     redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:5000/api/integrations/quickbooks/callback',
     token: { access_token, realmId: realm_id },
   });
