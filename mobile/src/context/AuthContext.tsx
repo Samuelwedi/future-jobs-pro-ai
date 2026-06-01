@@ -64,6 +64,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = async (email: string, password: string) => {
     const response = await api.post<{ token: string; user: User }>('/auth/login', { email, password });
+
+    // 🔑 Debug: print the token so we can verify it
+    console.log('🔑 MOBILE TOKEN:', response.token);
+
     await api.setToken(response.token);
 
     // Fetch kiosk enabled status for the company

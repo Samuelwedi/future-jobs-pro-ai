@@ -1,1 +1,0 @@
-export const WAKE_PHRASE = 'hey lucy';

@@ -1,50 +1,36 @@
-// ============================================
-// SCHEDULE ROUTES (with shift update notifications)
-// Future Jobs Pro AI – Created by Samuel B.
-// ============================================
-
 import express, { Request, Response } from 'express';
-import {
-  createShift,
-  updateShift,
-  deleteShift,
-  getCompanyShifts,
-  getShiftById,
-  assignEmployee,
-  unassignEmployee,
-  getShiftAssignments,
-  getUserShifts,
-  notifyShiftUpdate,
-} from '../services/scheduleService';
+import jwt from 'jsonwebtoken';
+import { pool } from '../config/database';
 
 const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
-// ---- SHIFTS ----
+// Helper: get company_id from JWT
+const getCompanyId = async (req: Request): Promise<string | null> => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    return userRes.rows[0]?.company_id || null;
+  } catch { return null; }
+};
 
-// GET /api/schedule/shifts?companyId=xxx&start=YYYY-MM-DD&end=YYYY-MM-DD
+// GET /api/schedule/shifts?start=&end=
 router.get('/shifts', async (req: Request, res: Response) => {
   try {
-    const { companyId, start, end } = req.query;
-    if (!companyId || !start || !end) {
-      return res.status(400).json({ success: false, message: 'companyId, start, and end are required' });
-    }
-    const shifts = await getCompanyShifts(companyId as string, start as string, end as string);
-    res.json({ success: true, shifts });
-  } catch (error: any) {
-    console.error('Get shifts error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-// GET /api/schedule/shifts/:id
-router.get('/shifts/:id', async (req: Request, res: Response) => {
-  try {
-    const shift = await getShiftById(req.params.id as string);
-    if (!shift) return res.status(404).json({ success: false, message: 'Shift not found' });
-    const assignments = await getShiftAssignments(req.params.id as string);
-    res.json({ success: true, shift, assignments });
+    const { start, end } = req.query;
+    let query = 'SELECT * FROM shifts WHERE company_id = $1';
+    const params: any[] = [companyId];
+    if (start) { query += ' AND start_time >= $2'; params.push(start); }
+    if (end)   { query += ' AND end_time <= $3'; params.push(end); }
+    const result = await pool.query(query, params);
+    res.json({ success: true, shifts: result.rows });
   } catch (error: any) {
-    console.error('Get shift error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -52,21 +38,17 @@ router.get('/shifts/:id', async (req: Request, res: Response) => {
 // POST /api/schedule/shifts
 router.post('/shifts', async (req: Request, res: Response) => {
   try {
-    const { companyId, projectId, name, date, startTime, endTime, notes, createdBy, employeeIds } = req.body;
-    if (!companyId || !projectId || !name || !date || !startTime || !endTime || !createdBy) {
-      return res.status(400).json({ success: false, message: 'Missing required fields' });
-    }
-    const shift = await createShift(companyId, projectId, name, date, startTime, endTime, createdBy, notes);
-    // Assign employees if provided
-    if (employeeIds && Array.isArray(employeeIds)) {
-      for (const uid of employeeIds) {
-        await assignEmployee(shift.id, uid);
-      }
-    }
-    const assignments = await getShiftAssignments(shift.id);
-    res.status(201).json({ success: true, shift, assignments });
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { name, date, startTime, endTime, projectId, notes, employeeIds } = req.body;
+    const result = await pool.query(
+      `INSERT INTO shifts (company_id, name, date, start_time, end_time, project_id, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [companyId, name, date, startTime, endTime, projectId, notes, req.body.userId || null]
+    );
+    res.json({ success: true, shift: result.rows[0] });
   } catch (error: any) {
-    console.error('Create shift error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -74,13 +56,18 @@ router.post('/shifts', async (req: Request, res: Response) => {
 // PUT /api/schedule/shifts/:id
 router.put('/shifts/:id', async (req: Request, res: Response) => {
   try {
-    const updates = req.body;
-    const shift = await updateShift(req.params.id as string, updates);
-    // Notify assigned employees that the shift changed
-    await notifyShiftUpdate(req.params.id as string).catch(err => console.error('Notify error:', err));
-    res.json({ success: true, shift });
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { name, date, startTime, endTime, notes } = req.body;
+    const result = await pool.query(
+      `UPDATE shifts SET name=$1, date=$2, start_time=$3, end_time=$4, notes=$5
+       WHERE id=$6 AND company_id=$7 RETURNING *`,
+      [name, date, startTime, endTime, notes, req.params.id, companyId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Shift not found' });
+    res.json({ success: true, shift: result.rows[0] });
   } catch (error: any) {
-    console.error('Update shift error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -88,51 +75,12 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
 // DELETE /api/schedule/shifts/:id
 router.delete('/shifts/:id', async (req: Request, res: Response) => {
   try {
-    await deleteShift(req.params.id as string);
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    await pool.query('DELETE FROM shifts WHERE id=$1 AND company_id=$2', [req.params.id, companyId]);
     res.json({ success: true, message: 'Shift deleted' });
   } catch (error: any) {
-    console.error('Delete shift error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ---- ASSIGNMENTS ----
-
-// POST /api/schedule/shifts/:id/assign
-router.post('/shifts/:id/assign', async (req: Request, res: Response) => {
-  try {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ success: false, message: 'userId is required' });
-    const assignment = await assignEmployee(req.params.id as string, userId);
-    res.status(201).json({ success: true, assignment });
-  } catch (error: any) {
-    console.error('Assign error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// DELETE /api/schedule/shifts/:id/assign/:userId
-router.delete('/shifts/:id/assign/:userId', async (req: Request, res: Response) => {
-  try {
-    await unassignEmployee(req.params.id as string, req.params.userId as string);
-    res.json({ success: true, message: 'Employee unassigned' });
-  } catch (error: any) {
-    console.error('Unassign error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// GET /api/schedule/my-shifts?userId=xxx&start=YYYY-MM-DD&end=YYYY-MM-DD
-router.get('/my-shifts', async (req: Request, res: Response) => {
-  try {
-    const { userId, start, end } = req.query;
-    if (!userId || !start || !end) {
-      return res.status(400).json({ success: false, message: 'userId, start, and end are required' });
-    }
-    const shifts = await getUserShifts(userId as string, start as string, end as string);
-    res.json({ success: true, shifts });
-  } catch (error: any) {
-    console.error('My shifts error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
