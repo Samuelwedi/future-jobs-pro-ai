@@ -11,7 +11,8 @@ import { api } from '../services/api';
 import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
-import { Audio } from 'expo-av';
+import Voice from '@react-native-voice/voice';
+import { WAKE_PHRASE } from '../config/wakeword';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -39,9 +40,6 @@ export default function HomeScreen() {
 
   // Always Listening state
   const [isAlwaysListening, setIsAlwaysListening] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const wakeWordUrl = 'wss://reasonable-youthfulness-production.up.railway.app'; // update after Railway deploy
 
   // Live Pulse data
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
@@ -82,74 +80,47 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isClockedIn, activeTimeEntry]);
 
+  // Voice recognition setup
+  useEffect(() => {
+    Voice.onSpeechResults = (event) => {
+      const transcript = event.value?.[0]?.toLowerCase() || '';
+      if (transcript.includes(WAKE_PHRASE)) {
+        Alert.alert('🚀 Coming Soon', 'Lucy voice assistant will be available soon!');
+      }
+    };
+
+    Voice.onSpeechError = (error) => {
+      console.error('Voice error:', error);
+    };
+
+    return () => {
+      Voice.destroy().then(Voice.removeAllListeners);
+    };
+  }, []);
+
   // Handle Always Listening toggle
   useEffect(() => {
     if (isAlwaysListening) {
-      startWakeWordListening();
+      startListening();
     } else {
-      stopWakeWordListening();
+      stopListening();
     }
-    return () => stopWakeWordListening();
   }, [isAlwaysListening]);
 
-  const startWakeWordListening = async () => {
+  const startListening = async () => {
     try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission required', 'Microphone access is needed for wake word detection.');
-        setIsAlwaysListening(false);
-        return;
-      }
-
-      const ws = new WebSocket(wakeWordUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log('Wake word WebSocket connected');
-      };
-
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.event === 'wake-word-detected') {
-            Alert.alert('🚀 Coming Soon', 'Lucy voice assistant will be available soon!');
-          }
-        } catch {}
-      };
-
-      ws.onerror = (e) => console.error('Wake word WebSocket error:', e);
-      ws.onclose = () => console.log('Wake word WebSocket closed');
-
-      // Start recording in chunks
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      await recording.startAsync();
-      recordingRef.current = recording;
-
-      // Stream audio chunks
-      recording.setOnRecordingStatusUpdate((status) => {
-        if (status.isRecording && ws.readyState === WebSocket.OPEN) {
-          // In a real implementation, you'd send raw PCM data.
-          // For now, we send a dummy heartbeat every second.
-          ws.send(JSON.stringify({ type: 'audio', data: 'dummy' }));
-        }
-      });
+      await Voice.start('en-US');
     } catch (err) {
-      console.error('Failed to start wake word listening:', err);
+      console.error('Failed to start voice recognition:', err);
       setIsAlwaysListening(false);
     }
   };
 
-  const stopWakeWordListening = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    if (recordingRef.current) {
-      recordingRef.current.stopAndUnloadAsync();
-      recordingRef.current = null;
+  const stopListening = async () => {
+    try {
+      await Voice.stop();
+    } catch (err) {
+      console.error('Failed to stop voice recognition:', err);
     }
   };
 
