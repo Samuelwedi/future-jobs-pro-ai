@@ -23,6 +23,7 @@ import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
 import Register from './pages/Register';
 import PaymentRequired from './pages/PaymentRequired';
+import Integrations from './pages/Integrations';
 
 export default function App() {
   return (
@@ -51,6 +52,7 @@ export default function App() {
 <Route path="*" element={<NotFound />} />
 <Route path="/register" element={<Register />} />
 <Route path="/payment-required" element={<PaymentRequired />} />
+<Route path="/integrations" element={<Integrations />} />
       </Routes>
     </Router>
   );

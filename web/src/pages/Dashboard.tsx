@@ -9,7 +9,7 @@ import {
   Notifications, TrendingDown, AccessTime, Work, People,
   Dashboard as DashboardIcon, CalendarMonth, Assessment,
   Groups, Folder, Timer, Chat, Assignment, BeachAccess,
-  TouchApp, Settings, Logout,
+  TouchApp, Settings, Logout, Link as LinkIcon,
 } from '@mui/icons-material';
 import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
@@ -31,6 +31,7 @@ const navItems = [
   { label: 'PTO', icon: <BeachAccess />, path: '/pto' },
   { label: 'Kiosk', icon: <TouchApp />, path: '/kiosk' },
   { label: 'Settings', icon: <Settings />, path: '/settings' },
+  { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
 ];
 
 export default function Dashboard() {
@@ -72,7 +73,6 @@ export default function Dashboard() {
     ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
     : 'U';
 
-  // Determine trial status
   const trialEndDate = user?.trialEndsAt ? new Date(user.trialEndsAt) : null;
   const trialActive = trialEndDate && trialEndDate > new Date();
   const daysLeft = trialActive ? Math.ceil((trialEndDate!.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;

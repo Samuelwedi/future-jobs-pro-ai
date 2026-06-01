@@ -1,9 +1,6 @@
-// ============================================
-// INTEGRATION ROUTES (OAuth endpoints)
-// Future Jobs Pro AI – Created by Samuel B.
-// ============================================
-
 import express, { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
+import { pool } from '../config/database';
 import {
   getQuickBooksAuthUrl,
   getStripeConnectUrl,
@@ -12,8 +9,34 @@ import {
 } from '../services/integrationService';
 
 const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
-// GET /api/integrations/quickbooks/auth – start OAuth
+// GET /api/integrations/status – check integration status for the company
+router.get('/status', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+    const result = await pool.query(
+      `SELECT provider, is_active FROM integrations WHERE company_id = $1`,
+      [decoded.companyId]
+    );
+
+    const status: any = {};
+    for (const row of result.rows) {
+      status[row.provider] = { connected: row.is_active };
+    }
+
+    res.json({ success: true, ...status });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/integrations/quickbooks/auth – start QuickBooks OAuth
 router.get('/quickbooks/auth', async (req: Request, res: Response) => {
   const { companyId } = req.query;
   if (!companyId) return res.status(400).json({ success: false, message: 'Missing companyId' });
