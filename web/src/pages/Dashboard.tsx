@@ -15,15 +15,6 @@ import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { useWakeWord } from '../hooks/useWakeWord';
-
-// inside the component
-const [wakeDetected, setWakeDetected] = useState(false);
-
-useWakeWord(() => {
-  setWakeDetected(true);
-  setTimeout(() => setWakeDetected(false), 3000);
-});
 
 const COLORS = ['#00D4FF', '#4CAF50', '#FF9800', '#F44336'];
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
@@ -154,11 +145,6 @@ export default function Dashboard() {
             <IconButton><Avatar sx={{ bgcolor: '#00D4FF', width: 40, height: 40 }}>{initials}</Avatar></IconButton>
           </Toolbar>
         </AppBar>
-        {wakeDetected && (
-  <Box sx={{ bgcolor: '#00D4FF', p: 1.5, textAlign: 'center', color: '#0A0A0A', fontWeight: 'bold' }}>
-    🎤 Wake word detected! Voice assistant coming soon.
-  </Box>
-)}
 
         {/* ===== TRIAL BANNER ===== */}
         {user && (

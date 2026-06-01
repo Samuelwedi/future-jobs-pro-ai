@@ -12,7 +12,6 @@ import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import Voice from '@react-native-voice/voice';
-import { WAKE_PHRASE } from '../config/wakeword';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -84,7 +83,7 @@ export default function HomeScreen() {
   useEffect(() => {
     Voice.onSpeechResults = (event) => {
       const transcript = event.value?.[0]?.toLowerCase() || '';
-      if (transcript.includes(WAKE_PHRASE)) {
+      if (transcript.includes('hey lucy')) {
         Alert.alert('🚀 Coming Soon', 'Lucy voice assistant will be available soon!');
       }
     };
