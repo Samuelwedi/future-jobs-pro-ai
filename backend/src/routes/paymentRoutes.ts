@@ -5,7 +5,11 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2025-01-27.acacia' as any });
+
+let stripe: any = null;
+if (process.env.STRIPE_SECRET_KEY) {
+  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-01-27.acacia' as any });
+}
 
 const getUserFromToken = async (req: Request) => {
   const authHeader = req.headers.authorization;
@@ -18,12 +22,11 @@ const getUserFromToken = async (req: Request) => {
   } catch { return null; }
 };
 
-// POST /api/stripe/create-setup-session
 router.post('/create-setup-session', async (req: Request, res: Response) => {
+  if (!stripe) return res.status(500).json({ success: false, message: 'Stripe not configured' });
   try {
     const user = await getUserFromToken(req);
     if (!user) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
     if (!user.stripe_customer_id) {
       return res.status(400).json({ success: false, message: 'Stripe customer not found. Please re-register.' });
     }
@@ -43,8 +46,8 @@ router.post('/create-setup-session', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/stripe/setup-success?session_id=...
 router.get('/setup-success', async (req: Request, res: Response) => {
+  if (!stripe) return res.status(500).json({ success: false, message: 'Stripe not configured' });
   try {
     const user = await getUserFromToken(req);
     if (!user) return res.status(401).json({ success: false, message: 'Not authenticated' });

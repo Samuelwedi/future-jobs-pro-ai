@@ -6,9 +6,12 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2025-01-27.acacia' as any });
 
-// POST /api/auth/register
+let stripe: any = null;
+if (process.env.STRIPE_SECRET_KEY) {
+  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-01-27.acacia' as any });
+}
+
 router.post('/register', async (req: Request, res: Response) => {
   try {
     const { firstName, lastName, email, password } = req.body;
@@ -25,13 +28,14 @@ router.post('/register', async (req: Request, res: Response) => {
     const fullName = `${firstName} ${lastName}`;
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
-    // Create Stripe customer
     let stripeCustomerId: string | null = null;
-    try {
-      const customer = await stripe.customers.create({ email, name: fullName });
-      stripeCustomerId = customer.id;
-    } catch (stripeErr) {
-      console.error('Stripe customer creation failed:', stripeErr);
+    if (stripe) {
+      try {
+        const customer = await stripe.customers.create({ email, name: fullName });
+        stripeCustomerId = customer.id;
+      } catch (err) {
+        console.error('Stripe customer creation failed:', err);
+      }
     }
 
     const result = await pool.query(
@@ -79,7 +83,6 @@ router.post('/register', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/auth/login
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
