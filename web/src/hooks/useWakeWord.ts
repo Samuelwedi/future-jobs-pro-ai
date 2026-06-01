@@ -1,40 +1,48 @@
-import { useEffect, useRef, useCallback } from 'react';
-import { Porcupine, BuiltInKeyword } from '@picovoice/porcupine-web';
+import { useEffect, useRef } from 'react';
 
 export function useWakeWord(onWake: () => void) {
-  const detectorRef = useRef<any>(null);
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    let porcupine: any = null;
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-    const init = async () => {
-      try {
-        // Use the built-in "Porcupine" wake word (free)
-        const pvKey = process.env.REACT_APP_PICOVOICE_ACCESS_KEY || ''; // add your key in .env
-        porcupine = await Porcupine.create(
-          pvKey,
-          [BuiltInKeyword.Porcupine],
-          (keyword) => {
-            onWake();
-          }
-        );
-        detectorRef.current = porcupine;
+    if (!SpeechRecognition) {
+      console.warn('Speech recognition not supported in this browser');
+      return;
+    }
 
-        await porcupine.start();
-      } catch (err) {
-        console.error('Wake word init failed:', err);
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onresult = (event: any) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript.toLowerCase();
+        if (transcript.includes('hey lucy')) {
+          onWake();
+        }
       }
     };
 
-    init();
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+    };
+
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+    } catch (err) {
+      console.error('Failed to start speech recognition:', err);
+    }
 
     return () => {
-      if (porcupine) {
-        porcupine.stop();
-        porcupine.release();
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
       }
     };
   }, [onWake]);
 
-  return detectorRef;
+  return recognitionRef;
 }
