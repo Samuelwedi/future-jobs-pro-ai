@@ -1,4 +1,3 @@
 openwakeword
 websockets
 numpy
-pyaudio
