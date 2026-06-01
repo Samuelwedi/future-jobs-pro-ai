@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, ActivityIndicator, RefreshControl, Platform,
+  Alert, ActivityIndicator, RefreshControl, Switch,
   Dimensions, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../context/LanguageContext';
-import { useVoiceCommand } from '../context/VoiceCommandContext';
 import { api } from '../services/api';
 import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
+import { Audio } from 'expo-av';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -25,7 +25,6 @@ interface AISuggestion {
 export default function HomeScreen() {
   const { user, logout } = useAuth();
   const { t } = useLang();
-  const { isListening, startListening, stopListening } = useVoiceCommand();
   const navigation = useNavigation<any>();
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
@@ -38,7 +37,13 @@ export default function HomeScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Live Pulse data (simulated – replace with real API later)
+  // Always Listening state
+  const [isAlwaysListening, setIsAlwaysListening] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const wakeWordUrl = 'wss://wakeword-service.up.railway.app'; // update after Railway deploy
+
+  // Live Pulse data
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
 
   useEffect(() => {
@@ -63,7 +68,7 @@ export default function HomeScreen() {
     return () => anim.stop();
   }, []);
 
-  // Elapsed timer when clocked in
+  // Elapsed timer
   useEffect(() => {
     if (isClockedIn && activeTimeEntry?.clockIn) {
       const start = new Date(activeTimeEntry.clockIn).getTime();
@@ -76,6 +81,77 @@ export default function HomeScreen() {
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isClockedIn, activeTimeEntry]);
+
+  // Handle Always Listening toggle
+  useEffect(() => {
+    if (isAlwaysListening) {
+      startWakeWordListening();
+    } else {
+      stopWakeWordListening();
+    }
+    return () => stopWakeWordListening();
+  }, [isAlwaysListening]);
+
+  const startWakeWordListening = async () => {
+    try {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Microphone access is needed for wake word detection.');
+        setIsAlwaysListening(false);
+        return;
+      }
+
+      const ws = new WebSocket(wakeWordUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('Wake word WebSocket connected');
+      };
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.event === 'wake-word-detected') {
+            Alert.alert('🚀 Coming Soon', 'Lucy voice assistant will be available soon!');
+          }
+        } catch {}
+      };
+
+      ws.onerror = (e) => console.error('Wake word WebSocket error:', e);
+      ws.onclose = () => console.log('Wake word WebSocket closed');
+
+      // Start recording in chunks
+      const recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      await recording.startAsync();
+      recordingRef.current = recording;
+
+      // Stream audio chunks
+      recording.setOnRecordingStatusUpdate((status) => {
+        if (status.isRecording && ws.readyState === WebSocket.OPEN) {
+          // In a real implementation, you'd send raw PCM data.
+          // For now, we send a dummy heartbeat every second.
+          ws.send(JSON.stringify({ type: 'audio', data: 'dummy' }));
+        }
+      });
+    } catch (err) {
+      console.error('Failed to start wake word listening:', err);
+      setIsAlwaysListening(false);
+    }
+  };
+
+  const stopWakeWordListening = () => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (recordingRef.current) {
+      recordingRef.current.stopAndUnloadAsync();
+      recordingRef.current = null;
+    }
+  };
 
   useFocusEffect(useCallback(() => {
     loadData();
@@ -134,7 +210,6 @@ export default function HomeScreen() {
 
   const greeting = t('greeting', { firstName: user?.firstName || '' });
 
-  // Quick action cards
   const quickActions = [
     { icon: 'photo-camera', color: '#00D4FF', gradient: ['#00D4FF', '#007AFF'], label: 'Photo', screen: 'Camera', needsProject: true },
     { icon: 'microphone', color: '#4CAF50', gradient: ['#4CAF50', '#2E7D32'], label: 'Voice', screen: 'VoiceNote', needsProject: true, IconSet: FontAwesome5 },
@@ -151,6 +226,17 @@ export default function HomeScreen() {
         refreshControl={<RefreshControl refreshing={false} onRefresh={loadData} tintColor="#00D4FF" />}
         showsVerticalScrollIndicator={false}
       >
+        {/* ===== ALWAYS LISTENING TOGGLE ===== */}
+        <View style={styles.listeningToggle}>
+          <Text style={styles.listeningToggleLabel}>Always Listening</Text>
+          <Switch
+            value={isAlwaysListening}
+            onValueChange={setIsAlwaysListening}
+            trackColor={{ false: '#333', true: '#00D4FF' }}
+            thumbColor="#FFF"
+          />
+        </View>
+
         {/* ===== LIVE PULSE BAR ===== */}
         <LinearGradient colors={['#1A1A2E', '#0A0A0A']} style={styles.pulseBar}>
           <View style={styles.pulseItem}>
@@ -240,7 +326,7 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* ===== QUICK ACTIONS (Horizontal Cards) ===== */}
+        {/* ===== QUICK ACTIONS ===== */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionsScroll}>
           {quickActions.map((action, index) => {
@@ -263,7 +349,7 @@ export default function HomeScreen() {
           })}
         </ScrollView>
 
-        {/* ===== MORE ACTIONS (Grid) ===== */}
+        {/* ===== MORE ACTIONS ===== */}
         <View style={styles.moreActions}>
           {[
             { icon: 'groups', color: '#FF9800', label: t('crew_clock'), screen: 'CrewClock' },
@@ -286,10 +372,10 @@ export default function HomeScreen() {
       {/* ===== FLOATING BUTTONS ===== */}
       <View style={styles.floatingContainer}>
         <TouchableOpacity
-          style={[styles.fab, { backgroundColor: isListening ? '#F44336' : '#00D4FF', marginBottom: 12 }]}
-          onPress={isListening ? stopListening : startListening}
+          style={[styles.fab, { backgroundColor: '#00D4FF', marginBottom: 12 }]}
+          onPress={() => Alert.alert('🚀 Coming Soon', 'Lucy voice assistant will be available soon!')}
         >
-          <Ionicons name={isListening ? 'mic-off' : 'mic'} size={28} color="#0A0A0A" />
+          <Ionicons name="mic" size={28} color="#0A0A0A" />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: '#00D4FF' }]}
@@ -306,14 +392,19 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0A0A0A' },
   container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
-  // Pulse Bar
-  pulseBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, marginTop: 60, borderRadius: 16, marginHorizontal: 20, marginBottom: 16, borderWidth: 1, borderColor: '#1A1A2E' },
+  listeningToggle: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 12, marginTop: 60,
+    backgroundColor: '#1A1A1A', borderRadius: 12, marginHorizontal: 20, marginBottom: 8,
+    borderWidth: 1, borderColor: '#333',
+  },
+  listeningToggleLabel: { color: '#FFF', fontSize: 16, fontWeight: '500' },
+  pulseBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, marginTop: 8, borderRadius: 16, marginHorizontal: 20, marginBottom: 16, borderWidth: 1, borderColor: '#1A1A2E' },
   pulseItem: { alignItems: 'center' },
   pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4CAF50', marginBottom: 4 },
   pulseValue: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   pulseLabel: { color: '#888', fontSize: 11, marginTop: 2 },
   pulseDivider: { width: 1, height: 30, backgroundColor: '#333' },
-  // Header
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatarGradient: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
@@ -321,10 +412,8 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 18, fontWeight: 'bold', color: '#FFF' },
   role: { fontSize: 12, color: '#00D4FF', marginTop: 2 },
   logoutBtn: { padding: 8 },
-  // AI Whisper
   aiWhisper: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 16, backgroundColor: '#1A1A2E', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, gap: 8, borderWidth: 1, borderColor: '#00D4FF20' },
   aiWhisperText: { color: '#CCC', fontSize: 13, flex: 1 },
-  // Hero Clock
   heroClock: { marginHorizontal: 20, marginBottom: 24, backgroundColor: '#1A1A1A', borderRadius: 24, padding: 28, alignItems: 'center', borderWidth: 1, borderColor: '#333' },
   heroClockActive: { borderColor: '#4CAF50', borderWidth: 2, backgroundColor: '#0A1A0A' },
   heroTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 6 },
@@ -338,22 +427,18 @@ const styles = StyleSheet.create({
   heroClockBtn: { width: '100%' },
   heroClockBtnGradient: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 16, borderRadius: 16, gap: 8 },
   heroClockBtnText: { color: '#FFF', fontSize: 17, fontWeight: '600' },
-  // Timer Ring
   timerRing: { width: 160, height: 160, borderRadius: 80, borderWidth: 4, borderColor: '#4CAF50', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
   timerRingInner: { alignItems: 'center' },
   timerText: { color: '#FFF', fontSize: 28, fontWeight: 'bold', fontVariant: ['tabular-nums'] },
   timerProject: { color: '#4CAF50', fontSize: 13, marginTop: 4 },
-  // Quick Actions (Horizontal Cards)
   sectionTitle: { color: '#FFF', fontSize: 18, fontWeight: '600', paddingHorizontal: 20, marginBottom: 14 },
   actionsScroll: { paddingHorizontal: 16, marginBottom: 24 },
   actionCard: { alignItems: 'center', marginRight: 16, width: 80 },
   actionCardGradient: { width: 64, height: 64, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
   actionCardLabel: { color: '#AAA', fontSize: 11, textAlign: 'center' },
-  // More Actions
   moreActions: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 12 },
   moreActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, gap: 10, borderWidth: 1, borderColor: '#333' },
   moreActionLabel: { color: '#CCC', fontSize: 13 },
-  // Floating
   floatingContainer: { position: 'absolute', bottom: 40, right: 20, zIndex: 10 },
   fab: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#00D4FF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12 },
 });

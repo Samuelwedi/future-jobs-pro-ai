@@ -13,6 +13,7 @@
     "@emotion/styled": "^11.11.0",
     "@mui/icons-material": "^5.18.0",
     "@mui/material": "^5.15.0",
+    "@picovoice/porcupine-web": "^4.0.0",
     "axios": "^1.6.0",
     "moment": "^2.30.1",
     "qrcode.react": "^4.2.0",
