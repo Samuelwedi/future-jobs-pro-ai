@@ -41,7 +41,7 @@ export default function HomeScreen() {
   const [isAlwaysListening, setIsAlwaysListening] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const recordingRef = useRef<Audio.Recording | null>(null);
-  const wakeWordUrl = 'wss://wakeword-service.up.railway.app'; // update after Railway deploy
+  const wakeWordUrl = 'wss://reasonable-youthfulness-production.up.railway.app'; // update after Railway deploy
 
   // Live Pulse data
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
