@@ -1,10 +1,21 @@
-import React from 'react';
-import { Box, Container, Typography, Paper, Button } from '@mui/material';
-import { TouchApp, QrCode } from '@mui/icons-material';
-
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import React, { useState, useEffect } from 'react';
+import { Box, Container, Typography, Paper } from '@mui/material';
+import { TouchApp } from '@mui/icons-material';
+import { QRCodeCanvas } from 'qrcode.react';
 
 export default function Kiosk() {
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('user');
+      if (stored) setUser(JSON.parse(stored));
+    } catch {}
+  }, []);
+
+  const companyId = user?.companyId || '';
+  const kioskUrl = `https://future-jobs-pro-ai.vercel.app/kiosk-clock?companyId=${companyId}`;
+
   return (
     <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', py: 4 }}>
       <Container maxWidth="sm">
@@ -12,12 +23,16 @@ export default function Kiosk() {
           <TouchApp sx={{ fontSize: 80, color: '#00D4FF', mb: 3 }} />
           <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 2 }}>Kiosk Mode</Typography>
           <Typography variant="body1" sx={{ color: '#AAA', lineHeight: 1.8, mb: 4 }}>
-            Let crew members clock in/out on a shared device. Scan the QR code with the mobile app to activate.
+            Scan the QR code with the mobile app to clock in/out on a shared device.
           </Typography>
-          <QrCode sx={{ fontSize: 120, color: '#00D4FF', mb: 3 }} />
-          <Button variant="contained" size="large" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 6, py: 1.5 }}>
-            Activate Kiosk
-          </Button>
+          {companyId && (
+            <Box sx={{ mb: 3 }}>
+              <QRCodeCanvas value={kioskUrl} size={200} bgColor="#FFFFFF" fgColor="#0A0A0A" level="H" includeMargin />
+            </Box>
+          )}
+          <Typography variant="body2" sx={{ color: '#888' }}>
+            URL: {kioskUrl}
+          </Typography>
         </Paper>
       </Container>
     </Box>
