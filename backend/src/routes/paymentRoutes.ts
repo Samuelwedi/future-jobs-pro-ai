@@ -17,9 +17,18 @@ const getUserFromToken = async (req: Request) => {
   try {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, JWT_SECRET) as any;
-    const result = await pool.query('SELECT * FROM users WHERE id = $1', [decoded.id]);
-    return result.rows[0] || null;
-  } catch { return null; }
+    // Explicitly select the stripe_customer_id column
+    const result = await pool.query(
+      'SELECT id, email, stripe_customer_id, company_id FROM users WHERE id = $1',
+      [decoded.id]
+    );
+    const user = result.rows[0] || null;
+    console.log('User fetched for payment:', user);   // ← debug log
+    return user;
+  } catch (err) {
+    console.error('getUserFromToken error:', err);
+    return null;
+  }
 };
 
 router.post('/create-setup-session', async (req: Request, res: Response) => {
