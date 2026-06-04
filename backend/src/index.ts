@@ -96,10 +96,6 @@ import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachme
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);   // ← payment routes
 
-app.get('/api/secret-test', (req: Request, res: Response) => {
-  res.json({ secret: process.env.JWT_SECRET || 'not set' });
-});
-
 // 404 & error handler
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
