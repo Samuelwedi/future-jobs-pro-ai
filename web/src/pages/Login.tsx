@@ -29,9 +29,11 @@ export default function Login() {
       // Save token and user
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      console.log('Token saved:', data.token.substring(0, 20) + '...');
 
-      navigate('/dashboard');
+      // Wait a tick for storage to settle, then redirect
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 100);
     } catch (err: any) {
       setError(err.message);
     } finally {
