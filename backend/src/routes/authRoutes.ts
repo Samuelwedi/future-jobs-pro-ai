@@ -56,12 +56,11 @@ router.post('/register', async (req: Request, res: Response) => {
       await pool.query('UPDATE users SET company_id = $1 WHERE id = $2', [companyId, user.id]);
     }
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, companyId },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
+   const token = jwt.sign(
+  { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role, companyId: user.companyId },
+  JWT_SECRET,
+  { expiresIn: '7d' }  // Add this
+);
     res.status(201).json({
       success: true,
       token,
@@ -104,11 +103,10 @@ router.post('/login', async (req: Request, res: Response) => {
     await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, companyId: user.company_id },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
+  { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role, companyId: user.companyId },
+  JWT_SECRET,
+  { expiresIn: '7d' }  // Add this
+);
     res.json({
       success: true,
       token,
