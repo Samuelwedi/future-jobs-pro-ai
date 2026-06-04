@@ -9,7 +9,7 @@ import {
 } from '../services/integrationService';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'f1jp@i2026_SamuelB_Secret#FutureJobsPro';
 
 // GET /api/integrations/status – check integration status for the company
 router.get('/status', async (req: Request, res: Response) => {

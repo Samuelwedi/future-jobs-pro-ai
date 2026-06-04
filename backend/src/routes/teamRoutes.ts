@@ -4,7 +4,7 @@ import { pool } from '../config/database';
 import { inviteEmployee, getCompanyMembers, updateMemberRole, removeMember, setPassword } from '../services/teamService';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'f1jp@i2026_SamuelB_Secret#FutureJobsPro';
 
 // GET /api/team – return members of the logged‑in user's company
 router.get('/', async (req: Request, res: Response) => {
