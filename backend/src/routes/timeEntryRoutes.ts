@@ -4,7 +4,7 @@ import { pool } from '../config/database';
 import { clockIn, clockOut, getTimeEntries, manualTimeEntry, updateTimeEntry } from '../services/timeEntryService';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'f1jp@i2026_SamuelB_Secret#FutureJobsPro';
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 // Helper to extract company_id from JWT
 const getCompanyId = (req: Request): string | null => {

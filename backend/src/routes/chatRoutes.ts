@@ -8,6 +8,7 @@ import {
 } from '../services/chatService';
 
 const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 router.get('/rooms/:userId', async (req: Request, res: Response) => {
   try {

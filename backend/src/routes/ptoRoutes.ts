@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'f1jp@i2026_SamuelB_Secret#FutureJobsPro';
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 // GET /api/pto – return PTO requests for the logged‑in user's company
 router.get('/', async (req: Request, res: Response) => {

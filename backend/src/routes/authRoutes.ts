@@ -5,7 +5,7 @@ import Stripe from 'stripe';
 import { pool } from '../config/database';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'f1jp@i2026_SamuelB_Secret#FutureJobsPro';
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 let stripe: any = null;
 if (process.env.STRIPE_SECRET_KEY) {
