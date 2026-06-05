@@ -1,4 +1,4 @@
-const API_BASE = 'https://futurejobsproai.com';
+const API_BASE = 'https://www.futurejobsproai.com';
 
 const getHeaders = () => {
   const token = localStorage.getItem('token');
