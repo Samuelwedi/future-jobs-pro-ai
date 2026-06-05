@@ -53,4 +53,27 @@ router.post('/message', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/room/:roomId', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+    const result = await pool.query(
+      `SELECT cm.*, u.first_name || ' ' || u.last_name AS sender_name
+       FROM chat_messages cm
+       JOIN users u ON cm.sender_id = u.id
+       WHERE cm.room_id = $1
+       ORDER BY cm.created_at ASC
+       LIMIT 200`,
+      [req.params.roomId]
+    );
+    res.json({ success: true, messages: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export default router;

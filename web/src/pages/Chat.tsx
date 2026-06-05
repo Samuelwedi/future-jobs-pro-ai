@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Box, Container, Typography, Paper, Avatar, List, ListItem,
   ListItemAvatar, ListItemText, TextField, Button, CircularProgress,
+  FormControl, InputLabel, Select, MenuItem, Chip,
 } from '@mui/material';
-import { ChatBubble, Send } from '@mui/icons-material';
+import { ChatBubble, Send, GroupAdd } from '@mui/icons-material';
 import { io, Socket } from 'socket.io-client';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
@@ -16,53 +17,63 @@ interface Message {
   created_at: string;
 }
 
+interface TeamMember {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [selectedUser, setSelectedUser] = useState<string>('');
   const [roomId, setRoomId] = useState<string | null>(null);
+  const [groupName, setGroupName] = useState('');
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load user from localStorage
   useEffect(() => {
     try {
       const stored = localStorage.getItem('user');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setUser(parsed);
-        setRoomId(parsed.companyId);
-      }
+      if (stored) setUser(JSON.parse(stored));
     } catch {}
   }, []);
 
-  // Fetch message history
+  // Fetch team members
   useEffect(() => {
     if (!user?.companyId) return;
     const token = localStorage.getItem('token');
-    fetch(`${API_BASE}/api/chat/company/${user.companyId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (res.status === 402) {
-          window.location.href = '/payment-required';
-          return null;
-        }
-        if (!res.ok) throw new Error('Failed to load messages');
-        return res.json();
+    fetch(`${API_BASE}/api/team`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => {
+        if (data.members) setMembers(data.members);
       })
-      .then((data) => {
-        if (data?.messages) setMessages(data.messages);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .catch(console.error);
   }, [user]);
 
-  // Connect to WebSocket
+  // Fetch messages when roomId changes
+  useEffect(() => {
+    if (!roomId) return;
+    const token = localStorage.getItem('token');
+    fetch(`${API_BASE}/api/chat/room/${roomId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(res => res.json())
+      .then(data => {
+        setMessages(data.messages || []);
+        setLoading(false);
+      })
+      .catch(err => { console.error(err); setLoading(false); });
+  }, [roomId]);
+
+  // WebSocket connection
   useEffect(() => {
     if (!roomId || !user) return;
-
     const socket = io(API_BASE, {
       transports: ['websocket'],
       auth: { token: localStorage.getItem('token') },
@@ -70,12 +81,11 @@ export default function Chat() {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('Chat socket connected');
       socket.emit('join-room', roomId);
     });
 
     socket.on('new-message', (msg: Message) => {
-      setMessages((prev) => [...prev, msg]);
+      setMessages(prev => [...prev, msg]);
     });
 
     return () => {
@@ -84,30 +94,36 @@ export default function Chat() {
     };
   }, [roomId, user]);
 
-  // Auto‑scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = () => {
-    if (!newMessage.trim() || !socketRef.current || !user) return;
+  const startDM = (otherUserId: string) => {
+    const sorted = [user.id, otherUserId].sort();
+    setRoomId(`dm_${sorted[0]}_${sorted[1]}`);
+    setSelectedUser(otherUserId);
+    setCreatingGroup(false);
+    setLoading(true);
+  };
 
+  const createGroup = async () => {
+    if (!groupName.trim()) return;
+    setRoomId(`group_${Date.now()}_${groupName.replace(/\s+/g, '_')}`);
+    setCreatingGroup(false);
+    setGroupName('');
+    setLoading(true);
+  };
+
+  const handleSend = () => {
+    if (!newMessage.trim() || !socketRef.current || !user || !roomId) return;
     const payload = {
       senderId: user.id,
       companyId: user.companyId,
       roomId,
       message: newMessage.trim(),
     };
-
     socketRef.current.emit('chat-message', payload);
     setNewMessage('');
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
   };
 
   if (!user) {
@@ -126,9 +142,50 @@ export default function Chat() {
           Team Chat
         </Typography>
         <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>
-          Real‑time messaging with your crew
+          Choose a colleague or create a group to start chatting
         </Typography>
 
+        {/* Room selection */}
+        <Paper sx={{ p: 2, mb: 2, bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333' }}>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+            <FormControl sx={{ minWidth: 200 }}>
+              <InputLabel sx={{ color: '#888' }}>Chat with</InputLabel>
+              <Select
+                value={selectedUser}
+                onChange={(e) => startDM(e.target.value)}
+                sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+              >
+                {members.map(m => (
+                  <MenuItem key={m.id} value={m.id}>
+                    {m.first_name} {m.last_name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Button
+              variant="outlined"
+              startIcon={<GroupAdd />}
+              onClick={() => setCreatingGroup(!creatingGroup)}
+              sx={{ color: '#00D4FF', borderColor: '#00D4FF' }}
+            >
+              New Group
+            </Button>
+          </Box>
+          {creatingGroup && (
+            <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+              <TextField
+                size="small"
+                placeholder="Group name"
+                value={groupName}
+                onChange={e => setGroupName(e.target.value)}
+                sx={{ input: { color: '#FFF' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
+              />
+              <Button variant="contained" onClick={createGroup} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>Create</Button>
+            </Box>
+          )}
+        </Paper>
+
+        {/* Chat messages */}
         <Paper sx={{ bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333', p: 2, mb: 2, minHeight: 400, display: 'flex', flexDirection: 'column' }}>
           {loading ? (
             <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -148,14 +205,7 @@ export default function Chat() {
                     sx={{ flexDirection: isMe ? 'row-reverse' : 'row', alignItems: 'flex-start' }}
                   >
                     <ListItemAvatar sx={{ minWidth: 40 }}>
-                      <Avatar
-                        sx={{
-                          bgcolor: isMe ? '#00D4FF' : '#555',
-                          width: 32,
-                          height: 32,
-                          fontSize: 14,
-                        }}
-                      >
+                      <Avatar sx={{ bgcolor: isMe ? '#00D4FF' : '#555', width: 32, height: 32, fontSize: 14 }}>
                         {msg.sender_name ? msg.sender_name.charAt(0).toUpperCase() : '?'}
                       </Avatar>
                     </ListItemAvatar>
@@ -164,11 +214,7 @@ export default function Chat() {
                       secondary={msg.message}
                       primaryTypographyProps={{ color: '#FFF', fontSize: 14 }}
                       secondaryTypographyProps={{ color: '#AAA', fontSize: 13 }}
-                      sx={{
-                        textAlign: isMe ? 'right' : 'left',
-                        mr: isMe ? 0 : 2,
-                        ml: isMe ? 2 : 0,
-                      }}
+                      sx={{ textAlign: isMe ? 'right' : 'left', mr: isMe ? 0 : 2, ml: isMe ? 2 : 0 }}
                     />
                   </ListItem>
                 );
@@ -178,32 +224,23 @@ export default function Chat() {
           )}
         </Paper>
 
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <TextField
-            fullWidth
-            placeholder="Type a message..."
-            variant="outlined"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            sx={{
-              input: { color: '#FFF' },
-              '& .MuiOutlinedInput-root': {
-                bgcolor: '#1A1A1A',
-                borderRadius: 2,
-                '& fieldset': { borderColor: '#333' },
-              },
-            }}
-          />
-          <Button
-            variant="contained"
-            onClick={handleSend}
-            disabled={!newMessage.trim()}
-            sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 4 }}
-          >
-            <Send />
-          </Button>
-        </Box>
+        {/* Send input */}
+        {roomId && (
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <TextField
+              fullWidth
+              placeholder="Type a message..."
+              variant="outlined"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              sx={{ input: { color: '#FFF' }, '& .MuiOutlinedInput-root': { bgcolor: '#1A1A1A', borderRadius: 2, '& fieldset': { borderColor: '#333' } } }}
+            />
+            <Button variant="contained" onClick={handleSend} disabled={!newMessage.trim()} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 4 }}>
+              <Send />
+            </Button>
+          </Box>
+        )}
       </Container>
     </Box>
   );

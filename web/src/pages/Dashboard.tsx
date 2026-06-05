@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Container, Grid, Paper, Typography, Card, CardContent,
@@ -10,6 +10,7 @@ import {
   Dashboard as DashboardIcon, CalendarMonth, Assessment,
   Groups, Folder, Timer, Chat, Assignment, BeachAccess,
   TouchApp, Settings, Logout, Link as LinkIcon,
+  Mic, MicOff,
 } from '@mui/icons-material';
 import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
@@ -54,6 +55,41 @@ export default function Dashboard() {
     { name: 'Active', value: 12 }, { name: 'Completed', value: 8 },
     { name: 'On Hold', value: 3 }, { name: 'Cancelled', value: 1 },
   ];
+
+  // ---- Voice command states ----
+  const [voiceText, setVoiceText] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  const startVoice = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in your browser.');
+      return;
+    }
+    const rec = new SpeechRecognition();
+    rec.lang = 'en-US';
+    rec.interimResults = false;
+    rec.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setVoiceText(transcript);
+      setIsListening(false);
+      alert(`🗣️ You said: "${transcript}"\nVoice assistant coming soon!`);
+    };
+    rec.onerror = () => setIsListening(false);
+    rec.onend = () => setIsListening(false);
+    rec.start();
+    recognitionRef.current = rec;
+    setIsListening(true);
+  };
+
+  const stopVoice = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+  };
+  // --------------------------------
 
   useEffect(() => {
     try {
@@ -266,6 +302,22 @@ export default function Dashboard() {
             </Grid>
           </Grid>
         </Container>
+
+        {/* ===== FLOATING VOICE BUTTON ===== */}
+        <Box sx={{ position: 'fixed', bottom: 32, right: 32, zIndex: 1000 }}>
+          <IconButton
+            onClick={isListening ? stopVoice : startVoice}
+            sx={{
+              bgcolor: isListening ? '#F44336' : '#00D4FF',
+              width: 56,
+              height: 56,
+              boxShadow: 4,
+              '&:hover': { bgcolor: isListening ? '#D32F2F' : '#0097A7' },
+            }}
+          >
+            {isListening ? <MicOff sx={{ color: '#FFF' }} /> : <Mic sx={{ color: '#0A0A0A' }} />}
+          </IconButton>
+        </Box>
       </Box>
     </Box>
   );
