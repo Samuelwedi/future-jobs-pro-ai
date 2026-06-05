@@ -52,7 +52,8 @@ app.get('/api/health', async (req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     owner: 'Samuel B.',
     app: 'Future Jobs Pro AI',
-    version: '1.0.0'
+    version: '1.0.0',
+    jwtSecret: process.env.JWT_SECRET || 'not set'   // ← add this line
   });
 });
 
