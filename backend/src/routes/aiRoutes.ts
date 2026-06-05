@@ -1,14 +1,18 @@
 import express, { Request, Response } from 'express';
 import { getPendingSuggestions, dismissSuggestion } from '../services/adaptiveAIService';
+import { pool } from '../config/database';
 
 const router = express.Router();
 
 router.get('/suggestions/:userId', async (req: Request, res: Response) => {
   try {
-    const suggestions = await getPendingSuggestions(req.params.userId as string);
-    res.json({ success: true, suggestions });
+    const { userId } = req.params;
+    const result = await pool.query(
+      'SELECT * FROM ai_insights WHERE target_user_id = $1 AND is_read = false ORDER BY created_at DESC LIMIT 5',
+      [userId]
+    );
+    res.json({ success: true, suggestions: result.rows });
   } catch (error: any) {
-    console.error('❌ Suggestions error:', error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, ActivityIndicator, RefreshControl, Switch,
+  Alert, ActivityIndicator, RefreshControl,
   Dimensions, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,7 +11,6 @@ import { api } from '../services/api';
 import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
-import Voice from '@react-native-voice/voice';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -36,9 +35,6 @@ export default function HomeScreen() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  // Always Listening state
-  const [isAlwaysListening, setIsAlwaysListening] = useState(false);
 
   // Live Pulse data
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
@@ -79,50 +75,6 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isClockedIn, activeTimeEntry]);
 
-  // Voice recognition setup
-  useEffect(() => {
-    Voice.onSpeechResults = (event) => {
-      const transcript = event.value?.[0]?.toLowerCase() || '';
-      if (transcript.includes('hey lucy')) {
-        Alert.alert('🚀 Coming Soon', 'Lucy voice assistant will be available soon!');
-      }
-    };
-
-    Voice.onSpeechError = (error) => {
-      console.error('Voice error:', error);
-    };
-
-    return () => {
-      Voice.destroy().then(Voice.removeAllListeners);
-    };
-  }, []);
-
-  // Handle Always Listening toggle
-  useEffect(() => {
-    if (isAlwaysListening) {
-      startListening();
-    } else {
-      stopListening();
-    }
-  }, [isAlwaysListening]);
-
-  const startListening = async () => {
-    try {
-      await Voice.start('en-US');
-    } catch (err) {
-      console.error('Failed to start voice recognition:', err);
-      setIsAlwaysListening(false);
-    }
-  };
-
-  const stopListening = async () => {
-    try {
-      await Voice.stop();
-    } catch (err) {
-      console.error('Failed to stop voice recognition:', err);
-    }
-  };
-
   useFocusEffect(useCallback(() => {
     loadData();
     loadAISuggestions();
@@ -130,25 +82,30 @@ export default function HomeScreen() {
 
   const loadData = async () => {
     try {
-      const res = await api.get<any>('/projects/active');
+      const res = await api.get<any>('/api/projects');
       setProjects(res.projects || []);
       setLivePulse(prev => ({ ...prev, activeProjects: (res.projects || []).length }));
-    } catch (e) { console.error(e); }
-    finally { setIsLoading(false); }
+    } catch (e) {
+      console.error('Failed to load projects:', e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const loadAISuggestions = async () => {
     try {
       const res = await api.getAISuggestions();
       setAiSuggestions(res.suggestions || []);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error('Failed to load AI suggestions:', e);
+    }
   };
 
   const handleClockIn = async () => {
     if (!selectedProject) { Alert.alert('Select a project first'); return; }
     try {
       const payload: any = { userId: user?.id, projectId: selectedProject.id, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 };
-      const res = await api.post('/time-entries/clock-in', payload);
+      const res = await api.post('/api/time-entries/clock-in', payload);
       setIsClockedIn(true); setActiveTimeEntry(res);
       await api.recordAIEvent('clock_in', { projectId: selectedProject.id });
     } catch (e: any) { Alert.alert('Error', e.message); }
@@ -156,7 +113,7 @@ export default function HomeScreen() {
 
   const handleClockOut = async () => {
     try {
-      await api.post('/time-entries/clock-out', { userId: user?.id, timeEntryId: activeTimeEntry.timeEntryId, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 });
+      await api.post('/api/time-entries/clock-out', { userId: user?.id, timeEntryId: activeTimeEntry.timeEntryId, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 });
       setIsClockedIn(false); setActiveTimeEntry(null);
       await api.recordAIEvent('clock_out', { timeEntryId: activeTimeEntry.timeEntryId });
     } catch (e: any) { Alert.alert('Error', e.message); }
@@ -196,17 +153,6 @@ export default function HomeScreen() {
         refreshControl={<RefreshControl refreshing={false} onRefresh={loadData} tintColor="#00D4FF" />}
         showsVerticalScrollIndicator={false}
       >
-        {/* ===== ALWAYS LISTENING TOGGLE ===== */}
-        <View style={styles.listeningToggle}>
-          <Text style={styles.listeningToggleLabel}>Always Listening</Text>
-          <Switch
-            value={isAlwaysListening}
-            onValueChange={setIsAlwaysListening}
-            trackColor={{ false: '#333', true: '#00D4FF' }}
-            thumbColor="#FFF"
-          />
-        </View>
-
         {/* ===== LIVE PULSE BAR ===== */}
         <LinearGradient colors={['#1A1A2E', '#0A0A0A']} style={styles.pulseBar}>
           <View style={styles.pulseItem}>
@@ -362,14 +308,7 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0A0A0A' },
   container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
-  listeningToggle: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 12, marginTop: 60,
-    backgroundColor: '#1A1A1A', borderRadius: 12, marginHorizontal: 20, marginBottom: 8,
-    borderWidth: 1, borderColor: '#333',
-  },
-  listeningToggleLabel: { color: '#FFF', fontSize: 16, fontWeight: '500' },
-  pulseBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, marginTop: 8, borderRadius: 16, marginHorizontal: 20, marginBottom: 16, borderWidth: 1, borderColor: '#1A1A2E' },
+  pulseBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, marginTop: 60, borderRadius: 16, marginHorizontal: 20, marginBottom: 16, borderWidth: 1, borderColor: '#1A1A2E' },
   pulseItem: { alignItems: 'center' },
   pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4CAF50', marginBottom: 4 },
   pulseValue: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
