@@ -1,59 +1,55 @@
 import express, { Request, Response } from 'express';
-import {
-  getRoomMessages,
-  getUserRooms,
-  createDirectRoom,
-  createGroupRoom,
-  getRoomMembers,
-} from '../services/chatService';
+import jwt from 'jsonwebtoken';
+import { pool } from '../config/database';
+import { saveMessage } from '../services/chatService';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-router.get('/rooms/:userId', async (req: Request, res: Response) => {
+// GET /api/chat/company/:companyId – chat history for the company
+router.get('/company/:companyId', async (req: Request, res: Response) => {
   try {
-    const rooms = await getUserRooms(req.params.userId as string);
-    res.json({ success: true, rooms });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to load rooms' });
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+    // Verify the user belongs to the requested company
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    if (userRes.rows[0].company_id !== req.params.companyId)
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    const result = await pool.query(
+      `SELECT cm.*, u.first_name || ' ' || u.last_name AS sender_name
+       FROM chat_messages cm
+       JOIN users u ON cm.sender_id = u.id
+       WHERE cm.company_id = $1
+       ORDER BY cm.created_at ASC
+       LIMIT 200`,
+      [req.params.companyId]
+    );
+    res.json({ success: true, messages: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-router.get('/messages/:roomId', async (req: Request, res: Response) => {
+// POST /api/chat/message (optional REST fallback – not used by WebSocket frontend)
+router.post('/message', async (req: Request, res: Response) => {
   try {
-    const messages = await getRoomMessages(req.params.roomId as string);
-    res.json({ success: true, messages });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to load messages' });
-  }
-});
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
 
-router.get('/members/:roomId', async (req: Request, res: Response) => {
-  try {
-    const members = await getRoomMembers(req.params.roomId as string);
-    res.json({ success: true, members });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to load members' });
-  }
-});
-
-router.post('/create-direct', async (req: Request, res: Response) => {
-  try {
-    const { userId1, userId2 } = req.body;
-    const roomId = await createDirectRoom(userId1, userId2);
-    res.json({ success: true, roomId });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to create room' });
-  }
-});
-
-router.post('/create-group', async (req: Request, res: Response) => {
-  try {
-    const { name, creatorId, memberIds } = req.body;
-    const roomId = await createGroupRoom(name, creatorId, memberIds);
-    res.json({ success: true, roomId });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to create group' });
+    const { roomId, message } = req.body;
+    const saved = await saveMessage(decoded.id, roomId, message, decoded.companyId);
+    res.json({ success: true, message: saved });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
