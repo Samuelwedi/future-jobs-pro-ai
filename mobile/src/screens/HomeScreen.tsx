@@ -82,7 +82,7 @@ export default function HomeScreen() {
 
   const loadData = async () => {
     try {
-      const res = await api.get<any>('/api/projects');
+      const res = await api.get<any>('/projects');
       setProjects(res.projects || []);
       setLivePulse(prev => ({ ...prev, activeProjects: (res.projects || []).length }));
     } catch (e) {
@@ -105,7 +105,7 @@ export default function HomeScreen() {
     if (!selectedProject) { Alert.alert('Select a project first'); return; }
     try {
       const payload: any = { userId: user?.id, projectId: selectedProject.id, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 };
-      const res = await api.post('/api/time-entries/clock-in', payload);
+      const res = await api.post('/time-entries/clock-in', payload);
       setIsClockedIn(true); setActiveTimeEntry(res);
       await api.recordAIEvent('clock_in', { projectId: selectedProject.id });
     } catch (e: any) { Alert.alert('Error', e.message); }
@@ -113,7 +113,7 @@ export default function HomeScreen() {
 
   const handleClockOut = async () => {
     try {
-      await api.post('/api/time-entries/clock-out', { userId: user?.id, timeEntryId: activeTimeEntry.timeEntryId, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 });
+      await api.post('/time-entries/clock-out', { userId: user?.id, timeEntryId: activeTimeEntry.timeEntryId, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 });
       setIsClockedIn(false); setActiveTimeEntry(null);
       await api.recordAIEvent('clock_out', { timeEntryId: activeTimeEntry.timeEntryId });
     } catch (e: any) { Alert.alert('Error', e.message); }
