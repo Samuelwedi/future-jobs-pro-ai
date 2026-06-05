@@ -41,4 +41,5 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
     console.error('JWT Verify Error:', error.name, error.message);
     return res.status(401).json({ success: false, message: 'Invalid token' });
   }
+
 };
