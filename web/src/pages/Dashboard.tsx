@@ -57,9 +57,22 @@ export default function Dashboard() {
   ];
 
   // ---- Voice command states ----
-  const [voiceText, setVoiceText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
+
+  // ---- Voice command definitions ----
+  const voiceCommands: { phrase: string; action: () => void }[] = [
+    { phrase: 'timesheet', action: () => navigate('/timesheet') },
+    { phrase: 'schedule', action: () => navigate('/schedule') },
+    { phrase: 'team', action: () => navigate('/team') },
+    { phrase: 'projects', action: () => navigate('/projects') },
+    { phrase: 'reports', action: () => navigate('/reports') },
+    { phrase: 'chat', action: () => navigate('/chat') },
+    { phrase: 'tasks', action: () => navigate('/tasks') },
+    { phrase: 'settings', action: () => navigate('/settings') },
+    { phrase: 'dashboard', action: () => navigate('/dashboard') },
+    { phrase: 'log out', action: () => handleLogout() },
+  ];
 
   const startVoice = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -71,10 +84,15 @@ export default function Dashboard() {
     rec.lang = 'en-US';
     rec.interimResults = false;
     rec.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setVoiceText(transcript);
+      const transcript: string = event.results[0][0].transcript.toLowerCase().trim();
       setIsListening(false);
-      alert(`🗣️ You said: "${transcript}"\nVoice assistant coming soon!`);
+
+      const matched = voiceCommands.find(cmd => transcript.includes(cmd.phrase));
+      if (matched) {
+        matched.action();
+      } else {
+        alert(`🗣️ You said: "${transcript}"\nI didn't understand that command.`);
+      }
     };
     rec.onerror = () => setIsListening(false);
     rec.onend = () => setIsListening(false);
@@ -89,7 +107,6 @@ export default function Dashboard() {
       setIsListening(false);
     }
   };
-  // --------------------------------
 
   useEffect(() => {
     try {
