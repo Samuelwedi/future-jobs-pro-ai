@@ -23,7 +23,8 @@
         "NSCameraUsageDescription": "Allow Future Jobs Pro AI to use your camera for job site photos",
         "NSLocationWhenInUseUsageDescription": "Allow Future Jobs Pro AI to use your location for GPS tracking",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Future Jobs Pro AI to use your location for GPS tracking",
-        "NSMicrophoneUsageDescription": "Allow Future Jobs Pro AI to use your microphone for voice notes"
+        "NSMicrophoneUsageDescription": "Allow Future Jobs Pro AI to use your microphone for voice notes",
+        "NSSpeechRecognitionUsageDescription": "Future Jobs Pro AI uses speech recognition to allow you to control the app with your voice."
       }
     },
     "android": {
