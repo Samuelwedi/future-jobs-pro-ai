@@ -10,7 +10,7 @@ import { Platform } from 'react-native';
 import { getOnlineStatus, queueAction } from './offlineService';
 
 // Railway permanent backend (replaces ngrok)
-const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
+const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app';
 // Custom domain – update when domain is live
 const PROD_API_URL = 'https://api.futurejobspro.com/api';
 export const API_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
