@@ -1,4 +1,4 @@
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = 'https://futurejobsproai.com';
 
 const getHeaders = () => {
   const token = localStorage.getItem('token');

@@ -4,7 +4,7 @@ import {
   Box, Container, Typography, TextField, Button, Paper, Link, Alert,
 } from '@mui/material';
 
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = 'https://futurejobsproai.com';
 
 export default function Login() {
   const [email, setEmail] = useState('');

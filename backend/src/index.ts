@@ -13,7 +13,7 @@ import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { pool, checkDatabaseHealth } from './config/database';
 import { saveMessage } from './services/chatService';
-import { trialCheck } from './middleware/trialMiddleware';   // ← trial enforcement
+import { trialCheck } from './middleware/trialMiddleware';
 
 dotenv.config();
 
@@ -30,6 +30,8 @@ app.use(cors({
     'https://future-jobs-pro-ai.vercel.app',
     'https://balancing-treble-prevent.ngrok-free.dev',
     'https://future-jobs-pro-ai-production.up.railway.app',
+    'https://futurejobsproai.com',           // ← your custom domain
+    'https://www.futurejobsproai.com',       // ← www subdomain
   ],
   credentials: true,
 }));
@@ -53,7 +55,6 @@ app.get('/api/health', async (req: Request, res: Response) => {
     owner: 'Samuel B.',
     app: 'Future Jobs Pro AI',
     version: '1.0.0',
-    jwtSecret: process.env.JWT_SECRET || 'not set'   // ← add this line
   });
 });
 
@@ -95,11 +96,7 @@ import kioskRoutes from './routes/kioskRoutes'; app.use('/api/kiosk', kioskRoute
 import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
 import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
-import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);   // ← payment routes
-
-app.get('/api/secret-test', (req: Request, res: Response) => {
-  res.json({ secret: process.env.JWT_SECRET || 'not set' });
-});
+import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
 
 // 404 & error handler
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
