@@ -6,7 +6,13 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 
 export const trialCheck = async (req: Request, res: Response, next: NextFunction) => {
   // Skip auth, stripe, and health endpoints
-  if (req.path.startsWith('/api/auth') || req.path.startsWith('/api/stripe') || req.path === '/api/health') {
+    // Skip auth, stripe, health, and secret-test endpoints
+  if (
+    req.path.startsWith('/api/auth') ||
+    req.path.startsWith('/api/stripe') ||
+    req.path === '/api/health' ||
+    req.path === '/api/secret-test'   // ← add this line
+  ) {
     return next();
   }
 
