@@ -10,7 +10,7 @@ import {
   Dashboard as DashboardIcon, CalendarMonth, Assessment,
   Groups, Folder, Timer, Chat, Assignment, BeachAccess,
   TouchApp, Settings, Logout, Link as LinkIcon,
-  Mic, MicOff,
+  SmartToy, Mic, MicOff,
 } from '@mui/icons-material';
 import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
@@ -33,6 +33,7 @@ const navItems = [
   { label: 'Kiosk', icon: <TouchApp />, path: '/kiosk' },
   { label: 'Settings', icon: <Settings />, path: '/settings' },
   { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
+  { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
 ];
 
 export default function Dashboard() {
@@ -71,7 +72,7 @@ export default function Dashboard() {
     { phrase: 'tasks', action: () => navigate('/tasks') },
     { phrase: 'settings', action: () => navigate('/settings') },
     { phrase: 'dashboard', action: () => navigate('/dashboard') },
-    { phrase: 'log out', action: () => handleLogout() },
+    { phrase: 'log out', action: () => handleLogout },
   ];
 
   const startVoice = () => {
