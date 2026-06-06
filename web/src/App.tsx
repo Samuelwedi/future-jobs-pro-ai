@@ -24,6 +24,7 @@ import NotFound from './pages/NotFound';
 import Register from './pages/Register';
 import PaymentRequired from './pages/PaymentRequired';
 import Integrations from './pages/Integrations';
+import AskLucy from './pages/AskLucy';
 
 export default function App() {
   return (
@@ -53,6 +54,7 @@ export default function App() {
 <Route path="/register" element={<Register />} />
 <Route path="/payment-required" element={<PaymentRequired />} />
 <Route path="/integrations" element={<Integrations />} />
+<Route path="/ask-lucy" element={<AskLucy />} />
       </Routes>
     </Router>
   );
