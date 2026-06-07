@@ -39,6 +39,7 @@ nlu:
 
   - intent: team_status
     examples: |
+      - show my team status
       - who is working right now
       - show my team status
       - how many employees are active

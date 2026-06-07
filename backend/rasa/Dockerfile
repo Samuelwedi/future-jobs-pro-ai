@@ -2,4 +2,5 @@ FROM rasa/rasa:3.6.2
 WORKDIR /app
 COPY . /app
 RUN rasa train
-CMD ["run", "--enable-api", "--port", "5005"]
+RUN chmod +x start.sh
+CMD ["./start.sh"]
