@@ -5,9 +5,6 @@ import {
 } from '@mui/material';
 import { Send, SmartToy } from '@mui/icons-material';
 
-// Replace with your actual Rasa URL from Railway
-const RASA_URL = 'https://discerning-perception-production.up.railway.app';
-
 interface Message {
   text: string;
   isUser: boolean;
@@ -37,28 +34,21 @@ export default function AskLucy() {
     setLoading(true);
 
     try {
-      const url = `${RASA_URL}/webhooks/rest/webhook`;
-      console.log('Sending to Rasa:', url);
-
-      const res = await fetch(url, {
+      const res = await fetch('/api/lucy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sender: 'user', message: userMessage }),
+        body: JSON.stringify({ message: userMessage }),
       });
 
-      console.log('Rasa response status:', res.status);
-
       if (!res.ok) {
-        throw new Error(`Rasa responded with status ${res.status}`);
+        throw new Error(`Lucy responded with status ${res.status}`);
       }
 
       const data = await res.json();
-      console.log('Rasa response data:', data);
-
       const botText = data?.[0]?.text || "I'm not sure how to respond to that yet.";
       setMessages(prev => [...prev, { text: botText, isUser: false }]);
     } catch (err: any) {
-      console.error('Rasa fetch error:', err.message);
+      console.error('Lucy fetch error:', err.message);
       setMessages(prev => [...prev, {
         text: `Sorry, Lucy is taking a break. (${err.message})`,
         isUser: false
