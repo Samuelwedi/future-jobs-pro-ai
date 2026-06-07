@@ -98,64 +98,119 @@ import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachme
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
 
-// ----- Lucy Command Engine (in‑process) -----
+// ----- Lucy AI Engine (OpenAI + Function Calling) -----
 app.post('/api/lucy', async (req: Request, res: Response) => {
   try {
     const { message } = req.body;
-    const msg = (message as string).toLowerCase().trim();
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.status(500).json({ success: false, message: 'OpenAI key not configured.' });
 
-    // ---- Greetings ----
-    if (msg.includes('hello') || msg.includes('hey') || msg.includes('hi')) {
-      return res.json([{ text: "Hello! I'm Lucy. How can I help you today?" }]);
-    }
+    // Define the functions Lucy can perform
+    const functions = [
+      {
+        name: 'get_team_status',
+        description: 'Get the number of active team members',
+        parameters: { type: 'object', properties: {} },
+      },
+      {
+        name: 'run_payroll',
+        description: 'Process payroll for a given period',
+        parameters: {
+          type: 'object',
+          properties: {
+            period: { type: 'string', description: 'e.g. last week, this month' },
+          },
+        },
+      },
+      {
+        name: 'create_schedule',
+        description: 'Create a work schedule',
+        parameters: {
+          type: 'object',
+          properties: {
+            employee: { type: 'string' },
+            day: { type: 'string' },
+            start_time: { type: 'string' },
+            end_time: { type: 'string' },
+          },
+        },
+      },
+      {
+        name: 'generate_report',
+        description: 'Generate a compliance or evidence report',
+        parameters: {
+          type: 'object',
+          properties: {
+            project_name: { type: 'string' },
+          },
+        },
+      },
+    ];
 
-    // ---- Team Status ----
-    if (msg.includes('team') && (msg.includes('status') || msg.includes('who') || msg.includes('active'))) {
-      try {
-        const teamRes = await fetch(`http://localhost:${PORT}/api/team`, {
-          headers: { Authorization: req.headers.authorization || '' },
-        });
-        const teamData: any = await teamRes.json();   // <-- type fix
-        const count = (teamData.members || []).length;
-        return res.json([{ text: `Currently ${count} team member(s) are active.` }]);
-      } catch {
-        return res.json([{ text: "I couldn't fetch the team status right now." }]);
+    // Step 1: Send the user message to OpenAI
+    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are Lucy, a friendly AI assistant for Future Jobs Pro AI. You help business owners manage their workforce. Answer concisely and warmly. If the user asks you to perform a task (like payroll, scheduling, report, team status), use the available functions.',
+          },
+          { role: 'user', content: message },
+        ],
+        functions,
+        function_call: 'auto',
+      }),
+    });
+
+    const aiData: any = await openaiRes.json();
+    const choice = aiData.choices?.[0];
+    if (!choice) return res.json([{ text: "I'm not sure how to help with that." }]);
+
+    // Step 2: If OpenAI wants to call a function
+    if (choice.finish_reason === 'function_call' && choice.message?.function_call) {
+      const { name, arguments: argsStr } = choice.message.function_call;
+      const args = JSON.parse(argsStr || '{}');
+      let resultText = '';
+
+      switch (name) {
+        case 'get_team_status': {
+          const teamRes = await fetch(`http://localhost:${PORT}/api/team`, {
+            headers: { Authorization: req.headers.authorization || '' },
+          });
+          const teamData: any = await teamRes.json();
+          const count = (teamData.members || []).length;
+          resultText = `Currently ${count} team member(s) are active.`;
+          break;
+        }
+        case 'run_payroll':
+          resultText = `Payroll has been processed for ${args.period || 'the requested period'}.`;
+          break;
+        case 'create_schedule':
+          resultText = `Schedule created for ${args.employee || 'staff'} on ${args.day || 'the requested day'} from ${args.start_time || '9am'} to ${args.end_time || '5pm'}.`;
+          break;
+        case 'generate_report':
+          resultText = `Report for ${args.project_name || 'your project'} has been generated.`;
+          break;
+        default:
+          resultText = 'Command executed.';
       }
+
+      // Return the result directly
+      return res.json([{ text: resultText }]);
     }
 
-    // ---- Run Payroll ----
-    if (msg.includes('payroll') && (msg.includes('run') || msg.includes('process'))) {
-      return res.json([{ text: "Payroll has been processed for the requested period." }]);
-    }
-
-    // ---- Create Schedule ----
-    if (msg.includes('schedule') && msg.includes('create')) {
-      return res.json([{ text: "Schedule created. Please check the calendar for details." }]);
-    }
-
-    // ---- Generate Report ----
-    if (msg.includes('report') && (msg.includes('generate') || msg.includes('create'))) {
-      return res.json([{ text: "Report has been generated. You can view it in the Reports section." }]);
-    }
-
-    // ---- Clock In / Out ----
-    if (msg.includes('clock') && msg.includes('in')) {
-      return res.json([{ text: "You've been clocked in. Have a great shift!" }]);
-    }
-    if (msg.includes('clock') && msg.includes('out')) {
-      return res.json([{ text: "You've been clocked out. Enjoy your evening!" }]);
-    }
-
-    // ---- Goodbye ----
-    if (msg.includes('bye') || msg.includes('goodbye')) {
-      return res.json([{ text: "Goodbye! Have a productive day." }]);
-    }
-
-    // ---- Fallback ----
-    return res.json([{ text: "I'm not sure how to respond to that yet. You can ask about team status, payroll, scheduling, or reports." }]);
-
+    // Step 3: Normal text response from OpenAI
+    const reply = choice.message?.content || "I'm not sure how to help with that.";
+    return res.json([{ text: reply }]);
   } catch (error: any) {
-    console.error('Lucy engine error:', error.message);
+    console.error('Lucy AI error:', error.message);
     res.status(500).json({ success: false, message: 'Lucy is taking a break.' });
   }
 });
