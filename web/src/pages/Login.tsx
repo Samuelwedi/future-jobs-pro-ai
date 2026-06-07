@@ -4,7 +4,7 @@ import {
   Box, Container, Typography, TextField, Button, Paper, Link, Alert,
 } from '@mui/material';
 
-const API_BASE = 'https://futurejobsproai.com';
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -26,14 +26,9 @@ export default function Login() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Login failed');
 
-      // Save token and user
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
-
-      // Wait a tick for storage to settle, then redirect
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 100);
+      navigate('/dashboard');
     } catch (err: any) {
       setError(err.message);
     } finally {
