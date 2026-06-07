@@ -30,8 +30,8 @@ app.use(cors({
     'https://future-jobs-pro-ai.vercel.app',
     'https://balancing-treble-prevent.ngrok-free.dev',
     'https://future-jobs-pro-ai-production.up.railway.app',
-    'https://futurejobsproai.com',           // ← your custom domain
-    'https://www.futurejobsproai.com',       // ← www subdomain
+    'https://futurejobsproai.com',
+    'https://www.futurejobsproai.com',
   ],
   credentials: true,
 }));
@@ -97,6 +97,23 @@ import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
 import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
+
+// ----- Proxy to Rasa NLU (Lucy) -----
+app.post('/api/lucy', async (req: Request, res: Response) => {
+  try {
+    const { message } = req.body;
+    const rasaRes = await fetch('https://discerning-perception-production.up.railway.app/webhooks/rest/webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sender: 'user', message }),
+    });
+    const data = await rasaRes.json();
+    res.json(data);
+  } catch (error: any) {
+    console.error('Lucy proxy error:', error.message);
+    res.status(500).json({ success: false, message: 'Lucy is taking a break.' });
+  }
+});
 
 // 404 & error handler
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
