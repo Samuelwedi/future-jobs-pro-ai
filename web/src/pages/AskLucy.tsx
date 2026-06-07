@@ -5,6 +5,9 @@ import {
 } from '@mui/material';
 import { Send, SmartToy } from '@mui/icons-material';
 
+// Your Railway backend (same as in api.ts)
+const BACKEND_API = 'https://future-jobs-pro-ai-production.up.railway.app';
+
 interface Message {
   text: string;
   isUser: boolean;
@@ -34,7 +37,8 @@ export default function AskLucy() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/lucy', {
+      // Call your backend proxy, which forwards to Rasa
+      const res = await fetch(`${BACKEND_API}/api/lucy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage }),
