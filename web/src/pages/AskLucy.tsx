@@ -5,8 +5,7 @@ import {
 } from '@mui/material';
 import { Send, SmartToy } from '@mui/icons-material';
 
-// Your Railway backend (same as in api.ts)
-const BACKEND_API = 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 interface Message {
   text: string;
@@ -15,7 +14,7 @@ interface Message {
 
 export default function AskLucy() {
   const [messages, setMessages] = useState<Message[]>([
-    { text: "Hi! I'm Lucy. Try asking: 'run payroll for last week' or 'show my team status'", isUser: false },
+    { text: "Hi! I'm Lucy. I remember our conversations. How can I help you today?", isUser: false },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -29,6 +28,32 @@ export default function AskLucy() {
     scrollToBottom();
   }, [messages]);
 
+  // Load conversation history on mount
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const res = await fetch(`${API_BASE}/api/lucy/history`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.messages && data.messages.length > 0) {
+          const history: Message[] = data.messages.map((m: any) => ({
+            text: m.content,
+            isUser: m.role === 'user',
+          }));
+          // Prepend a welcome note if needed, then append history
+          setMessages(prev => [...prev, ...history]);
+        }
+      } catch (err) {
+        console.error('Failed to load Lucy history:', err);
+      }
+    };
+    loadHistory();
+  }, []);
+
   const sendMessage = async () => {
     if (!input.trim()) return;
     const userMessage = input.trim();
@@ -37,10 +62,13 @@ export default function AskLucy() {
     setLoading(true);
 
     try {
-      // Call your backend proxy, which forwards to Rasa
-      const res = await fetch(`${BACKEND_API}/api/lucy`, {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/api/lucy`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ message: userMessage }),
       });
 
@@ -77,7 +105,7 @@ export default function AskLucy() {
           Ask Lucy
         </Typography>
         <Typography variant="body2" sx={{ color: '#888', mb: 3, textAlign: 'center' }}>
-          Type a command – Lucy will execute it. (e.g., “run payroll for last week”)
+          Lucy remembers everything you tell her – just ask naturally.
         </Typography>
 
         <Paper sx={{ flex: 1, bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333', p: 2, mb: 2, overflowY: 'auto' }}>
