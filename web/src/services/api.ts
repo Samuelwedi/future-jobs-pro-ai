@@ -8,7 +8,6 @@ const getHeaders = () => {
   };
 };
 
-// Global handler for 402 Payment Required
 const handle402 = () => {
   if (window.location.pathname === '/payment-required') return;
   window.location.href = '/payment-required';
