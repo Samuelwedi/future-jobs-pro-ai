@@ -10,6 +10,7 @@ import morgan from 'morgan';
 import compression from 'compression';
 import dotenv from 'dotenv';
 import http from 'http';
+import jwt from 'jsonwebtoken';
 import { Server as SocketIOServer } from 'socket.io';
 import { pool, checkDatabaseHealth } from './config/database';
 import { saveMessage } from './services/chatService';
@@ -19,6 +20,7 @@ dotenv.config();
 
 const app: Express = express();
 const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 // ----- CORS (must be before other middleware) -----
 app.use(cors({
@@ -98,14 +100,51 @@ import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachme
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
 
-// ----- Lucy AI Engine (OpenAI + Function Calling) -----
+// ----- Helper: extract userId from JWT -----
+const getUserId = (req: Request): string | null => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    return decoded.id || null;
+  } catch {
+    return null;
+  }
+};
+
+// ----- Lucy Conversation History -----
+app.get('/api/lucy/history', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+  try {
+    const result = await pool.query(
+      'SELECT role, content, created_at FROM lucy_conversations WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
+      [userId]
+    );
+    res.json({ success: true, messages: result.rows.reverse() });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ----- Lucy AI Engine (OpenAI + Function Calling + Memory) -----
 app.post('/api/lucy', async (req: Request, res: Response) => {
   try {
     const { message } = req.body;
+    const userId = getUserId(req);
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return res.status(500).json({ success: false, message: 'OpenAI key not configured.' });
 
-    // Define the functions Lucy can perform
+    // Retrieve conversation memory (last 10 messages)
+    const memoryRes = await pool.query(
+      'SELECT role, content FROM lucy_conversations WHERE user_id = $1 ORDER BY created_at ASC LIMIT 10',
+      [userId]
+    );
+    const priorMessages = memoryRes.rows.map((r: any) => ({ role: r.role, content: r.content }));
+
+    // Define functions Lucy can perform
     const functions = [
       {
         name: 'get_team_status',
@@ -147,7 +186,23 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
       },
     ];
 
-    // Step 1: Send the user message to OpenAI
+    // Build the message array: system prompt + memory + current user message
+    const messages = [
+      {
+        role: 'system',
+        content:
+          'You are Lucy, a friendly AI assistant for Future Jobs Pro AI. You help business owners manage their workforce. Answer concisely and warmly. You remember past conversations. If the user asks you to perform a task (like payroll, scheduling, report, team status), use the available functions.',
+      },
+      ...priorMessages,
+      { role: 'user', content: message },
+    ];
+
+    // Save the user message immediately
+    if (userId) {
+      await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1, $2, $3)', [userId, 'user', message]);
+    }
+
+    // Call OpenAI
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -156,14 +211,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
       },
       body: JSON.stringify({
         model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are Lucy, a friendly AI assistant for Future Jobs Pro AI. You help business owners manage their workforce. Answer concisely and warmly. If the user asks you to perform a task (like payroll, scheduling, report, team status), use the available functions.',
-          },
-          { role: 'user', content: message },
-        ],
+        messages,
         functions,
         function_call: 'auto',
       }),
@@ -173,7 +221,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
     const choice = aiData.choices?.[0];
     if (!choice) return res.json([{ text: "I'm not sure how to help with that." }]);
 
-    // Step 2: If OpenAI wants to call a function
+    // Handle function calls
     if (choice.finish_reason === 'function_call' && choice.message?.function_call) {
       const { name, arguments: argsStr } = choice.message.function_call;
       const args = JSON.parse(argsStr || '{}');
@@ -202,12 +250,18 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           resultText = 'Command executed.';
       }
 
-      // Return the result directly
+      // Save Lucy's reply
+      if (userId) {
+        await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1, $2, $3)', [userId, 'assistant', resultText]);
+      }
       return res.json([{ text: resultText }]);
     }
 
-    // Step 3: Normal text response from OpenAI
+    // Plain text reply
     const reply = choice.message?.content || "I'm not sure how to help with that.";
+    if (userId) {
+      await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1, $2, $3)', [userId, 'assistant', reply]);
+    }
     return res.json([{ text: reply }]);
   } catch (error: any) {
     console.error('Lucy AI error:', error.message);
