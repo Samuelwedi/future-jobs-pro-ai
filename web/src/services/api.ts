@@ -1,4 +1,4 @@
-const API_BASE = 'https://www.futurejobsproai.com';
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 const getHeaders = () => {
   const token = localStorage.getItem('token');
@@ -10,7 +10,6 @@ const getHeaders = () => {
 
 // Global handler for 402 Payment Required
 const handle402 = () => {
-  // Prevent multiple redirects
   if (window.location.pathname === '/payment-required') return;
   window.location.href = '/payment-required';
 };
