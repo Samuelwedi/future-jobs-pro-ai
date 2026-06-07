@@ -11,6 +11,7 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
     req.path.startsWith('/api/auth') ||
     req.path.startsWith('/api/stripe') ||
     req.path === '/api/health' ||
+    req.path === '/api/lucy' ||
     req.path === '/api/secret-test'   // ← add this line
   ) {
     return next();
