@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Box, TextField, IconButton, Paper, Typography, List, ListItem, Avatar, ListItemAvatar, ListItemText, CircularProgress,
+  Box, TextField, IconButton, Paper, Typography, List, ListItem,
+  Avatar, ListItemAvatar, ListItemText, CircularProgress,
 } from '@mui/material';
 import { Send, SmartToy } from '@mui/icons-material';
 
-const RASA_URL = 'discerning-perception-production.up.railway.app';
+// Replace with your actual Rasa URL from Railway
+const RASA_URL = 'https://discerning-perception-production.up.railway.app';
 
 interface Message {
   text: string;
@@ -35,16 +37,32 @@ export default function AskLucy() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${RASA_URL}/webhooks/rest/webhook`, {
+      const url = `${RASA_URL}/webhooks/rest/webhook`;
+      console.log('Sending to Rasa:', url);
+
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sender: 'user', message: userMessage }),
       });
+
+      console.log('Rasa response status:', res.status);
+
+      if (!res.ok) {
+        throw new Error(`Rasa responded with status ${res.status}`);
+      }
+
       const data = await res.json();
+      console.log('Rasa response data:', data);
+
       const botText = data?.[0]?.text || "I'm not sure how to respond to that yet.";
       setMessages(prev => [...prev, { text: botText, isUser: false }]);
-    } catch (err) {
-      setMessages(prev => [...prev, { text: 'Sorry, Lucy is taking a break. Please try again later.', isUser: false }]);
+    } catch (err: any) {
+      console.error('Rasa fetch error:', err.message);
+      setMessages(prev => [...prev, {
+        text: `Sorry, Lucy is taking a break. (${err.message})`,
+        isUser: false
+      }]);
     } finally {
       setLoading(false);
     }
