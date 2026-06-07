@@ -61,20 +61,6 @@ export default function Dashboard() {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
-  // ---- Voice command definitions ----
-  const voiceCommands: { phrase: string; action: () => void }[] = [
-    { phrase: 'timesheet', action: () => navigate('/timesheet') },
-    { phrase: 'schedule', action: () => navigate('/schedule') },
-    { phrase: 'team', action: () => navigate('/team') },
-    { phrase: 'projects', action: () => navigate('/projects') },
-    { phrase: 'reports', action: () => navigate('/reports') },
-    { phrase: 'chat', action: () => navigate('/chat') },
-    { phrase: 'tasks', action: () => navigate('/tasks') },
-    { phrase: 'settings', action: () => navigate('/settings') },
-    { phrase: 'dashboard', action: () => navigate('/dashboard') },
-    { phrase: 'log out', action: () => handleLogout },
-  ];
-
   const startVoice = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -85,15 +71,9 @@ export default function Dashboard() {
     rec.lang = 'en-US';
     rec.interimResults = false;
     rec.onresult = (event: any) => {
-      const transcript: string = event.results[0][0].transcript.toLowerCase().trim();
+      const transcript: string = event.results[0][0].transcript;
       setIsListening(false);
-
-      const matched = voiceCommands.find(cmd => transcript.includes(cmd.phrase));
-      if (matched) {
-        matched.action();
-      } else {
-        alert(`🗣️ You said: "${transcript}"\nI didn't understand that command.`);
-      }
+      sendToLucy(transcript);
     };
     rec.onerror = () => setIsListening(false);
     rec.onend = () => setIsListening(false);
@@ -106,6 +86,21 @@ export default function Dashboard() {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       setIsListening(false);
+    }
+  };
+
+  const sendToLucy = async (text: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/lucy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text }),
+      });
+      const data = await res.json();
+      const reply = data?.[0]?.text || "I'm not sure how to respond to that.";
+      alert(`🗣️ You said: "${text}"\n🤖 Lucy: ${reply}`);
+    } catch {
+      alert('Sorry, Lucy is taking a break.');
     }
   };
 
