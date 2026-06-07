@@ -4,8 +4,8 @@ import {
 } from '@mui/material';
 import { Send, SmartToy } from '@mui/icons-material';
 
-// Replace with your actual Rasa URL from Railway
-const RASA_URL = 'https://discerning-perception-production.up.railway.app';
+const RASA_URL = 'discerning-perception-production.up.railway.app';
+
 interface Message {
   text: string;
   isUser: boolean;
@@ -41,7 +41,6 @@ export default function AskLucy() {
         body: JSON.stringify({ sender: 'user', message: userMessage }),
       });
       const data = await res.json();
-      // Rasa returns an array of responses; take the first text
       const botText = data?.[0]?.text || "I'm not sure how to respond to that yet.";
       setMessages(prev => [...prev, { text: botText, isUser: false }]);
     } catch (err) {
