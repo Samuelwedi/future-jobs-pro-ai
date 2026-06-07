@@ -11,7 +11,7 @@ import { getOnlineStatus, queueAction } from './offlineService';
 
 // Railway permanent backend
 const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
-const PROD_API_URL = 'https://api.futurejobspro.com/api';
+const PROD_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api'; // ← fixed
 export const API_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
 
 class ApiService {
