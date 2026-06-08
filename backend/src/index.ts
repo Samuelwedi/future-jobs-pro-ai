@@ -1,342 +1,278 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  Box, Container, Grid, Paper, Typography, Card, CardContent,
-  AppBar, Toolbar, IconButton, Avatar, Chip, LinearProgress,
-  List, ListItemButton, ListItemIcon, ListItemText, Button,
-} from '@mui/material';
-import {
-  Notifications, TrendingDown, AccessTime, Work, People,
-  Dashboard as DashboardIcon, CalendarMonth, Assessment,
-  Groups, Folder, Timer, Chat, Assignment, BeachAccess,
-  TouchApp, Settings, Logout, Link as LinkIcon,
-  SmartToy, Mic, MicOff,
-} from '@mui/icons-material';
-import {
-  AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
-  CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts';
+// ============================================
+// FUTURE JOBS PRO AI – MAIN SERVER
+// Created by: Samuel B.
+// ============================================
 
-const COLORS = ['#00D4FF', '#4CAF50', '#FF9800', '#F44336'];
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import express, { Express, Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import compression from 'compression';
+import dotenv from 'dotenv';
+import http from 'http';
+import jwt from 'jsonwebtoken';
+import { Server as SocketIOServer } from 'socket.io';
+import { pool, checkDatabaseHealth } from './config/database';
+import { saveMessage } from './services/chatService';
+import { trialCheck } from './middleware/trialMiddleware';
 
-const navItems = [
-  { label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-  { label: 'Schedule', icon: <CalendarMonth />, path: '/schedule' },
-  { label: 'Reports', icon: <Assessment />, path: '/reports' },
-  { label: 'Team', icon: <Groups />, path: '/team' },
-  { label: 'Projects', icon: <Folder />, path: '/projects' },
-  { label: 'Timesheet', icon: <Timer />, path: '/timesheet' },
-  { label: 'Chat', icon: <Chat />, path: '/chat' },
-  { label: 'Tasks', icon: <Assignment />, path: '/tasks' },
-  { label: 'PTO', icon: <BeachAccess />, path: '/pto' },
-  { label: 'Kiosk', icon: <TouchApp />, path: '/kiosk' },
-  { label: 'Settings', icon: <Settings />, path: '/settings' },
-  { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
-  { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
-];
+dotenv.config();
 
-export default function Dashboard() {
-  const navigate = useNavigate();
-  const location = useLocation();
+const app: Express = express();
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET!;
 
-  const [user, setUser] = useState<any>(null);
-  const [stats] = useState({
-    activeJobs: 12, totalEmployees: 28, hoursToday: 142.5,
-    revenueToday: 8475, marginToday: 34.2,
-  });
+// ----- CORS -----
+app.use(cors({
+  origin: [
+    'http://localhost:3000', 'http://localhost:19006',
+    'http://localhost:5173', 'http://localhost:5174',
+    'https://future-jobs-pro-ai.vercel.app',
+    'https://future-jobs-pro-ai-production.up.railway.app',
+    'https://futurejobsproai.com', 'https://www.futurejobsproai.com',
+  ],
+  credentials: true,
+}));
 
-  const profitData = [
-    { time: '8AM', margin: 38 }, { time: '10AM', margin: 35 },
-    { time: '12PM', margin: 32 }, { time: '2PM', margin: 34 },
-    { time: '4PM', margin: 36 },
-  ];
+app.use(helmet());
+app.use(compression());
+app.use(morgan('dev'));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-  const jobStatusData = [
-    { name: 'Active', value: 12 }, { name: 'Completed', value: 8 },
-    { name: 'On Hold', value: 3 }, { name: 'Cancelled', value: 1 },
-  ];
+// ----- Trial middleware -----
+app.use(trialCheck);
 
-  // ---- Voice command states ----
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
+// ----- Health Check -----
+app.get('/api/health', async (req: Request, res: Response) => {
+  const dbHealthy = await checkDatabaseHealth();
+  res.json({ status: dbHealthy ? 'healthy' : 'unhealthy', timestamp: new Date().toISOString(), owner: 'Samuel B.', app: 'Future Jobs Pro AI', version: '1.0.0' });
+});
 
-  const startVoice = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in your browser.');
-      return;
-    }
-    const rec = new SpeechRecognition();
-    rec.lang = 'en-US';
-    rec.interimResults = false;
-    rec.onresult = (event: any) => {
-      const transcript: string = event.results[0][0].transcript;
-      setIsListening(false);
-      sendToLucy(transcript);
-    };
-    rec.onerror = () => setIsListening(false);
-    rec.onend = () => setIsListening(false);
-    rec.start();
-    recognitionRef.current = rec;
-    setIsListening(true);
-  };
+app.get('/api/db-test', async (req: Request, res: Response) => {
+  try { const result = await pool.query('SELECT NOW()'); res.json({ success: true, timestamp: result.rows[0].now }); }
+  catch (error: any) { res.status(500).json({ success: false, error: error.message }); }
+});
 
-  const stopVoice = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    }
-  };
+app.get('/', (req, res) => res.send('<h1>🚀 Future Jobs Pro AI</h1>'));
 
-  const sendToLucy = async (text: string) => {
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/api/lucy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ message: text }),
-      });
-      const data = await res.json();
-      const reply = data?.[0]?.text || "I'm not sure how to respond to that.";
-      alert(`🗣️ You said: "${text}"\n🤖 Lucy: ${reply}`);
-      // Also speak it aloud
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(reply);
-        utterance.lang = 'en-US';
-        window.speechSynthesis.speak(utterance);
-      }
-    } catch { alert('Sorry, Lucy is taking a break.'); }
-  };
+// ===== REST ROUTES =====
+import authRoutes from './routes/authRoutes'; app.use('/api/auth', authRoutes);
+import aiRoutes from './routes/aiRoutes'; app.use('/api/ai', aiRoutes);
+import photoRoutes from './routes/photoRoutes'; app.use('/api/photos', photoRoutes);
+import gpsRoutes from './routes/gpsRoutes'; app.use('/api/gps', gpsRoutes);
+import voiceRoutes from './routes/voiceRoutes'; app.use('/api/voice', voiceRoutes);
+import disputeRoutes from './routes/disputeRoutes'; app.use('/api/dispute', disputeRoutes);
+import notificationRoutes from './routes/notificationRoutes'; app.use('/api/notifications', notificationRoutes);
+import stripeRoutes from './routes/stripeRoutes'; app.use('/api/stripe', stripeRoutes);
+import adminRoutes from './routes/adminRoutes'; app.use('/api/admin', adminRoutes);
+import timeEntryRoutes from './routes/timeEntryRoutes'; app.use('/api/time-entries', timeEntryRoutes);
+import projectRoutes from './routes/projectRoutes'; app.use('/api/projects', projectRoutes);
+import integrationRoutes from './routes/integrationRoutes'; app.use('/api/integrations', integrationRoutes);
+import companyRoutes from './routes/companyRoutes'; app.use('/api/companies', companyRoutes);
+import chatRoutes from './routes/chatRoutes'; app.use('/api/chat', chatRoutes);
+import userRoutes from './routes/userRoutes'; app.use('/api/users', userRoutes);
+import scheduleRoutes from './routes/scheduleRoutes'; app.use('/api/schedule', scheduleRoutes);
+import crewRoutes from './routes/crewRoutes'; app.use('/api/crew', crewRoutes);
+import assistantRoutes from './routes/assistantRoutes'; app.use('/api/assistant', assistantRoutes);
+import taskRoutes from './routes/taskRoutes'; app.use('/api/tasks', taskRoutes);
+import webhookRoutes from './routes/webhookRoutes'; app.use('/api/webhooks', webhookRoutes);
+import ptoRoutes from './routes/ptoRoutes'; app.use('/api/pto', ptoRoutes);
+import kioskRoutes from './routes/kioskRoutes'; app.use('/api/kiosk', kioskRoutes);
+import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
+import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
+import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
+import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('user');
-      if (stored) setUser(JSON.parse(stored));
-    } catch {}
-  }, []);
+// ----- Helper: extract userId from JWT -----
+const getUserId = (req: Request): string | null => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  try { const token = authHeader.split(' ')[1]; const decoded = jwt.verify(token, JWT_SECRET) as any; return decoded.id || null; }
+  catch { return null; }
+};
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    navigate('/login');
-  };
+// ----- Lucy Conversation History -----
+app.get('/api/lucy/history', async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+  try {
+    const result = await pool.query('SELECT role, content, created_at FROM lucy_conversations WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50', [userId]);
+    res.json({ success: true, messages: result.rows.reverse() });
+  } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
+});
 
-  const fullName = user ? (user.fullName || `${user.firstName} ${user.lastName}`) : 'User';
-  const initials = user
-    ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
-    : 'U';
+// ----- Payroll placeholder endpoint -----
+app.post('/api/payroll/run', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { period, companyId } = req.body;
+    const result = await pool.query('INSERT INTO payrolls (company_id, period, created_by) VALUES ($1, $2, $3) RETURNING id', [companyId, period, userId]);
+    res.json({ success: true, message: `Payroll for ${period} has been processed.`, payrollId: result.rows[0].id });
+  } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
+});
 
-  const trialEndDate = user?.trialEndsAt ? new Date(user.trialEndsAt) : null;
-  const trialActive = trialEndDate && trialEndDate > new Date();
-  const daysLeft = trialActive ? Math.ceil((trialEndDate!.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+// ----- Lucy AI Engine (OpenAI + Function Calling + Memory + Real Actions) -----
+app.post('/api/lucy', async (req: Request, res: Response) => {
+  try {
+    const { message } = req.body;
+    const userId = getUserId(req);
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.status(500).json({ success: false, message: 'OpenAI key not configured.' });
 
-  const handleAddPayment = async () => {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`${API_BASE}/api/stripe/create-setup-session`, {
+    // Get conversation memory (last 10 messages)
+    const memoryRes = await pool.query('SELECT role, content FROM lucy_conversations WHERE user_id = $1 ORDER BY created_at ASC LIMIT 10', [userId]);
+    const priorMessages = memoryRes.rows.map((r: any) => ({ role: r.role, content: r.content }));
+
+    // Define functions
+    const functions = [
+      { name: 'get_team_status', description: 'Get the number of active team members', parameters: { type: 'object', properties: {} } },
+      {
+        name: 'run_payroll',
+        description: 'Process payroll for a given period',
+        parameters: { type: 'object', properties: { period: { type: 'string', description: 'e.g. last week, this month' } } },
+      },
+      {
+        name: 'create_schedule',
+        description: 'Create a work schedule for an employee',
+        parameters: {
+          type: 'object',
+          properties: {
+            employee: { type: 'string' },
+            day: { type: 'string' },
+            start_time: { type: 'string' },
+            end_time: { type: 'string' },
+            notes: { type: 'string' },
+          },
+        },
+      },
+      {
+        name: 'generate_report',
+        description: 'Generate a compliance or evidence report for a project',
+        parameters: { type: 'object', properties: { project_name: { type: 'string' } } },
+      },
+    ];
+
+    const messages = [
+      { role: 'system', content: 'You are Lucy, a friendly and capable AI assistant for Future Jobs Pro AI. You help business owners manage their workforce. You have access to functions that can execute real tasks (schedule, payroll, reports, team status). When the user asks you to do something, use the appropriate function. After executing, give a spoken‑style confirmation.' },
+      ...priorMessages,
+      { role: 'user', content: message },
+    ];
+
+    // Save user message
+    if (userId) await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1,$2,$3)', [userId, 'user', message]);
+
+    // Call OpenAI
+    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: 'gpt-4o', messages, functions, function_call: 'auto' }),
     });
-    const data = await res.json();
-    if (data.url) window.location.href = data.url;
-    else alert('Failed to start payment setup');
-  };
+    const aiData: any = await openaiRes.json();
+    const choice = aiData.choices?.[0];
+    if (!choice) return res.json([{ text: "I'm not sure how to help with that." }]);
 
-  return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#0A0A0A' }}>
-      {/* ===== SIDEBAR ===== */}
-      <Box
-        sx={{
-          width: 260, bgcolor: '#111', borderRight: '1px solid #222',
-          display: 'flex', flexDirection: 'column', pt: 2, pb: 2, flexShrink: 0,
-        }}
-      >
-        <Box sx={{ px: 2, mb: 3 }}>
-          <Typography sx={{ color: '#00D4FF', fontWeight: 'bold', fontSize: 18 }}>
-            🚀 Future Jobs Pro
-          </Typography>
-          <Typography variant="caption" sx={{ color: '#666' }}>Samuel B.</Typography>
-        </Box>
+    // Function call handling
+    if (choice.finish_reason === 'function_call' && choice.message?.function_call) {
+      const { name, arguments: argsStr } = choice.message.function_call;
+      const args = JSON.parse(argsStr || '{}');
+      let resultText = '';
+      switch (name) {
+        case 'get_team_status': {
+          const teamRes = await fetch(`http://localhost:${PORT}/api/team`, { headers: { Authorization: req.headers.authorization || '' } });
+          const teamData: any = await teamRes.json();
+          const count = (teamData.members || []).length;
+          resultText = `You currently have ${count} team member(s) active.`;
+          break;
+        }
+        case 'run_payroll': {
+          const period = args.period || 'the requested period';
+          const payrollRes = await fetch(`http://localhost:${PORT}/api/payroll/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': req.headers.authorization || '' },
+            body: JSON.stringify({ period, companyId: 'from-token', userId }),
+          });
+          const payrollData: any = await payrollRes.json();
+          resultText = payrollData.message || `Payroll for ${period} has been processed.`;
+          break;
+        }
+        case 'create_schedule': {
+          const { employee, day, start_time, end_time, notes } = args;
+          const scheduleRes = await fetch(`http://localhost:${PORT}/api/schedule/shifts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': req.headers.authorization || '' },
+            body: JSON.stringify({
+              name: `Shift for ${employee || 'staff'}`,
+              date: day,
+              startTime: start_time || '09:00',
+              endTime: end_time || '17:00',
+              notes: notes || '',
+              employeeIds: [],
+            }),
+          });
+          const schedData: any = await scheduleRes.json();
+          resultText = schedData.success
+            ? `Schedule created for ${employee || 'employee'} on ${day || 'the requested day'} from ${start_time || '9am'} to ${end_time || '5pm'}.`
+            : 'Sorry, I couldn’t create that schedule right now.';
+          break;
+        }
+        case 'generate_report': {
+          const project = args.project_name || 'Project';
+          const reportRes = await fetch(`http://localhost:${PORT}/api/photos/report`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': req.headers.authorization || '' },
+            body: JSON.stringify({ projectName: project, reportTitle: `Evidence Report - ${project}` }),
+          });
+          const reportData: any = await reportRes.json();
+          resultText = reportData.reportUrl
+            ? `Report for ${project} has been generated. You can view it here: ${reportData.reportUrl}`
+            : 'Report generation failed. Please try again.';
+          break;
+        }
+        default: resultText = 'Command executed.';
+      }
+      // Save Lucy's reply
+      if (userId) await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1,$2,$3)', [userId, 'assistant', resultText]);
+      return res.json([{ text: resultText }]);
+    }
 
-        <List sx={{ flex: 1 }}>
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.path;
-            return (
-              <ListItemButton
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                sx={{
-                  mx: 1, borderRadius: 2, mb: 0.5,
-                  color: isActive ? '#00D4FF' : '#AAA',
-                  bgcolor: isActive ? 'rgba(0,212,255,0.1)' : 'transparent',
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 14 }} />
-              </ListItemButton>
-            );
-          })}
-        </List>
+    // Plain text reply
+    const reply = choice.message?.content || "I'm not sure how to help with that.";
+    if (userId) await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1,$2,$3)', [userId, 'assistant', reply]);
+    return res.json([{ text: reply }]);
+  } catch (error: any) {
+    console.error('Lucy AI error:', error.message);
+    res.status(500).json({ success: false, message: 'Lucy is taking a break.' });
+  }
+});
 
-        <ListItemButton
-          onClick={handleLogout}
-          sx={{ mx: 1, borderRadius: 2, color: '#F44336', '&:hover': { bgcolor: 'rgba(244,67,54,0.1)' } }}
-        >
-          <ListItemIcon sx={{ minWidth: 36, color: '#F44336' }}><Logout /></ListItemIcon>
-          <ListItemText primary="Logout" primaryTypographyProps={{ fontSize: 14 }} />
-        </ListItemButton>
-      </Box>
+// 404 & error handler
+app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => { console.error(err); res.status(500).json({ success: false, message: 'Internal server error' }); });
 
-      {/* ===== MAIN CONTENT ===== */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <AppBar position="static" sx={{ bgcolor: '#1A1A1A', borderBottom: '1px solid #333', boxShadow: 'none' }}>
-          <Toolbar>
-            <Typography variant="h6" sx={{ flexGrow: 1, color: '#FFF', fontWeight: 'bold' }}>
-              Welcome back, {fullName}
-            </Typography>
-            <IconButton color="inherit"><Notifications /></IconButton>
-            <IconButton><Avatar sx={{ bgcolor: '#00D4FF', width: 40, height: 40 }}>{initials}</Avatar></IconButton>
-          </Toolbar>
-        </AppBar>
+// ----- WebSocket Server -----
+const server = http.createServer(app);
+const io = new SocketIOServer(server, { cors: { origin: '*' } });
 
-        {/* ===== TRIAL BANNER ===== */}
-        {user && (
-          <Box sx={{
-            bgcolor: trialActive ? '#1A1A2E' : '#F4433620',
-            p: 2, textAlign: 'center', borderBottom: '1px solid #333'
-          }}>
-            {trialActive ? (
-              <Typography sx={{ color: '#00D4FF' }}>
-                Trial ends in {daysLeft} day{daysLeft !== 1 ? 's' : ''}.
-                <Button href="/pricing" sx={{ ml: 2, color: '#00D4FF', textDecoration: 'underline' }}>
-                  Upgrade
-                </Button>
-              </Typography>
-            ) : (
-              <>
-                <Typography sx={{ color: '#F44336', mb: 1 }}>
-                  Your trial has expired. Please add a payment method to continue.
-                </Typography>
-                <Button variant="contained" onClick={handleAddPayment}
-                  sx={{ bgcolor: '#F44336', color: '#FFF' }}>
-                  Add Payment Method
-                </Button>
-              </>
-            )}
-          </Box>
-        )}
+io.on('connection', (socket) => {
+  console.log('🔌 New WebSocket connection:', socket.id);
+  socket.on('join-room', (roomId) => { socket.join(`room-${roomId}`); console.log(`Socket ${socket.id} joined room-${roomId}`); });
+  socket.on('leave-room', (roomId) => { socket.leave(`room-${roomId}`); console.log(`Socket ${socket.id} left room-${roomId}`); });
+  socket.on('chat-message', async (data) => {
+    try { const saved = await saveMessage(data.senderId, data.roomId, data.message, data.companyId); io.to(`room-${data.roomId}`).emit('new-message', saved); }
+    catch (err) { console.error('Chat message error:', err); }
+  });
+});
 
-        <Container maxWidth="xl" sx={{ mt: 3, mb: 3, flex: 1 }}>
-          <Box sx={{ mb: 3 }}>
-            <Chip label="👑 Boss Mode" sx={{ bgcolor: '#00D4FF20', color: '#00D4FF', border: '1px solid #00D4FF40', fontWeight: 'bold' }} />
-          </Box>
+server.listen(parseInt(PORT as string) || 5000, '0.0.0.0', () => {
+  console.log('');
+  console.log('╔══════════════════════════════════════════════════════════╗');
+  console.log('║   🚀 Future Jobs Pro AI Server Running                  ║');
+  console.log('║   Created by: Samuel B.                                 ║');
+  console.log('║   WebSocket: enabled                                   ║');
+  console.log(`║   📍 Local:            http://localhost:${PORT}           ║`);
+  console.log('╚══════════════════════════════════════════════════════════╝');
+});
 
-          {/* Live Profit Pulse */}
-          <Paper sx={{ p: 3, mb: 3, bgcolor: '#1A1A1A', borderRadius: 2, border: '1px solid #333' }}>
-            <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 600, mb: 2 }}>💰 Live Profit Pulse</Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={3}>
-                <Card sx={{ bgcolor: '#0A0A0A', border: '1px solid #333' }}>
-                  <CardContent>
-                    <Typography variant="body2" sx={{ color: '#888' }}>Today's Margin</Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold' }}>{stats.marginToday}%</Typography>
-                      <TrendingDown fontSize="small" sx={{ color: '#F44336' }} />
-                      <Typography variant="body2" sx={{ color: '#F44336' }}>2.1%</Typography>
-                    </Box>
-                    <LinearProgress variant="determinate" value={stats.marginToday}
-                      sx={{ mt: 1, height: 6, borderRadius: 3, bgcolor: '#333',
-                        '& .MuiLinearProgress-bar': { bgcolor: '#4CAF50' } }} />
-                  </CardContent>
-                </Card>
-              </Grid>
-              {[
-                { label: 'Active Jobs', value: stats.activeJobs, icon: <Work />, color: '#00D4FF' },
-                { label: 'Employees', value: stats.totalEmployees, icon: <People />, color: '#4CAF50' },
-                { label: 'Hours Today', value: `${stats.hoursToday}h`, icon: <AccessTime />, color: '#FF9800' },
-              ].map((stat) => (
-                <Grid item xs={6} md={3} key={stat.label}>
-                  <Card sx={{ bgcolor: '#0A0A0A', border: '1px solid #333' }}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Box>
-                          <Typography variant="body2" sx={{ color: '#888' }}>{stat.label}</Typography>
-                          <Typography variant="h5" sx={{ color: '#FFF', fontWeight: 'bold' }}>{stat.value}</Typography>
-                        </Box>
-                        <Box sx={{ color: stat.color }}>{stat.icon}</Box>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
-            <Box sx={{ height: 250, minHeight: 200, mt: 2 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={profitData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis dataKey="time" stroke="#888" />
-                  <YAxis stroke="#888" />
-                  <Tooltip contentStyle={{ backgroundColor: '#1A1A1A', border: '1px solid #333' }} />
-                  <Area type="monotone" dataKey="margin" stroke="#00D4FF" fill="#00D4FF20" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </Box>
-          </Paper>
-
-          {/* Job Distribution */}
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Paper sx={{ p: 3, bgcolor: '#1A1A1A', borderRadius: 2, border: '1px solid #333' }}>
-                <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 600, mb: 2 }}>Job Status</Typography>
-                <Box sx={{ height: 250, minHeight: 200 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={jobStatusData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                        {jobStatusData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
-                      </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: '#1A1A1A', border: '1px solid #333' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </Box>
-              </Paper>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Paper sx={{ p: 3, bgcolor: '#1A1A1A', borderRadius: 2, border: '1px solid #F4433640' }}>
-                <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 600, mb: 2 }}>⚠️ Dispute Risk Alerts</Typography>
-                {[
-                  { project: 'Maple HVAC Install', risk: 87, issue: 'Tech arrived 22min late + client history' },
-                  { project: 'Pine Plumbing Repair', risk: 72, issue: 'Job duration 45min over estimate' },
-                ].map((alert, i) => (
-                  <Box key={i} sx={{ p: 2, bgcolor: '#0A0A0A', borderRadius: 1, border: '1px solid #333', mb: 1 }}>
-                    <Typography sx={{ color: '#FFF', fontWeight: 500 }}>{alert.project}</Typography>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                      <Typography variant="body2" sx={{ color: '#888' }}>{alert.issue}</Typography>
-                      <Chip label={`Risk: ${alert.risk}`} size="small" sx={{ bgcolor: '#F4433620', color: '#F44336' }} />
-                    </Box>
-                  </Box>
-                ))}
-              </Paper>
-            </Grid>
-          </Grid>
-        </Container>
-
-        {/* ===== FLOATING VOICE BUTTON ===== */}
-        <Box sx={{ position: 'fixed', bottom: 32, right: 32, zIndex: 1000 }}>
-          <IconButton
-            onClick={isListening ? stopVoice : startVoice}
-            sx={{
-              bgcolor: isListening ? '#F44336' : '#00D4FF',
-              width: 56,
-              height: 56,
-              boxShadow: 4,
-              '&:hover': { bgcolor: isListening ? '#D32F2F' : '#0097A7' },
-            }}
-          >
-            {isListening ? <MicOff sx={{ color: '#FFF' }} /> : <Mic sx={{ color: '#0A0A0A' }} />}
-          </IconButton>
-        </Box>
-      </Box>
-    </Box>
-  );
-}
+export default app;
