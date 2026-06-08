@@ -91,17 +91,22 @@ export default function Dashboard() {
 
   const sendToLucy = async (text: string) => {
     try {
+      const token = localStorage.getItem('token');
       const res = await fetch(`${API_BASE}/api/lucy`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ message: text }),
       });
       const data = await res.json();
       const reply = data?.[0]?.text || "I'm not sure how to respond to that.";
       alert(`🗣️ You said: "${text}"\n🤖 Lucy: ${reply}`);
-    } catch {
-      alert('Sorry, Lucy is taking a break.');
-    }
+      // Also speak it aloud
+      if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(reply);
+        utterance.lang = 'en-US';
+        window.speechSynthesis.speak(utterance);
+      }
+    } catch { alert('Sorry, Lucy is taking a break.'); }
   };
 
   useEffect(() => {

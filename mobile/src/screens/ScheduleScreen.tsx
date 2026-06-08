@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
-  TouchableOpacity, Modal, Linking, ScrollView,
+  TouchableOpacity, Modal, Linking, ScrollView, TextInput, Alert,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -9,7 +9,7 @@ import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import {
   format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
-  addDays, subMonths, addMonths, isSameMonth, isSameDay, getDay,
+  addDays, subMonths, addMonths, isSameMonth, isSameDay,
 } from 'date-fns';
 
 interface Shift {
@@ -30,6 +30,11 @@ interface Employee {
   role: string;
 }
 
+interface Project {
+  id: string;
+  name: string;
+}
+
 export default function ScheduleScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -45,9 +50,19 @@ export default function ScheduleScreen() {
   const [selectedEmployeeName, setSelectedEmployeeName] = useState('My Schedule');
   const [showEmployeePicker, setShowEmployeePicker] = useState(false);
 
+  // ---- New shift creation states ----
+  const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [newShiftName, setNewShiftName] = useState('');
+  const [newShiftStart, setNewShiftStart] = useState('09:00');
+  const [newShiftEnd, setNewShiftEnd] = useState('17:00');
+  const [newShiftNotes, setNewShiftNotes] = useState('');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+
   useFocusEffect(useCallback(() => {
     if (user?.role === 'boss' || user?.role === 'manager') {
       fetchEmployees();
+      fetchProjects();   // fetch projects for shift creation
     }
   }, []));
 
@@ -59,6 +74,13 @@ export default function ScheduleScreen() {
     try {
       const res = await api.get<{ success: boolean; users: Employee[] }>(`/users/company/${user?.companyId}`);
       setEmployees(res.users || []);
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchProjects = async () => {
+    try {
+      const res = await api.get<{ success: boolean; projects: Project[] }>('/projects');
+      setProjects(res.projects || []);
     } catch (e) { console.error(e); }
   };
 
@@ -96,7 +118,7 @@ export default function ScheduleScreen() {
 
   const onRefresh = () => { setRefreshing(true); fetchShifts(); };
 
-  // Build calendar days for current month
+  // ---- Calendar generation (unchanged) ----
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -109,7 +131,6 @@ export default function ScheduleScreen() {
     d = addDays(d, 1);
   }
 
-  // Mark days with shifts
   const shiftDates = new Set(shifts.map(s => s.date));
   const shiftsForSelectedDate = shifts.filter(s => s.date === format(selectedDate, 'yyyy-MM-dd'));
 
@@ -121,6 +142,47 @@ export default function ScheduleScreen() {
 
   const navigateMonth = (dir: number) => {
     setCurrentMonth(prev => dir === -1 ? subMonths(prev, 1) : addMonths(prev, 1));
+  };
+
+  // ---- Create Shift ----
+  const handleCreateShift = async () => {
+    if (!newShiftName.trim()) {
+      Alert.alert('Required', 'Please enter a shift name.');
+      return;
+    }
+    try {
+      await api.post('/schedule/shifts', {
+        name: newShiftName,
+        date: format(selectedDate, 'yyyy-MM-dd'),
+        startTime: newShiftStart,
+        endTime: newShiftEnd,
+        notes: newShiftNotes,
+        projectId: selectedProjectId,
+        employeeIds: [],
+      });
+      Alert.alert('✅ Created', 'Shift has been added.');
+      setCreateModalVisible(false);
+      // Reset form
+      setNewShiftName('');
+      setNewShiftStart('09:00');
+      setNewShiftEnd('17:00');
+      setNewShiftNotes('');
+      setSelectedProjectId('');
+      // Reload shifts
+      fetchShifts();
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not create shift.');
+    }
+  };
+
+  // Open create modal pre‑filled with the current selected date
+  const openCreateModal = () => {
+    setNewShiftName('');
+    setNewShiftStart('09:00');
+    setNewShiftEnd('17:00');
+    setNewShiftNotes('');
+    setSelectedProjectId('');
+    setCreateModalVisible(true);
   };
 
   if (loading) return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
@@ -136,10 +198,12 @@ export default function ScheduleScreen() {
             <Text style={styles.headerTitle}>{selectedEmployeeName}</Text>
           </TouchableOpacity>
         </View>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity onPress={openCreateModal} style={{ padding: 4 }}>
+          <MaterialIcons name="add" size={28} color="#00D4FF" />
+        </TouchableOpacity>
       </View>
 
-      {/* View Mode Toggles */}
+      {/* View Mode Toggles (unchanged) */}
       <View style={styles.viewModes}>
         {(['month', 'week', '3days', 'day'] as Array<typeof viewMode>).map(m => (
           <TouchableOpacity key={m} onPress={() => setViewMode(m)} style={[styles.viewModeBtn, viewMode === m && styles.viewModeBtnActive]}>
@@ -148,7 +212,7 @@ export default function ScheduleScreen() {
         ))}
       </View>
 
-      {/* Month Navigator */}
+      {/* Month Navigator (unchanged) */}
       <View style={styles.monthNav}>
         <TouchableOpacity onPress={() => navigateMonth(-1)}>
           <MaterialIcons name="chevron-left" size={28} color="#00D4FF" />
@@ -159,14 +223,14 @@ export default function ScheduleScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Day Headers */}
+      {/* Day Headers (unchanged) */}
       <View style={styles.dayHeaders}>
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
           <Text key={day} style={styles.dayHeaderText}>{day}</Text>
         ))}
       </View>
 
-      {/* Calendar Grid */}
+      {/* Calendar Grid (unchanged) */}
       <View style={styles.calendarGrid}>
         {calendarDays.map((day, idx) => {
           const dateStr = format(day, 'yyyy-MM-dd');
@@ -184,7 +248,7 @@ export default function ScheduleScreen() {
                 isSelected && styles.daySelected,
                 isToday && styles.dayToday,
               ]}
-              onPress={() => { setSelectedDate(day); if (viewMode === 'month') setViewMode('day'); }}
+              onPress={() => setSelectedDate(day)}
             >
               <Text style={[
                 styles.dayText,
@@ -199,7 +263,7 @@ export default function ScheduleScreen() {
         })}
       </View>
 
-      {/* Shift List for Selected Date */}
+      {/* Shift List for Selected Date (unchanged) */}
       <FlatList
         data={shiftsForSelectedDate}
         renderItem={({ item }) => (
@@ -216,7 +280,82 @@ export default function ScheduleScreen() {
         ListEmptyComponent={<Text style={styles.empty}>No shifts on this day</Text>}
       />
 
-      {/* Shift Detail Modal (same as before) */}
+      {/* ===== CREATE SHIFT MODAL ===== */}
+      <Modal visible={createModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>New Shift for {format(selectedDate, 'MMM d, yyyy')}</Text>
+              <TouchableOpacity onPress={() => setCreateModalVisible(false)}>
+                <MaterialIcons name="close" size={24} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Shift Name"
+              placeholderTextColor="#888"
+              value={newShiftName}
+              onChangeText={setNewShiftName}
+            />
+            <View style={styles.row}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Start (HH:MM)"
+                placeholderTextColor="#888"
+                value={newShiftStart}
+                onChangeText={setNewShiftStart}
+              />
+              <TextInput
+                style={[styles.input, { flex: 1, marginLeft: 8 }]}
+                placeholder="End (HH:MM)"
+                placeholderTextColor="#888"
+                value={newShiftEnd}
+                onChangeText={setNewShiftEnd}
+              />
+            </View>
+
+            {/* Project Picker */}
+            <View style={styles.pickerWrapper}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {projects.map(proj => (
+                  <TouchableOpacity
+                    key={proj.id}
+                    style={[styles.projectChip, selectedProjectId === proj.id && styles.projectChipActive]}
+                    onPress={() => setSelectedProjectId(proj.id)}
+                  >
+                    <Text style={[styles.projectChipText, selectedProjectId === proj.id && styles.projectChipTextActive]}>
+                      {proj.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              {projects.length === 0 && (
+                <Text style={{ color: '#888' }}>No projects available</Text>
+              )}
+            </View>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Notes (optional)"
+              placeholderTextColor="#888"
+              value={newShiftNotes}
+              onChangeText={setNewShiftNotes}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setCreateModalVisible(false)}>
+                <Text style={styles.btnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.btn, styles.createBtn]} onPress={handleCreateShift}>
+                <Text style={[styles.btnText, { color: '#0A0A0A' }]}>Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ===== SHIFT DETAIL MODAL (unchanged) ===== */}
       <Modal visible={!!selectedShift} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -258,7 +397,7 @@ export default function ScheduleScreen() {
         </View>
       </Modal>
 
-      {/* Employee Picker Modal (same as before) */}
+      {/* ===== EMPLOYEE PICKER MODAL (unchanged) ===== */}
       <Modal visible={showEmployeePicker} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -332,6 +471,20 @@ const styles = StyleSheet.create({
   modalContent: { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 24 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  // ---- New styles for creation modal ----
+  input: { backgroundColor: '#0A0A0A', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, color: '#FFF', fontSize: 16, marginBottom: 12, borderWidth: 1, borderColor: '#333' },
+  row: { flexDirection: 'row' },
+  pickerWrapper: { marginBottom: 12 },
+  projectChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: '#333', marginRight: 8 },
+  projectChipActive: { backgroundColor: '#00D4FF', borderColor: '#00D4FF' },
+  projectChipText: { color: '#AAA', fontSize: 14 },
+  projectChipTextActive: { color: '#0A0A0A', fontWeight: '600' },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
+  btn: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8, marginLeft: 10 },
+  cancelBtn: { backgroundColor: '#333' },
+  createBtn: { backgroundColor: '#00D4FF' },
+  btnText: { color: '#FFF', fontWeight: '600', fontSize: 16 },
+  // ---- Existing styles ----
   detailLabel: { color: '#888', fontSize: 13, marginTop: 12 },
   detailValue: { color: '#FFF', fontSize: 16, marginTop: 2 },
   directionsBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#00D4FF', paddingVertical: 12, borderRadius: 10, marginTop: 20, gap: 8 },
