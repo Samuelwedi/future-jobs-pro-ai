@@ -102,7 +102,7 @@ app.get('/api/lucy/history', async (req: Request, res: Response) => {
   } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// ----- Payroll placeholder endpoint -----
+// ----- Payroll placeholder endpoint (fixed) -----
 app.post('/api/payroll/run', async (req: Request, res: Response) => {
   try {
     const userId = getUserId(req);
@@ -110,10 +110,13 @@ app.post('/api/payroll/run', async (req: Request, res: Response) => {
     const { period, companyId } = req.body;
     const result = await pool.query('INSERT INTO payrolls (company_id, period, created_by) VALUES ($1, $2, $3) RETURNING id', [companyId, period, userId]);
     res.json({ success: true, message: `Payroll for ${period} has been processed.`, payrollId: result.rows[0].id });
-  } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
+  } catch (error: any) {
+    console.error('Payroll error:', error.message);
+    res.status(500).json({ success: false, message: 'Payroll service is temporarily unavailable.' });
+  }
 });
 
-// ----- Lucy AI Engine (OpenAI + Function Calling + Memory + Real Actions) -----
+// ----- Lucy AI Engine (OpenAI + Function Calling + Memory + Safe Error Handling) -----
 app.post('/api/lucy', async (req: Request, res: Response) => {
   try {
     const { message } = req.body;
@@ -173,65 +176,76 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
     const choice = aiData.choices?.[0];
     if (!choice) return res.json([{ text: "I'm not sure how to help with that." }]);
 
-    // Function call handling
+    // Function call handling – with safe error handling
     if (choice.finish_reason === 'function_call' && choice.message?.function_call) {
       const { name, arguments: argsStr } = choice.message.function_call;
       const args = JSON.parse(argsStr || '{}');
       let resultText = '';
-      switch (name) {
-        case 'get_team_status': {
-          const teamRes = await fetch(`http://localhost:${PORT}/api/team`, { headers: { Authorization: req.headers.authorization || '' } });
-          const teamData: any = await teamRes.json();
-          const count = (teamData.members || []).length;
-          resultText = `You currently have ${count} team member(s) active.`;
-          break;
+      try {
+        switch (name) {
+          case 'get_team_status': {
+            const teamRes = await fetch(`http://localhost:${PORT}/api/team`, { headers: { Authorization: req.headers.authorization || '' } });
+            if (!teamRes.ok) throw new Error('Unable to reach team service');
+            const teamData: any = await teamRes.json();
+            const count = (teamData.members || []).length;
+            resultText = `You currently have ${count} team member(s) active.`;
+            break;
+          }
+          case 'run_payroll': {
+            const period = args.period || 'the requested period';
+            const payrollRes = await fetch(`http://localhost:${PORT}/api/payroll/run`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': req.headers.authorization || '' },
+              body: JSON.stringify({ period, companyId: 'from-token', userId }),
+            });
+            if (!payrollRes.ok) throw new Error('Payroll service unavailable');
+            const payrollData: any = await payrollRes.json();
+            resultText = payrollData.message || `Payroll for ${period} has been processed.`;
+            break;
+          }
+          case 'create_schedule': {
+            const { employee, day, start_time, end_time, notes } = args;
+            const scheduleRes = await fetch(`http://localhost:${PORT}/api/schedule/shifts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': req.headers.authorization || '' },
+              body: JSON.stringify({
+                name: `Shift for ${employee || 'staff'}`,
+                date: day,
+                startTime: start_time || '09:00',
+                endTime: end_time || '17:00',
+                notes: notes || '',
+                employeeIds: [],
+              }),
+            });
+            if (!scheduleRes.ok) throw new Error('Schedule service unavailable');
+            const schedData: any = await scheduleRes.json();
+            resultText = schedData.success
+              ? `Schedule created for ${employee || 'employee'} on ${day || 'the requested day'} from ${start_time || '9am'} to ${end_time || '5pm'}.`
+              : 'Sorry, I couldn’t create that schedule right now.';
+            break;
+          }
+          case 'generate_report': {
+            const project = args.project_name || 'Project';
+            const reportRes = await fetch(`http://localhost:${PORT}/api/photos/report`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': req.headers.authorization || '' },
+              body: JSON.stringify({ projectName: project, reportTitle: `Evidence Report - ${project}` }),
+            });
+            if (!reportRes.ok) throw new Error('Report service unavailable');
+            const reportData: any = await reportRes.json();
+            resultText = reportData.reportUrl
+              ? `Report for ${project} has been generated. You can view it here: ${reportData.reportUrl}`
+              : 'Report generation failed. Please try again.';
+            break;
+          }
+          default: resultText = 'Command executed.';
         }
-        case 'run_payroll': {
-          const period = args.period || 'the requested period';
-          const payrollRes = await fetch(`http://localhost:${PORT}/api/payroll/run`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': req.headers.authorization || '' },
-            body: JSON.stringify({ period, companyId: 'from-token', userId }),
-          });
-          const payrollData: any = await payrollRes.json();
-          resultText = payrollData.message || `Payroll for ${period} has been processed.`;
-          break;
-        }
-        case 'create_schedule': {
-          const { employee, day, start_time, end_time, notes } = args;
-          const scheduleRes = await fetch(`http://localhost:${PORT}/api/schedule/shifts`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': req.headers.authorization || '' },
-            body: JSON.stringify({
-              name: `Shift for ${employee || 'staff'}`,
-              date: day,
-              startTime: start_time || '09:00',
-              endTime: end_time || '17:00',
-              notes: notes || '',
-              employeeIds: [],
-            }),
-          });
-          const schedData: any = await scheduleRes.json();
-          resultText = schedData.success
-            ? `Schedule created for ${employee || 'employee'} on ${day || 'the requested day'} from ${start_time || '9am'} to ${end_time || '5pm'}.`
-            : 'Sorry, I couldn’t create that schedule right now.';
-          break;
-        }
-        case 'generate_report': {
-          const project = args.project_name || 'Project';
-          const reportRes = await fetch(`http://localhost:${PORT}/api/photos/report`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': req.headers.authorization || '' },
-            body: JSON.stringify({ projectName: project, reportTitle: `Evidence Report - ${project}` }),
-          });
-          const reportData: any = await reportRes.json();
-          resultText = reportData.reportUrl
-            ? `Report for ${project} has been generated. You can view it here: ${reportData.reportUrl}`
-            : 'Report generation failed. Please try again.';
-          break;
-        }
-        default: resultText = 'Command executed.';
+      } catch (innerErr: any) {
+        // Friendly fallback for any backend failure
+        resultText = `I tried to ${name.replace(/_/g, ' ')}, but the service is currently unavailable. Please try again later.`;
+        console.error(`Lucy function error (${name}):`, innerErr.message);
       }
+
       // Save Lucy's reply
       if (userId) await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1,$2,$3)', [userId, 'assistant', resultText]);
       return res.json([{ text: resultText }]);
