@@ -1,17 +1,42 @@
 import express, { Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 import { recordUserEvent } from '../services/adaptiveAIService';
 
 const router = express.Router();
+const JWT_SECRET = process.env.JWT_SECRET!;
+
+// GET /api/crew – list crew members (for Lucy)
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    const companyId = userRes.rows[0].company_id;
+    if (!companyId) return res.json({ success: true, crew: [] });
+
+    const result = await pool.query(
+      'SELECT id, first_name, last_name, email FROM users WHERE company_id = $1',
+      [companyId]
+    );
+    res.json({ success: true, crew: result.rows });
+  } catch (error: any) {
+    console.error('Crew list error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to fetch crew' });
+  }
+});
 
 // POST /api/crew/clock-in
-// Clocks in every user assigned to a shift on today's date
 router.post('/clock-in', async (req: Request, res: Response) => {
   try {
     const { shiftId, latitude, longitude } = req.body;
     if (!shiftId) return res.status(400).json({ success: false, message: 'shiftId is required' });
 
-    // Get all assigned users for this shift
     const assignResult = await pool.query(
       `SELECT user_id FROM shift_assignments WHERE shift_id = $1`,
       [shiftId]
@@ -21,11 +46,9 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'No employees assigned to this shift' });
     }
 
-    // Get the shift details for project info
     const shiftResult = await pool.query('SELECT * FROM shifts WHERE id = $1', [shiftId]);
     const shift = shiftResult.rows[0];
 
-    // Clock in each user
     const clockedIn: any[] = [];
     for (const userId of userIds) {
       const result = await pool.query(
