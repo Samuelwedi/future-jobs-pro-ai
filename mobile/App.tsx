@@ -28,6 +28,12 @@ import TeamScreen from './src/screens/TeamScreen';
 import { StatusBar } from 'expo-status-bar';
 import { listenToNetworkChanges, processQueue } from './src/services/offlineService';
 import { View, Text, TouchableOpacity } from 'react-native';
+import ContactScreen from './src/screens/ContactScreen';
+import PrivacyScreen from './src/screens/PrivacyScreen';
+import TermsScreen from './src/screens/TermsScreen';
+import AboutScreen from './src/screens/AboutScreen';
+import SecurityScreen from './src/screens/SecurityScreen';
+import SupportScreen from './src/screens/SupportScreen';
 
 const Stack = createStackNavigator();
 
@@ -103,6 +109,12 @@ function AppNavigator() {
               <Stack.Screen name="Kiosk" component={KioskScreen} />
               <Stack.Screen name="GPSPlayback" component={GPSPlaybackScreen} />
               <Stack.Screen name="Team" component={TeamScreen} />
+              <Stack.Screen name="Contact" component={ContactScreen} />
+<Stack.Screen name="Privacy" component={PrivacyScreen} />
+<Stack.Screen name="Terms" component={TermsScreen} />
+<Stack.Screen name="About" component={AboutScreen} />
+<Stack.Screen name="Security" component={SecurityScreen} />
+<Stack.Screen name="Support" component={SupportScreen} /> 
             </>
           )}
         </Stack.Navigator>
