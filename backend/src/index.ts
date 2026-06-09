@@ -237,10 +237,17 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             break;
           }
           case 'get_payroll_details': {
-            if (!companyId) throw new Error('Company ID missing from token');
+            // Ensure we have a companyId – look it up from DB if missing from token
+            let resolvedCompanyId = companyId;
+            if (!resolvedCompanyId && userId) {
+              const userRow = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+              if (userRow.rows.length > 0) resolvedCompanyId = userRow.rows[0].company_id;
+            }
+            if (!resolvedCompanyId) throw new Error('Company ID could not be determined');
+
             const payrollRows = await pool.query(
               'SELECT period, created_at FROM payrolls WHERE company_id = $1 ORDER BY created_at DESC LIMIT 5',
-              [companyId]
+              [resolvedCompanyId]
             );
             if (payrollRows.rows.length > 0) {
               const details = payrollRows.rows
@@ -398,8 +405,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           default: resultText = 'Command executed.';
         }
       } catch (innerErr: any) {
-        // TEMPORARY DEBUG – will be removed after fixing
-        resultText = `Debug: ${name} error: ${innerErr.message}`;
+        resultText = `I tried to ${name.replace(/_/g, ' ')}, but the service is currently unavailable. Please try again later.`;
         console.error(`Lucy function error (${name}):`, innerErr.message);
       }
 

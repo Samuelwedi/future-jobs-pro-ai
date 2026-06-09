@@ -111,16 +111,17 @@ export default function Dashboard() {
         utterance.rate = 1.0;
 
         const voices = window.speechSynthesis.getVoices();
+        const enVoices = voices.filter(v => v.lang.startsWith('en-US') || v.lang.startsWith('en-GB'));
         const femaleVoice =
-          voices.find(v => v.name.includes('Zira')) ||
-          voices.find(v => v.name.includes('Samantha')) ||
-          voices.find(v => v.name.includes('Karen')) ||
-          voices.find(v => v.name.includes('Moira')) ||
-          voices.find(v => v.name.includes('Fiona')) ||
-          voices.find(v => v.name.includes('Google US English Female')) ||
-          voices.find(v => v.lang === 'en-US' && v.name.includes('Female')) ||
-          voices.find(v => v.lang === 'en-US' && v.name.includes('Siri')) ||
-          voices[0];
+          enVoices.find(v => v.name.includes('Zira')) ||
+          enVoices.find(v => v.name.includes('Samantha')) ||
+          enVoices.find(v => v.name.includes('Karen')) ||
+          enVoices.find(v => v.name.includes('Moira')) ||
+          enVoices.find(v => v.name.includes('Fiona')) ||
+          enVoices.find(v => v.name.includes('Google US English Female')) ||
+          enVoices.find(v => v.name.includes('Female')) ||
+          enVoices.find(v => v.name.toLowerCase().includes('siri')) ||
+          enVoices[0];
 
         if (femaleVoice) utterance.voice = femaleVoice;
         window.speechSynthesis.speak(utterance);
