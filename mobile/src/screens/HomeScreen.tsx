@@ -274,6 +274,13 @@ export default function HomeScreen() {
             ...(user?.kioskEnabled ? [{ icon: 'touch-app', color: '#FF9800', label: 'Kiosk', screen: 'Kiosk' }] : []),
             ...(user?.role === 'boss' || user?.role === 'manager' ? [{ icon: 'people', color: '#00D4FF', label: 'Team', screen: 'Team' }] : []),
             { icon: 'person', color: '#00D4FF', label: t('settings'), screen: 'Profile' },
+            // ---- New info & support items ----
+            { icon: 'mail', color: '#00D4FF', label: 'Contact', screen: 'Contact' },
+            { icon: 'lock', color: '#4CAF50', label: 'Privacy', screen: 'Privacy' },
+            { icon: 'description', color: '#FF9800', label: 'Terms', screen: 'Terms' },
+            { icon: 'info', color: '#9C27B0', label: 'About', screen: 'About' },
+            { icon: 'verified-user', color: '#00BCD4', label: 'Security', screen: 'Security' },
+            { icon: 'headset-mic', color: '#F44336', label: 'Support', screen: 'Support' },
           ].map((action, index) => (
             <TouchableOpacity key={index} style={styles.moreActionBtn} onPress={() => navigation.navigate(action.screen)}>
               <MaterialIcons name={action.icon as any} size={24} color={action.color} />
