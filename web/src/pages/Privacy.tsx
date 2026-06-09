@@ -15,7 +15,7 @@ export default function Privacy() {
             { title: '5. Data Security', text: 'We use AES‑256 encryption at rest, TLS 1.3 in transit, secure API authentication, and regular security audits.' },
             { title: '6. Data Retention', text: 'Account information is retained until deletion. Time entries, GPS data, and job photos are retained for 7 years for legal/compliance purposes.' },
             { title: '7. Your Rights', text: 'You have the right to access, correct, delete, and export your personal data. You may opt out of marketing emails at any time.' },
-            { title: '8. Contact', text: 'For privacy questions: privacy@futurejobspro.com' },
+            { title: '8. Contact', text: 'For privacy questions: support@futurejobsproai.com' },
           ].map((section, i) => (
             <Box key={i} sx={{ mb: 3 }}>
               <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>{section.title}</Typography>

@@ -72,6 +72,11 @@ export default function Pricing() {
             </Grid>
           ))}
         </Grid>
+        <Box sx={{ mt: 6, textAlign: 'center' }}>
+          <Typography variant="body2" sx={{ color: '#888' }}>
+            Need a custom plan? Contact sales: <a href="mailto:sales@futurejobsproai.com" style={{ color: '#00D4FF' }}>sales@futurejobsproai.com</a>
+          </Typography>
+        </Box>
       </Container>
     </Box>
   );

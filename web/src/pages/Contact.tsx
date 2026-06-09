@@ -31,7 +31,7 @@ export default function Contact() {
           <Grid item xs={12} md={5}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {[
-                { icon: <Email sx={{ color: '#00D4FF' }} />, title: 'Email Us', desc: 'support@futurejobspro.com', sub: 'We respond within 2 hours' },
+                { icon: <Email sx={{ color: '#00D4FF' }} />, title: 'Email Us', desc: 'support@futurejobsproai.com', sub: 'We respond within 2 hours' },
                 { icon: <Phone sx={{ color: '#4CAF50' }} />, title: 'Call Us', desc: '+1 (888) 555-0123', sub: 'Mon‑Fri, 9am‑6pm EST' },
                 { icon: <Chat sx={{ color: '#FF9800' }} />, title: 'Live Chat', desc: 'Available 24/7 for Pro & Enterprise', sub: 'Start a conversation' },
               ].map((item, i) => (

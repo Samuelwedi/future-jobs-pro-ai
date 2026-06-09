@@ -17,7 +17,7 @@ export default function Terms() {
             { title: '7. Limitation of Liability', text: 'TO THE MAXIMUM EXTENT PERMITTED BY LAW, FUTURE JOBS PRO AI SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES.' },
             { title: '8. Termination', text: 'We may suspend or terminate your account for violation of these Terms. You may cancel at any time.' },
             { title: '9. Changes', text: 'We may modify these Terms. We will notify you of material changes via email or through the Service.' },
-            { title: '10. Contact', text: 'For questions, contact: legal@futurejobspro.com' },
+            { title: '10. Contact', text: 'For questions, contact: support@futurejobsproai.com' },
           ].map((section, i) => (
             <Box key={i} sx={{ mb: 3 }}>
               <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>{section.title}</Typography>
