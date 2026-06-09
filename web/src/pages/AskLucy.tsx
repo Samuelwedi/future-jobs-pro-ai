@@ -1,14 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Box, TextField, IconButton, Paper, Typography, List, ListItem, Avatar, ListItemAvatar, ListItemText, CircularProgress } from '@mui/material';
+import {
+  Box, TextField, IconButton, Paper, Typography, List, ListItem,
+  Avatar, ListItemAvatar, ListItemText, CircularProgress,
+} from '@mui/material';
 import { Send, SmartToy } from '@mui/icons-material';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
-interface Message { text: string; isUser: boolean; }
+interface Message {
+  text: string;
+  isUser: boolean;
+}
 
 export default function AskLucy() {
   const [messages, setMessages] = useState<Message[]>([
-    { text: "Hi! I'm Lucy. I remember our conversations. I can schedule, run payroll, and generate reports. Try me!", isUser: false },
+    {
+      text: "Hi! I'm Lucy. I remember our conversations. I can schedule, run payroll, and generate reports. Try me!",
+      isUser: false,
+    },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -24,23 +33,44 @@ export default function AskLucy() {
       const token = localStorage.getItem('token');
       if (!token) return;
       try {
-        const res = await fetch(`${API_BASE}/api/lucy/history`, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`${API_BASE}/api/lucy/history`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.messages) {
-            const history: Message[] = data.messages.map((m: any) => ({ text: m.content, isUser: m.role === 'user' }));
+            const history: Message[] = data.messages.map((m: any) => ({
+              text: m.content,
+              isUser: m.role === 'user',
+            }));
             setMessages(prev => [...prev, ...history]);
           }
         }
-      } catch (err) { console.error('History load failed:', err); }
+      } catch (err) {
+        console.error('History load failed:', err);
+      }
     })();
   }, []);
 
+  // Speak with a female voice
   const speak = (text: string) => {
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'en-US';
       utterance.rate = 1.0;
+
+      // Try to pick a female voice
+      const voices = window.speechSynthesis.getVoices();
+      const femaleVoice =
+        voices.find(v => v.name.includes('Samantha')) ||
+        voices.find(v => v.name.includes('Karen')) ||
+        voices.find(v => v.name.includes('Moira')) ||
+        voices.find(v => v.name.includes('Fiona')) ||
+        voices.find(v => v.name.includes('Female')) ||
+        voices.find(v => v.lang === 'en-US' && v.name.includes('Siri')) ||
+        voices[0]; // fallback to first available
+
+      if (femaleVoice) utterance.voice = femaleVoice;
       window.speechSynthesis.speak(utterance);
     }
   };
@@ -51,26 +81,40 @@ export default function AskLucy() {
     setMessages(prev => [...prev, { text: userMessage, isUser: true }]);
     setInput('');
     setLoading(true);
+
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`${API_BASE}/api/lucy`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ message: userMessage }),
       });
-      if (!res.ok) throw new Error(`Status ${res.status}`);
+
+      if (!res.ok) throw new Error(`Lucy responded with status ${res.status}`);
+
       const data = await res.json();
-      const botText = data?.[0]?.text || "I'm not sure how to respond to that.";
+      const botText = data?.[0]?.text || "I'm not sure how to respond to that yet.";
       setMessages(prev => [...prev, { text: botText, isUser: false }]);
-      speak(botText); // ← voice confirmation
+      speak(botText); // ← speak in female voice
     } catch (err: any) {
+      console.error('Lucy fetch error:', err.message);
       const errorText = `Sorry, Lucy is taking a break. (${err.message})`;
       setMessages(prev => [...prev, { text: errorText, isUser: false }]);
       speak(errorText);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
 
   return (
     <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', py: 4, display: 'flex', justifyContent: 'center' }}>
@@ -92,9 +136,11 @@ export default function AskLucy() {
                     <Avatar sx={{ bgcolor: '#00D4FF', width: 32, height: 32, fontSize: 14 }}>L</Avatar>
                   </ListItemAvatar>
                 )}
-                <ListItemText primary={msg.text}
+                <ListItemText
+                  primary={msg.text}
                   primaryTypographyProps={{
-                    color: msg.isUser ? '#00D4FF' : '#FFF', fontSize: 14,
+                    color: msg.isUser ? '#00D4FF' : '#FFF',
+                    fontSize: 14,
                     fontWeight: msg.isUser ? 'bold' : 'normal',
                     sx: { textAlign: msg.isUser ? 'right' : 'left' },
                   }}
@@ -107,9 +153,18 @@ export default function AskLucy() {
         </Paper>
 
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <TextField fullWidth placeholder="Type a command..." variant="outlined" value={input}
-            onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} disabled={loading}
-            sx={{ input: { color: '#FFF' }, '& .MuiOutlinedInput-root': { bgcolor: '#1A1A1A', borderRadius: 2, '& fieldset': { borderColor: '#333' } } }}
+          <TextField
+            fullWidth
+            placeholder="Type a command..."
+            variant="outlined"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={loading}
+            sx={{
+              input: { color: '#FFF' },
+              '& .MuiOutlinedInput-root': { bgcolor: '#1A1A1A', borderRadius: 2, '& fieldset': { borderColor: '#333' } },
+            }}
           />
           <IconButton onClick={sendMessage} disabled={loading || !input.trim()} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', width: 48, height: 48 }}>
             <Send />

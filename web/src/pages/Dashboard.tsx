@@ -90,24 +90,43 @@ export default function Dashboard() {
   };
 
   const sendToLucy = async (text: string) => {
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/api/lucy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ message: text }),
-      });
-      const data = await res.json();
-      const reply = data?.[0]?.text || "I'm not sure how to respond to that.";
-      alert(`🗣️ You said: "${text}"\n🤖 Lucy: ${reply}`);
-      // Also speak it aloud
-      if ('speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(reply);
-        utterance.lang = 'en-US';
-        window.speechSynthesis.speak(utterance);
-      }
-    } catch { alert('Sorry, Lucy is taking a break.'); }
-  };
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_BASE}/api/lucy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ message: text }),
+    });
+    const data = await res.json();
+    const reply = data?.[0]?.text || "I'm not sure how to respond to that.";
+    alert(`🗣️ You said: "${text}"\n🤖 Lucy: ${reply}`);
+
+    // Speak in female voice
+    if ('speechSynthesis' in window) {
+      const utterance = new SpeechSynthesisUtterance(reply);
+      utterance.lang = 'en-US';
+      utterance.rate = 1.0;
+
+      const voices = window.speechSynthesis.getVoices();
+      const femaleVoice =
+        voices.find(v => v.name.includes('Samantha')) ||
+        voices.find(v => v.name.includes('Karen')) ||
+        voices.find(v => v.name.includes('Moira')) ||
+        voices.find(v => v.name.includes('Fiona')) ||
+        voices.find(v => v.name.includes('Female')) ||
+        voices.find(v => v.lang === 'en-US' && v.name.includes('Siri')) ||
+        voices[0];
+
+      if (femaleVoice) utterance.voice = femaleVoice;
+      window.speechSynthesis.speak(utterance);
+    }
+  } catch {
+    alert('Sorry, Lucy is taking a break.');
+  }
+};
 
   useEffect(() => {
     try {
