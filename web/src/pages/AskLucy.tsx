@@ -59,16 +59,17 @@ export default function AskLucy() {
       utterance.lang = 'en-US';
       utterance.rate = 1.0;
 
-      // Try to pick a female voice
       const voices = window.speechSynthesis.getVoices();
       const femaleVoice =
+        voices.find(v => v.name.includes('Zira')) ||
         voices.find(v => v.name.includes('Samantha')) ||
         voices.find(v => v.name.includes('Karen')) ||
         voices.find(v => v.name.includes('Moira')) ||
         voices.find(v => v.name.includes('Fiona')) ||
-        voices.find(v => v.name.includes('Female')) ||
+        voices.find(v => v.name.includes('Google US English Female')) ||
+        voices.find(v => v.lang === 'en-US' && v.name.includes('Female')) ||
         voices.find(v => v.lang === 'en-US' && v.name.includes('Siri')) ||
-        voices[0]; // fallback to first available
+        voices[0];
 
       if (femaleVoice) utterance.voice = femaleVoice;
       window.speechSynthesis.speak(utterance);
@@ -98,7 +99,7 @@ export default function AskLucy() {
       const data = await res.json();
       const botText = data?.[0]?.text || "I'm not sure how to respond to that yet.";
       setMessages(prev => [...prev, { text: botText, isUser: false }]);
-      speak(botText); // ← speak in female voice
+      speak(botText);
     } catch (err: any) {
       console.error('Lucy fetch error:', err.message);
       const errorText = `Sorry, Lucy is taking a break. (${err.message})`;

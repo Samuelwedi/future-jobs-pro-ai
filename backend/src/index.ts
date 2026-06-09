@@ -237,7 +237,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             break;
           }
           case 'get_payroll_details': {
-            // Query payroll records for the company directly from the database
+            if (!companyId) throw new Error('Company ID missing from token');
             const payrollRows = await pool.query(
               'SELECT period, created_at FROM payrolls WHERE company_id = $1 ORDER BY created_at DESC LIMIT 5',
               [companyId]
@@ -250,6 +250,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             } else {
               resultText = 'No payroll records found.';
             }
+            console.log('Payroll details fetched:', payrollRows.rows.length, 'rows'); // debug log
             break;
           }
           case 'create_schedule': {
