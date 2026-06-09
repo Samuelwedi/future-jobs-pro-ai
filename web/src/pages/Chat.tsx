@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Box, Container, Typography, Paper, Avatar, List, ListItem,
   ListItemAvatar, ListItemText, TextField, Button, CircularProgress,
-  FormControl, InputLabel, Select, MenuItem, Chip,
+  FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material';
-import { ChatBubble, Send, GroupAdd } from '@mui/icons-material';
+import { ChatBubble, Send, GroupAdd, SupportAgent } from '@mui/icons-material';
 import { io, Socket } from 'socket.io-client';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
@@ -50,9 +50,7 @@ export default function Chat() {
     const token = localStorage.getItem('token');
     fetch(`${API_BASE}/api/team`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => res.json())
-      .then(data => {
-        if (data.members) setMembers(data.members);
-      })
+      .then(data => { if (data.members) setMembers(data.members); })
       .catch(console.error);
   }, [user]);
 
@@ -64,10 +62,7 @@ export default function Chat() {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(res => res.json())
-      .then(data => {
-        setMessages(data.messages || []);
-        setLoading(false);
-      })
+      .then(data => { setMessages(data.messages || []); setLoading(false); })
       .catch(err => { console.error(err); setLoading(false); });
   }, [roomId]);
 
@@ -80,13 +75,8 @@ export default function Chat() {
     });
     socketRef.current = socket;
 
-    socket.on('connect', () => {
-      socket.emit('join-room', roomId);
-    });
-
-    socket.on('new-message', (msg: Message) => {
-      setMessages(prev => [...prev, msg]);
-    });
+    socket.on('connect', () => socket.emit('join-room', roomId));
+    socket.on('new-message', (msg: Message) => setMessages(prev => [...prev, msg]));
 
     return () => {
       socket.emit('leave-room', roomId);
@@ -106,7 +96,7 @@ export default function Chat() {
     setLoading(true);
   };
 
-  const createGroup = async () => {
+  const createGroup = () => {
     if (!groupName.trim()) return;
     setRoomId(`group_${Date.now()}_${groupName.replace(/\s+/g, '_')}`);
     setCreatingGroup(false);
@@ -114,15 +104,21 @@ export default function Chat() {
     setLoading(true);
   };
 
+  const joinSupport = () => {
+    setRoomId('support');
+    setSelectedUser('');
+    setCreatingGroup(false);
+    setLoading(true);
+  };
+
   const handleSend = () => {
     if (!newMessage.trim() || !socketRef.current || !user || !roomId) return;
-    const payload = {
+    socketRef.current.emit('chat-message', {
       senderId: user.id,
       companyId: user.companyId,
       roomId,
       message: newMessage.trim(),
-    };
-    socketRef.current.emit('chat-message', payload);
+    });
     setNewMessage('');
   };
 
@@ -169,6 +165,15 @@ export default function Chat() {
               sx={{ color: '#00D4FF', borderColor: '#00D4FF' }}
             >
               New Group
+            </Button>
+            {/* ---- Support Button ---- */}
+            <Button
+              variant="outlined"
+              startIcon={<SupportAgent />}
+              onClick={joinSupport}
+              sx={{ color: '#F44336', borderColor: '#F44336' }}
+            >
+              Contact Support
             </Button>
           </Box>
           {creatingGroup && (
