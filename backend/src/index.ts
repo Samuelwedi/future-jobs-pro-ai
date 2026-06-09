@@ -250,7 +250,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             } else {
               resultText = 'No payroll records found.';
             }
-            console.log('Payroll details fetched:', payrollRows.rows.length, 'rows'); // debug log
+            console.log('Payroll details fetched:', payrollRows.rows.length, 'rows');
             break;
           }
           case 'create_schedule': {
@@ -398,7 +398,8 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           default: resultText = 'Command executed.';
         }
       } catch (innerErr: any) {
-        resultText = `I tried to ${name.replace(/_/g, ' ')}, but the service is currently unavailable. Please try again later.`;
+        // TEMPORARY DEBUG – will be removed after fixing
+        resultText = `Debug: ${name} error: ${innerErr.message}`;
         console.error(`Lucy function error (${name}):`, innerErr.message);
       }
 
