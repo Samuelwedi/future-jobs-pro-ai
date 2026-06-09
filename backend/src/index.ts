@@ -136,6 +136,10 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
         parameters: { type: 'object', properties: { period: { type: 'string', description: 'e.g. last week, this month' } } },
       },
       {
+        name: 'get_payroll_details', description: 'Show recently processed payroll records',
+        parameters: { type: 'object', properties: {} },
+      },
+      {
         name: 'create_schedule', description: 'Create a work shift',
         parameters: {
           type: 'object',
@@ -208,7 +212,6 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
       let resultText = '';
       try {
         const authHeader = req.headers.authorization || '';
-        // Extract companyId from JWT for use in payroll, etc.
         const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : '';
         const decodedToken: any = token ? jwt.verify(token, JWT_SECRET) : {};
         const companyId = decodedToken.companyId || null;
@@ -224,7 +227,6 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'run_payroll': {
             const period = args.period || 'the requested period';
-            // Use the real companyId
             const payrollRes = await fetch(`http://localhost:${PORT}/api/payroll/run`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
               body: JSON.stringify({ period, companyId, userId }),
@@ -232,6 +234,22 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             if (!payrollRes.ok) throw new Error('Payroll service down');
             const payrollData: any = await payrollRes.json();
             resultText = payrollData.message || `Payroll for ${period} processed.`;
+            break;
+          }
+          case 'get_payroll_details': {
+            // Query payroll records for the company directly from the database
+            const payrollRows = await pool.query(
+              'SELECT period, created_at FROM payrolls WHERE company_id = $1 ORDER BY created_at DESC LIMIT 5',
+              [companyId]
+            );
+            if (payrollRows.rows.length > 0) {
+              const details = payrollRows.rows
+                .map((p: any) => `Payroll for ${p.period} – processed on ${new Date(p.created_at).toLocaleDateString()}`)
+                .join('; ');
+              resultText = `Here are the recent payrolls: ${details}`;
+            } else {
+              resultText = 'No payroll records found.';
+            }
             break;
           }
           case 'create_schedule': {
