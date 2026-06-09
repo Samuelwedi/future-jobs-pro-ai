@@ -1,7 +1,8 @@
 import React from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import {
   Box, Container, Typography, Button, Grid, Card, CardContent,
-  AppBar, Toolbar, Chip,
+  AppBar, Toolbar, Chip, Link,
 } from '@mui/material';
 import {
   CheckCircle, LocationOn, PhotoCamera, Mic, Security, Speed,
@@ -17,8 +18,8 @@ export default function Landing() {
             🚀 Future Jobs Pro AI
           </Typography>
           <Box>
-            <Button href="/login" sx={{ color: '#FFF', mr: 2 }}>Sign In</Button>
-            <Button href="/pricing" variant="contained" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+            <Button component={RouterLink} to="/login" sx={{ color: '#FFF', mr: 2 }}>Sign In</Button>
+            <Button component={RouterLink} to="/pricing" variant="contained" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
               Start Free Trial
             </Button>
           </Box>
@@ -39,7 +40,7 @@ export default function Landing() {
               legal‑grade proof of work with AI‑powered photo verification,
               GPS breadcrumbs, and automatic dispute resolution.
             </Typography>
-            <Button href="/pricing" variant="contained" size="large" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 6, py: 1.5, fontSize: 18 }}>
+            <Button component={RouterLink} to="/pricing" variant="contained" size="large" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 6, py: 1.5, fontSize: 18 }}>
               Start Your Free Trial →
             </Button>
             <Typography variant="body2" sx={{ color: '#888', mt: 2 }}>
@@ -117,7 +118,7 @@ export default function Landing() {
           <Typography variant="body1" sx={{ color: '#AAA', mb: 4 }}>
             Join field service businesses using Future Jobs Pro AI to protect their revenue.
           </Typography>
-          <Button href="/pricing" variant="contained" size="large" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 6, py: 1.5, fontSize: 18, fontWeight: 'bold' }}>
+          <Button component={RouterLink} to="/pricing" variant="contained" size="large" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 6, py: 1.5, fontSize: 18, fontWeight: 'bold' }}>
             Start Your Free Trial →
           </Button>
           <Typography variant="body2" sx={{ color: '#888', mt: 2 }}>
@@ -136,27 +137,27 @@ export default function Landing() {
             </Grid>
             <Grid item xs={6} md={2}>
               <Typography sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>Product</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>Features</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>Pricing</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>Demo</Typography>
+              <Link component={RouterLink} to="/features" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>Features</Link>
+              <Link component={RouterLink} to="/pricing" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>Pricing</Link>
+              <Link component={RouterLink} to="/demo" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>Demo</Link>
             </Grid>
             <Grid item xs={6} md={2}>
               <Typography sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>Company</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>About</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>Blog</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>Contact</Typography>
+              <Link component={RouterLink} to="/about" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>About</Link>
+              <Link component={RouterLink} to="/blog" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>Blog</Link>
+              <Link component={RouterLink} to="/contact" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>Contact</Link>
             </Grid>
             <Grid item xs={6} md={2}>
               <Typography sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>Legal</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>Privacy</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>Terms</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>Security</Typography>
+              <Link component={RouterLink} to="/privacy" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>Privacy</Link>
+              <Link component={RouterLink} to="/terms" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>Terms</Link>
+              <Link component={RouterLink} to="/security" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>Security</Link>
             </Grid>
             <Grid item xs={6} md={2}>
               <Typography sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>Social</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>Twitter</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>LinkedIn</Typography>
-              <Typography sx={{ color: '#888', fontSize: 14, mb: 0.5 }}>YouTube</Typography>
+              <Link href="https://twitter.com" target="_blank" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>Twitter</Link>
+              <Link href="https://linkedin.com" target="_blank" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>LinkedIn</Link>
+              <Link href="https://youtube.com" target="_blank" sx={{ color: '#888', fontSize: 14, mb: 0.5, display: 'block', textDecoration: 'none' }}>YouTube</Link>
             </Grid>
           </Grid>
           <Typography align="center" sx={{ color: '#555', fontSize: 14, mt: 6 }}>
