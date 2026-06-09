@@ -25,12 +25,16 @@ import Register from './pages/Register';
 import PaymentRequired from './pages/PaymentRequired';
 import Integrations from './pages/Integrations';
 import AskLucy from './pages/AskLucy';
+import Features from './pages/Features';
+import Demo from './pages/Demo';
+import About from './pages/About';
+import Blog from './pages/Blog';
+import Security from './pages/Security';
 
 export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/voice-assistant" element={<VoiceAssistant />} />
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
@@ -43,18 +47,26 @@ export default function App() {
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/team" element={<Team />} />
-<Route path="/projects" element={<Projects />} />
-<Route path="/timesheet" element={<Timesheet />} />
-<Route path="/chat" element={<Chat />} />
-<Route path="/tasks" element={<Tasks />} />
-<Route path="/pto" element={<PTO />} />
-<Route path="/kiosk" element={<Kiosk />} />
-<Route path="/settings" element={<Settings />} />
-<Route path="*" element={<NotFound />} />
-<Route path="/register" element={<Register />} />
-<Route path="/payment-required" element={<PaymentRequired />} />
-<Route path="/integrations" element={<Integrations />} />
-<Route path="/ask-lucy" element={<AskLucy />} />
+        <Route path="/projects" element={<Projects />} />
+        <Route path="/timesheet" element={<Timesheet />} />
+        <Route path="/chat" element={<Chat />} />
+        <Route path="/tasks" element={<Tasks />} />
+        <Route path="/pto" element={<PTO />} />
+        <Route path="/kiosk" element={<Kiosk />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/payment-required" element={<PaymentRequired />} />
+        <Route path="/integrations" element={<Integrations />} />
+        <Route path="/ask-lucy" element={<AskLucy />} />
+        <Route path="/voice-assistant" element={<VoiceAssistant />} />
+        {/* New pages */}
+        <Route path="/features" element={<Features />} />
+        <Route path="/demo" element={<Demo />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/blog" element={<Blog />} />
+        <Route path="/security" element={<Security />} />
+        {/* Catch all 404 */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </Router>
   );
