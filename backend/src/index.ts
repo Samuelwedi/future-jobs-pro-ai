@@ -208,6 +208,11 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
       let resultText = '';
       try {
         const authHeader = req.headers.authorization || '';
+        // Extract companyId from JWT for use in payroll, etc.
+        const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : '';
+        const decodedToken: any = token ? jwt.verify(token, JWT_SECRET) : {};
+        const companyId = decodedToken.companyId || null;
+
         switch (name) {
           case 'get_team_status': {
             const teamRes = await fetch(`http://localhost:${PORT}/api/team`, { headers: { Authorization: authHeader } });
@@ -219,9 +224,10 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'run_payroll': {
             const period = args.period || 'the requested period';
+            // Use the real companyId
             const payrollRes = await fetch(`http://localhost:${PORT}/api/payroll/run`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
-              body: JSON.stringify({ period, companyId: 'from-token', userId }),
+              body: JSON.stringify({ period, companyId, userId }),
             });
             if (!payrollRes.ok) throw new Error('Payroll service down');
             const payrollData: any = await payrollRes.json();
@@ -245,11 +251,10 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'list_schedule': {
             const period = args.period || 'this week';
-            // Simple date mapping – OpenAI can pass "this week", we translate to start/end
             const now = new Date();
             let start = '', end = '';
             if (period.includes('next')) { start = formatDate(addDays(now, 7)); end = formatDate(addDays(now, 13)); }
-            else { start = formatDate(now); end = formatDate(addDays(now, 6)); } // default this week
+            else { start = formatDate(now); end = formatDate(addDays(now, 6)); }
             const scheduleRes = await fetch(`http://localhost:${PORT}/api/schedule/shifts?start=${start}&end=${end}`, { headers: { Authorization: authHeader } });
             if (!scheduleRes.ok) throw new Error('Schedule service down');
             const shifts: any = await scheduleRes.json();
@@ -363,7 +368,6 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'send_chat': {
             const { message, room } = args;
-            // Use WebSocket? For simplicity, use REST endpoint if available; else fallback
             const chatRes = await fetch(`http://localhost:${PORT}/api/chat/message`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
               body: JSON.stringify({ roomId: room, message }),
