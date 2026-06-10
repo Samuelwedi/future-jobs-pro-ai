@@ -5,7 +5,7 @@ import { pool } from '../config/database';
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-// GET /api/users/company – list users in the same company
+// GET /api/users/company – list users in the same company (by token)
 router.get('/company', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -21,6 +21,31 @@ router.get('/company', async (req: Request, res: Response) => {
     const result = await pool.query(
       'SELECT id, email, role, full_name, first_name, last_name FROM users WHERE company_id = $1',
       [companyId]
+    );
+    res.json({ success: true, users: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/users/company/:companyId – list users by company ID (used by mobile team screen)
+router.get('/company/:companyId', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+    // Verify the user belongs to the requested company
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    if (userRes.rows[0].company_id !== req.params.companyId)
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    const result = await pool.query(
+      'SELECT id, email, role, full_name, first_name, last_name FROM users WHERE company_id = $1',
+      [req.params.companyId]
     );
     res.json({ success: true, users: result.rows });
   } catch (error: any) {
