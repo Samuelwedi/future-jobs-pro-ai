@@ -4,6 +4,7 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET!;
+
 // Helper: get company_id from JWT
 const getCompanyId = async (req: Request): Promise<string | null> => {
   const authHeader = req.headers.authorization;
@@ -28,6 +29,41 @@ router.get('/shifts', async (req: Request, res: Response) => {
     if (start) { query += ' AND start_time >= $2'; params.push(start); }
     if (end)   { query += ' AND end_time <= $3'; params.push(end); }
     const result = await pool.query(query, params);
+    res.json({ success: true, shifts: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/schedule/my-shifts?userId=...&start=...&end=... (mobile schedule screen)
+router.get('/my-shifts', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+
+    const { userId, start, end } = req.query;
+    if (!userId || !start || !end)
+      return res.status(400).json({ success: false, message: 'userId, start, and end are required' });
+
+    // Verify the requesting user belongs to the same company as the target user
+    const requestUserRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    if (requestUserRes.rows.length === 0)
+      return res.status(404).json({ success: false, message: 'Requesting user not found' });
+
+    const targetUserRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+    if (targetUserRes.rows.length === 0)
+      return res.status(404).json({ success: false, message: 'Target user not found' });
+
+    if (requestUserRes.rows[0].company_id !== targetUserRes.rows[0].company_id)
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    const result = await pool.query(
+      `SELECT * FROM shifts WHERE user_id = $1 AND date >= $2 AND date <= $3 ORDER BY date`,
+      [userId, start, end]
+    );
     res.json({ success: true, shifts: result.rows });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
