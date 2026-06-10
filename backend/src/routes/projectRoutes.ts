@@ -4,7 +4,6 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 
-// Helper: get company_id from JWT
 const getCompanyId = (req: Request): string | null => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -14,7 +13,6 @@ const getCompanyId = (req: Request): string | null => {
   } catch { return null; }
 };
 
-// GET /api/projects – returns projects for the logged‑in user's company
 router.get('/', async (req: Request, res: Response) => {
   try {
     const companyId = getCompanyId(req);
@@ -30,7 +28,6 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/projects/active – alias used by mobile home screen
 router.get('/active', async (req: Request, res: Response) => {
   try {
     const companyId = getCompanyId(req);
@@ -46,7 +43,6 @@ router.get('/active', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/projects – create a new project
 router.post('/', async (req: Request, res: Response) => {
   try {
     const companyId = getCompanyId(req);
