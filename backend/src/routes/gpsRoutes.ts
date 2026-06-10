@@ -8,12 +8,12 @@ import {
   recordGPSPoint,
   generateBreadcrumbTrail,
   getArrivalConfidence,
-  // getActiveEmployeeLocations   // temporarily replaced
+  getActiveEmployeeLocations
 } from '../services/gpsService';
 
 const router = express.Router();
 
-// POST /api/gps/update – Mobile app sends location every 30 seconds
+// POST /api/gps/update
 router.post('/update', async (req: Request, res: Response) => {
   try {
     const { userId, timeEntryId, projectId, latitude, longitude,
@@ -41,41 +41,40 @@ router.post('/update', async (req: Request, res: Response) => {
         ? '✅ You are at the job site'
         : '⚠️ You are outside the job site'
     });
-  } catch (error) {
-    console.error('❌ GPS update error:', error);
+  } catch (error: any) {
+    console.error('❌ GPS update error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to record GPS point' });
   }
 });
 
-// GET /api/gps/trail/:timeEntryId – Full breadcrumb trail
+// GET /api/gps/trail/:timeEntryId
 router.get('/trail/:timeEntryId', async (req: Request, res: Response) => {
   try {
     const trail = await generateBreadcrumbTrail(req.params.timeEntryId as string);
     res.json({ success: true, trail });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to get breadcrumb trail' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/gps/confidence/:timeEntryId – Arrival confidence score
+// GET /api/gps/confidence/:timeEntryId
 router.get('/confidence/:timeEntryId', async (req: Request, res: Response) => {
   try {
     const confidence = await getArrivalConfidence(req.params.timeEntryId as string);
     res.json({ success: true, ...confidence });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to calculate confidence' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/gps/active/:companyId – Who's working right now (safe placeholder)
+// GET /api/gps/active/:companyId – Who's working right now
 router.get('/active/:companyId', async (req: Request, res: Response) => {
   try {
-    // Temporarily return empty list until the GPS tracking table is created.
-    // Original call: const locations = await getActiveEmployeeLocations(req.params.companyId);
-    // When ready, uncomment the import and the line above, and remove the placeholder.
-    res.json({ success: true, count: 0, employees: [] });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to get active locations' });
+    const locations = await getActiveEmployeeLocations(req.params.companyId as string);
+    res.json({ success: true, count: locations.length, employees: locations });
+  } catch (error: any) {
+    console.error('GPS active error:', error.message);
+    res.json({ success: true, count: 0, employees: [] });   // safe fallback
   }
 });
 
