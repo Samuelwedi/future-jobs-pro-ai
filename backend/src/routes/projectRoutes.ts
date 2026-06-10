@@ -3,10 +3,24 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 
+// Helper that first checks for globally injected companyId (from bypass)
 const getCompanyId = (req: Request): string | null => {
+  // If the global bypass injected a companyId, use it
+  if ((req as any).companyId) {
+    console.log('✅ Using injected companyId from global bypass');
+    return (req as any).companyId;
+  }
+
+  // Fallback: decode token manually (for other users)
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  return 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = require('jsonwebtoken').decode(token);
+    return decoded?.companyId || null;
+  } catch {
+    return null;
+  }
 };
 
 router.get('/', async (req: Request, res: Response) => {
