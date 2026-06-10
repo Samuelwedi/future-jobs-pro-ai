@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
@@ -12,7 +13,7 @@ router.get('/company', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
 
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     const companyId = userRes.rows[0]?.company_id;
@@ -35,7 +36,7 @@ router.get('/company/:companyId', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
 
     // Verify the user belongs to the requested company
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
@@ -60,7 +61,7 @@ router.put('/profile', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
 
     const { firstName, lastName } = req.body;
     const fullName = `${firstName} ${lastName}`;

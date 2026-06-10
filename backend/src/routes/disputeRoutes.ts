@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 // ============================================
 // DISPUTE EVIDENCE ROUTES
 // Future Jobs Pro AI – Created by Samuel B.

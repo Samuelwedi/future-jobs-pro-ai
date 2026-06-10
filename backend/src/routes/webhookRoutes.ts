@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import { handleIncomingWebhook } from '../services/webhookService';
 

@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
@@ -11,7 +12,7 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     return userRes.rows[0]?.company_id || null;
   } catch {

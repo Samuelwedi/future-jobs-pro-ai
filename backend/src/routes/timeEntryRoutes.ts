@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
@@ -12,7 +13,7 @@ const getCompanyId = (req: Request): string | null => {
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
     return decoded.companyId || null;
   } catch {
     return null;
@@ -25,7 +26,7 @@ const getUserId = (req: Request): string | null => {
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
     return decoded.id || null;
   } catch {
     return null;

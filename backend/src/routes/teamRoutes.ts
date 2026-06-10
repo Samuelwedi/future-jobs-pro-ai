@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
@@ -14,7 +15,7 @@ router.get('/', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
 
     const userResult = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (userResult.rows.length === 0) {

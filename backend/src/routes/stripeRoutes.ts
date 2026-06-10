@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import Stripe from 'stripe';
 import { syncStripeEventToQuickBooks } from '../services/integrationService';

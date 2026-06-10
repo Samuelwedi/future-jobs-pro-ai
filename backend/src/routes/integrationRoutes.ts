@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
@@ -18,7 +19,7 @@ router.get('/status', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
 
     const result = await pool.query(
       `SELECT provider, is_active FROM integrations WHERE company_id = $1`,

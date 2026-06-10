@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
@@ -12,7 +13,7 @@ router.get('/', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
 
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
@@ -40,7 +41,7 @@ router.post('/', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
 
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (userRes.rows.length === 0)

@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 // ============================================
 // VOICE NOTES ROUTES
 // Future Jobs Pro AI – Created by Samuel B.

@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import Stripe from 'stripe';
@@ -16,7 +17,7 @@ const getUserFromToken = async (req: Request) => {
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
     // Explicitly select the stripe_customer_id column
     const result = await pool.query(
       'SELECT id, email, stripe_customer_id, company_id FROM users WHERE id = $1',
