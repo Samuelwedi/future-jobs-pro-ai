@@ -11,7 +11,6 @@ import { api } from '../services/api';
 import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
-import Voice from '@react-native-voice/voice';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -36,63 +35,16 @@ export default function HomeScreen() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const [voiceActive, setVoiceActive] = useState(false);
 
   // Live Pulse data
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
 
-  // ---------- 1. Clear stale token on mount ----------
+  // ---------- Clear stale token on mount ----------
   useEffect(() => {
     api.clearToken().catch(() => {});
   }, []);
 
-  // ---------- 2. Permission & always-listening voice ----------
-  const startVoiceRecognition = async () => {
-    try {
-      // Request microphone permission
-      const { Audio } = require('expo-av');
-      const { status: micStatus } = await Audio.requestPermissionsAsync();
-      if (micStatus !== 'granted') {
-        console.warn('Microphone permission denied');
-        return;
-      }
-
-      Voice.onSpeechResults = (event) => {
-        const transcript = event.value?.[0]?.toLowerCase() || '';
-        if (transcript.includes('hey lucy') || transcript.includes('lucy')) {
-          // Navigate to AIAssistant (Lucy chat)
-          navigation.navigate('AIAssistant');
-        }
-      };
-
-      Voice.onSpeechError = (error) => {
-        console.error('Voice recognition error:', error);
-      };
-
-      await Voice.start('en-US');
-      setVoiceActive(true);
-    } catch (err) {
-      console.error('Voice start failed:', err);
-      setVoiceActive(false);
-    }
-  };
-
-  const stopVoiceRecognition = async () => {
-    try {
-      await Voice.stop();
-      setVoiceActive(false);
-    } catch (e) {}
-  };
-
-  // Start voice on focus, stop on blur
-  useFocusEffect(useCallback(() => {
-    startVoiceRecognition();
-    return () => {
-      stopVoiceRecognition();
-    };
-  }, []));
-
-  // ---------- 3. Existing location, pulse, timer ----------
+  // ---------- Location, pulse, timer ----------
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -127,7 +79,7 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isClockedIn, activeTimeEntry]);
 
-  // ---------- 4. Data loading ----------
+  // ---------- Data loading ----------
   const loadData = async () => {
     try {
       const res = await api.get<any>('/projects');
@@ -348,16 +300,10 @@ export default function HomeScreen() {
       {/* ===== FLOATING BUTTONS ===== */}
       <View style={styles.floatingContainer}>
         <TouchableOpacity
-          style={[styles.fab, { backgroundColor: voiceActive ? '#F44336' : '#00D4FF', marginBottom: 12 }]}
-          onPress={() => {
-            if (voiceActive) {
-              stopVoiceRecognition();
-            } else {
-              startVoiceRecognition();
-            }
-          }}
+          style={[styles.fab, { backgroundColor: '#00D4FF', marginBottom: 12 }]}
+          onPress={() => navigation.navigate('AIAssistant')}
         >
-          <Ionicons name={voiceActive ? 'mic-off' : 'mic'} size={28} color="#0A0A0A" />
+          <Ionicons name="mic" size={28} color="#0A0A0A" />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: '#00D4FF' }]}
