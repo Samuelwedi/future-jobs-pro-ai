@@ -1,11 +1,9 @@
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 import { saveMessage } from '../services/chatService';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET!;
 
 // GET /api/chat/company/:companyId – chat history for the company
 router.get('/company/:companyId', async (req: Request, res: Response) => {
@@ -13,7 +11,7 @@ router.get('/company/:companyId', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    const token = authHeader.split(' ')[1];
+    
     const decoded = verifyToken(req);
 
     // Verify the user belongs to the requested company
@@ -43,9 +41,8 @@ router.post('/message', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    const token = authHeader.split(' ')[1];
+    
     const decoded = verifyToken(req);
-
     const { roomId, message } = req.body;
     const saved = await saveMessage(decoded.id, roomId, message, decoded.companyId);
     res.json({ success: true, message: saved });
@@ -59,7 +56,7 @@ router.get('/room/:roomId', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    const token = authHeader.split(' ')[1];
+    
     const decoded = verifyToken(req);
 
     const result = await pool.query(
@@ -83,7 +80,7 @@ router.get('/rooms/:userId', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    const token = authHeader.split(' ')[1];
+    
     const decoded = verifyToken(req);
 
     // Ensure the requesting user belongs to the same company as the target user

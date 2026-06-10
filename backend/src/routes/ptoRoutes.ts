@@ -1,10 +1,8 @@
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET!;
 
 // GET /api/pto – return PTO requests for the logged‑in user's company
 router.get('/', async (req: Request, res: Response) => {
@@ -12,7 +10,7 @@ router.get('/', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    const token = authHeader.split(' ')[1];
+    
     const decoded = verifyToken(req);
 
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
@@ -40,7 +38,7 @@ router.post('/', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    const token = authHeader.split(' ')[1];
+    
     const decoded = verifyToken(req);
 
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);

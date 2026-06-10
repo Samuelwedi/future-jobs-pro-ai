@@ -15,6 +15,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { pool, checkDatabaseHealth } from './config/database';
 import { saveMessage } from './services/chatService';
 import { trialCheck } from './middleware/trialMiddleware';
+import { verifyToken } from './utils/auth';   // ✅ added
 
 dotenv.config();
 
@@ -84,24 +85,12 @@ import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachme
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
 
-// ----- Helper: extract userId from JWT (with bypass for test user) -----
+// ----- Helper: extract userId from JWT (using verifyToken) -----
 const getUserId = (req: Request): string | null => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-
-  const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = verifyToken(req);
     return decoded.id || null;
-  } catch (verifyError) {
-    // If verification fails, try to decode without verification (for test user only)
-    try {
-      const unverified = jwt.decode(token) as any;
-      if (unverified && unverified.email === 'samuel@test.com') {
-        console.log('⚠️ Bypassing JWT in getUserId for test user');
-        return unverified.id || null;
-      }
-    } catch (e) {}
+  } catch {
     return null;
   }
 };
@@ -226,8 +215,13 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
       let resultText = '';
       try {
         const authHeader = req.headers.authorization || '';
-        const token = authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : '';
-        const decodedToken: any = token ? jwt.verify(token, JWT_SECRET) : {};
+        // ✅ Replace jwt.verify with verifyToken(req)
+        let decodedToken: any = null;
+        try {
+          decodedToken = verifyToken(req);
+        } catch (e) {
+          decodedToken = {};
+        }
         const companyId = decodedToken.companyId || null;
 
         switch (name) {

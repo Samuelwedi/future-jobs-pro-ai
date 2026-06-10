@@ -1,18 +1,15 @@
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 import { clockIn, clockOut, getTimeEntries, manualTimeEntry, updateTimeEntry } from '../services/timeEntryService';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET!;
 
 // Helper to extract company_id from JWT
 const getCompanyId = (req: Request): string | null => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
-    const token = authHeader.split(' ')[1];
     const decoded = verifyToken(req);
     return decoded.companyId || null;
   } catch {
@@ -25,7 +22,6 @@ const getUserId = (req: Request): string | null => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
-    const token = authHeader.split(' ')[1];
     const decoded = verifyToken(req);
     return decoded.id || null;
   } catch {

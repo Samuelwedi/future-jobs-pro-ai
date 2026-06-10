@@ -1,6 +1,5 @@
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 import {
   getQuickBooksAuthUrl,
@@ -10,7 +9,6 @@ import {
 } from '../services/integrationService';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET!;
 
 // GET /api/integrations/status – check integration status for the company
 router.get('/status', async (req: Request, res: Response) => {
@@ -18,7 +16,7 @@ router.get('/status', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    const token = authHeader.split(' ')[1];
+    
     const decoded = verifyToken(req);
 
     const result = await pool.query(

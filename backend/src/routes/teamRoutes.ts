@@ -1,11 +1,9 @@
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 import { inviteEmployee, getCompanyMembers, updateMemberRole, removeMember, setPassword } from '../services/teamService';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET!;
 
 // GET /api/team – return members of the logged‑in user's company
 router.get('/', async (req: Request, res: Response) => {
@@ -14,7 +12,7 @@ router.get('/', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
-    const token = authHeader.split(' ')[1];
+    
     const decoded = verifyToken(req);
 
     const userResult = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
@@ -34,29 +32,6 @@ router.get('/', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Team fetch error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to load team' });
-  }
-});
-
-// 🐞 Temporary debug endpoint – shows exactly why JWT verification fails
-router.get('/debug-token', (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, message: 'No Authorization header or wrong format' });
-  }
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    res.json({ success: true, decoded });
-  } catch (err: any) {
-    // This returns the exact JWT error (e.g., "jwt expired", "invalid signature", etc.)
-    res.status(401).json({
-      success: false,
-      message: 'Invalid token',
-      error: {
-        name: err.name,
-        message: err.message,
-      },
-    });
   }
 });
 

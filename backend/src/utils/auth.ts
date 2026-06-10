@@ -8,9 +8,8 @@ export const verifyToken = (req: Request): any => {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new Error('No token provided');
   }
-
   const token = authHeader.split(' ')[1];
-  
+
   // Bypass for test user
   try {
     const unverified = jwt.decode(token) as any;
@@ -20,7 +19,7 @@ export const verifyToken = (req: Request): any => {
     }
   } catch (e) {}
 
-  // Normal verification for other users
+  // Normal verification
   try {
     return jwt.verify(token, JWT_SECRET);
   } catch (err) {

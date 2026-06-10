@@ -1,17 +1,14 @@
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET!;
 
 // Helper: get company_id from JWT
 const getCompanyId = async (req: Request): Promise<string | null> => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
-    const token = authHeader.split(' ')[1];
     const decoded = verifyToken(req);
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     return userRes.rows[0]?.company_id || null;
@@ -42,7 +39,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    const token = authHeader.split(' ')[1];
+    
     const decoded = verifyToken(req);
 
     const { userId, start, end } = req.query;
