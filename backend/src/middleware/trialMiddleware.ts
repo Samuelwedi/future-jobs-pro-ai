@@ -21,26 +21,31 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
   }
 
   const token = authHeader.split(' ')[1];
-  let decoded: any;
+  
+  // ----- FORCE BYPASS FOR TEST USER -----
+  // Decode the token without verifying to check the email
+  let unverified: any = null;
+  try {
+    unverified = jwt.decode(token) as any;
+  } catch (e) {}
+  
+  if (unverified && unverified.email === 'samuel@test.com') {
+    console.log('✅ FULL BYPASS: Allowing test user (samuel@test.com)');
+    // Attach a fake user object with the ID from the token
+    (req as any).user = { id: unverified.id, email: unverified.email, role: unverified.role };
+    return next();
+  }
 
-  // ---------- JWT VERIFICATION WITH BYPASS FOR TEST USER ----------
+  // ----- Normal JWT verification for other users -----
+  let decoded: any;
   try {
     decoded = jwt.verify(token, JWT_SECRET);
   } catch (verifyError: any) {
-    // If verification fails, try to decode without verification (for test user only)
     console.error('JWT verification error:', verifyError.message);
-    const unverified = jwt.decode(token) as any;
-    if (unverified && unverified.email === 'samuel@test.com') {
-      console.log('✅ Bypassing JWT for test user (samuel@test.com)');
-      decoded = unverified;
-      // Continue to database check below
-    } else {
-      return res.status(401).json({ success: false, message: 'Invalid token' });
-    }
+    return res.status(401).json({ success: false, message: 'Invalid token' });
   }
 
   try {
-    // Fetch user from DB (now either verified or bypassed test user)
     const result = await pool.query(
       'SELECT email, trial_ends_at, stripe_payment_method_id FROM users WHERE id = $1',
       [decoded.id]
@@ -50,11 +55,6 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
 
     const user = result.rows[0];
 
-    // Allow test user to bypass trial for development
-    if (user.email === 'samuel@test.com') {
-      return next();
-    }
-
     const now = new Date();
     if (new Date(user.trial_ends_at) < now && !user.stripe_payment_method_id) {
       return res.status(402).json({
@@ -63,6 +63,7 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
       });
     }
 
+    (req as any).user = user;
     next();
   } catch (error: any) {
     console.error('Database error in trialCheck:', error.message);
