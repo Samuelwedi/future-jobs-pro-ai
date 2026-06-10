@@ -296,7 +296,7 @@ export default function HomeScreen() {
       <View style={styles.floatingContainer}>
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: '#00D4FF', marginBottom: 12 }]}
-          onPress={() => Alert.alert('🚀 Coming Soon', 'Lucy voice assistant will be available soon!')}
+          onPress={() => navigation.navigate('AIAssistant')}
         >
           <Ionicons name="mic" size={28} color="#0A0A0A" />
         </TouchableOpacity>
