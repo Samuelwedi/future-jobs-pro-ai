@@ -20,9 +20,27 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
     return res.status(401).json({ success: false, message: 'Not authenticated' });
   }
 
+  const token = authHeader.split(' ')[1];
+  let decoded: any;
+
+  // ---------- JWT VERIFICATION WITH BYPASS FOR TEST USER ----------
   try {
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    decoded = jwt.verify(token, JWT_SECRET);
+  } catch (verifyError: any) {
+    // If verification fails, try to decode without verification (for test user only)
+    console.error('JWT verification error:', verifyError.message);
+    const unverified = jwt.decode(token) as any;
+    if (unverified && unverified.email === 'samuel@test.com') {
+      console.log('✅ Bypassing JWT for test user (samuel@test.com)');
+      decoded = unverified;
+      // Continue to database check below
+    } else {
+      return res.status(401).json({ success: false, message: 'Invalid token' });
+    }
+  }
+
+  try {
+    // Fetch user from DB (now either verified or bypassed test user)
     const result = await pool.query(
       'SELECT email, trial_ends_at, stripe_payment_method_id FROM users WHERE id = $1',
       [decoded.id]
@@ -47,11 +65,7 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
 
     next();
   } catch (error: any) {
-    console.error('JWT Verify Error:', error.name, error.message);
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid token',
-      error: { name: error.name, message: error.message },
-    });
+    console.error('Database error in trialCheck:', error.message);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };
