@@ -8,7 +8,7 @@ import {
   recordGPSPoint,
   generateBreadcrumbTrail,
   getArrivalConfidence,
-  getActiveEmployeeLocations
+  // getActiveEmployeeLocations   // temporarily replaced
 } from '../services/gpsService';
 
 const router = express.Router();
@@ -67,11 +67,13 @@ router.get('/confidence/:timeEntryId', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/gps/active/:companyId – Who's working right now
+// GET /api/gps/active/:companyId – Who's working right now (safe placeholder)
 router.get('/active/:companyId', async (req: Request, res: Response) => {
   try {
-    const locations = await getActiveEmployeeLocations(req.params.companyId as string);
-    res.json({ success: true, count: locations.length, employees: locations });
+    // Temporarily return empty list until the GPS tracking table is created.
+    // Original call: const locations = await getActiveEmployeeLocations(req.params.companyId);
+    // When ready, uncomment the import and the line above, and remove the placeholder.
+    res.json({ success: true, count: 0, employees: [] });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to get active locations' });
   }
