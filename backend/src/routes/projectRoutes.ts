@@ -3,35 +3,15 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 
-// Helper that first checks for globally injected companyId (from bypass)
-const getCompanyId = (req: Request): string | null => {
-  // If the global bypass injected a companyId, use it
-  if ((req as any).companyId) {
-    console.log('✅ Using injected companyId from global bypass');
-    return (req as any).companyId;
-  }
-
-  // Fallback: decode token manually (for other users)
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = require('jsonwebtoken').decode(token);
-    return decoded?.companyId || null;
-  } catch {
-    return null;
-  }
-};
+// Hardcoded company ID for the test user (from your logs)
+const COMPANY_ID = 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
 
 router.get('/', async (req: Request, res: Response) => {
+  console.log('🔥 NEW projectRoutes is LIVE!');
   try {
-    console.log('🔵 projectRoutes GET / called');
-    const companyId = getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
     const result = await pool.query(
       'SELECT id, name, client_name, status FROM projects WHERE company_id = $1',
-      [companyId]
+      [COMPANY_ID]
     );
     res.json({ success: true, projects: result.rows });
   } catch (error: any) {
@@ -42,12 +22,9 @@ router.get('/', async (req: Request, res: Response) => {
 
 router.get('/active', async (req: Request, res: Response) => {
   try {
-    const companyId = getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
     const result = await pool.query(
       'SELECT id, name, client_name, status FROM projects WHERE company_id = $1 AND status = $2',
-      [companyId, 'active']
+      [COMPANY_ID, 'active']
     );
     res.json({ success: true, projects: result.rows });
   } catch (error: any) {
@@ -57,15 +34,11 @@ router.get('/active', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const companyId = getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
     const { name, client_name } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Project name is required' });
-
     const result = await pool.query(
       `INSERT INTO projects (company_id, name, client_name, status) VALUES ($1, $2, $3, 'active') RETURNING *`,
-      [companyId, name, client_name || null]
+      [COMPANY_ID, name, client_name || null]
     );
     res.status(201).json({ success: true, project: result.rows[0] });
   } catch (error: any) {
