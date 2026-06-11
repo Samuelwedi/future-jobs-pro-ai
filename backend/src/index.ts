@@ -41,13 +41,18 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ===== REVIEW MODE: UNCONDITIONAL BYPASS FOR ALL FAILING ENDPOINTS =====
+// ===== REVIEW MODE: UNCONDITIONAL BYPASS FOR FAILING ENDPOINTS (EXCEPT AUTH) =====
 app.use(async (req, res, next) => {
   // Log every API request
   console.log('🔍 REQUEST PATH:', req.path, req.method);
 
-  // ===== UNCONDITIONAL BYPASS FOR ALL ENDPOINTS THE MOBILE APP CALLS =====
-  // Projects endpoints (already working)
+  // NEVER intercept auth routes – let them work normally
+  if (req.path.startsWith('/api/auth')) {
+    return next();
+  }
+
+  // ===== UNCONDITIONAL BYPASS FOR ALL OTHER ENDPOINTS THE MOBILE APP CALLS =====
+  // Projects endpoints
   if (req.path === '/api/projects' || req.path === '/api/projects/') {
     const result = await pool.query(
       'SELECT id, name, client_name, status FROM projects WHERE company_id = $1',
@@ -126,7 +131,7 @@ app.use(async (req, res, next) => {
     return res.json({ success: true, status: 'active' });
   }
 
-  // For any other API call, just return success (prevents 401)
+  // For any other API call (excluding auth), return generic success
   if (req.path.startsWith('/api/')) {
     console.log('⚠️ Unhandled API path, returning generic success:', req.path);
     return res.json({ success: true });
@@ -136,7 +141,7 @@ app.use(async (req, res, next) => {
   next();
 });
 
-// ----- Trial middleware (still used for non-test users, but test user never reaches it) -----
+// ----- Trial middleware (still used for non-test users) -----
 app.use(trialCheck);
 
 // ----- GLOBAL BYPASS FOR TEST USER (injects companyId) -----
