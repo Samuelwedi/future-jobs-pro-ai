@@ -25,9 +25,6 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Future Jobs Pro AI uses your location in the background to continue tracking your work site arrival/departure, even when the app is not open, so you can automatically clock in when you reach a job site.",
         "NSMicrophoneUsageDescription": "Allow Future Jobs Pro AI to use your microphone for voice notes",
         "NSSpeechRecognitionUsageDescription": "Future Jobs Pro AI uses speech recognition to allow you to control the app with your voice."
-      },
-      "entitlements": {
-        "com.apple.developer.in-app-payments": true
       }
     },
     "android": {
