@@ -3,10 +3,11 @@ import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { io, Socket } from 'socket.io-client';
+import { useNavigation } from '@react-navigation/native';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
@@ -20,6 +21,7 @@ interface Message {
 
 export default function SupportScreen() {
   const { user } = useAuth();
+  const navigation = useNavigation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const socketRef = useRef<Socket | null>(null);
@@ -77,7 +79,11 @@ export default function SupportScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#FFF" />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Live Support</Text>
+        <View style={{ width: 40 }} />
       </View>
       <FlatList
         ref={flatListRef}
@@ -118,12 +124,17 @@ export default function SupportScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingTop: 60,
     paddingBottom: 16,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    backgroundColor: '#0A0A0A',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
+  backButton: { padding: 8, marginLeft: 4 },
   headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   bubble: { margin: 8, padding: 12, borderRadius: 12, maxWidth: '80%' },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#00D4FF' },

@@ -31,7 +31,6 @@ export default function SubscriptionScreen() {
     const init = async () => {
       try {
         await RNIap.initConnection();
-        // Cast to any[] to avoid type conflicts
         const productList = (await RNIap.fetchProducts({
           skus: Object.values(productIds),
         })) as any[];
