@@ -21,10 +21,13 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Allow Future Jobs Pro AI to use your camera for job site photos",
-        "NSLocationWhenInUseUsageDescription": "Allow Future Jobs Pro AI to use your location for GPS tracking",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow Future Jobs Pro AI to use your location for GPS tracking",
+        "NSLocationWhenInUseUsageDescription": "Future Jobs Pro AI uses your location to record where you clock in and out, verify your presence at a job site (e.g., when you start work at 123 Main Street), and show nearby crew members on the map.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Future Jobs Pro AI uses your location in the background to continue tracking your work site arrival/departure, even when the app is not open, so you can automatically clock in when you reach a job site.",
         "NSMicrophoneUsageDescription": "Allow Future Jobs Pro AI to use your microphone for voice notes",
         "NSSpeechRecognitionUsageDescription": "Future Jobs Pro AI uses speech recognition to allow you to control the app with your voice."
+      },
+      "entitlements": {
+        "com.apple.developer.in-app-payments": true
       }
     },
     "android": {
@@ -40,7 +43,19 @@
       "favicon": "./assets/icon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "minSdkVersion": 26,
+            "buildToolsVersion": "36.0.0",
+            "kotlinVersion": "2.0.21"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {

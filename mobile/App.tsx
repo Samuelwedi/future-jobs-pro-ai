@@ -25,6 +25,7 @@ import PTOScreen from './src/screens/PTOScreen';
 import KioskScreen from './src/screens/KioskScreen';
 import GPSPlaybackScreen from './src/screens/GPSPlaybackScreen';
 import TeamScreen from './src/screens/TeamScreen';
+import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import { StatusBar } from 'expo-status-bar';
 import { listenToNetworkChanges, processQueue } from './src/services/offlineService';
 import { View, Text, TouchableOpacity } from 'react-native';
@@ -109,12 +110,13 @@ function AppNavigator() {
               <Stack.Screen name="Kiosk" component={KioskScreen} />
               <Stack.Screen name="GPSPlayback" component={GPSPlaybackScreen} />
               <Stack.Screen name="Team" component={TeamScreen} />
+              <Stack.Screen name="Subscription" component={SubscriptionScreen} />
               <Stack.Screen name="Contact" component={ContactScreen} />
-<Stack.Screen name="Privacy" component={PrivacyScreen} />
-<Stack.Screen name="Terms" component={TermsScreen} />
-<Stack.Screen name="About" component={AboutScreen} />
-<Stack.Screen name="Security" component={SecurityScreen} />
-<Stack.Screen name="Support" component={SupportScreen} /> 
+              <Stack.Screen name="Privacy" component={PrivacyScreen} />
+              <Stack.Screen name="Terms" component={TermsScreen} />
+              <Stack.Screen name="About" component={AboutScreen} />
+              <Stack.Screen name="Security" component={SecurityScreen} />
+              <Stack.Screen name="Support" component={SupportScreen} />
             </>
           )}
         </Stack.Navigator>

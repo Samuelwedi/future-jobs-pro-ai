@@ -75,6 +75,12 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Upgrade Button - Added */}
+      <TouchableOpacity style={styles.upgradeBtn} onPress={() => (navigation as any).navigate('Subscription')}>
+        <MaterialIcons name="stars" size={20} color="#0A0A0A" />
+        <Text style={styles.upgradeText}>Upgrade to Premium</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <MaterialIcons name="logout" size={20} color="#F44336" />
         <Text style={styles.logoutText}>{t('logout')}</Text>
@@ -102,6 +108,8 @@ const styles = StyleSheet.create({
   langBtnActive: { backgroundColor: '#00D4FF', borderColor: '#00D4FF' },
   langBtnText: { color: '#888', fontSize: 15, fontWeight: '500' },
   langBtnTextActive: { color: '#0A0A0A', fontWeight: '600' },
+  upgradeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#00D4FF', paddingVertical: 14, borderRadius: 12, marginTop: 10, marginBottom: 10, gap: 8 },
+  upgradeText: { color: '#0A0A0A', fontSize: 16, fontWeight: 'bold' },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 12, borderWidth: 1, borderColor: '#F4433640', marginTop: 10, marginBottom: 30 },
   logoutText: { color: '#F44336', fontSize: 16, fontWeight: '600', marginLeft: 8 },
   footer: { color: '#555', fontSize: 12, textAlign: 'center' },
