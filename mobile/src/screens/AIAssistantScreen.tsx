@@ -6,6 +6,7 @@ import {
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { useNavigation } from '@react-navigation/native';
 
 interface Message {
   text: string;
@@ -14,6 +15,7 @@ interface Message {
 
 export default function AIAssistantScreen() {
   const { user } = useAuth();
+  const navigation = useNavigation();
   const [messages, setMessages] = useState<Message[]>([
     { text: "Hi! I'm Lucy. I can schedule, run payroll, and generate reports. Try me!", isUser: false },
   ]);
@@ -58,7 +60,11 @@ export default function AIAssistantScreen() {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#FFF" />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Ask Lucy</Text>
+        <View style={{ width: 40 }} />
       </View>
       <FlatList
         ref={flatListRef}
@@ -97,8 +103,19 @@ export default function AIAssistantScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  header: { paddingTop: 60, paddingBottom: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#333' },
-  headerTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 60,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#0A0A0A',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333'
+  },
+  backButton: { padding: 8, marginLeft: 4 },
+  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   bubble: { margin: 8, padding: 12, borderRadius: 12, maxWidth: '80%' },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#00D4FF' },
   bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333', flexDirection: 'row', alignItems: 'center' },

@@ -2,10 +2,12 @@ const { Pool } = require('pg');
 const DATABASE_URL = 'postgresql://postgres:fFhIpSkiVKmHhAmQcQoSudrksWdXuGMQ@centerbeam.proxy.rlwy.net:47967/railway';
 const pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
-async function addColumn() {
+async function extendTrial() {
   try {
-    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP WITH TIME ZONE');
-    console.log('✅ trial_ends_at column added (or already exists).');
+    // Set trial to 30 days from now
+    const newDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await pool.query('UPDATE users SET trial_ends_at = $1 WHERE email = $2', [newDate, 'samuel@test.com']);
+    console.log('✅ Trial extended to', newDate);
   } catch (err) {
     console.error('❌ Error:', err.message);
   } finally {
@@ -13,4 +15,4 @@ async function addColumn() {
   }
 }
 
-addColumn();
+extendTrial();
