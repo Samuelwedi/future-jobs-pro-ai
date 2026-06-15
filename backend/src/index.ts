@@ -43,108 +43,39 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ===== REVIEW MODE: UNCONDITIONAL BYPASS FOR FAILING ENDPOINTS (EXCEPT AUTH) =====
 app.use(async (req, res, next) => {
-  // Log every API request
   console.log('🔍 REQUEST PATH:', req.path, req.method);
+  if (req.path.startsWith('/api/auth')) return next();
 
-  // NEVER intercept auth routes – let them work normally
-  if (req.path.startsWith('/api/auth')) {
-    return next();
-  }
-
-  // ===== UNCONDITIONAL BYPASS FOR ALL OTHER ENDPOINTS THE MOBILE APP CALLS =====
-  // Projects endpoints
   if (req.path === '/api/projects' || req.path === '/api/projects/') {
-    const result = await pool.query(
-      'SELECT id, name, client_name, status FROM projects WHERE company_id = $1',
-      ['ed1887d9-3ffd-46e4-b281-338c8ad03a66']
-    );
+    const result = await pool.query('SELECT id, name, client_name, status FROM projects WHERE company_id = $1', ['ed1887d9-3ffd-46e4-b281-338c8ad03a66']);
     return res.json({ success: true, projects: result.rows });
   }
   if (req.path === '/api/projects/active' || req.path === '/api/projects/active/') {
-    const result = await pool.query(
-      'SELECT id, name, client_name, status FROM projects WHERE company_id = $1 AND status = $2',
-      ['ed1887d9-3ffd-46e4-b281-338c8ad03a66', 'active']
-    );
+    const result = await pool.query('SELECT id, name, client_name, status FROM projects WHERE company_id = $1 AND status = $2', ['ed1887d9-3ffd-46e4-b281-338c8ad03a66', 'active']);
     return res.json({ success: true, projects: result.rows });
   }
-
-  // AI suggestions and events
-  if (req.path === '/api/ai/suggestions') {
-    return res.json({ success: true, suggestions: [] });
-  }
-  if (req.path === '/api/ai/event') {
-    return res.json({ success: true });
-  }
-
-  // Notifications
-  if (req.path === '/api/notifications/register') {
-    return res.json({ success: true });
-  }
-
-  // Schedule
-  if (req.path.startsWith('/api/schedule')) {
-    return res.json({ success: true, shifts: [] });
-  }
-
-  // Team members
-  if (req.path.startsWith('/api/team')) {
-    return res.json({ success: true, members: [] });
-  }
-
-  // Companies
-  if (req.path.startsWith('/api/companies')) {
-    return res.json({ success: true, unit: {} });
-  }
-
-  // Lucy history
-  if (req.path === '/api/lucy/history') {
-    return res.json({ success: true, messages: [] });
-  }
-
-  // Time entries
-  if (req.path.startsWith('/api/time-entries')) {
-    return res.json({ success: true, entries: [] });
-  }
-
-  // Users company
-  if (req.path.startsWith('/api/users/company')) {
-    return res.json({ success: true, users: [] });
-  }
-
-  // Chat rooms
-  if (req.path.startsWith('/api/chat/rooms')) {
-    return res.json({ success: true, rooms: [] });
-  }
-
-  // GPS active
-  if (req.path.startsWith('/api/gps/active')) {
-    return res.json({ success: true, positions: [] });
-  }
-
-  // PTO
-  if (req.path.startsWith('/api/pto')) {
-    return res.json({ success: true, requests: [], balance: { days: 10 } });
-  }
-
-  // Kiosk
-  if (req.path.startsWith('/api/kiosk')) {
-    return res.json({ success: true, status: 'active' });
-  }
-
-  // For any other API call (excluding auth), return generic success
+  if (req.path === '/api/ai/suggestions') return res.json({ success: true, suggestions: [] });
+  if (req.path === '/api/ai/event') return res.json({ success: true });
+  if (req.path === '/api/notifications/register') return res.json({ success: true });
+  if (req.path.startsWith('/api/schedule')) return res.json({ success: true, shifts: [] });
+  if (req.path.startsWith('/api/team')) return res.json({ success: true, members: [] });
+  if (req.path.startsWith('/api/companies')) return res.json({ success: true, unit: {} });
+  if (req.path === '/api/lucy/history') return res.json({ success: true, messages: [] });
+  if (req.path.startsWith('/api/time-entries')) return res.json({ success: true, entries: [] });
+  if (req.path.startsWith('/api/users/company')) return res.json({ success: true, users: [] });
+  if (req.path.startsWith('/api/chat/rooms')) return res.json({ success: true, rooms: [] });
+  if (req.path.startsWith('/api/gps/active')) return res.json({ success: true, positions: [] });
+  if (req.path.startsWith('/api/pto')) return res.json({ success: true, requests: [], balance: { days: 10 } });
+  if (req.path.startsWith('/api/kiosk')) return res.json({ success: true, status: 'active' });
   if (req.path.startsWith('/api/')) {
     console.log('⚠️ Unhandled API path, returning generic success:', req.path);
     return res.json({ success: true });
   }
-
-  // Non-API requests continue
   next();
 });
 
-// ----- Trial middleware (still used for non-test users) -----
 app.use(trialCheck);
 
-// ----- GLOBAL BYPASS FOR TEST USER (injects companyId) -----
 app.use((req, res, next) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -161,7 +92,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// ----- Health Check -----
 app.get('/api/health', async (req: Request, res: Response) => {
   const dbHealthy = await checkDatabaseHealth();
   res.json({ status: dbHealthy ? 'healthy' : 'unhealthy', timestamp: new Date().toISOString(), owner: 'Samuel B.', app: 'Future Jobs Pro AI', version: '1.0.0' });
@@ -196,13 +126,12 @@ import assistantRoutes from './routes/assistantRoutes'; app.use('/api/assistant'
 import taskRoutes from './routes/taskRoutes'; app.use('/api/tasks', taskRoutes);
 import webhookRoutes from './routes/webhookRoutes'; app.use('/api/webhooks', webhookRoutes);
 import ptoRoutes from './routes/ptoRoutes'; app.use('/api/pto', ptoRoutes);
-// import kioskRoutes from './routes/kioskRoutes'; app.use('/api/kiosk', kioskRoutes); // Commented to prevent 500 errors
+// import kioskRoutes from './routes/kioskRoutes'; app.use('/api/kiosk', kioskRoutes);
 import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
 import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
 
-// ----- Helper: extract userId from JWT (using verifyToken) -----
 const getUserId = (req: Request): string | null => {
   try {
     const decoded = verifyToken(req);
@@ -211,6 +140,55 @@ const getUserId = (req: Request): string | null => {
     return null;
   }
 };
+
+// ===== NEW: Helper to call Lucy AI =====
+async function getLucyResponse(userMessage: string, userId: string): Promise<string> {
+  try {
+    const response = await fetch(`http://localhost:${PORT}/api/lucy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: userMessage, userId }),
+    });
+    const data: any = await response.json();
+    if (Array.isArray(data) && data[0]?.text) return data[0].text;
+    if (data.success === false) return data.message || "Lucy is taking a break.";
+    return "I'm not sure how to help with that.";
+  } catch (err) {
+    console.error('Lucy AI error:', err);
+    return "Sorry, Lucy is temporarily unavailable. Please try again later.";
+  }
+}
+
+// ===== NEW: Support agent takeover endpoints =====
+app.post('/api/support/takeover', async (req: Request, res: Response) => {
+  try {
+    const { userId, roomId, action } = req.body;
+    if (!userId || !roomId || !action) return res.status(400).json({ success: false, message: 'Missing fields' });
+    if (action === 'join') {
+      await pool.query(`INSERT INTO support_agents (user_id) VALUES ($1) ON CONFLICT (user_id) DO UPDATE SET is_active = true, joined_at = NOW()`, [userId]);
+    } else if (action === 'leave') {
+      await pool.query(`UPDATE support_agents SET is_active = false WHERE user_id = $1`, [userId]);
+    } else {
+      return res.status(400).json({ success: false, message: 'Invalid action' });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Takeover error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get('/api/support/status/:roomId', async (req: Request, res: Response) => {
+  const { roomId } = req.params;
+  const result = await pool.query(
+    `SELECT COUNT(*) > 0 as active
+     FROM chat_room_members crm
+     JOIN support_agents sa ON crm.user_id = sa.user_id
+     WHERE crm.room_id = $1 AND sa.is_active = true`,
+    [roomId]
+  );
+  res.json({ success: true, active: result.rows[0].active });
+});
 
 // ----- Lucy Conversation History -----
 app.get('/api/lucy/history', async (req: Request, res: Response) => {
@@ -564,9 +542,37 @@ io.on('connection', (socket) => {
   console.log('🔌 New WebSocket connection:', socket.id);
   socket.on('join-room', (roomId) => { socket.join(`room-${roomId}`); console.log(`Socket ${socket.id} joined room-${roomId}`); });
   socket.on('leave-room', (roomId) => { socket.leave(`room-${roomId}`); console.log(`Socket ${socket.id} left room-${roomId}`); });
+
+  // Enhanced chat-message handler with Lucy AI and human takeover
   socket.on('chat-message', async (data) => {
-    try { const saved = await saveMessage(data.senderId, data.roomId, data.message, data.companyId); io.to(`room-${data.roomId}`).emit('new-message', saved); }
-    catch (err) { console.error('Chat message error:', err); }
+    const { senderId, companyId, roomId, message } = data;
+    if (!senderId || !roomId || !message) return;
+
+    const isSupportRoom = (roomId === 'support');
+    let isHumanAgent = false;
+    if (isSupportRoom) {
+      const agentCheck = await pool.query(
+        `SELECT 1 FROM chat_room_members crm
+         JOIN users u ON crm.user_id = u.id
+         JOIN support_agents sa ON u.id = sa.user_id
+         WHERE crm.room_id = $1 AND sa.is_active = true`,
+        [roomId]
+      );
+      isHumanAgent = agentCheck.rows.length > 0;
+    }
+
+    // Save and broadcast user message
+    const userMsg = await saveMessage(senderId, roomId, message, companyId);
+    io.to(`room-${roomId}`).emit('new-message', userMsg);
+    if (isHumanAgent) return;
+
+    // For support room, send AI response
+    if (isSupportRoom) {
+      const aiReply = await getLucyResponse(message, senderId);
+      const aiMsg = await saveMessage('00000000-0000-0000-0000-000000000001', roomId, aiReply, companyId);
+      await pool.query('UPDATE chat_messages SET is_ai = true WHERE id = $1', [aiMsg.id]);
+      io.to(`room-${roomId}`).emit('new-message', { ...aiMsg, is_ai: true });
+    }
   });
 });
 

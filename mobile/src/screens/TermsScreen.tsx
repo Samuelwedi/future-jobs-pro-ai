@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { MaterialIcons } from '@expo/vector-icons';
 
 export default function TermsScreen() {
   const navigation = useNavigation();
@@ -9,30 +9,59 @@ export default function TermsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Terms of Service</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 40 }} />
       </View>
-      <ScrollView style={styles.body}>
-        {[
-          { title: '1. Acceptance', text: 'By using Future Jobs Pro AI, you agree to these Terms. If you do not agree, do not use our Service.' },
-          { title: '2. Account', text: 'You must provide accurate information when creating an account. You are responsible for maintaining the security of your credentials.' },
-          { title: '3. Subscription', text: 'Paid plans are billed monthly or annually. Fees are non‑refundable except as required by law.' },
-          { title: '4. Acceptable Use', text: 'You agree not to use the Service for any illegal purpose or to interfere with our systems.' },
-          { title: '5. Data & Privacy', text: 'Your use is subject to our Privacy Policy. You retain ownership of your data. We never sell your personal data.' },
-          { title: '6. GPS & Location', text: 'Location data is collected only during active work hours. It stops when the employee clocks out.' },
-          { title: '7. Limitation of Liability', text: 'TO THE MAXIMUM EXTENT PERMITTED BY LAW, FUTURE JOBS PRO AI SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES.' },
-          { title: '8. Termination', text: 'We may suspend or terminate your account for violation of these Terms. You may cancel at any time.' },
-          { title: '9. Changes', text: 'We may modify these Terms. We will notify you of material changes via email or through the Service.' },
-          { title: '10. Contact', text: 'For questions, contact: support@futurejobsproai.com' },
-        ].map((section, idx) => (
-          <View key={idx} style={{ marginBottom: 20 }}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            <Text style={styles.paragraph}>{section.text}</Text>
-          </View>
-        ))}
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.sectionTitle}>1. Acceptance of Terms</Text>
+        <Text style={styles.text}>
+          By using Future Jobs Pro AI, you agree to be bound by these Terms of Service.
+        </Text>
+
+        <Text style={styles.sectionTitle}>2. Description of Service</Text>
+        <Text style={styles.text}>
+          Future Jobs Pro AI provides workforce management tools including time tracking, GPS location, photo documentation, AI assistant, and scheduling.
+        </Text>
+
+        <Text style={styles.sectionTitle}>3. User Accounts</Text>
+        <Text style={styles.text}>
+          You must provide accurate information when creating an account. You are responsible for maintaining the confidentiality of your password.
+        </Text>
+
+        <Text style={styles.sectionTitle}>4. Data Collection</Text>
+        <Text style={styles.text}>
+          We collect location data (only during work hours), photos, voice notes, and basic profile information. See our Privacy Policy for details.
+        </Text>
+
+        <Text style={styles.sectionTitle}>5. Subscription Payments</Text>
+        <Text style={styles.text}>
+          If you choose a paid plan, you agree to pay the applicable fees. Subscriptions renew automatically unless cancelled.
+        </Text>
+
+        <Text style={styles.sectionTitle}>6. Termination</Text>
+        <Text style={styles.text}>
+          We may terminate or suspend your account if you violate these terms.
+        </Text>
+
+        <Text style={styles.sectionTitle}>7. Limitation of Liability</Text>
+        <Text style={styles.text}>
+          Future Jobs Pro AI is provided "as is". We are not liable for any damages arising from your use of the app.
+        </Text>
+
+        <Text style={styles.sectionTitle}>8. Changes to Terms</Text>
+        <Text style={styles.text}>
+          We may update these terms from time to time. Continued use of the app constitutes acceptance of the new terms.
+        </Text>
+
+        <Text style={styles.sectionTitle}>9. Contact</Text>
+        <Text style={styles.text}>
+          For questions, email support@futurejobsproai.com.
+        </Text>
+
+        <Text style={styles.effective}>Effective date: June 1, 2026</Text>
       </ScrollView>
     </View>
   );
@@ -40,9 +69,21 @@ export default function TermsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingTop: 60, paddingBottom: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#333' },
-  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold', marginLeft: 16 },
-  body: { flex: 1, padding: 20 },
-  sectionTitle: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 6 },
-  paragraph: { color: '#AAA', fontSize: 14, lineHeight: 22 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 60,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#0A0A0A',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  backButton: { padding: 8, marginLeft: 4 },
+  headerTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold' },
+  content: { padding: 20, paddingBottom: 40 },
+  sectionTitle: { color: '#00D4FF', fontSize: 18, fontWeight: 'bold', marginTop: 20, marginBottom: 8 },
+  text: { color: '#CCC', fontSize: 14, lineHeight: 20, marginBottom: 12 },
+  effective: { color: '#888', fontSize: 12, textAlign: 'center', marginTop: 30 },
 });

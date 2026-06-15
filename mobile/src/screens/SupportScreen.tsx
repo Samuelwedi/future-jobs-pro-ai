@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +17,7 @@ interface Message {
   sender_name?: string;
   message: string;
   created_at: string;
+  is_ai?: boolean;
 }
 
 export default function SupportScreen() {
@@ -26,25 +27,28 @@ export default function SupportScreen() {
   const [input, setInput] = useState('');
   const socketRef = useRef<Socket | null>(null);
   const flatListRef = useRef<FlatList>(null);
+  const [agentActive, setAgentActive] = useState(false);
+  const [loadingAgent, setLoadingAgent] = useState(false);
 
   useEffect(() => {
     if (!user) return;
 
-    // Get the JWT token from the API service
+    // Check current agent status
+    api.get('/support/status/support')
+      .then((res: any) => setAgentActive(res.active))
+      .catch(() => {});
+
     api.getToken().then((token) => {
       if (!token) return;
-
       const socket = io(API_BASE, {
         transports: ['websocket'],
         auth: { token },
       });
       socketRef.current = socket;
-
       socket.on('connect', () => socket.emit('join-room', 'support'));
       socket.on('new-message', (msg: Message) =>
         setMessages((prev) => [...prev, msg])
       );
-
       // Fetch existing support messages
       fetch(`${API_BASE}/api/chat/room/support`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -73,6 +77,21 @@ export default function SupportScreen() {
     setInput('');
   };
 
+  const toggleTakeover = async () => {
+    if (loadingAgent) return;
+    setLoadingAgent(true);
+    const action = agentActive ? 'leave' : 'join';
+    try {
+      await api.post('/support/takeover', { userId: user?.id, roomId: 'support', action });
+      setAgentActive(!agentActive);
+      Alert.alert('Success', agentActive ? 'You left support mode' : 'You are now a support agent');
+    } catch (err) {
+      Alert.alert('Error', 'Could not change takeover status');
+    } finally {
+      setLoadingAgent(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -83,7 +102,11 @@ export default function SupportScreen() {
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Live Support</Text>
-        <View style={{ width: 40 }} />
+        {(user?.role === 'boss' || user?.role === 'manager') && (
+          <TouchableOpacity onPress={toggleTakeover} style={styles.takeoverBtn} disabled={loadingAgent}>
+            <MaterialIcons name="people" size={24} color={agentActive ? '#4CAF50' : '#FFF'} />
+          </TouchableOpacity>
+        )}
       </View>
       <FlatList
         ref={flatListRef}
@@ -94,11 +117,12 @@ export default function SupportScreen() {
             style={[
               styles.bubble,
               item.sender_id === user?.id ? styles.bubbleMe : styles.bubbleThem,
+              item.is_ai && styles.bubbleAI,
             ]}
           >
             <Text style={styles.sender}>
               {item.sender_name ||
-                (item.sender_id === user?.id ? 'You' : 'Support')}
+                (item.sender_id === user?.id ? 'You' : item.sender_id === '00000000-0000-0000-0000-000000000001' ? 'Lucy (AI)' : 'Support')}
             </Text>
             <Text style={styles.msgText}>{item.message}</Text>
           </View>
@@ -136,6 +160,7 @@ const styles = StyleSheet.create({
   },
   backButton: { padding: 8, marginLeft: 4 },
   headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  takeoverBtn: { marginRight: 12, padding: 4 },
   bubble: { margin: 8, padding: 12, borderRadius: 12, maxWidth: '80%' },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#00D4FF' },
   bubbleThem: {
@@ -144,6 +169,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
+  bubbleAI: { borderColor: '#00D4FF', borderWidth: 1 },
   sender: { color: '#FFF', fontWeight: 'bold', fontSize: 12, marginBottom: 4 },
   msgText: { color: '#FFF', fontSize: 14 },
   inputBar: {

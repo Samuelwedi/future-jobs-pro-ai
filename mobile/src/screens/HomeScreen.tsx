@@ -39,12 +39,12 @@ export default function HomeScreen() {
   // Live Pulse data
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
 
-  // ---------- Clear stale token on mount ----------
+  // Clear stale token
   useEffect(() => {
     api.clearToken().catch(() => {});
   }, []);
 
-  // ---------- Location, pulse, timer ----------
+  // Location
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -55,6 +55,7 @@ export default function HomeScreen() {
     })();
   }, []);
 
+  // Pulse animation
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
@@ -66,9 +67,15 @@ export default function HomeScreen() {
     return () => anim.stop();
   }, []);
 
+  // Timer logic (fixed)
   useEffect(() => {
     if (isClockedIn && activeTimeEntry?.clockIn) {
-      const start = new Date(activeTimeEntry.clockIn).getTime();
+      const startTime = new Date(activeTimeEntry.clockIn);
+      if (isNaN(startTime.getTime())) {
+        console.error('Invalid clockIn date:', activeTimeEntry.clockIn);
+        return;
+      }
+      const start = startTime.getTime();
       timerRef.current = setInterval(() => {
         setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
       }, 1000);
@@ -79,7 +86,7 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isClockedIn, activeTimeEntry]);
 
-  // ---------- Data loading ----------
+  // Data loading
   const loadData = async () => {
     try {
       const res = await api.get<any>('/projects');
@@ -106,21 +113,31 @@ export default function HomeScreen() {
     loadAISuggestions();
   }, []));
 
+  // Clock in
   const handleClockIn = async () => {
-    if (!selectedProject) { Alert.alert('Select a project first'); return; }
-    try {
-      const payload: any = { userId: user?.id, projectId: selectedProject.id, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 };
-      const res = await api.post('/time-entries/clock-in', payload);
-      setIsClockedIn(true); setActiveTimeEntry(res);
-      await api.recordAIEvent('clock_in', { projectId: selectedProject.id });
-    } catch (e: any) { Alert.alert('Error', e.message); }
-  };
+  if (!selectedProject) { Alert.alert('Select a project first'); return; }
+  try {
+    const payload: any = { userId: user?.id, projectId: selectedProject.id, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 };
+    const res = await api.post<any>('/time-entries/clock-in', payload);
+    // res is of type any, now safe to spread
+    setIsClockedIn(true);
+    setActiveTimeEntry({ ...res, clockIn: res.clockIn });
+    await api.recordAIEvent('clock_in', { projectId: selectedProject.id });
+  } catch (e: any) { Alert.alert('Error', e.message); }
+};
 
+  // Clock out
   const handleClockOut = async () => {
+    if (!activeTimeEntry?.timeEntryId) {
+      Alert.alert('Error', 'No active time entry');
+      return;
+    }
     try {
       await api.post('/time-entries/clock-out', { userId: user?.id, timeEntryId: activeTimeEntry.timeEntryId, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 });
-      setIsClockedIn(false); setActiveTimeEntry(null);
+      setIsClockedIn(false);
+      setActiveTimeEntry(null);
       await api.recordAIEvent('clock_out', { timeEntryId: activeTimeEntry.timeEntryId });
+      Alert.alert('Clocked Out', 'Your time entry has been saved.');
     } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
@@ -158,7 +175,6 @@ export default function HomeScreen() {
         refreshControl={<RefreshControl refreshing={false} onRefresh={loadData} tintColor="#00D4FF" />}
         showsVerticalScrollIndicator={false}
       >
-        {/* ===== LIVE PULSE BAR ===== */}
         <LinearGradient colors={['#1A1A2E', '#0A0A0A']} style={styles.pulseBar}>
           <View style={styles.pulseItem}>
             <View style={styles.pulseDot} />
@@ -177,7 +193,6 @@ export default function HomeScreen() {
           </View>
         </LinearGradient>
 
-        {/* ===== HEADER ===== */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <LinearGradient colors={['#00D4FF', '#007AFF']} style={styles.avatarGradient}>
@@ -195,7 +210,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ===== AI WHISPER BAR ===== */}
         {aiSuggestions.length > 0 && (
           <TouchableOpacity style={styles.aiWhisper} onPress={() => dismissSuggestion(aiSuggestions[0].id)}>
             <MaterialIcons name="psychology" size={18} color="#00D4FF" />
@@ -204,7 +218,6 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* ===== HERO CLOCK MODULE ===== */}
         <View style={[styles.heroClock, isClockedIn && styles.heroClockActive]}>
           {!isClockedIn ? (
             <>
@@ -247,7 +260,6 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* ===== QUICK ACTIONS ===== */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionsScroll}>
           {quickActions.map((action, index) => {
@@ -270,7 +282,6 @@ export default function HomeScreen() {
           })}
         </ScrollView>
 
-        {/* ===== MORE ACTIONS ===== */}
         <View style={styles.moreActions}>
           {[
             { icon: 'groups', color: '#FF9800', label: t('crew_clock'), screen: 'CrewClock' },
@@ -279,7 +290,6 @@ export default function HomeScreen() {
             ...(user?.kioskEnabled ? [{ icon: 'touch-app', color: '#FF9800', label: 'Kiosk', screen: 'Kiosk' }] : []),
             ...(user?.role === 'boss' || user?.role === 'manager' ? [{ icon: 'people', color: '#00D4FF', label: 'Team', screen: 'Team' }] : []),
             { icon: 'person', color: '#00D4FF', label: t('settings'), screen: 'Profile' },
-            // ---- New info & support items ----
             { icon: 'mail', color: '#00D4FF', label: 'Contact', screen: 'Contact' },
             { icon: 'lock', color: '#4CAF50', label: 'Privacy', screen: 'Privacy' },
             { icon: 'description', color: '#FF9800', label: 'Terms', screen: 'Terms' },
@@ -297,7 +307,6 @@ export default function HomeScreen() {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* ===== FLOATING BUTTONS ===== */}
       <View style={styles.floatingContainer}>
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: '#00D4FF', marginBottom: 12 }]}

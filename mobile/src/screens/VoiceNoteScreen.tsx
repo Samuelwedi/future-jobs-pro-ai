@@ -32,7 +32,6 @@ export default function VoiceNoteScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
 
-  // ---------- SAFE PARAMS ----------
   const projectId: string = route?.params?.projectId || '';
   const timeEntryId: string = route?.params?.timeEntryId || '';
 
@@ -53,6 +52,8 @@ export default function VoiceNoteScreen() {
           allowsRecordingIOS: true,
           playsInSilentModeIOS: true,
         });
+      } else {
+        Alert.alert('Permission Denied', 'Microphone access is required to record voice notes.');
       }
     })();
     return () => {
@@ -61,6 +62,10 @@ export default function VoiceNoteScreen() {
   }, []);
 
   const startRecording = async () => {
+    if (!hasPermission) {
+      Alert.alert('Permission Required', 'Please grant microphone permission in settings.');
+      return;
+    }
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const { recording: newRecording } = await Audio.Recording.createAsync(
@@ -72,8 +77,9 @@ export default function VoiceNoteScreen() {
       timerRef.current = setInterval(() => {
         setRecordingDuration(Math.floor((Date.now() - startTime) / 1000));
       }, 1000);
-    } catch (error) {
-      Alert.alert('Error', 'Could not start recording');
+    } catch (error: any) {
+      console.error('Start recording error:', error);
+      Alert.alert('Error', `Could not start recording: ${error.message}`);
     }
   };
 
@@ -91,9 +97,11 @@ export default function VoiceNoteScreen() {
       setRecording(null);
       if (uri) {
         await processRecording(uri);
+      } else {
+        Alert.alert('Error', 'No audio file was created.');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Could not stop recording');
+    } catch (error: any) {
+      Alert.alert('Error', `Could not stop recording: ${error.message}`);
     }
   };
 
@@ -105,7 +113,6 @@ export default function VoiceNoteScreen() {
         projectId,
         timeEntryId,
       };
-
       const response = await api.uploadFileWithData<VoiceNoteResponse>(
         '/voice/process',
         audioUri,
@@ -137,7 +144,6 @@ export default function VoiceNoteScreen() {
     else Alert.alert('Info', 'Return to previous screen.');
   };
 
-  // ---------- Fallback when no project ----------
   if (!projectId) {
     return (
       <View style={styles.center}>
@@ -149,7 +155,6 @@ export default function VoiceNoteScreen() {
     );
   }
 
-  // ---------- Permission checks ----------
   if (hasPermission === null) {
     return (
       <View style={styles.center}>
@@ -167,7 +172,6 @@ export default function VoiceNoteScreen() {
     );
   }
 
-  // ---------- Processing state ----------
   if (isProcessing) {
     return (
       <View style={styles.center}>
@@ -178,29 +182,24 @@ export default function VoiceNoteScreen() {
     );
   }
 
-  // ---------- Result view ----------
   if (result) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.resultContent}>
         <Text style={styles.resultTitle}>✅ Voice Note Processed</Text>
-
         <View style={styles.card}>
           <Text style={styles.cardLabel}>📧 Client Summary</Text>
           <Text style={styles.summaryText}>{result.clientSummary}</Text>
         </View>
-
         <View style={styles.card}>
           <Text style={styles.cardLabel}>📝 Full Transcript</Text>
           <Text style={styles.transcriptText}>{result.transcript}</Text>
         </View>
-
         {result.structuredData.actions.length > 0 && (
           <View style={styles.card}>
             <Text style={styles.cardLabel}>🔧 Actions</Text>
             {result.structuredData.actions.map((a, i) => <Text key={i} style={styles.item}>• {a}</Text>)}
           </View>
         )}
-
         {result.structuredData.parts.length > 0 && (
           <View style={styles.card}>
             <Text style={styles.cardLabel}>🧰 Parts/Equipment</Text>
@@ -209,7 +208,6 @@ export default function VoiceNoteScreen() {
             </View>
           </View>
         )}
-
         <View style={styles.buttonRow}>
           <TouchableOpacity style={styles.secondaryButton} onPress={() => setResult(null)}>
             <Text style={styles.secondaryButtonText}>New Note</Text>
@@ -222,7 +220,6 @@ export default function VoiceNoteScreen() {
     );
   }
 
-  // ---------- Main recording view ----------
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -239,7 +236,6 @@ export default function VoiceNoteScreen() {
             <View key={i} style={[styles.waveBar, { height: isRecording ? 40 + i*5 : 20, backgroundColor: isRecording ? '#00D4FF' : '#444' }]} />
           ))}
         </View>
-
         {isRecording && <Text style={styles.timer}>{formatDuration(recordingDuration)}</Text>}
         <Text style={styles.aiGuide}>
           {isRecording ? "🎤 Recording... Speak clearly about the work you did" : "Tap the mic and describe the work you performed"}
@@ -258,7 +254,6 @@ export default function VoiceNoteScreen() {
   );
 }
 
-// ---------- Styles (same as before) ----------
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
