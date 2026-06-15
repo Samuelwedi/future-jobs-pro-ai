@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Modal, TextInput, Alert, Linking,
+  RefreshControl, Modal, TextInput, Alert, Linking, Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
 
 interface Project {
   id: string;
@@ -64,6 +63,15 @@ export default function ProjectsScreen() {
     }
   };
 
+  const openMaps = (address: string) => {
+    if (!address) return;
+    const encoded = encodeURIComponent(address);
+    const url = Platform.OS === 'ios'
+      ? `http://maps.apple.com/?q=${encoded}`
+      : `https://www.google.com/maps/search/?api=1&query=${encoded}`;
+    Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open maps'));
+  };
+
   const handleCreateProject = async () => {
     if (!newName.trim()) {
       Alert.alert('Error', 'Project name is required');
@@ -71,17 +79,21 @@ export default function ProjectsScreen() {
     }
     setCreating(true);
     try {
-      // First create the project
       const projectRes = await api.post<{ success: boolean; project: Project }>('/projects', {
         name: newName.trim(),
         client_name: newClientName.trim() || null,
         address: newAddress.trim() || null,
       });
+      console.log('Project creation response:', projectRes);
+      
+      if (!projectRes.success || !projectRes.project) {
+        throw new Error('Invalid response from server');
+      }
       const projectId = projectRes.project.id;
-
-      // If a file was selected, upload it using fetch (since api.post doesn't support FormData)
+      if (!projectId) throw new Error('Project ID missing in response');
+      
       if (selectedFile) {
-        const token = await api.getToken(); // assuming api.getToken() exists
+        const token = await api.getToken();
         const formData = new FormData();
         formData.append('file', {
           uri: selectedFile.uri,
@@ -97,7 +109,7 @@ export default function ProjectsScreen() {
           body: formData,
         });
       }
-
+      
       Alert.alert('Success', 'Project created');
       setModalVisible(false);
       setNewName('');
@@ -106,18 +118,11 @@ export default function ProjectsScreen() {
       setSelectedFile(null);
       fetchProjects();
     } catch (error: any) {
+      console.error('Create project error:', error);
       Alert.alert('Error', error.message || 'Failed to create project');
     } finally {
       setCreating(false);
     }
-  };
-
-  const openMaps = (address: string) => {
-    if (!address) return;
-    const url = `http://maps.apple.com/?q=${encodeURIComponent(address)}`;
-    Linking.openURL(url).catch(() => {
-      Alert.alert('Error', 'Could not open maps');
-    });
   };
 
   const renderProject = ({ item }: { item: Project }) => (
@@ -172,12 +177,10 @@ export default function ProjectsScreen() {
         ListEmptyComponent={<Text style={styles.emptyText}>No projects found</Text>}
       />
 
-      {/* Floating Action Button */}
       <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
         <MaterialIcons name="add" size={28} color="#0A0A0A" />
       </TouchableOpacity>
 
-      {/* Create Project Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
