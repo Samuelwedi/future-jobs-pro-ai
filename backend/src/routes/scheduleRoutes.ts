@@ -33,13 +33,12 @@ router.get('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/schedule/my-shifts?userId=...&start=...&end=... (mobile schedule screen)
+// GET /api/schedule/my-shifts?userId=...&start=...&end=...
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    
     const decoded = verifyToken(req);
 
     const { userId, start, end } = req.query;
@@ -58,8 +57,19 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     if (requestUserRes.rows[0].company_id !== targetUserRes.rows[0].company_id)
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
+    // Fetch shifts for the user (includes assignments via shift_assignments)
     const result = await pool.query(
-      `SELECT * FROM shifts WHERE user_id = $1 AND date >= $2 AND date <= $3 ORDER BY date`,
+      `SELECT s.*, 
+              array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
+              json_agg(DISTINCT jsonb_build_object('id', u.id, 'name', u.first_name || ' ' || u.last_name)) FILTER (WHERE u.id IS NOT NULL) AS assigned_users
+       FROM shifts s
+       LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
+       LEFT JOIN users u ON sa.user_id = u.id
+       WHERE s.user_id = $1 
+         AND s.date >= $2::date 
+         AND s.date <= $3::date
+       GROUP BY s.id
+       ORDER BY s.date`,
       [userId, start, end]
     );
     res.json({ success: true, shifts: result.rows });
@@ -75,13 +85,41 @@ router.post('/shifts', async (req: Request, res: Response) => {
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const { name, date, startTime, endTime, projectId, notes, employeeIds } = req.body;
-    const result = await pool.query(
-      `INSERT INTO shifts (company_id, name, date, start_time, end_time, project_id, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [companyId, name, date, startTime, endTime, projectId, notes, req.body.userId || null]
-    );
-    res.json({ success: true, shift: result.rows[0] });
+    if (!name || !date || !startTime || !endTime) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    // Start a transaction
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Insert the shift (assign to the first employee? Instead, we'll insert the shift with a NULL user_id and use assignments)
+      const shiftResult = await client.query(
+        `INSERT INTO shifts (company_id, name, date, start_time, end_time, project_id, notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        [companyId, name, date, startTime, endTime, projectId || null, notes || null, req.body.userId || null]
+      );
+      const shift = shiftResult.rows[0];
+
+      // If employeeIds are provided, insert assignments
+      if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
+        const assignmentValues = employeeIds.map((userId: string) => `('${shift.id}', '${userId}')`).join(',');
+        await client.query(
+          `INSERT INTO shift_assignments (shift_id, user_id) VALUES ${assignmentValues}`
+        );
+      }
+
+      await client.query('COMMIT');
+      res.status(201).json({ success: true, shift });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (error: any) {
+    console.error('Create shift error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -92,13 +130,23 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { name, date, startTime, endTime, notes } = req.body;
+    const { name, date, startTime, endTime, notes, employeeIds } = req.body;
     const result = await pool.query(
       `UPDATE shifts SET name=$1, date=$2, start_time=$3, end_time=$4, notes=$5
        WHERE id=$6 AND company_id=$7 RETURNING *`,
       [name, date, startTime, endTime, notes, req.params.id, companyId]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Shift not found' });
+
+    // Update assignments: delete existing and insert new ones
+    if (employeeIds && Array.isArray(employeeIds)) {
+      await pool.query('DELETE FROM shift_assignments WHERE shift_id = $1', [req.params.id]);
+      if (employeeIds.length > 0) {
+        const values = employeeIds.map((uid: string) => `('${req.params.id}', '${uid}')`).join(',');
+        await pool.query(`INSERT INTO shift_assignments (shift_id, user_id) VALUES ${values}`);
+      }
+    }
+
     res.json({ success: true, shift: result.rows[0] });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -111,6 +159,8 @@ router.delete('/shifts/:id', async (req: Request, res: Response) => {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
+    // Delete assignments first
+    await pool.query('DELETE FROM shift_assignments WHERE shift_id = $1', [req.params.id]);
     await pool.query('DELETE FROM shifts WHERE id=$1 AND company_id=$2', [req.params.id, companyId]);
     res.json({ success: true, message: 'Shift deleted' });
   } catch (error: any) {
