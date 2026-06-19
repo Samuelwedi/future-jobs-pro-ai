@@ -7,11 +7,9 @@
 import { pool } from '../config/database';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as crypto from 'crypto';
 import OpenAI from 'openai';
 import { recordUserEvent } from './adaptiveAIService';
 
-// Only initialise OpenAI if a valid API key is present
 let openai: OpenAI | null = null;
 if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here') {
   openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -38,41 +36,27 @@ interface VoiceNoteResult {
   duration: number;
 }
 
-// ============================================
-// MAIN FUNCTION: Process a voice note file
-// ============================================
 export async function processVoiceNote(
   audioPath: string,
   userId: string,
   projectId: string,
   timeEntryId: string
 ): Promise<VoiceNoteResult> {
-
   console.log(`\n🎙️  [Samuel B. AI] Processing voice note: ${path.basename(audioPath)}`);
 
-  // 1. Transcribe audio
   const transcript = await transcribeAudio(audioPath);
   console.log(`📝 Transcript: "${transcript.substring(0, 100)}${transcript.length > 100 ? '...' : ''}"`);
 
-  // 2. Extract structured data
   const extractedData = await extractStructuredData(transcript);
-
-  // 3. Generate client‑friendly summary
   const clientSummary = await generateClientSummary(transcript, extractedData);
-
-  // 4. Generate search tags
   const tags = generateTags(transcript, extractedData);
-
-  // 5. Estimate duration
   const duration = await getAudioDuration(audioPath);
 
-  // 6. Save to database
   const savedNote = await saveVoiceNote({
     userId, projectId, timeEntryId, audioPath,
     transcript, structuredData: extractedData, clientSummary, tags, duration
   });
 
-  // 7. Record event for AI learning
   await recordUserEvent({
     userId,
     eventType: 'voice_note',
@@ -84,15 +68,10 @@ export async function processVoiceNote(
   return { id: savedNote.id, transcript, structuredData: extractedData, clientSummary, tags, duration };
 }
 
-// ============================================
-// Transcribe audio (Whisper if OpenAI key present, else simulation)
-// ============================================
 async function transcribeAudio(audioPath: string): Promise<string> {
   if (!openai) {
-    // Return a simulated transcript for testing without API key
     return "Found corrosion on valve number three. I replaced the gasket and tested pressure at 45 PSI. Need to order a new gasket for next visit.";
   }
-
   try {
     const response = await openai.audio.transcriptions.create({
       file: fs.createReadStream(audioPath),
@@ -107,10 +86,16 @@ async function transcribeAudio(audioPath: string): Promise<string> {
   }
 }
 
-// ============================================
-// Extract structured data (GPT if OpenAI key present, else rule‑based)
-// ============================================
 async function extractStructuredData(transcript: string): Promise<ExtractedData> {
+  const defaultData: ExtractedData = {
+    actions: [],
+    parts: [],
+    measurements: [],
+    issues: [],
+    nextSteps: [],
+    people: []
+  };
+
   if (openai) {
     try {
       const response = await openai.chat.completions.create({
@@ -123,14 +108,21 @@ async function extractStructuredData(transcript: string): Promise<ExtractedData>
         max_tokens: 500
       });
       const content = response.choices[0].message.content;
-      if (content) return JSON.parse(content);
+      if (content) {
+        const parsed = JSON.parse(content);
+        // Ensure all required keys exist with at least empty arrays
+        for (const key of ['actions', 'parts', 'measurements', 'issues', 'nextSteps', 'people']) {
+          if (!Array.isArray(parsed[key])) parsed[key] = [];
+        }
+        return parsed as ExtractedData;
+      }
     } catch (error) {
       console.error('GPT extraction error:', error);
     }
   }
 
   // Fallback rule‑based extraction
-  return ruleBasedExtraction(transcript);
+  return ruleBasedExtraction(transcript) || defaultData;
 }
 
 function ruleBasedExtraction(transcript: string): ExtractedData {
@@ -160,9 +152,6 @@ function ruleBasedExtraction(transcript: string): ExtractedData {
   return data;
 }
 
-// ============================================
-// Generate a client‑ready summary
-// ============================================
 async function generateClientSummary(transcript: string, data: ExtractedData): Promise<string> {
   if (!openai) {
     return `Technician ${data.actions.slice(0,2).join(' and ')}. System is working properly.`;
@@ -180,9 +169,6 @@ async function generateClientSummary(transcript: string, data: ExtractedData): P
   }
 }
 
-// ============================================
-// Generate search tags
-// ============================================
 function generateTags(transcript: string, data: ExtractedData): string[] {
   const tags = new Set<string>();
   data.actions.forEach(a => a.split(' ').forEach(w => { if (w.length > 3) tags.add(w.toLowerCase()); }));
@@ -195,21 +181,15 @@ function generateTags(transcript: string, data: ExtractedData): string[] {
   return Array.from(tags).slice(0, 20);
 }
 
-// ============================================
-// Get audio duration (estimate from file size)
-// ============================================
 async function getAudioDuration(audioPath: string): Promise<number> {
   try {
     const stats = fs.statSync(audioPath);
-    return Math.round((stats.size / (1024 * 1024)) * 60); // rough: 1 MB ≈ 1 min
+    return Math.round((stats.size / (1024 * 1024)) * 60);
   } catch {
     return 30;
   }
 }
 
-// ============================================
-// Save voice note to database
-// ============================================
 async function saveVoiceNote(params: {
   userId: string; projectId: string; timeEntryId: string; audioPath: string;
   transcript: string; structuredData: ExtractedData; clientSummary: string;
@@ -224,9 +204,6 @@ async function saveVoiceNote(params: {
   return { id: result.rows[0].id };
 }
 
-// ============================================
-// Get all voice notes for a project
-// ============================================
 export async function getProjectVoiceNotes(projectId: string): Promise<any[]> {
   const result = await pool.query(
     `SELECT vn.*, u.first_name || ' ' || u.last_name as created_by

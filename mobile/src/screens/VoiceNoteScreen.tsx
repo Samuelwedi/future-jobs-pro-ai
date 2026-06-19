@@ -119,6 +119,17 @@ export default function VoiceNoteScreen() {
         extraFields,
         'audio'
       );
+      // SAFETY FALLBACK: ensure structuredData exists with empty arrays
+      if (!response.structuredData) {
+        response.structuredData = {
+          actions: [],
+          parts: [],
+          measurements: [],
+          issues: [],
+          nextSteps: [],
+          people: []
+        };
+      }
       setResult(response);
       api.recordAIEvent('voice_note', {
         transcript: response.transcript,
