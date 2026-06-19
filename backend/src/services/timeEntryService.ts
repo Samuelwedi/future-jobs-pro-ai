@@ -1,5 +1,5 @@
 // ============================================
-// TIME ENTRY SERVICE (enriched for Timesheet)
+// TIME ENTRY SERVICE
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
@@ -8,8 +8,9 @@ import { recordUserEvent } from './adaptiveAIService';
 
 export async function clockIn(userId: string, projectId: string, latitude: number, longitude: number) {
   const result = await pool.query(
-    `INSERT INTO time_entries (user_id, project_id, clock_in, clock_in_latitude, clock_in_longitude, status)
-     VALUES ($1, $2, NOW(), $3, $4, 'active') RETURNING *`,
+    `INSERT INTO time_entries (user_id, project_id, clock_in, clock_in_latitude, clock_in_longitude, company_id)
+     VALUES ($1, $2, NOW(), $3, $4, (SELECT company_id FROM users WHERE id = $1))
+     RETURNING *`,
     [userId, projectId, latitude, longitude]
   );
   const entry = result.rows[0];
@@ -19,8 +20,10 @@ export async function clockIn(userId: string, projectId: string, latitude: numbe
 
 export async function clockOut(userId: string, timeEntryId: string, latitude: number, longitude: number) {
   const result = await pool.query(
-    `UPDATE time_entries SET clock_out = NOW(), clock_out_latitude = $1, clock_out_longitude = $2, status = 'completed'
-     WHERE id = $3 AND user_id = $4 RETURNING *`,
+    `UPDATE time_entries
+     SET clock_out = NOW(), clock_out_latitude = $1, clock_out_longitude = $2
+     WHERE id = $3 AND user_id = $4 AND clock_out IS NULL
+     RETURNING *`,
     [latitude, longitude, timeEntryId, userId]
   );
   const entry = result.rows[0];
@@ -55,7 +58,7 @@ export async function getTimeEntries(userId: string, startDate: string, endDate:
 
 function buildAlerts(entry: any): string[] {
   const alerts: string[] = [];
-  if (!entry.clock_out && entry.status !== 'active') alerts.push('Forgot to clock out');
+  if (!entry.clock_out) alerts.push('Still clocked in');
   return alerts;
 }
 
@@ -64,8 +67,9 @@ export async function manualTimeEntry(
   breakMinutes: number = 0, notes: string = '', createdBy: string
 ) {
   const result = await pool.query(
-    `INSERT INTO time_entries (user_id, project_id, clock_in, clock_out, break_minutes, notes, is_manual, created_by, status)
-     VALUES ($1,$2,$3,$4,$5,$6,true,$7,'completed') RETURNING *`,
+    `INSERT INTO time_entries (user_id, project_id, clock_in, clock_out, break_minutes, notes, is_manual, created_by, company_id)
+     VALUES ($1,$2,$3,$4,$5,$6,true,$7, (SELECT company_id FROM users WHERE id = $1))
+     RETURNING *`,
     [userId, projectId, clockIn, clockOut, breakMinutes, notes, createdBy]
   );
   return result.rows[0];
