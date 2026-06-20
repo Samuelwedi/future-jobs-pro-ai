@@ -70,23 +70,8 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
     }
   }
 
-  // For test user, return mock data for all endpoints (or just let them through)
-  if (isTestUser || (decoded && decoded.email === 'samuel@test.com')) {
-    console.log('✅ TRIAL MIDDLEWARE: Returning mock data for test user:', req.method, req.path);
-
-    // You already have mock data logic here – keep it as is.
-    // The important part is that we've bypassed the token requirement.
-    // Now we can either return mock data or let the route handle it.
-    // If we want the real routes to process, we just call next().
-    // However, the 401s suggest the real routes still fail because they also check auth.
-    // So we'll attach the user to the request and let the route handle it.
-    (req as any).user = decoded;
-    (req as any).companyId = decoded.companyId || 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
-    return next();
-  }
-
-  // Non-test users: attach user and continue
+  // Attach user to request
   (req as any).user = decoded;
-  (req as any).companyId = decoded.companyId;
+  (req as any).companyId = decoded.companyId || 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
   next();
 };
