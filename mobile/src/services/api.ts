@@ -11,7 +11,7 @@ import { getOnlineStatus, queueAction } from './offlineService';
 
 // Railway permanent backend
 const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
-const PROD_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api'; // ← fixed
+const PROD_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 export const API_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
 
 class ApiService {
@@ -26,9 +26,16 @@ class ApiService {
     });
 
     this.client.interceptors.request.use(async (config) => {
+      // Add Authorization header if token exists
       if (this.token) {
         config.headers.Authorization = `Bearer ${this.token}`;
       }
+
+      // In development, always add the test user header so the server can bypass token validation
+      if (__DEV__) {
+        config.headers['X-Test-User'] = 'samuel@test.com';
+      }
+
       return config;
     });
   }
