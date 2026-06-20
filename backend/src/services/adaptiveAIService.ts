@@ -51,6 +51,53 @@ interface AIEvent {
 }
 
 // ============================================
+// SELF-HEALING: Ensure table and columns exist
+// ============================================
+async function ensureBehaviorTableExists(): Promise<void> {
+  try {
+    // Create table if not exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_behavior_patterns (
+        user_id UUID PRIMARY KEY REFERENCES users(id),
+        avg_clock_in_time TIME,
+        avg_clock_out_time TIME,
+        common_work_days INTEGER[],
+        avg_shift_duration_minutes INTEGER,
+        frequent_locations JSONB,
+        preferred_project_types TEXT[],
+        avg_job_duration_minutes INTEGER,
+        avg_photo_compliance_score INTEGER,
+        common_photo_issues TEXT[],
+        common_phrases TEXT[],
+        data_points_collected INTEGER DEFAULT 0,
+        overall_pattern_strength INTEGER DEFAULT 0,
+        last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+
+    // Add columns if they are missing (in case table existed without them)
+    const columns = [
+      'avg_clock_in_time', 'avg_clock_out_time', 'common_work_days',
+      'avg_shift_duration_minutes', 'frequent_locations', 'preferred_project_types',
+      'avg_job_duration_minutes', 'avg_photo_compliance_score', 'common_photo_issues',
+      'common_phrases', 'data_points_collected', 'overall_pattern_strength'
+    ];
+    for (const col of columns) {
+      let type = 'TEXT';
+      if (col === 'avg_clock_in_time' || col === 'avg_clock_out_time') type = 'TIME';
+      else if (col === 'common_work_days') type = 'INTEGER[]';
+      else if (col === 'avg_shift_duration_minutes' || col === 'avg_job_duration_minutes' || col === 'avg_photo_compliance_score' || col === 'data_points_collected' || col === 'overall_pattern_strength') type = 'INTEGER';
+      else if (col === 'frequent_locations') type = 'JSONB';
+      else if (col === 'preferred_project_types' || col === 'common_photo_issues' || col === 'common_phrases') type = 'TEXT[]';
+      await pool.query(`ALTER TABLE user_behavior_patterns ADD COLUMN IF NOT EXISTS ${col} ${type}`);
+    }
+    console.log('✅ user_behavior_patterns table verified');
+  } catch (err) {
+    console.error('❌ Failed to ensure behavior table:', err);
+  }
+}
+
+// ============================================
 // CORE FUNCTION: Record a user event (eyes & ears of AI)
 // ============================================
 export async function recordUserEvent(event: AIEvent): Promise<void> {
@@ -72,10 +119,13 @@ export async function recordUserEvent(event: AIEvent): Promise<void> {
       ]
     );
 
-    // 2. Update the user's behavior pattern
+    // 2. Ensure the behavior table exists before updating
+    await ensureBehaviorTableExists();
+
+    // 3. Update the user's behavior pattern
     await updateUserPatterns(event.userId);
 
-    // 3. Generate proactive insights/suggestions
+    // 4. Generate proactive insights/suggestions
     await generateInsights(event.userId, event);
 
   } catch (error) {
@@ -188,16 +238,16 @@ async function updateUserPatterns(userId: string): Promise<void> {
     const locMap = new Map<string, { lat: number; lng: number; count: number; lastSeen: Date }>();
     events.forEach(e => {
       if (e.location_lat && e.location_lng) {
-       const lat = parseFloat(e.location_lat);
-const lng = parseFloat(e.location_lng);
-if (isNaN(lat) || isNaN(lng)) return;
-const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+        const lat = parseFloat(e.location_lat);
+        const lng = parseFloat(e.location_lng);
+        if (isNaN(lat) || isNaN(lng)) return;
+        const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
         const existing = locMap.get(key);
         if (existing) {
           existing.count++;
           if (new Date(e.created_at) > existing.lastSeen) existing.lastSeen = new Date(e.created_at);
         } else {
-          locMap.set(key, { lat: e.location_lat, lng: e.location_lng, count: 1, lastSeen: new Date(e.created_at) });
+          locMap.set(key, { lat, lng, count: 1, lastSeen: new Date(e.created_at) });
         }
       }
     });
@@ -217,8 +267,8 @@ const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
       `INSERT INTO user_behavior_patterns (
         user_id, avg_clock_in_time, avg_clock_out_time, common_work_days,
         avg_shift_duration_minutes, frequent_locations, avg_photo_compliance_score,
-        common_photo_issues, common_phrases, data_points_collected, last_updated
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+        common_photo_issues, common_phrases, data_points_collected, overall_pattern_strength
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0)
       ON CONFLICT (user_id) DO UPDATE SET
         avg_clock_in_time = EXCLUDED.avg_clock_in_time,
         avg_clock_out_time = EXCLUDED.avg_clock_out_time,
@@ -229,6 +279,7 @@ const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
         common_photo_issues = EXCLUDED.common_photo_issues,
         common_phrases = EXCLUDED.common_phrases,
         data_points_collected = EXCLUDED.data_points_collected,
+        overall_pattern_strength = EXCLUDED.overall_pattern_strength,
         last_updated = NOW()`,
       [
         userId, avgClockInTime, avgClockOutTime, commonWorkDays,
