@@ -4,8 +4,12 @@ import { Request } from 'express';
 const JWT_SECRET = process.env.JWT_SECRET!;
 
 export const verifyToken = (req: Request): any => {
+  // Log all headers for debugging
+  console.log('🔍 verifyToken headers:', JSON.stringify(req.headers, null, 2));
+
   // ----- TEST USER BYPASS via header -----
   const testUserHeader = req.headers['x-test-user'];
+  console.log('🔍 testUserHeader value:', testUserHeader);
   if (testUserHeader === 'samuel@test.com') {
     console.log('✅ verifyToken: bypass for test user (header)');
     return {
