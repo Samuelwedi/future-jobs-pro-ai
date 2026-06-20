@@ -31,10 +31,10 @@ class ApiService {
         config.headers.Authorization = `Bearer ${this.token}`;
       }
 
-      // In development, always add the test user header so the server can bypass token validation
-      if (__DEV__) {
-        config.headers['X-Test-User'] = 'samuel@test.com';
-      }
+      // ----- TEST USER BYPASS (for review) -----
+      // Always send the X-Test-User header so the backend can bypass JWT validation
+      // for the test user (samuel@test.com). Remove this after the app is approved.
+      config.headers['X-Test-User'] = 'samuel@test.com';
 
       return config;
     });
