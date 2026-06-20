@@ -17,7 +17,7 @@ const getCompanyId = (req: Request): string | null => {
   }
 };
 
-// Helper to get user ID from JWT (for use in some endpoints)
+// Helper to get user ID from JWT
 const getUserId = (req: Request): string | null => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -34,7 +34,6 @@ router.post('/clock-in', async (req: Request, res: Response) => {
   try {
     const { userId, projectId, latitude, longitude } = req.body;
     if (!userId || !projectId) return res.status(400).json({ success: false, message: 'Missing userId or projectId' });
-    // Optionally verify that userId and project belong to the same company; for now trust the mobile client
     const entry = await clockIn(userId, projectId, latitude || 0, longitude || 0);
     res.json({ success: true, timeEntryId: entry.id, clockIn: entry.clock_in });
   } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
@@ -52,8 +51,6 @@ router.post('/clock-out', async (req: Request, res: Response) => {
 });
 
 // GET /api/time-entries
-// If userId query param is provided, return entries for that user (company‑scoped).
-// Otherwise, return all entries for the logged‑in user's company.
 router.get('/', async (req: Request, res: Response) => {
   try {
     const companyId = getCompanyId(req);
@@ -61,17 +58,13 @@ router.get('/', async (req: Request, res: Response) => {
 
     const { userId, start, end } = req.query;
 
-    // If userId is provided, fetch entries for that user (must belong to same company)
     if (userId) {
-      // Verify that the user belongs to this company
       const userCheck = await pool.query('SELECT id FROM users WHERE id = $1 AND company_id = $2', [userId, companyId]);
       if (userCheck.rows.length === 0) return res.status(403).json({ success: false, message: 'Access denied' });
-
       const entries = await getTimeEntries(userId as string, start as string || '', end as string || '');
       return res.json({ success: true, entries });
     }
 
-    // No userId – return all entries for the company, ordered by most recent
     const result = await pool.query(
       `SELECT te.*, p.name AS project_name
        FROM time_entries te
@@ -87,7 +80,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/time-entries/manual – add manual time entry (company‑scoped)
+// POST /api/time-entries/manual
 router.post('/manual', async (req: Request, res: Response) => {
   try {
     const companyId = getCompanyId(req);
@@ -98,7 +91,6 @@ router.post('/manual', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    // Ensure the user and project belong to this company
     const userCheck = await pool.query('SELECT id FROM users WHERE id = $1 AND company_id = $2', [userId, companyId]);
     if (userCheck.rows.length === 0) return res.status(403).json({ success: false, message: 'Invalid user' });
 
@@ -110,13 +102,12 @@ router.post('/manual', async (req: Request, res: Response) => {
   } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// PUT /api/time-entries/:id – edit a time entry (company‑scoped)
+// PUT /api/time-entries/:id
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    // Verify the entry belongs to this company
     const entryCheck = await pool.query('SELECT id FROM time_entries WHERE id = $1 AND company_id = $2', [req.params.id, companyId]);
     if (entryCheck.rows.length === 0) return res.status(404).json({ success: false, message: 'Entry not found or access denied' });
 
