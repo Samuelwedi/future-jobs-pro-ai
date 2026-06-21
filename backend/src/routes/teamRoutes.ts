@@ -5,17 +5,18 @@ import { inviteEmployee, getCompanyMembers, updateMemberRole, removeMember, setP
 
 const router = express.Router();
 
-// Helper to check if the request is from the test user
 const isTestUser = (req: Request): boolean => {
   return req.headers['x-test-user'] === 'samuel@test.com';
 };
 
-// Helper to safely extract userId from request params
+// Helper to safely get userId as string
 const getUserId = (req: Request): string => {
-  const id = req.params.userId;
-  if (typeof id === 'string') return id;
-  // If it's an array, take the first element
-  return id[0] || '';
+  return String(req.params.userId);
+};
+
+// Helper to safely get companyId as string
+const getCompanyId = (req: Request): string => {
+  return String(req.params.companyId);
 };
 
 // GET /api/team
@@ -126,8 +127,9 @@ router.post('/set-password', async (req: Request, res: Response) => {
 // GET /api/team/members/:companyId
 router.get('/members/:companyId', async (req: Request, res: Response) => {
   try {
+    const companyId = getCompanyId(req);
     if (isTestUser(req)) {
-      const members = await getCompanyMembers(req.params.companyId);
+      const members = await getCompanyMembers(companyId);
       return res.json({ success: true, members });
     }
     const authHeader = req.headers.authorization;
@@ -135,7 +137,7 @@ router.get('/members/:companyId', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     verifyToken(req);
-    const members = await getCompanyMembers(req.params.companyId as string);
+    const members = await getCompanyMembers(companyId);
     res.json({ success: true, members });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

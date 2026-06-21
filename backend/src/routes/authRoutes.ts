@@ -1,4 +1,3 @@
-import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -57,11 +56,11 @@ router.post('/register', async (req: Request, res: Response) => {
       await pool.query('UPDATE users SET company_id = $1 WHERE id = $2', [companyId, user.id]);
     }
 
-   const token = jwt.sign(
-  { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role, companyId: user.companyId },
-  JWT_SECRET,
-  { expiresIn: '7d' }  // Add this
-);
+    const token = jwt.sign(
+      { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, companyId: user.company_id },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
     res.status(201).json({
       success: true,
       token,
@@ -104,10 +103,10 @@ router.post('/login', async (req: Request, res: Response) => {
     await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
 
     const token = jwt.sign(
-  { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role, companyId: user.companyId },
-  JWT_SECRET,
-  { expiresIn: '7d' }  // Add this
-);
+      { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role, companyId: user.company_id },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
     res.json({
       success: true,
       token,
