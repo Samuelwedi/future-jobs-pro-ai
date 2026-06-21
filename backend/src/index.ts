@@ -41,6 +41,13 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// ===== PING ENDPOINT (for testing connectivity) =====
+app.get('/ping', (req, res) => {
+  res.json({ success: true, message: 'pong' });
+});
+
+app.get('/', (req, res) => res.send('<h1>🚀 Future Jobs Pro AI</h1>'));
+
 // ----- Trial middleware -----
 app.use(trialCheck);
 
@@ -72,12 +79,6 @@ app.get('/api/db-test', async (req: Request, res: Response) => {
   catch (error: any) { res.status(500).json({ success: false, error: error.message }); }
 });
 
-// ===== PING ENDPOINT (for testing connectivity) =====
-app.get('/ping', (req, res) => {
-  res.json({ success: true, message: 'pong' });
-});
-
-app.get('/', (req, res) => res.send('<h1>🚀 Future Jobs Pro AI</h1>'));
 
 // ===== REST ROUTES (REGISTERED FIRST – THEY WILL BE TRIED BEFORE THE BYPASS) =====
 import authRoutes from './routes/authRoutes'; app.use('/api/auth', authRoutes);

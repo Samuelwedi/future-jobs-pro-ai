@@ -3,23 +3,23 @@ import { verifyToken } from '../utils/auth';
 import { pool } from '../config/database';
 
 export const trialCheck = async (req: Request, res: Response, next: NextFunction) => {
-  // Skip auth routes and health
+  // Skip auth routes, health, ping, and root
   if (
     req.path.startsWith('/api/auth') ||
     req.path.startsWith('/api/stripe') ||
     req.path === '/api/health' ||
-    req.path === '/api/lucy'
+    req.path === '/api/lucy' ||
+    req.path === '/ping' ||
+    req.path === '/'
   ) {
     return next();
   }
 
   try {
-    // Use the shared verifyToken helper (which includes test user bypass)
     const decoded = verifyToken(req);
     (req as any).user = decoded;
     (req as any).companyId = decoded.companyId || 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
 
-    // Optional trial expiration logic for non-test users
     if (decoded.email !== 'samuel@test.com') {
       const userRes = await pool.query(
         'SELECT trial_ends_at, stripe_payment_method_id FROM users WHERE id = $1',
