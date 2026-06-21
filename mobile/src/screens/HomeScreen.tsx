@@ -39,10 +39,8 @@ export default function HomeScreen() {
   // Live Pulse data
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
 
-  // Clear stale token
-  useEffect(() => {
-    api.clearToken().catch(() => {});
-  }, []);
+  // ----- REMOVED: api.clearToken() on mount -----
+  // This was clearing the token right after login, causing 401 errors.
 
   // Location
   useEffect(() => {
@@ -119,7 +117,6 @@ export default function HomeScreen() {
   try {
     const payload: any = { userId: user?.id, projectId: selectedProject.id, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 };
     const res = await api.post<any>('/time-entries/clock-in', payload);
-    // res is of type any, now safe to spread
     setIsClockedIn(true);
     setActiveTimeEntry({ ...res, clockIn: res.clockIn });
     await api.recordAIEvent('clock_in', { projectId: selectedProject.id });
