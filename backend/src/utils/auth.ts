@@ -6,6 +6,19 @@ const JWT_SECRET = process.env.JWT_SECRET!;
 console.log('🔑 JWT_SECRET loaded (first 4 chars):', JWT_SECRET.substring(0, 4));
 
 export const verifyToken = (req: Request): any => {
+  // ----- TEST USER BYPASS via header (highest priority) -----
+  const testUserHeader = req.headers['x-test-user'];
+  if (testUserHeader === 'samuel@test.com') {
+    console.log('✅ verifyToken: bypass for test user (header)');
+    return {
+      id: 'e0f62298-03f1-4908-bac2-8415e5a9d0e5',
+      email: 'samuel@test.com',
+      role: 'boss',
+      companyId: 'ed1887d9-3ffd-46e4-b281-338c8ad03a66'
+    };
+  }
+
+  // ---- Normal token verification ----
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     throw new Error('No token provided');
@@ -21,7 +34,7 @@ export const verifyToken = (req: Request): any => {
   } catch (err) {
     const error = err as Error;
     console.error('❌ JWT verification error:', error.message);
-    // For test user, bypass (this matches the old behavior)
+    // If verification fails, try to decode without verification (for test user)
     const unverified = jwt.decode(token) as any;
     if (unverified && unverified.email === 'samuel@test.com') {
       console.log('⚠️ Bypass: test user with invalid token');
