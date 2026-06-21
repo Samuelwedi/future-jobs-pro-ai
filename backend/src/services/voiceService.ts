@@ -17,7 +17,6 @@ if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_ap
   console.log('⚠️  OpenAI API key not set – voice transcription is disabled.');
 }
 
-// Types
 interface ExtractedData {
   actions: string[];
   parts: string[];
@@ -110,7 +109,6 @@ async function extractStructuredData(transcript: string): Promise<ExtractedData>
       const content = response.choices[0].message.content;
       if (content) {
         const parsed = JSON.parse(content);
-        // Ensure all required keys exist with at least empty arrays
         for (const key of ['actions', 'parts', 'measurements', 'issues', 'nextSteps', 'people']) {
           if (!Array.isArray(parsed[key])) parsed[key] = [];
         }
@@ -120,8 +118,6 @@ async function extractStructuredData(transcript: string): Promise<ExtractedData>
       console.error('GPT extraction error:', error);
     }
   }
-
-  // Fallback rule‑based extraction
   return ruleBasedExtraction(transcript) || defaultData;
 }
 
@@ -195,11 +191,22 @@ async function saveVoiceNote(params: {
   transcript: string; structuredData: ExtractedData; clientSummary: string;
   tags: string[]; duration: number;
 }): Promise<{ id: string }> {
+  // Convert empty timeEntryId to null
+  const timeEntryId = params.timeEntryId && params.timeEntryId !== '' ? params.timeEntryId : null;
+
   const result = await pool.query(
     `INSERT INTO voice_notes (user_id, project_id, time_entry_id, audio_s3_key, transcript, structured_data, client_summary, duration_seconds)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-    [params.userId, params.projectId, params.timeEntryId, params.audioPath,
-     params.transcript, JSON.stringify(params.structuredData), params.clientSummary, params.duration]
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [
+      params.userId,
+      params.projectId,
+      timeEntryId,
+      params.audioPath,
+      params.transcript,
+      JSON.stringify(params.structuredData),
+      params.clientSummary,
+      params.duration
+    ]
   );
   return { id: result.rows[0].id };
 }
