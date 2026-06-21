@@ -55,10 +55,11 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
 
     const { userId, projectId, timeEntryId } = req.body;
 
-    if (!userId || !projectId || !timeEntryId) {
-      console.log('❌ Missing fields:', { userId, projectId, timeEntryId });
-      return res.status(400).json({ success: false, message: 'Missing required fields: userId, projectId, timeEntryId' });
-    }
+    if (!userId || !projectId) {
+  return res.status(400).json({ success: false, message: 'Missing required fields: userId, projectId' });
+}
+// timeEntryId is optional – default to null
+const finalTimeEntryId = timeEntryId || null;
 
     console.log(`📁 File: ${req.file.originalname}`);
     console.log(`👤 User: ${userId}`);
