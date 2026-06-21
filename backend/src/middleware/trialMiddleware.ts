@@ -1,46 +1,59 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyToken } from '../utils/auth';
+import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
 
+const JWT_SECRET = process.env.JWT_SECRET!;
+
 export const trialCheck = async (req: Request, res: Response, next: NextFunction) => {
-  // Skip auth routes, health, ping, and root
+  // Skip auth, stripe, health, and lucy endpoints
   if (
     req.path.startsWith('/api/auth') ||
     req.path.startsWith('/api/stripe') ||
     req.path === '/api/health' ||
-    req.path === '/api/lucy' ||
-    req.path === '/ping' ||
-    req.path === '/'
+    req.path === '/api/lucy'
   ) {
     return next();
   }
 
-  try {
-    const decoded = verifyToken(req);
-    (req as any).user = decoded;
-    (req as any).companyId = decoded.companyId || 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, message: 'Not authenticated' });
+  }
 
-    if (decoded.email !== 'samuel@test.com') {
-      const userRes = await pool.query(
-        'SELECT trial_ends_at, stripe_payment_method_id FROM users WHERE id = $1',
-        [decoded.id]
-      );
-      if (userRes.rows.length === 0) {
-        return res.status(401).json({ success: false, message: 'User not found' });
-      }
-      const user = userRes.rows[0];
-      const now = new Date();
-      if (new Date(user.trial_ends_at) < now && !user.stripe_payment_method_id) {
-        return res.status(402).json({
-          success: false,
-          message: 'Trial expired. Please add a payment method.',
-        });
-      }
+  try {
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const result = await pool.query(
+      'SELECT email, trial_ends_at, stripe_payment_method_id FROM users WHERE id = $1',
+      [decoded.id]
+    );
+    if (result.rows.length === 0)
+      return res.status(401).json({ success: false, message: 'User not found' });
+
+    const user = result.rows[0];
+
+    // Allow test user to bypass trial and extend trial to 365 days
+    if (user.email === 'samuel@test.com') {
+      // Optionally update trial_ends_at to 365 days from now (if you want to be safe)
+      // but we already set it in the database.
+      return next();
+    }
+
+    const now = new Date();
+    if (new Date(user.trial_ends_at) < now && !user.stripe_payment_method_id) {
+      return res.status(402).json({
+        success: false,
+        message: 'Trial expired. Please add a payment method.',
+      });
     }
 
     next();
   } catch (error: any) {
-    console.error('Trial check error:', error.message);
-    return res.status(401).json({ success: false, message: error.message });
+    console.error('JWT Verify Error:', error.name, error.message);
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid token',
+      error: { name: error.name, message: error.message },
+    });
   }
 };

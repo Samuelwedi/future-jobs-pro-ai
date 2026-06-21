@@ -41,32 +41,8 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ===== PING ENDPOINT (for testing connectivity) =====
-app.get('/ping', (req, res) => {
-  res.json({ success: true, message: 'pong' });
-});
-
-app.get('/', (req, res) => res.send('<h1>🚀 Future Jobs Pro AI</h1>'));
-
 // ----- Trial middleware -----
 app.use(trialCheck);
-
-// ----- GLOBAL BYPASS FOR TEST USER (injects companyId) -----
-app.use((req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded = jwt.decode(token) as any;
-      if (decoded && decoded.email === 'samuel@test.com') {
-        console.log('🌍 GLOBAL BYPASS: Injecting companyId for test user');
-        (req as any).user = decoded;
-        (req as any).companyId = 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
-      }
-    } catch(e) {}
-  }
-  next();
-});
 
 // ----- Health Check -----
 app.get('/api/health', async (req: Request, res: Response) => {
@@ -74,13 +50,9 @@ app.get('/api/health', async (req: Request, res: Response) => {
   res.json({ status: dbHealthy ? 'healthy' : 'unhealthy', timestamp: new Date().toISOString(), owner: 'Samuel B.', app: 'Future Jobs Pro AI', version: '1.0.0' });
 });
 
-app.get('/api/db-test', async (req: Request, res: Response) => {
-  try { const result = await pool.query('SELECT NOW()'); res.json({ success: true, timestamp: result.rows[0].now }); }
-  catch (error: any) { res.status(500).json({ success: false, error: error.message }); }
-});
+app.get('/', (req, res) => res.send('<h1>🚀 Future Jobs Pro AI</h1>'));
 
-
-// ===== REST ROUTES (REGISTERED FIRST – THEY WILL BE TRIED BEFORE THE BYPASS) =====
+// ===== REST ROUTES =====
 import authRoutes from './routes/authRoutes'; app.use('/api/auth', authRoutes);
 import aiRoutes from './routes/aiRoutes'; app.use('/api/ai', aiRoutes);
 import photoRoutes from './routes/photoRoutes'; app.use('/api/photos', photoRoutes);
@@ -117,55 +89,6 @@ const getUserId = (req: Request): string | null => {
     return null;
   }
 };
-
-// ===== NEW: Helper to call Lucy AI =====
-async function getLucyResponse(userMessage: string, userId: string): Promise<string> {
-  try {
-    const response = await fetch(`http://localhost:${PORT}/api/lucy`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: userMessage, userId }),
-    });
-    const data: any = await response.json();
-    if (Array.isArray(data) && data[0]?.text) return data[0].text;
-    if (data.success === false) return data.message || "Lucy is taking a break.";
-    return "I'm not sure how to help with that.";
-  } catch (err) {
-    console.error('Lucy AI error:', err);
-    return "Sorry, Lucy is temporarily unavailable. Please try again later.";
-  }
-}
-
-// ===== NEW: Support agent takeover endpoints =====
-app.post('/api/support/takeover', async (req: Request, res: Response) => {
-  try {
-    const { userId, roomId, action } = req.body;
-    if (!userId || !roomId || !action) return res.status(400).json({ success: false, message: 'Missing fields' });
-    if (action === 'join') {
-      await pool.query(`INSERT INTO support_agents (user_id) VALUES ($1) ON CONFLICT (user_id) DO UPDATE SET is_active = true, joined_at = NOW()`, [userId]);
-    } else if (action === 'leave') {
-      await pool.query(`UPDATE support_agents SET is_active = false WHERE user_id = $1`, [userId]);
-    } else {
-      return res.status(400).json({ success: false, message: 'Invalid action' });
-    }
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error('Takeover error:', err);
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-app.get('/api/support/status/:roomId', async (req: Request, res: Response) => {
-  const { roomId } = req.params;
-  const result = await pool.query(
-    `SELECT COUNT(*) > 0 as active
-     FROM chat_room_members crm
-     JOIN support_agents sa ON crm.user_id = sa.user_id
-     WHERE crm.room_id = $1 AND sa.is_active = true`,
-    [roomId]
-  );
-  res.json({ success: true, active: result.rows[0].active });
-});
 
 // ----- Lucy Conversation History -----
 app.get('/api/lucy/history', async (req: Request, res: Response) => {
@@ -513,16 +436,6 @@ function addDays(date: Date, days: number): Date {
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => { console.error(err); res.status(500).json({ success: false, message: 'Internal server error' }); });
 
-// ===== FALLBACK: Unconditional bypass for truly unhandled API paths (moved to the end) =====
-app.use(async (req, res, next) => {
-  // Only intercept API requests that haven't been handled by any route
-  if (req.path.startsWith('/api/')) {
-    console.log('⚠️ Unhandled API path, returning generic success:', req.path);
-    return res.json({ success: true });
-  }
-  next();
-});
-
 // ----- WebSocket Server -----
 const server = http.createServer(app);
 const io = new SocketIOServer(server, { cors: { origin: '*' } });
@@ -531,34 +444,9 @@ io.on('connection', (socket) => {
   console.log('🔌 New WebSocket connection:', socket.id);
   socket.on('join-room', (roomId) => { socket.join(`room-${roomId}`); console.log(`Socket ${socket.id} joined room-${roomId}`); });
   socket.on('leave-room', (roomId) => { socket.leave(`room-${roomId}`); console.log(`Socket ${socket.id} left room-${roomId}`); });
-
   socket.on('chat-message', async (data) => {
-    const { senderId, companyId, roomId, message } = data;
-    if (!senderId || !roomId || !message) return;
-
-    const isSupportRoom = (roomId === 'support');
-    let isHumanAgent = false;
-    if (isSupportRoom) {
-      const agentCheck = await pool.query(
-        `SELECT 1 FROM chat_room_members crm
-         JOIN users u ON crm.user_id = u.id
-         JOIN support_agents sa ON u.id = sa.user_id
-         WHERE crm.room_id = $1 AND sa.is_active = true`,
-        [roomId]
-      );
-      isHumanAgent = agentCheck.rows.length > 0;
-    }
-
-    const userMsg = await saveMessage(senderId, roomId, message, companyId);
-    io.to(`room-${roomId}`).emit('new-message', userMsg);
-    if (isHumanAgent) return;
-
-    if (isSupportRoom) {
-      const aiReply = await getLucyResponse(message, senderId);
-      const aiMsg = await saveMessage('00000000-0000-0000-0000-000000000001', roomId, aiReply, companyId);
-      await pool.query('UPDATE chat_messages SET is_ai = true WHERE id = $1', [aiMsg.id]);
-      io.to(`room-${roomId}`).emit('new-message', { ...aiMsg, is_ai: true });
-    }
+    try { const saved = await saveMessage(data.senderId, data.roomId, data.message, data.companyId); io.to(`room-${data.roomId}`).emit('new-message', saved); }
+    catch (err) { console.error('Chat message error:', err); }
   });
 });
 
@@ -566,7 +454,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('');
   console.log('╔══════════════════════════════════════════════════════════╗');
   console.log('║   🚀 Future Jobs Pro AI Server Running                  ║');
-  console.log(`║   📍 Port: ${PORT}                                          ║`);
+  console.log('║   Created by: Samuel B.                                 ║');
   console.log('║   WebSocket: enabled                                   ║');
   console.log(`║   📍 Local:            http://localhost:${PORT}           ║`);
   console.log('╚══════════════════════════════════════════════════════════╝');
