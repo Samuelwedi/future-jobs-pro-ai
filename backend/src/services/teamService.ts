@@ -14,20 +14,25 @@ export async function inviteEmployee(
   role: string,
   invitedBy: string
 ) {
+  console.log('📝 Inviting employee:', { companyId, email, firstName, lastName, role, invitedBy });
+
   // Check if user already exists
   const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
   if (existing.rows.length > 0) {
     throw new Error('A user with this email already exists');
   }
 
+  // Check if invitedBy exists
+  const inviter = await pool.query('SELECT id FROM users WHERE id = $1', [invitedBy]);
+  if (inviter.rows.length === 0) {
+    throw new Error('Inviter not found');
+  }
+
   // Generate a random temporary password
   const tempPassword = Math.random().toString(36).slice(-10);
   const passwordHash = await bcrypt.hash(tempPassword, 10);
-
-  // Build full_name from first and last name
   const fullName = `${firstName} ${lastName}`;
 
-  // Insert the new user (no is_active or needs_password_change columns)
   const result = await pool.query(
     `INSERT INTO users (email, password_hash, first_name, last_name, full_name, role, company_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7)

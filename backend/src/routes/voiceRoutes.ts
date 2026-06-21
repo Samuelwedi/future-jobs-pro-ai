@@ -45,6 +45,8 @@ const upload = multer({
 // ---------------------------------------------------------------
 router.post('/process', upload.single('audio'), async (req: Request, res: Response) => {
   console.log('\n🎙️  ========== NEW VOICE NOTE – Samuel B. ==========');
+  console.log('📋 Request body:', req.body);
+  console.log('📎 File:', req.file ? req.file.originalname : 'NO FILE');
 
   try {
     if (!req.file) {
@@ -54,7 +56,8 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
     const { userId, projectId, timeEntryId } = req.body;
 
     if (!userId || !projectId || !timeEntryId) {
-      return res.status(400).json({ success: false, message: 'Missing required fields' });
+      console.log('❌ Missing fields:', { userId, projectId, timeEntryId });
+      return res.status(400).json({ success: false, message: 'Missing required fields: userId, projectId, timeEntryId' });
     }
 
     console.log(`📁 File: ${req.file.originalname}`);
