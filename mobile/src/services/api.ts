@@ -14,6 +14,8 @@ const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 const PROD_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 export const API_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
 
+console.log('🚀 API_URL:', API_URL); // Debug: confirm the URL
+
 class ApiService {
   private client: AxiosInstance;
   private token: string | null = null;
@@ -29,6 +31,7 @@ class ApiService {
       if (this.token) {
         config.headers.Authorization = `Bearer ${this.token}`;
       }
+      // Add test user header for backend bypass (only for development/test)
       config.headers['X-Test-User'] = 'samuel@test.com';
       return config;
     });
@@ -59,13 +62,20 @@ class ApiService {
   async post<T>(url: string, data?: any): Promise<T> {
     const online = getOnlineStatus();
     console.log('📡 Online status in api.post:', online);
+    console.log(`📤 POST ${API_URL}${url}`, data);
     if (!online) {
       console.log('📴 Offline – queuing action:', url);
       await queueAction({ method: 'POST', url, data });
       throw new Error('Offline – action queued for later');
     }
-    const response = await this.client.post<T>(url, data);
-    return response.data;
+    try {
+      const response = await this.client.post<T>(url, data);
+      console.log(`✅ POST ${url} success`, response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error(`❌ POST ${url} error:`, error.message, error.response?.data);
+      throw error;
+    }
   }
 
   async put<T>(url: string, data?: any): Promise<T> {
