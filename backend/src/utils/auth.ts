@@ -3,6 +3,8 @@ import { Request } from 'express';
 
 const JWT_SECRET = process.env.JWT_SECRET!;
 
+console.log('🔑 JWT_SECRET loaded (first 4 chars):', JWT_SECRET.substring(0, 4));
+
 export const verifyToken = (req: Request): any => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -10,15 +12,19 @@ export const verifyToken = (req: Request): any => {
   }
 
   const token = authHeader.split(' ')[1];
+  console.log('🔍 Verifying token (first 20 chars):', token.substring(0, 20) + '...');
+
   try {
-    // Normal verification
-    return jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    console.log('✅ Token verified for user:', decoded.email);
+    return decoded;
   } catch (err) {
-    // If verification fails, try to decode without verification (for test user)
-    console.warn('⚠️ JWT verification failed, checking if it’s the test user');
+    const error = err as Error;
+    console.error('❌ JWT verification error:', error.message);
+    // For test user, bypass (this matches the old behavior)
     const unverified = jwt.decode(token) as any;
     if (unverified && unverified.email === 'samuel@test.com') {
-      console.log('✅ verifyToken: bypass for test user (invalid token)');
+      console.log('⚠️ Bypass: test user with invalid token');
       return {
         id: 'e0f62298-03f1-4908-bac2-8415e5a9d0e5',
         email: 'samuel@test.com',
