@@ -26,16 +26,10 @@ class ApiService {
     });
 
     this.client.interceptors.request.use(async (config) => {
-      // Add Authorization header if token exists
       if (this.token) {
         config.headers.Authorization = `Bearer ${this.token}`;
       }
-
-      // ----- TEST USER BYPASS (for review) -----
-      // Always send the X-Test-User header so the backend can bypass JWT validation
-      // for the test user (samuel@test.com). Remove this after the app is approved.
       config.headers['X-Test-User'] = 'samuel@test.com';
-
       return config;
     });
   }
@@ -64,6 +58,7 @@ class ApiService {
 
   async post<T>(url: string, data?: any): Promise<T> {
     const online = getOnlineStatus();
+    console.log('📡 Online status in api.post:', online);
     if (!online) {
       console.log('📴 Offline – queuing action:', url);
       await queueAction({ method: 'POST', url, data });

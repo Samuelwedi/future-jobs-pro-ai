@@ -20,6 +20,9 @@
       "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
         "NSCameraUsageDescription": "Allow Future Jobs Pro AI to use your camera for job site photos",
         "NSLocationWhenInUseUsageDescription": "Future Jobs Pro AI uses your location to record where you clock in and out, verify your presence at a job site (e.g., when you start work at 123 Main Street), and show nearby crew members on the map.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Future Jobs Pro AI uses your location in the background to continue tracking your work site arrival/departure, even when the app is not open, so you can automatically clock in when you reach a job site.",
@@ -41,7 +44,6 @@
     },
     "plugins": [
       "expo-secure-store",
-      "react-native-iap",
       [
         "expo-build-properties",
         {

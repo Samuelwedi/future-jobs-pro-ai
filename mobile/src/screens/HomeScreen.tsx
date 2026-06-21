@@ -287,9 +287,9 @@ export default function HomeScreen() {
             { icon: 'groups', color: '#FF9800', label: t('crew_clock'), screen: 'CrewClock' },
             { icon: 'beach-access', color: '#00D4FF', label: t('pto'), screen: 'PTO' },
             { icon: 'work', color: '#FF9800', label: t('projects'), screen: 'Projects' },
-            ...(user?.kioskEnabled ? [{ icon: 'touch-app', color: '#FF9800', label: 'Kiosk', screen: 'Kiosk' }] : []),
             ...(user?.role === 'boss' || user?.role === 'manager' ? [{ icon: 'people', color: '#00D4FF', label: 'Team', screen: 'Team' }] : []),
             { icon: 'person', color: '#00D4FF', label: t('settings'), screen: 'Profile' },
+            // ---- New info & support items ----
             { icon: 'mail', color: '#00D4FF', label: 'Contact', screen: 'Contact' },
             { icon: 'lock', color: '#4CAF50', label: 'Privacy', screen: 'Privacy' },
             { icon: 'description', color: '#FF9800', label: 'Terms', screen: 'Terms' },

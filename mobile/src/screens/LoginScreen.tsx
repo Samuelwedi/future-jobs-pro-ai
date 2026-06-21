@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../services/api';
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -31,8 +32,14 @@ export default function LoginScreen() {
     }
     setIsLoading(true);
     try {
-      await login(email, password);
+      console.log('🔍 Login attempt with email:', email);
+      console.log('🔍 Login URL:', API_URL + '/auth/login');
+
+      const response = await login(email, password);
+      console.log('✅ Login response:', response);
     } catch (error: any) {
+      console.error('❌ Login error:', error);
+      console.error('❌ Error details:', error.response?.data || error.message);
       Alert.alert('Login Failed', error.response?.data?.message || 'Invalid credentials');
     } finally {
       setIsLoading(false);
