@@ -81,7 +81,7 @@ router.post('/upload', upload.single('photo'), async (req: Request, res: Respons
   }
 });
 
-// GET /api/photos/company (already present)
+// GET /api/photos/company – all photos for the user's company
 router.get('/company', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -89,6 +89,26 @@ router.get('/company', async (req: Request, res: Response) => {
     const result = await pool.query('SELECT * FROM photos WHERE company_id = $1 ORDER BY taken_at DESC', [companyId]);
     res.json({ success: true, photos: result.rows });
   } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ----- NEW: GET photos for a specific project -----
+router.get('/project/:projectId', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { projectId } = req.params;
+    if (!projectId) return res.status(400).json({ success: false, message: 'Project ID required' });
+
+    const result = await pool.query(
+      'SELECT * FROM photos WHERE project_id = $1 AND company_id = $2 ORDER BY taken_at DESC',
+      [projectId, companyId]
+    );
+    res.json({ success: true, photos: result.rows });
+  } catch (error: any) {
+    console.error('Error fetching project photos:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
