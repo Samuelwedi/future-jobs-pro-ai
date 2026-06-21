@@ -24,10 +24,15 @@ export async function inviteEmployee(
   const tempPassword = Math.random().toString(36).slice(-10);
   const passwordHash = await bcrypt.hash(tempPassword, 10);
 
+  // Build full_name from first and last name
+  const fullName = `${firstName} ${lastName}`;
+
+  // Insert the new user (no is_active or needs_password_change columns)
   const result = await pool.query(
-    `INSERT INTO users (email, password_hash, first_name, last_name, role, company_id, is_active, needs_password_change)
-     VALUES ($1,$2,$3,$4,$5,$6,true,true) RETURNING id, email, first_name, last_name, role, company_id`,
-    [email, passwordHash, firstName, lastName, role, companyId]
+    `INSERT INTO users (email, password_hash, first_name, last_name, full_name, role, company_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, email, first_name, last_name, role, company_id`,
+    [email, passwordHash, firstName, lastName, fullName, role, companyId]
   );
 
   const user = result.rows[0];
@@ -36,7 +41,7 @@ export async function inviteEmployee(
 
 export async function getCompanyMembers(companyId: string) {
   const result = await pool.query(
-    'SELECT id, email, first_name, last_name, role, is_active, last_login, needs_password_change, created_at FROM users WHERE company_id = $1 ORDER BY role, created_at DESC',
+    'SELECT id, email, first_name, last_name, role, created_at FROM users WHERE company_id = $1 ORDER BY role, created_at DESC',
     [companyId]
   );
   return result.rows;
@@ -63,7 +68,7 @@ export async function removeMember(userId: string, companyId: string) {
 export async function setPassword(userId: string, newPassword: string) {
   const passwordHash = await bcrypt.hash(newPassword, 10);
   await pool.query(
-    'UPDATE users SET password_hash = $1, needs_password_change = false WHERE id = $2',
+    'UPDATE users SET password_hash = $1 WHERE id = $2',
     [passwordHash, userId]
   );
 }
