@@ -27,21 +27,36 @@ class ApiService {
       headers: { 'Content-Type': 'application/json' },
     });
 
-    this.client.interceptors.request.use(async (config) => {
-      // 🔑 Read token from SecureStore on every request (more reliable)
-      const storedToken = await SecureStore.getItemAsync('authToken');
-      if (storedToken) {
-        config.headers.Authorization = `Bearer ${storedToken}`;
-        console.log('🔑 Authorization header added for:', config.url);
-      } else {
-        console.log('⚠️ No token found in SecureStore for request:', config.url);
+    // Interceptor to add Authorization header
+    this.client.interceptors.request.use(
+      async (config) => {
+        // Use cached token first
+        let token = this.token;
+        if (!token) {
+          // Fallback: read from SecureStore
+          token = await SecureStore.getItemAsync('authToken');
+          if (token) {
+            this.token = token;
+          }
+        }
+
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
+          console.log('🔑 Authorization header added for:', config.url, 'token first 10 chars:', token.substring(0, 10) + '...');
+        } else {
+          console.log('⚠️ No token available for request:', config.url);
+        }
+
+        // Always send test user header (for review)
+        config.headers['X-Test-User'] = 'samuel@test.com';
+
+        return config;
+      },
+      (error) => {
+        console.error('❌ Request interceptor error:', error);
+        return Promise.reject(error);
       }
-
-      // Always send test user header (for review)
-      config.headers['X-Test-User'] = 'samuel@test.com';
-
-      return config;
-    });
+    );
   }
 
   async setToken(token: string): Promise<void> {
@@ -65,7 +80,9 @@ class ApiService {
   }
 
   async get<T>(url: string): Promise<T> {
+    console.log('📤 GET', this.client.defaults.baseURL + url);
     const response = await this.client.get<T>(url);
+    console.log('✅ GET /' + url + ' success', response.data);
     return response.data;
   }
 
@@ -89,7 +106,9 @@ class ApiService {
       await queueAction({ method: 'PUT', url, data });
       throw new Error('Offline – action queued for later');
     }
+    console.log('📤 PUT', this.client.defaults.baseURL + url, data);
     const response = await this.client.put<T>(url, data);
+    console.log('✅ PUT /' + url + ' success', response.data);
     return response.data;
   }
 
@@ -100,7 +119,9 @@ class ApiService {
       await queueAction({ method: 'DELETE', url });
       throw new Error('Offline – action queued for later');
     }
+    console.log('📤 DELETE', this.client.defaults.baseURL + url);
     const response = await this.client.delete<T>(url);
+    console.log('✅ DELETE /' + url + ' success', response.data);
     return response.data;
   }
 
@@ -126,9 +147,11 @@ class ApiService {
     formData.append(fieldName, { uri: fileUri, name: filename, type } as any);
     Object.entries(extraFields).forEach(([key, value]) => formData.append(key, value));
 
+    console.log('📤 UPLOAD', this.client.defaults.baseURL + url, { file: filename, extraFields });
     const response = await this.client.post<T>(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
+    console.log('✅ UPLOAD /' + url + ' success', response.data);
     return response.data;
   }
 
