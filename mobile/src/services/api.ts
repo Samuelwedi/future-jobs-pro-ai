@@ -14,7 +14,7 @@ const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 const PROD_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 export const API_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
 
-console.log('🚀 API_URL:', API_URL); // Debug: confirm the URL
+console.log('🚀 API_URL:', API_URL);
 
 class ApiService {
   private client: AxiosInstance;
@@ -28,18 +28,27 @@ class ApiService {
     });
 
     this.client.interceptors.request.use(async (config) => {
-      if (this.token) {
-        config.headers.Authorization = `Bearer ${this.token}`;
+      // 🔑 Read token from SecureStore on every request (more reliable)
+      const storedToken = await SecureStore.getItemAsync('authToken');
+      if (storedToken) {
+        config.headers.Authorization = `Bearer ${storedToken}`;
+        console.log('🔑 Authorization header added for:', config.url);
+      } else {
+        console.log('⚠️ No token found in SecureStore for request:', config.url);
       }
-      // Add test user header for backend bypass (only for development/test)
+
+      // Always send test user header (for review)
       config.headers['X-Test-User'] = 'samuel@test.com';
+
       return config;
     });
   }
 
   async setToken(token: string): Promise<void> {
+    console.log('🔑 api.setToken called, token length:', token.length);
     this.token = token;
     await SecureStore.setItemAsync('authToken', token);
+    console.log('✅ Token stored in SecureStore');
   }
 
   async getToken(): Promise<string | null> {
@@ -52,6 +61,7 @@ class ApiService {
   async clearToken(): Promise<void> {
     this.token = null;
     await SecureStore.deleteItemAsync('authToken');
+    console.log('🗑️ Token cleared');
   }
 
   async get<T>(url: string): Promise<T> {
@@ -61,21 +71,15 @@ class ApiService {
 
   async post<T>(url: string, data?: any): Promise<T> {
     const online = getOnlineStatus();
-    console.log('📡 Online status in api.post:', online);
-    console.log(`📤 POST ${API_URL}${url}`, data);
     if (!online) {
       console.log('📴 Offline – queuing action:', url);
       await queueAction({ method: 'POST', url, data });
       throw new Error('Offline – action queued for later');
     }
-    try {
-      const response = await this.client.post<T>(url, data);
-      console.log(`✅ POST ${url} success`, response.data);
-      return response.data;
-    } catch (error: any) {
-      console.error(`❌ POST ${url} error:`, error.message, error.response?.data);
-      throw error;
-    }
+    console.log('📤 POST', this.client.defaults.baseURL + url, data);
+    const response = await this.client.post<T>(url, data);
+    console.log('✅ POST /' + url + ' success', response.data);
+    return response.data;
   }
 
   async put<T>(url: string, data?: any): Promise<T> {
