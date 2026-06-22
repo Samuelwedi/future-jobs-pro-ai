@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import fetch from 'node-fetch';
 
 const execAsync = promisify(exec);
 
@@ -30,6 +31,24 @@ export interface WatermarkOptions {
   fontSize?: number;
 }
 
+// ----- Reverse geocoding to get address from coordinates -----
+async function getAddressFromCoords(lat: number, lng: number): Promise<string | null> {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`;
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'FutureJobsProAI/1.0' },
+    });
+    if (!response.ok) return null;
+    const data: any = await response.json();
+    if (data && data.display_name) {
+      return data.display_name;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
 export async function applyWatermark(
   inputPath: string,
   outputPath: string,
@@ -47,13 +66,26 @@ export async function applyWatermark(
 ): Promise<string> {
   console.log(`🖼️ [Samuel B.] Applying ${options.template || 'standard'} watermark...`);
 
-  // Detect if it's a video by extension
-  const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(path.extname(inputPath).toLowerCase());
-  if (isVideo) {
-    return applyVideoWatermark(inputPath, outputPath, metadata, options);
+  // If address is not provided but lat/lng are, try to fetch it
+  let address = metadata.address || '';
+  if (!address && metadata.latitude !== undefined && metadata.longitude !== undefined) {
+    const fetched = await getAddressFromCoords(metadata.latitude, metadata.longitude);
+    if (fetched) {
+      address = fetched;
+      console.log(`📍 Address resolved: ${address}`);
+    } else {
+      // Fallback: format coordinates as address
+      address = `${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`;
+      console.log(`📍 Using coordinates as address: ${address}`);
+    }
   }
 
-  return applyImageWatermark(inputPath, outputPath, metadata, options);
+  const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(path.extname(inputPath).toLowerCase());
+  if (isVideo) {
+    return applyVideoWatermark(inputPath, outputPath, { ...metadata, address }, options);
+  }
+
+  return applyImageWatermark(inputPath, outputPath, { ...metadata, address }, options);
 }
 
 // ===== IMAGE WATERMARK =====
@@ -91,33 +123,21 @@ async function applyImageWatermark(
   const now = new Date();
   const lines: { text: string; fontSize: number; bold: boolean }[] = [];
 
-  // Header line
   lines.push({ text: opts.customText, fontSize: baseFontSize, bold: true });
 
   // Date & Time
-  if (opts.showDate || opts.showTime) {
-    const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    if (opts.showDate && opts.showTime) {
-      lines.push({ text: `${dateStr}  ${timeStr}`, fontSize: lineFontSize, bold: false });
-    } else if (opts.showDate) {
-      lines.push({ text: dateStr, fontSize: lineFontSize, bold: false });
-    } else {
-      lines.push({ text: timeStr, fontSize: lineFontSize, bold: false });
-    }
-  }
+  const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  lines.push({ text: `${dateStr}  ${timeStr}`, fontSize: lineFontSize, bold: false });
 
-  // Address
+  // Address (now either fetched or coordinates)
   if (metadata.address) {
-    lines.push({ text: metadata.address, fontSize: lineFontSize, bold: false });
-  }
-
-  // GPS Coordinates
-  if (opts.showGPS && metadata.latitude && metadata.longitude) {
-    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
-    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
+    const maxAddrLen = 45; // truncate long addresses
+    const addr = metadata.address.length > maxAddrLen ? metadata.address.substring(0, maxAddrLen) + '...' : metadata.address;
+    lines.push({ text: addr, fontSize: lineFontSize, bold: false });
+  } else if (metadata.latitude !== undefined && metadata.longitude !== undefined) {
     lines.push({
-      text: `${Math.abs(metadata.latitude).toFixed(6)}°${latDir}  ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`,
+      text: `${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`,
       fontSize: lineFontSize,
       bold: false,
     });
@@ -128,7 +148,7 @@ async function applyImageWatermark(
     lines.push({ text: `Weather: ${metadata.weather}`, fontSize: lineFontSize, bold: false });
   }
 
-  // Detailed template extras
+  // Detailed extras
   if (opts.template === 'detailed' || opts.template === 'map-style') {
     if (opts.showAltitude && metadata.altitude !== undefined) {
       lines.push({ text: `Altitude: ${Math.round(metadata.altitude)}m`, fontSize: lineFontSize, bold: false });
@@ -140,14 +160,12 @@ async function applyImageWatermark(
     }
   }
 
-  if (opts.template === 'map-style') {
-    if (metadata.latitude && metadata.longitude) {
-      lines.push({
-        text: `maps.google.com/?q=${metadata.latitude},${metadata.longitude}`,
-        fontSize: Math.round(lineFontSize * 0.85),
-        bold: false,
-      });
-    }
+  if (opts.template === 'map-style' && metadata.latitude !== undefined && metadata.longitude !== undefined) {
+    lines.push({
+      text: `maps.google.com/?q=${metadata.latitude},${metadata.longitude}`,
+      fontSize: Math.round(lineFontSize * 0.85),
+      bold: false,
+    });
   }
 
   // Calculate box dimensions
@@ -161,7 +179,6 @@ async function applyImageWatermark(
   const totalTextHeight = lines.reduce((sum, l) => sum + l.fontSize * lineHeight, 0);
   const boxHeight = totalTextHeight + boxPadding * 2;
 
-  // Box position
   let boxX = textPadding;
   let boxY = textPadding;
   if (opts.position === 'top-right') {
@@ -176,7 +193,7 @@ async function applyImageWatermark(
     boxY = Math.round((height - boxHeight) / 2);
   }
 
-  // Build SVG with background box
+  // Build SVG
   const cornerRadius = 10;
   let svgContent = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <rect x="${boxX}" y="${boxY}" width="${boxWidth}" height="${boxHeight}" rx="${cornerRadius}" ry="${cornerRadius}"
@@ -191,11 +208,8 @@ async function applyImageWatermark(
   svgContent += '</svg>';
 
   const svgBuffer = Buffer.from(svgContent);
-
-  // Composite layers
   const layers: sharp.OverlayOptions[] = [{ input: svgBuffer, top: 0, left: 0 }];
 
-  // Logo overlay
   if (opts.logoPath && fs.existsSync(opts.logoPath)) {
     try {
       const logoMeta = await sharp(opts.logoPath).metadata();
@@ -220,7 +234,6 @@ async function applyVideoWatermark(
 ): Promise<string> {
   console.log('🎬 Applying watermark to video...');
 
-  // First, generate a PNG watermark image
   const pngPath = inputPath + '.watermark.png';
   const opts: Required<WatermarkOptions> = {
     template: options.template || 'standard',
@@ -239,7 +252,6 @@ async function applyVideoWatermark(
     fontSize: options.fontSize || 0,
   };
 
-  // We'll use a fixed size for video watermark (720p)
   const width = 1280;
   const height = 720;
   const baseFontSize = 28;
@@ -255,14 +267,12 @@ async function applyVideoWatermark(
   lines.push({ text: `${dateStr}  ${timeStr}`, fontSize: lineFontSize, bold: false });
 
   if (metadata.address) {
-    lines.push({ text: metadata.address, fontSize: lineFontSize, bold: false });
-  }
-
-  if (metadata.latitude && metadata.longitude) {
-    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
-    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
+    const maxAddrLen = 45;
+    const addr = metadata.address.length > maxAddrLen ? metadata.address.substring(0, maxAddrLen) + '...' : metadata.address;
+    lines.push({ text: addr, fontSize: lineFontSize, bold: false });
+  } else if (metadata.latitude !== undefined && metadata.longitude !== undefined) {
     lines.push({
-      text: `${Math.abs(metadata.latitude).toFixed(6)}°${latDir}  ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`,
+      text: `${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`,
       fontSize: lineFontSize,
       bold: false,
     });
@@ -301,18 +311,15 @@ async function applyVideoWatermark(
   const svgBuffer = Buffer.from(svgContent);
   await sharp(svgBuffer).png().toFile(pngPath);
 
-  // Use ffmpeg to overlay the watermark on the video
   try {
     const ffmpegCmd = `ffmpeg -i "${inputPath}" -i "${pngPath}" -filter_complex "[0:v][1:v] overlay=10:${height - boxHeight - 10}" -c:a copy "${outputPath}" -y`;
     await execAsync(ffmpegCmd);
     console.log('✅ Video watermark applied using ffmpeg');
   } catch (err) {
     console.error('❌ ffmpeg watermark failed, using fallback copy:', err);
-    // Fallback: copy the file without watermark
     fs.copyFileSync(inputPath, outputPath);
   }
 
-  // Clean up
   if (fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
 
   return outputPath;
