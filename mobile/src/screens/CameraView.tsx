@@ -21,6 +21,7 @@ interface UploadResponse {
     suggestions: string[];
   };
   verificationHash: string;
+  fileType: string;
 }
 
 const TEMPLATES = [
@@ -40,6 +41,8 @@ export default function CameraView() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<any>(null);
   const [isTakingPicture, setIsTakingPicture] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [mode, setMode] = useState<'photo' | 'video'>('photo');
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
   const [watermarkTemplate, setWatermarkTemplate] = useState('standard');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
@@ -74,14 +77,9 @@ export default function CameraView() {
     );
   }
 
-  const takePhoto = async () => {
-    if (!cameraRef.current || isTakingPicture) return;
+  const uploadFile = async (uri: string, isVideo: boolean = false) => {
     setIsTakingPicture(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 1, exif: true });
-
       const extraFields: Record<string, string> = {
         userId: user?.id || '',
         projectId,
@@ -92,12 +90,13 @@ export default function CameraView() {
         extraFields.latitude = currentLocation.coords.latitude.toString();
         extraFields.longitude = currentLocation.coords.longitude.toString();
       }
+      if (isVideo) extraFields.fileType = 'video';
 
       const response = await api.uploadFileWithData<UploadResponse>(
         '/photos/upload',
-        photo.uri,
+        uri,
         extraFields,
-        'photo'
+        'file'
       );
 
       const score = response?.compliance?.score ?? 0;
@@ -107,22 +106,23 @@ export default function CameraView() {
 
       setLastScore(score);
 
-      api.recordAIEvent('photo_taken', {
+      api.recordAIEvent(isVideo ? 'video_taken' : 'photo_taken', {
         complianceScore: score,
         issues,
         projectId,
+        fileType: isVideo ? 'video' : 'image',
       }, currentLocation ? { lat: currentLocation.coords.latitude, lng: currentLocation.coords.longitude } : undefined).catch(() => {});
 
       if (passed) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('✅ Photo Approved', `Compliance Score: ${score}/100\n\nThis photo will hold up in any dispute.`, [
+        Alert.alert(`✅ ${isVideo ? 'Video' : 'Photo'} Approved`, `Compliance Score: ${score}/100\n\nThis will hold up in any dispute.`, [
           { text: 'Take Another', style: 'cancel' },
           { text: 'Done', onPress: goBack },
         ]);
       } else {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         Alert.alert(
-          '⚠️ Photo Needs Improvement',
+          `⚠️ ${isVideo ? 'Video' : 'Photo'} Needs Improvement`,
           `Score: ${score}/100\n\nIssues:\n• ${issues.join('\n• ')}\n\nSuggestions:\n• ${suggestions.join('\n• ')}`,
           [
             { text: 'Retake', style: 'cancel' },
@@ -131,9 +131,42 @@ export default function CameraView() {
         );
       }
     } catch (error: any) {
-      Alert.alert('Upload Failed', error.message || 'Could not upload photo. Please check your connection.');
+      Alert.alert('Upload Failed', error.message || 'Could not upload. Please check your connection.');
     } finally {
       setIsTakingPicture(false);
+    }
+  };
+
+  const takePhoto = async () => {
+    if (!cameraRef.current || isTakingPicture || isRecording) return;
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 1, exif: true });
+      await uploadFile(photo.uri, false);
+    } catch (error: any) {
+      Alert.alert('Error', 'Failed to take photo');
+    }
+  };
+
+  const startRecording = async () => {
+    if (!cameraRef.current || isRecording || isTakingPicture) return;
+    setIsRecording(true);
+    try {
+      const video = await cameraRef.current.recordAsync({
+        maxDuration: 60,
+        quality: ExpoCamera.Constants.VideoQuality['720p'],
+      });
+      await uploadFile(video.uri, true);
+    } catch (error: any) {
+      Alert.alert('Error', 'Failed to record video');
+    } finally {
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (cameraRef.current && isRecording) {
+      cameraRef.current.stopRecording();
+      setIsRecording(false);
     }
   };
 
@@ -167,10 +200,24 @@ export default function CameraView() {
 
   return (
     <View style={styles.container}>
-      {/* CAMERA – NO CHILDREN */}
       <ExpoCamera ref={cameraRef} style={styles.camera} facing="back" />
 
-      {/* OVERLAYS – ABSOLUTE POSITIONED SIBLINGS */}
+      {/* Mode Toggle */}
+      <View style={styles.modeToggle}>
+        <TouchableOpacity
+          style={[styles.modeBtn, mode === 'photo' && styles.modeBtnActive]}
+          onPress={() => setMode('photo')}
+        >
+          <Text style={[styles.modeText, mode === 'photo' && styles.modeTextActive]}>📸 Photo</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeBtn, mode === 'video' && styles.modeBtnActive]}
+          onPress={() => setMode('video')}
+        >
+          <Text style={[styles.modeText, mode === 'video' && styles.modeTextActive]}>🎬 Video</Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.watermarkPreview}>
         {previewLines.map((line, idx) => (
           <Text key={idx} style={styles.watermarkPreviewText}>{line}</Text>
@@ -220,10 +267,22 @@ export default function CameraView() {
       )}
 
       <View style={styles.captureButtonContainer}>
-        <TouchableOpacity style={styles.captureButton} onPress={takePhoto} disabled={isTakingPicture}>
-          <View style={[styles.captureInner, isTakingPicture && styles.captureInnerDisabled]} />
-        </TouchableOpacity>
-        <Text style={styles.captureHint}>Tap to capture</Text>
+        {mode === 'video' ? (
+          <TouchableOpacity
+            style={[styles.captureButton, { backgroundColor: isRecording ? '#F44336' : '#FFFFFF' }]}
+            onPress={isRecording ? stopRecording : startRecording}
+            disabled={isTakingPicture}
+          >
+            <View style={[styles.captureInner, isRecording && styles.captureRecording]} />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.captureButton} onPress={takePhoto} disabled={isTakingPicture}>
+            <View style={[styles.captureInner, isTakingPicture && styles.captureInnerDisabled]} />
+          </TouchableOpacity>
+        )}
+        <Text style={styles.captureHint}>
+          {isRecording ? 'Tap to Stop' : mode === 'video' ? 'Tap to Record' : 'Tap to Capture'}
+        </Text>
       </View>
     </View>
   );
@@ -233,9 +292,32 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
   camera: { flex: 1 },
-  watermarkPreview: {
+  modeToggle: {
     position: 'absolute',
     top: 60,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 20,
+    zIndex: 10,
+  },
+  modeBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modeBtnActive: {
+    backgroundColor: 'rgba(0,212,255,0.3)',
+    borderWidth: 1,
+    borderColor: '#00D4FF',
+  },
+  modeText: { color: '#FFF', fontSize: 14, fontWeight: '500' },
+  modeTextActive: { color: '#00D4FF' },
+  watermarkPreview: {
+    position: 'absolute',
+    top: 120,
     right: 20,
     backgroundColor: 'rgba(0,0,0,0.55)',
     paddingHorizontal: 12,
@@ -251,7 +333,7 @@ const styles = StyleSheet.create({
   },
   templateToggle: {
     position: 'absolute',
-    top: 120,
+    top: 180,
     left: 20,
     flexDirection: 'row',
     alignItems: 'center',
@@ -268,7 +350,7 @@ const styles = StyleSheet.create({
   },
   templatePicker: {
     position: 'absolute',
-    top: 160,
+    top: 230,
     left: 20,
     backgroundColor: 'rgba(20,20,20,0.95)',
     borderRadius: 14,
@@ -276,76 +358,18 @@ const styles = StyleSheet.create({
     width: 240,
     maxHeight: 300,
   },
-  pickerTitle: {
-    color: '#888',
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    marginBottom: 10,
-    marginLeft: 4,
-  },
-  templateOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    marginBottom: 4,
-  },
-  templateOptionSelected: {
-    backgroundColor: 'rgba(0,212,255,0.15)',
-  },
-  templateOptionTitle: {
-    color: '#FFF',
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  templateOptionTitleSelected: {
-    color: '#00D4FF',
-    fontWeight: '700',
-  },
-  templateOptionDesc: {
-    color: '#AAA',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  scoreBadge: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  scoreText: {
-    color: '#FFF',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  captureButtonContainer: {
-    position: 'absolute',
-    bottom: 50,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  captureButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  captureInner: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 3,
-    borderColor: '#0A0A0A',
-  },
+  pickerTitle: { color: '#888', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', marginBottom: 10, marginLeft: 4 },
+  templateOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 10, borderRadius: 10, marginBottom: 4 },
+  templateOptionSelected: { backgroundColor: 'rgba(0,212,255,0.15)' },
+  templateOptionTitle: { color: '#FFF', fontSize: 15, fontWeight: '500' },
+  templateOptionTitleSelected: { color: '#00D4FF', fontWeight: '700' },
+  templateOptionDesc: { color: '#AAA', fontSize: 12, marginTop: 2 },
+  scoreBadge: { position: 'absolute', top: 120, left: 20, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  scoreText: { color: '#FFF', fontWeight: 'bold', fontSize: 14 },
+  captureButtonContainer: { position: 'absolute', bottom: 50, left: 0, right: 0, alignItems: 'center' },
+  captureButton: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  captureInner: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#FFFFFF', borderWidth: 3, borderColor: '#0A0A0A' },
+  captureRecording: { backgroundColor: '#F44336', borderColor: '#F44336' },
   captureInnerDisabled: { backgroundColor: '#AAA' },
   captureHint: { color: '#FFF', fontSize: 13, opacity: 0.8 },
   errorText: { color: '#FFF', fontSize: 18, marginBottom: 24, textAlign: 'center' },

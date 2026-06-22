@@ -6,6 +6,10 @@
 import sharp from 'sharp';
 import * as fs from 'fs';
 import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 export type WatermarkTemplate = 'standard' | 'minimal' | 'detailed' | 'map-style';
 
@@ -41,9 +45,24 @@ export async function applyWatermark(
   },
   options: WatermarkOptions = {}
 ): Promise<string> {
-
   console.log(`🖼️ [Samuel B.] Applying ${options.template || 'standard'} watermark...`);
 
+  // Detect if it's a video by extension
+  const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(path.extname(inputPath).toLowerCase());
+  if (isVideo) {
+    return applyVideoWatermark(inputPath, outputPath, metadata, options);
+  }
+
+  return applyImageWatermark(inputPath, outputPath, metadata, options);
+}
+
+// ===== IMAGE WATERMARK =====
+async function applyImageWatermark(
+  inputPath: string,
+  outputPath: string,
+  metadata: any,
+  options: WatermarkOptions
+): Promise<string> {
   const opts: Required<WatermarkOptions> = {
     template: options.template || 'standard',
     showDate: options.showDate !== false,
@@ -189,6 +208,113 @@ export async function applyWatermark(
 
   await sharp(inputPath).composite(layers).toFile(outputPath);
   console.log(`✅ Watermark applied: ${path.basename(outputPath)}`);
+  return outputPath;
+}
+
+// ===== VIDEO WATERMARK (uses ffmpeg) =====
+async function applyVideoWatermark(
+  inputPath: string,
+  outputPath: string,
+  metadata: any,
+  options: WatermarkOptions
+): Promise<string> {
+  console.log('🎬 Applying watermark to video...');
+
+  // First, generate a PNG watermark image
+  const pngPath = inputPath + '.watermark.png';
+  const opts: Required<WatermarkOptions> = {
+    template: options.template || 'standard',
+    showDate: options.showDate !== false,
+    showTime: options.showTime !== false,
+    showGPS: options.showGPS !== false,
+    showLogo: options.showLogo !== false,
+    showMap: options.showMap !== false,
+    showWeather: options.showWeather !== false,
+    showAltitude: options.showAltitude !== false,
+    showCompass: options.showCompass !== false,
+    logoPath: options.logoPath || '',
+    customText: options.customText || 'Future Jobs Pro AI',
+    position: options.position || 'bottom-left',
+    opacity: options.opacity || 0.7,
+    fontSize: options.fontSize || 0,
+  };
+
+  // We'll use a fixed size for video watermark (720p)
+  const width = 1280;
+  const height = 720;
+  const baseFontSize = 28;
+  const lineFontSize = Math.round(baseFontSize * 0.72);
+
+  const now = new Date();
+  const lines: { text: string; fontSize: number; bold: boolean }[] = [];
+
+  lines.push({ text: opts.customText, fontSize: baseFontSize, bold: true });
+
+  const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  lines.push({ text: `${dateStr}  ${timeStr}`, fontSize: lineFontSize, bold: false });
+
+  if (metadata.address) {
+    lines.push({ text: metadata.address, fontSize: lineFontSize, bold: false });
+  }
+
+  if (metadata.latitude && metadata.longitude) {
+    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
+    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
+    lines.push({
+      text: `${Math.abs(metadata.latitude).toFixed(6)}°${latDir}  ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`,
+      fontSize: lineFontSize,
+      bold: false,
+    });
+  }
+
+  if (metadata.weather) {
+    lines.push({ text: `Weather: ${metadata.weather}`, fontSize: lineFontSize, bold: false });
+  }
+
+  // Build PNG watermark
+  const lineHeight = 1.5;
+  const textPadding = 20;
+  const boxPadding = 16;
+
+  const maxLineChars = Math.max(...lines.map(l => l.text.length));
+  const estimatedTextWidth = maxLineChars * (lineFontSize * 0.55);
+  const boxWidth = estimatedTextWidth + boxPadding * 2;
+  const totalTextHeight = lines.reduce((sum, l) => sum + l.fontSize * lineHeight, 0);
+  const boxHeight = totalTextHeight + boxPadding * 2;
+
+  const boxX = textPadding;
+  const boxY = height - boxHeight - textPadding;
+
+  let svgContent = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <rect x="${boxX}" y="${boxY}" width="${boxWidth}" height="${boxHeight}" rx="10" ry="10"
+          fill="rgba(0,0,0,0.55)" stroke="rgba(255,255,255,0.3)" stroke-width="1" />`;
+
+  let textY = boxY + boxPadding + lines[0].fontSize;
+  for (const line of lines) {
+    const fontWeight = line.bold ? 'bold' : 'normal';
+    svgContent += `<text x="${boxX + boxPadding}" y="${textY}" font-size="${line.fontSize}" fill="white" opacity="0.95" font-family="Arial, sans-serif" font-weight="${fontWeight}">${escapeXml(line.text)}</text>`;
+    textY += line.fontSize * lineHeight;
+  }
+  svgContent += '</svg>';
+
+  const svgBuffer = Buffer.from(svgContent);
+  await sharp(svgBuffer).png().toFile(pngPath);
+
+  // Use ffmpeg to overlay the watermark on the video
+  try {
+    const ffmpegCmd = `ffmpeg -i "${inputPath}" -i "${pngPath}" -filter_complex "[0:v][1:v] overlay=10:${height - boxHeight - 10}" -c:a copy "${outputPath}" -y`;
+    await execAsync(ffmpegCmd);
+    console.log('✅ Video watermark applied using ffmpeg');
+  } catch (err) {
+    console.error('❌ ffmpeg watermark failed, using fallback copy:', err);
+    // Fallback: copy the file without watermark
+    fs.copyFileSync(inputPath, outputPath);
+  }
+
+  // Clean up
+  if (fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
+
   return outputPath;
 }
 
