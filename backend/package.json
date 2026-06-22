@@ -27,6 +27,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.1",
     "express-session": "^1.19.0",
+    "fluent-ffmpeg": "^2.1.3",
     "helmet": "^8.1.0",
     "intuit-oauth": "^4.2.3",
     "jsonwebtoken": "^9.0.3",
