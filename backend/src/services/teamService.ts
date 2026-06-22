@@ -5,12 +5,7 @@
 
 import { pool } from '../config/database';
 import bcrypt from 'bcryptjs';
-
-// Helper to convert userId to string
-const toUserId = (userId: string | string[]): string => {
-  if (Array.isArray(userId)) return userId[0] || '';
-  return userId;
-};
+import { sendInviteEmail } from './emailService';
 
 export async function inviteEmployee(
   companyId: string,
@@ -43,7 +38,11 @@ export async function inviteEmployee(
     const passwordHash = await bcrypt.hash(tempPassword, 10);
     const fullName = `${firstName} ${lastName}`;
 
-    // 4. Insert new user – try with full_name, fallback without
+    // 4. Get company name for email
+    const companyRes = await pool.query('SELECT name FROM companies WHERE id = $1', [companyId]);
+    const companyName = companyRes.rows[0]?.name || 'your company';
+
+    // 5. Insert new user
     let result;
     try {
       result = await pool.query(
@@ -68,6 +67,10 @@ export async function inviteEmployee(
 
     const user = result.rows[0];
     console.log('✅ Employee invited:', user);
+
+    // 6. Send email with temporary password
+    await sendInviteEmail(email, firstName, tempPassword, companyName);
+
     return { user, tempPassword };
   } catch (error) {
     console.error('❌ Invite error:', error);
@@ -83,32 +86,29 @@ export async function getCompanyMembers(companyId: string) {
   return result.rows;
 }
 
-export async function updateMemberRole(userId: string | string[], newRole: string, companyId: string) {
-  const id = toUserId(userId);
+export async function updateMemberRole(userId: string, newRole: string, companyId: string) {
   const result = await pool.query(
     'UPDATE users SET role = $1 WHERE id = $2 AND company_id = $3 RETURNING id, email, first_name, last_name, role',
-    [newRole, id, companyId]
+    [newRole, userId, companyId]
   );
   if (result.rows.length === 0) throw new Error('User not found in your company');
   return result.rows[0];
 }
 
-export async function removeMember(userId: string | string[], companyId: string) {
-  const id = toUserId(userId);
+export async function removeMember(userId: string, companyId: string) {
   const result = await pool.query(
     'DELETE FROM users WHERE id = $1 AND company_id = $2 RETURNING id',
-    [id, companyId]
+    [userId, companyId]
   );
   if (result.rows.length === 0) throw new Error('User not found in your company');
   return result.rows[0];
 }
 
-export async function setPassword(userId: string | string[], newPassword: string) {
-  const id = toUserId(userId);
+export async function setPassword(userId: string, newPassword: string) {
   const passwordHash = await bcrypt.hash(newPassword, 10);
   await pool.query(
     'UPDATE users SET password_hash = $1 WHERE id = $2',
-    [passwordHash, id]
+    [passwordHash, userId]
   );
 }
 

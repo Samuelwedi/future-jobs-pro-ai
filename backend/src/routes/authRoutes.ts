@@ -1,3 +1,4 @@
+import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -125,6 +126,39 @@ router.post('/login', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Login error:', error.message);
     res.status(500).json({ success: false, message: 'Login failed' });
+  }
+});
+
+// ----- CHANGE PASSWORD -----
+router.post('/change-password', async (req: Request, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Current and new password required' });
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const userId = decoded.id;
+
+    const userRes = await pool.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const valid = await bcrypt.compare(currentPassword, userRes.rows[0].password_hash);
+    if (!valid) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, userId]);
+    res.json({ success: true, message: 'Password changed successfully' });
+  } catch (error: any) {
+    console.error('Change password error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to change password' });
   }
 });
 
