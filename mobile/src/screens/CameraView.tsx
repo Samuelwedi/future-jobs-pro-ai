@@ -152,8 +152,8 @@ export default function CameraView() {
     setIsRecording(true);
     try {
       const video = await cameraRef.current.recordAsync({
-        maxDuration: 60,
-        quality: '720p',
+        maxDuration: 1800,          // 30 minutes (1800 seconds)
+        quality: '1080p',           // High definition – change to '4k' for 4K video if device supports
       });
       await uploadFile(video.uri, true);
     } catch (error: any) {

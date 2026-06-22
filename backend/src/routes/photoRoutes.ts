@@ -18,8 +18,8 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Increase file size limit for videos (100MB)
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+// Allow up to 1 GB for large video files
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 * 1024 } });
 
 const getCompanyId = async (req: Request): Promise<string | null> => {
   const authHeader = req.headers.authorization;
