@@ -153,7 +153,7 @@ export default function CameraView() {
     try {
       const video = await cameraRef.current.recordAsync({
         maxDuration: 60,
-        quality: ExpoCamera.Constants.VideoQuality['720p'],
+        quality: '720p',
       });
       await uploadFile(video.uri, true);
     } catch (error: any) {
