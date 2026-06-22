@@ -188,6 +188,14 @@ export default function ProfileScreen() {
         <Text style={styles.actionText}>Change Password</Text>
       </TouchableOpacity>
 
+      {/* ----- SUBSCRIPTION BUTTON (only for boss/manager) ----- */}
+      {(user?.role === 'boss' || user?.role === 'manager') && (
+        <TouchableOpacity style={[styles.actionBtn, { borderColor: '#00D4FF', marginTop: 8 }]} onPress={() => (navigation as any).navigate('Subscription')}>
+          <MaterialIcons name="stars" size={20} color="#00D4FF" />
+          <Text style={[styles.actionText, { color: '#00D4FF' }]}>Subscription Plans</Text>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <MaterialIcons name="logout" size={20} color="#F44336" />
         <Text style={styles.logoutText}>{t('logout')}</Text>
