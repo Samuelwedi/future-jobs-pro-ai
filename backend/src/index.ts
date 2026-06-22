@@ -20,7 +20,7 @@ import { verifyToken } from './utils/auth';
 dotenv.config();
 
 const app: Express = express();
-const PORT = parseInt(process.env.PORT || '5000', 10);
+const PORT = parseInt(process.env.PORT || '8080', 10); // Changed fallback to 8080
 const JWT_SECRET = process.env.JWT_SECRET!;
 
 // ----- CORS -----
@@ -40,6 +40,11 @@ app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// ===== HEALTH CHECK (added for Railway) =====
+app.get('/ping', (req, res) => {
+  res.json({ success: true, message: 'pong' });
+});
 
 // ----- Trial middleware -----
 app.use(trialCheck);
@@ -456,7 +461,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('║   🚀 Future Jobs Pro AI Server Running                  ║');
   console.log('║   Created by: Samuel B.                                 ║');
   console.log('║   WebSocket: enabled                                   ║');
-  console.log(`║   📍 Local:            http://localhost:${PORT}           ║`);
+  console.log(`║   📍 Port:            ${PORT}                           ║`);
   console.log('╚══════════════════════════════════════════════════════════╝');
 });
 
