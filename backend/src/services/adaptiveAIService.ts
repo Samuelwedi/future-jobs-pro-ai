@@ -80,7 +80,7 @@ async function ensureBehaviorTableExists(): Promise<void> {
       'avg_clock_in_time', 'avg_clock_out_time', 'common_work_days',
       'avg_shift_duration_minutes', 'frequent_locations', 'preferred_project_types',
       'avg_job_duration_minutes', 'avg_photo_compliance_score', 'common_photo_issues',
-      'common_phrases', 'data_points_collected', 'overall_pattern_strength'
+      'common_phrases', 'data_points_collected', 'overall_pattern_strength', 'last_updated'
     ];
     for (const col of columns) {
       let type = 'TEXT';
@@ -89,6 +89,7 @@ async function ensureBehaviorTableExists(): Promise<void> {
       else if (col === 'avg_shift_duration_minutes' || col === 'avg_job_duration_minutes' || col === 'avg_photo_compliance_score' || col === 'data_points_collected' || col === 'overall_pattern_strength') type = 'INTEGER';
       else if (col === 'frequent_locations') type = 'JSONB';
       else if (col === 'preferred_project_types' || col === 'common_photo_issues' || col === 'common_phrases') type = 'TEXT[]';
+      else if (col === 'last_updated') type = 'TIMESTAMP WITH TIME ZONE';
       await pool.query(`ALTER TABLE user_behavior_patterns ADD COLUMN IF NOT EXISTS ${col} ${type}`);
     }
     console.log('✅ user_behavior_patterns table verified');
@@ -262,13 +263,13 @@ async function updateUserPatterns(userId: string): Promise<void> {
         lastVisited: data.lastSeen
       }));
 
-    // Upsert pattern
+    // Upsert pattern (now with last_updated)
     await pool.query(
       `INSERT INTO user_behavior_patterns (
         user_id, avg_clock_in_time, avg_clock_out_time, common_work_days,
         avg_shift_duration_minutes, frequent_locations, avg_photo_compliance_score,
-        common_photo_issues, common_phrases, data_points_collected, overall_pattern_strength
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0)
+        common_photo_issues, common_phrases, data_points_collected, overall_pattern_strength, last_updated
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,0,NOW())
       ON CONFLICT (user_id) DO UPDATE SET
         avg_clock_in_time = EXCLUDED.avg_clock_in_time,
         avg_clock_out_time = EXCLUDED.avg_clock_out_time,
