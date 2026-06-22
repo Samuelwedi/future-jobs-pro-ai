@@ -8,7 +8,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import fetch from 'node-fetch';
 
 const execAsync = promisify(exec);
 
@@ -31,21 +30,23 @@ export interface WatermarkOptions {
   fontSize?: number;
 }
 
-// ----- Reverse geocoding to get address from coordinates -----
-async function getAddressFromCoords(lat: number, lng: number): Promise<string | null> {
+// Reverse geocode coordinates to address (using Nominatim)
+async function getAddressFromCoords(lat: number, lng: number): Promise<string | undefined> {
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`;
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`;
     const response = await fetch(url, {
-      headers: { 'User-Agent': 'FutureJobsProAI/1.0' },
+      headers: { 'User-Agent': 'Future Jobs Pro AI (support@futurejobsproai.com)' }
     });
-    if (!response.ok) return null;
+    if (!response.ok) return undefined;
     const data: any = await response.json();
     if (data && data.display_name) {
-      return data.display_name;
+      // Shorten the address to a readable format (e.g., "123 Main St, City")
+      return data.display_name.split(',').slice(0, 3).join(',');
     }
-    return null;
+    return undefined;
   } catch (e) {
-    return null;
+    console.warn('Reverse geocoding failed:', e);
+    return undefined;
   }
 }
 
@@ -66,26 +67,28 @@ export async function applyWatermark(
 ): Promise<string> {
   console.log(`🖼️ [Samuel B.] Applying ${options.template || 'standard'} watermark...`);
 
-  // If address is not provided but lat/lng are, try to fetch it
-  let address = metadata.address || '';
-  if (!address && metadata.latitude !== undefined && metadata.longitude !== undefined) {
-    const fetched = await getAddressFromCoords(metadata.latitude, metadata.longitude);
-    if (fetched) {
-      address = fetched;
-      console.log(`📍 Address resolved: ${address}`);
-    } else {
-      // Fallback: format coordinates as address
-      address = `${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`;
-      console.log(`📍 Using coordinates as address: ${address}`);
+  // Try to get human‑readable address if coordinates exist and no address provided
+  let address: string | undefined = metadata.address;
+  if (!address && metadata.latitude && metadata.longitude) {
+    const resolved = await getAddressFromCoords(metadata.latitude, metadata.longitude);
+    if (resolved) {
+      address = resolved;
+      console.log(`📍 Resolved address: ${address}`);
     }
   }
 
+  // If still no address, use coordinates as fallback
+  const locationDisplay = address || 
+    (metadata.latitude && metadata.longitude 
+      ? `${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`
+      : 'No location');
+
   const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(path.extname(inputPath).toLowerCase());
   if (isVideo) {
-    return applyVideoWatermark(inputPath, outputPath, { ...metadata, address }, options);
+    return applyVideoWatermark(inputPath, outputPath, { ...metadata, address: locationDisplay }, options);
   }
 
-  return applyImageWatermark(inputPath, outputPath, { ...metadata, address }, options);
+  return applyImageWatermark(inputPath, outputPath, { ...metadata, address: locationDisplay }, options);
 }
 
 // ===== IMAGE WATERMARK =====
@@ -125,30 +128,28 @@ async function applyImageWatermark(
 
   lines.push({ text: opts.customText, fontSize: baseFontSize, bold: true });
 
-  // Date & Time
   const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   lines.push({ text: `${dateStr}  ${timeStr}`, fontSize: lineFontSize, bold: false });
 
-  // Address (now either fetched or coordinates)
   if (metadata.address) {
-    const maxAddrLen = 45; // truncate long addresses
-    const addr = metadata.address.length > maxAddrLen ? metadata.address.substring(0, maxAddrLen) + '...' : metadata.address;
-    lines.push({ text: addr, fontSize: lineFontSize, bold: false });
-  } else if (metadata.latitude !== undefined && metadata.longitude !== undefined) {
+    lines.push({ text: metadata.address, fontSize: lineFontSize, bold: false });
+  }
+
+  if (opts.showGPS && metadata.latitude && metadata.longitude && !metadata.address) {
+    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
+    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     lines.push({
-      text: `${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`,
+      text: `${Math.abs(metadata.latitude).toFixed(6)}°${latDir}  ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`,
       fontSize: lineFontSize,
       bold: false,
     });
   }
 
-  // Weather
   if (opts.showWeather && metadata.weather) {
     lines.push({ text: `Weather: ${metadata.weather}`, fontSize: lineFontSize, bold: false });
   }
 
-  // Detailed extras
   if (opts.template === 'detailed' || opts.template === 'map-style') {
     if (opts.showAltitude && metadata.altitude !== undefined) {
       lines.push({ text: `Altitude: ${Math.round(metadata.altitude)}m`, fontSize: lineFontSize, bold: false });
@@ -160,15 +161,16 @@ async function applyImageWatermark(
     }
   }
 
-  if (opts.template === 'map-style' && metadata.latitude !== undefined && metadata.longitude !== undefined) {
-    lines.push({
-      text: `maps.google.com/?q=${metadata.latitude},${metadata.longitude}`,
-      fontSize: Math.round(lineFontSize * 0.85),
-      bold: false,
-    });
+  if (opts.template === 'map-style') {
+    if (metadata.latitude && metadata.longitude) {
+      lines.push({
+        text: `maps.google.com/?q=${metadata.latitude},${metadata.longitude}`,
+        fontSize: Math.round(lineFontSize * 0.85),
+        bold: false,
+      });
+    }
   }
 
-  // Calculate box dimensions
   const lineHeight = 1.5;
   const textPadding = 16;
   const boxPadding = 12;
@@ -193,7 +195,6 @@ async function applyImageWatermark(
     boxY = Math.round((height - boxHeight) / 2);
   }
 
-  // Build SVG
   const cornerRadius = 10;
   let svgContent = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <rect x="${boxX}" y="${boxY}" width="${boxWidth}" height="${boxHeight}" rx="${cornerRadius}" ry="${cornerRadius}"
@@ -208,6 +209,7 @@ async function applyImageWatermark(
   svgContent += '</svg>';
 
   const svgBuffer = Buffer.from(svgContent);
+
   const layers: sharp.OverlayOptions[] = [{ input: svgBuffer, top: 0, left: 0 }];
 
   if (opts.logoPath && fs.existsSync(opts.logoPath)) {
@@ -225,7 +227,7 @@ async function applyImageWatermark(
   return outputPath;
 }
 
-// ===== VIDEO WATERMARK (uses ffmpeg) =====
+// ===== VIDEO WATERMARK =====
 async function applyVideoWatermark(
   inputPath: string,
   outputPath: string,
@@ -267,12 +269,14 @@ async function applyVideoWatermark(
   lines.push({ text: `${dateStr}  ${timeStr}`, fontSize: lineFontSize, bold: false });
 
   if (metadata.address) {
-    const maxAddrLen = 45;
-    const addr = metadata.address.length > maxAddrLen ? metadata.address.substring(0, maxAddrLen) + '...' : metadata.address;
-    lines.push({ text: addr, fontSize: lineFontSize, bold: false });
-  } else if (metadata.latitude !== undefined && metadata.longitude !== undefined) {
+    lines.push({ text: metadata.address, fontSize: lineFontSize, bold: false });
+  }
+
+  if (metadata.latitude && metadata.longitude && !metadata.address) {
+    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
+    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     lines.push({
-      text: `${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`,
+      text: `${Math.abs(metadata.latitude).toFixed(6)}°${latDir}  ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`,
       fontSize: lineFontSize,
       bold: false,
     });
@@ -282,7 +286,6 @@ async function applyVideoWatermark(
     lines.push({ text: `Weather: ${metadata.weather}`, fontSize: lineFontSize, bold: false });
   }
 
-  // Build PNG watermark
   const lineHeight = 1.5;
   const textPadding = 20;
   const boxPadding = 16;
@@ -326,7 +329,7 @@ async function applyVideoWatermark(
 }
 
 // ============================================
-// PDF REPORT (unchanged)
+// PDF REPORT
 // ============================================
 export async function generateWatermarkedPDFReport(
   photos: Array<{
