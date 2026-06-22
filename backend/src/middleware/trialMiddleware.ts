@@ -1,11 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import { verifyToken } from '../utils/auth';
 import { pool } from '../config/database';
 
-const JWT_SECRET = process.env.JWT_SECRET!;
-
 export const trialCheck = async (req: Request, res: Response, next: NextFunction) => {
-  // Skip auth, stripe, health, and lucy endpoints
+  // Skip auth, stripe, health, lucy
   if (
     req.path.startsWith('/api/auth') ||
     req.path.startsWith('/api/stripe') ||
@@ -15,45 +13,78 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
     return next();
   }
 
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, message: 'Not authenticated' });
-  }
-
   try {
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
-    const result = await pool.query(
-      'SELECT email, trial_ends_at, stripe_payment_method_id FROM users WHERE id = $1',
-      [decoded.id]
-    );
-    if (result.rows.length === 0)
-      return res.status(401).json({ success: false, message: 'User not found' });
+    const decoded = verifyToken(req);
+    (req as any).user = decoded;
+    (req as any).companyId = decoded.companyId || 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
 
-    const user = result.rows[0];
-
-    // Allow test user to bypass trial and extend trial to 365 days
-    if (user.email === 'samuel@test.com') {
-      // Optionally update trial_ends_at to 365 days from now (if you want to be safe)
-      // but we already set it in the database.
+    if (decoded.email === 'samuel@test.com') {
       return next();
     }
 
+    const userRes = await pool.query(
+      `SELECT trial_ends_at, grace_ends_at, stripe_payment_method_id, paid_months
+       FROM users WHERE id = $1`,
+      [decoded.id]
+    );
+    if (userRes.rows.length === 0) {
+      return res.status(401).json({ success: false, message: 'User not found' });
+    }
+
+    const user = userRes.rows[0];
     const now = new Date();
-    if (new Date(user.trial_ends_at) < now && !user.stripe_payment_method_id) {
+    const trialEnd = new Date(user.trial_ends_at);
+    const graceEnd = user.grace_ends_at ? new Date(user.grace_ends_at) : null;
+    const hasPaymentMethod = !!user.stripe_payment_method_id;
+    const paidMonths = user.paid_months || 0;
+
+    // If trial is still active
+    if (now < trialEnd) {
+      return next();
+    }
+
+    // If user has never paid and trial ended → give one-time 7‑day grace
+    if (!hasPaymentMethod && !graceEnd) {
+      const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      await pool.query('UPDATE users SET grace_ends_at = $1 WHERE id = $2', [sevenDays, decoded.id]);
+      console.log(`🆓 First grace period for user ${decoded.id} until ${sevenDays}`);
+      return next();
+    }
+
+    // If user has payment method but payment failed
+    if (hasPaymentMethod) {
+      // Check if grace period already exists
+      if (graceEnd && now < graceEnd) {
+        // Active grace period
+        return next();
+      }
+
+      // If no active grace, check if they qualify for a new one (paid >= 3 months)
+      if (paidMonths >= 3) {
+        const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        await pool.query('UPDATE users SET grace_ends_at = $1 WHERE id = $2', [sevenDays, decoded.id]);
+        console.log(`🆓 Grace period granted for loyal user ${decoded.id} (paid ${paidMonths} months) until ${sevenDays}`);
+        return next();
+      }
+
+      // If paid less than 3 months, block immediately
       return res.status(402).json({
         success: false,
-        message: 'Trial expired. Please add a payment method.',
+        message: 'Payment required. Please update your payment method.',
+      });
+    }
+
+    // If no payment method and grace period has expired
+    if (graceEnd && now >= graceEnd) {
+      return res.status(402).json({
+        success: false,
+        message: 'Payment required. Please add a payment method.',
       });
     }
 
     next();
   } catch (error: any) {
-    console.error('JWT Verify Error:', error.name, error.message);
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid token',
-      error: { name: error.name, message: error.message },
-    });
+    console.error('Trial check error:', error.message);
+    return res.status(401).json({ success: false, message: error.message });
   }
 };
