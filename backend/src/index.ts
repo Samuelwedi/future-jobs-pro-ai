@@ -20,7 +20,9 @@ import { verifyToken } from './utils/auth';
 dotenv.config();
 
 const app: Express = express();
-const PORT = parseInt(process.env.PORT || '8080', 10); // Changed fallback to 8080
+console.log(`🔍 PORT environment variable: "${process.env.PORT}"`);
+const PORT = parseInt(process.env.PORT || '8080', 10);
+console.log(`🚀 Using PORT: ${PORT}`);
 const JWT_SECRET = process.env.JWT_SECRET!;
 
 // ----- CORS -----
@@ -41,9 +43,12 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ===== HEALTH CHECK (added for Railway) =====
+// ===== EARLY HEALTH CHECK (before any middleware, routing) =====
 app.get('/ping', (req, res) => {
   res.json({ success: true, message: 'pong' });
+});
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
 });
 
 // ----- Trial middleware -----
