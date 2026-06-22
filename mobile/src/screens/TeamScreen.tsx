@@ -5,7 +5,8 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 
 interface Member {
   id: string;
@@ -20,6 +21,7 @@ interface Member {
 
 export default function TeamScreen() {
   const { user } = useAuth();
+  const navigation = useNavigation();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -110,7 +112,13 @@ export default function TeamScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Team</Text>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#FFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Team</Text>
+        <View style={{ width: 40 }} />
+      </View>
       <FlatList
         data={members}
         renderItem={renderMember}
@@ -123,7 +131,6 @@ export default function TeamScreen() {
         <MaterialIcons name="person-add" size={28} color="#0A0A0A" />
       </TouchableOpacity>
 
-      {/* Invite Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -156,7 +163,19 @@ export default function TeamScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  header: { color: '#FFF', fontSize: 24, fontWeight: 'bold', paddingTop: 60, paddingBottom: 20, paddingHorizontal: 20 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 60,
+    paddingBottom: 20,
+    paddingHorizontal: 16,
+    backgroundColor: '#0A0A0A',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  backButton: { padding: 8, marginLeft: 4 },
+  headerTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold' },
   list: { paddingHorizontal: 20 },
   memberCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 12, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#333' },
   memberName: { color: '#FFF', fontSize: 16, fontWeight: '600' },

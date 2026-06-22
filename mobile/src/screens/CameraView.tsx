@@ -152,8 +152,8 @@ export default function CameraView() {
     setIsRecording(true);
     try {
       const video = await cameraRef.current.recordAsync({
-        maxDuration: 1800,          // 30 minutes (1800 seconds)
-        quality: '1080p',           // High definition – change to '4k' for 4K video if device supports
+        maxDuration: 1800,
+        quality: '1080p',
       });
       await uploadFile(video.uri, true);
     } catch (error: any) {
@@ -201,6 +201,11 @@ export default function CameraView() {
   return (
     <View style={styles.container}>
       <ExpoCamera ref={cameraRef} style={styles.camera} facing="back" />
+
+      {/* Back Button - Top Left */}
+      <TouchableOpacity style={styles.backArrow} onPress={goBack}>
+        <Ionicons name="arrow-back" size={28} color="#FFF" />
+      </TouchableOpacity>
 
       {/* Mode Toggle */}
       <View style={styles.modeToggle}>
@@ -292,6 +297,13 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
   camera: { flex: 1 },
+  backArrow: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    zIndex: 10,
+    padding: 8,
+  },
   modeToggle: {
     position: 'absolute',
     top: 60,
