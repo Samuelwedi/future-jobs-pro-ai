@@ -1,6 +1,7 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Features: Image/Video watermark, QR code, WeatherKit, Hash
+// Features: Image/Video watermark, OpenWeatherMap, plain hash
+// No QR code – clean and reliable
 // ============================================================
 
 import sharp from 'sharp';
@@ -9,8 +10,6 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
-import QRCode from 'qrcode';
-import { getWeather } from './weatherService';
 
 const execAsync = promisify(exec);
 
@@ -21,12 +20,7 @@ export interface WatermarkOptions {
   showDate?: boolean;
   showTime?: boolean;
   showGPS?: boolean;
-  showLogo?: boolean;
-  showMap?: boolean;
   showWeather?: boolean;
-  showAltitude?: boolean;
-  showCompass?: boolean;
-  logoPath?: string;
   customText?: string;
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
   opacity?: number;
@@ -38,7 +32,29 @@ export interface WatermarkResult {
   verificationHash: string;
 }
 
-// ---------- Reverse Geocode (fallback address) ----------
+// ---------- OpenWeatherMap API ----------
+async function fetchWeather(lat: number, lng: number): Promise<string> {
+  const apiKey = process.env.OPENWEATHER_API_KEY || '5747418241c0b06e9b0dc9223223479f';
+  const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.warn('OpenWeather API error:', response.status);
+      return 'Weather unavailable';
+    }
+    const data: any = await response.json();
+    const temp = Math.round(data.main.temp);
+    const condition = data.weather?.[0]?.description || 'unknown';
+    // Capitalize first letter
+    const capitalized = condition.charAt(0).toUpperCase() + condition.slice(1);
+    return `${capitalized} ${temp}°C`;
+  } catch (error) {
+    console.warn('OpenWeather fetch failed:', error);
+    return 'Weather unavailable';
+  }
+}
+
+// ---------- Reverse Geocode (Nominatim) ----------
 async function getAddressFromCoords(lat: number, lng: number): Promise<string | undefined> {
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`;
@@ -125,7 +141,7 @@ export async function applyWatermark(
   // 2. Fetch weather if missing and coordinates exist
   let weather = metadata.weather;
   if (!weather && metadata.latitude && metadata.longitude) {
-    weather = await getWeather(metadata.latitude, metadata.longitude, takenAt);
+    weather = await fetchWeather(metadata.latitude, metadata.longitude);
     console.log(`🌤️ Weather fetched: ${weather}`);
   } else if (!weather) {
     weather = 'Weather unavailable';
@@ -141,11 +157,6 @@ export async function applyWatermark(
   });
   console.log(`🔒 Verification hash: ${verificationHash}`);
 
-  // 4. Determine if video
-  const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(
-    path.extname(inputPath).toLowerCase()
-  );
-
   const fullMetadata = {
     ...metadata,
     address: locationDisplay,
@@ -153,17 +164,26 @@ export async function applyWatermark(
     takenAt,
   };
 
-  if (isVideo) {
-    await applyVideoWatermark(inputPath, outputPath, fullMetadata, options, verificationHash);
-  } else {
-    await applyImageWatermark(inputPath, outputPath, fullMetadata, options, verificationHash);
+  const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(
+    path.extname(inputPath).toLowerCase()
+  );
+
+  try {
+    if (isVideo) {
+      await applyVideoWatermark(inputPath, outputPath, fullMetadata, options, verificationHash);
+    } else {
+      await applyImageWatermark(inputPath, outputPath, fullMetadata, options, verificationHash);
+    }
+  } catch (err) {
+    console.error('❌ Watermark failed, copying original:', err);
+    fs.copyFileSync(inputPath, outputPath);
   }
 
   return { outputPath, verificationHash };
 }
 
 // ============================================================
-// IMAGE WATERMARK
+// IMAGE WATERMARK – no QR, only plain text + hash
 // ============================================================
 async function applyImageWatermark(
   inputPath: string,
@@ -197,10 +217,10 @@ async function applyImageWatermark(
   const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-  // Build text lines
+  // Build text lines (no QR)
   const lines: { text: string; fontSize: number; bold: boolean }[] = [];
 
-  // Company name (bold)
+  // Company name
   lines.push({ text: opts.customText, fontSize: baseFontSize, bold: true });
 
   // Date/Time
@@ -230,35 +250,17 @@ async function applyImageWatermark(
   // Verification hash (plain text)
   lines.push({ text: `🔒 Verified: ${verificationHash}`, fontSize: smallFontSize, bold: false });
 
-  // QR code (we'll embed this as an image in the SVG)
-  const qrSize = Math.round(baseFontSize * 2.2);
-  let qrDataUrl = '';
-  try {
-    qrDataUrl = await QRCode.toDataURL(verificationHash, {
-      errorCorrectionLevel: 'H',
-      type: 'image/png',
-      margin: 1,
-      width: qrSize,
-    });
-  } catch (e) {
-    console.warn('QR generation failed:', e);
-  }
-
   // Calculate box dimensions
   const lineHeight = 1.5;
   const textPadding = 16;
   const boxPadding = 14;
-  const qrMargin = 12;
 
-  // Estimate text block width
   const maxLineChars = Math.max(...lines.map(l => l.text.length));
   const estimatedTextWidth = maxLineChars * (lineFontSize * 0.55);
   const totalTextHeight = lines.reduce((sum, l) => sum + l.fontSize * lineHeight, 0);
 
-  // If QR exists, add its width + margin to box width
-  const qrExtraWidth = qrDataUrl ? qrSize + qrMargin : 0;
-  const boxWidth = estimatedTextWidth + boxPadding * 2 + qrExtraWidth;
-  const boxHeight = Math.max(totalTextHeight + boxPadding * 2, qrSize + boxPadding * 2);
+  const boxWidth = estimatedTextWidth + boxPadding * 2;
+  const boxHeight = totalTextHeight + boxPadding * 2;
 
   // Position
   let boxX = textPadding;
@@ -277,24 +279,16 @@ async function applyImageWatermark(
 
   const cornerRadius = 10;
 
-  // Build SVG
+  // Build SVG (no QR image)
   let svgContent = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <rect x="${boxX}" y="${boxY}" width="${boxWidth}" height="${boxHeight}" rx="${cornerRadius}" ry="${cornerRadius}"
           fill="rgba(0,0,0,0.55)" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" />`;
 
-  // Text block (left side)
   let textY = boxY + boxPadding + lines[0].fontSize;
   for (const line of lines) {
     const fontWeight = line.bold ? 'bold' : 'normal';
     svgContent += `<text x="${boxX + boxPadding}" y="${textY}" font-size="${line.fontSize}" fill="white" opacity="0.95" font-family="Arial, sans-serif" font-weight="${fontWeight}">${escapeXml(line.text)}</text>`;
     textY += line.fontSize * lineHeight;
-  }
-
-  // QR code (right side)
-  if (qrDataUrl) {
-    const qrX = boxX + boxWidth - boxPadding - qrSize;
-    const qrY = boxY + (boxHeight - qrSize) / 2;
-    svgContent += `<image x="${qrX}" y="${qrY}" width="${qrSize}" height="${qrSize}" href="${qrDataUrl}" />`;
   }
 
   svgContent += '</svg>';
@@ -305,7 +299,7 @@ async function applyImageWatermark(
 }
 
 // ============================================================
-// VIDEO WATERMARK (with ffprobe scaling & bottom-left default)
+// VIDEO WATERMARK – no QR
 // ============================================================
 async function applyVideoWatermark(
   inputPath: string,
@@ -340,7 +334,7 @@ async function applyVideoWatermark(
     showGPS: options.showGPS !== false,
     showWeather: options.showWeather !== false,
     customText: options.customText || 'Future Jobs Pro AI',
-    position: options.position || 'bottom-left', // default
+    position: options.position || 'bottom-left',
     opacity: options.opacity || 0.7,
     fontSize: options.fontSize || 0,
   };
@@ -377,35 +371,19 @@ async function applyVideoWatermark(
 
   lines.push({ text: `🔒 Verified: ${verificationHash}`, fontSize: smallFontSize, bold: false });
 
-  // QR Code
-  const qrSize = Math.round(baseFontSize * 2.2);
-  let qrDataUrl = '';
-  try {
-    qrDataUrl = await QRCode.toDataURL(verificationHash, {
-      errorCorrectionLevel: 'H',
-      type: 'image/png',
-      margin: 1,
-      width: qrSize,
-    });
-  } catch (e) {}
-
   const lineHeight = 1.5;
   const textPadding = 20;
   const boxPadding = 16;
-  const qrMargin = 12;
 
   const maxLineChars = Math.max(...lines.map(l => l.text.length));
   const estimatedTextWidth = maxLineChars * (lineFontSize * 0.55);
   const totalTextHeight = lines.reduce((sum, l) => sum + l.fontSize * lineHeight, 0);
-  const qrExtraWidth = qrDataUrl ? qrSize + qrMargin : 0;
-  const boxWidth = estimatedTextWidth + boxPadding * 2 + qrExtraWidth;
-  const boxHeight = Math.max(totalTextHeight + boxPadding * 2, qrSize + boxPadding * 2);
+  const boxWidth = estimatedTextWidth + boxPadding * 2;
+  const boxHeight = totalTextHeight + boxPadding * 2;
 
-  // Position: bottom-left by default
   let boxX = textPadding;
-  let boxY = videoHeight - boxHeight - textPadding;
+  let boxY = videoHeight - boxHeight - textPadding; // bottom-left default
 
-  // (Other positions can be added easily if needed)
   if (opts.position === 'top-left') boxY = textPadding;
   else if (opts.position === 'top-right') { boxX = videoWidth - boxWidth - textPadding; boxY = textPadding; }
   else if (opts.position === 'bottom-right') { boxX = videoWidth - boxWidth - textPadding; boxY = videoHeight - boxHeight - textPadding; }
@@ -423,12 +401,6 @@ async function applyVideoWatermark(
     textY += line.fontSize * lineHeight;
   }
 
-  if (qrDataUrl) {
-    const qrX = boxX + boxWidth - boxPadding - qrSize;
-    const qrY = boxY + (boxHeight - qrSize) / 2;
-    svgContent += `<image x="${qrX}" y="${qrY}" width="${qrSize}" height="${qrSize}" href="${qrDataUrl}" />`;
-  }
-
   svgContent += '</svg>';
 
   const pngPath = inputPath + '.watermark.png';
@@ -436,7 +408,6 @@ async function applyVideoWatermark(
   await sharp(svgBuffer).png().toFile(pngPath);
 
   try {
-    // Overlay at calculated position
     const ffmpegCmd = `ffmpeg -i "${inputPath}" -i "${pngPath}" -filter_complex "overlay=${boxX}:${boxY}" -c:a copy "${outputPath}" -y`;
     await execAsync(ffmpegCmd);
     console.log(`✅ Video watermark applied (${videoWidth}x${videoHeight})`);
@@ -449,7 +420,7 @@ async function applyVideoWatermark(
 }
 
 // ============================================================
-// PDF REPORT – with background watermark & embedded hash
+// PDF REPORT – with background watermark (unchanged)
 // ============================================================
 export async function generateWatermarkedPDFReport(
   photos: Array<{
@@ -472,29 +443,25 @@ export async function generateWatermarkedPDFReport(
   const stream = fs.createWriteStream(outputPath);
   doc.pipe(stream);
 
-  // ----- Helper: Draw background watermark on each page -----
   function drawBackgroundWatermark() {
-  const pageWidth = doc.page.width;
-  const pageHeight = doc.page.height;
-  doc.save();
-  doc.opacity(0.06);
-  doc.fontSize(60);
-  doc.font('Helvetica-Bold');
-  doc.fillColor('#000');
-  doc.rotate(-30, { origin: [pageWidth / 2, pageHeight / 2] });
-  // Manually calculate the y position to center vertically
-  const textWidth = doc.widthOfString('FUTURE JOBS PRO AI');
-  const textHeight = 60; // approximate
-  const x = (pageWidth - textWidth) / 2;
-  const y = (pageHeight - textHeight) / 2;
-  doc.text('FUTURE JOBS PRO AI', x, y, { align: 'center' });
-  doc.restore();
-  doc.opacity(1);
-}
+    const pw = doc.page.width, ph = doc.page.height;
+    doc.save();
+    doc.opacity(0.06);
+    doc.fontSize(60);
+    doc.font('Helvetica-Bold');
+    doc.fillColor('#000');
+    doc.rotate(-30, { origin: [pw / 2, ph / 2] });
+    const txt = 'FUTURE JOBS PRO AI';
+    const tw = doc.widthOfString(txt);
+    const th = 60;
+    const x = (pw - tw) / 2;
+    const y = (ph - th) / 2;
+    doc.text(txt, x, y, { align: 'center' });
+    doc.restore();
+    doc.opacity(1);
+  }
 
-  // ----- Header (first page) -----
   drawBackgroundWatermark();
-
   doc.fontSize(24).font('Helvetica-Bold').text(companyName, { align: 'center' });
   doc.moveDown(0.5);
   doc.fontSize(18).font('Helvetica-Bold').text(reportTitle, { align: 'center' });
@@ -506,66 +473,29 @@ export async function generateWatermarkedPDFReport(
   doc.moveDown(1);
 
   for (let i = 0; i < photos.length; i++) {
-    const photo = photos[i];
-    if (i > 0) {
-      doc.addPage();
-      drawBackgroundWatermark();
-    }
-
+    if (i > 0) { doc.addPage(); drawBackgroundWatermark(); }
+    const p = photos[i];
     doc.fontSize(14).font('Helvetica-Bold').text(`Photo ${i + 1}`, { underline: true });
     doc.moveDown(0.5);
-
-    doc.fontSize(10).font('Helvetica').text(`📅 Taken: ${photo.takenAt.toLocaleString()}`);
-    doc.moveDown(0.2);
-
-    if (photo.address) {
-      doc.text(`📍 Address: ${photo.address}`);
-    } else if (photo.latitude && photo.longitude) {
-      doc.text(`📍 GPS: ${photo.latitude.toFixed(6)}, ${photo.longitude.toFixed(6)}`);
-    }
-    doc.moveDown(0.2);
-
-    if (photo.weather) {
-      doc.text(`🌤️ Weather: ${photo.weather}`);
-    }
-
-    if (photo.complianceScore !== undefined) {
-      doc.text(`📊 Compliance Score: ${photo.complianceScore}/100`);
-    }
-
-    if (photo.verificationHash) {
-      doc.text(`🔒 Verification Hash: ${photo.verificationHash}`);
-    }
-
-    if (photo.notes) {
-      doc.text(`📝 Notes: ${photo.notes}`);
-    }
-
+    doc.fontSize(10).font('Helvetica').text(`📅 Taken: ${p.takenAt.toLocaleString()}`);
+    if (p.address) doc.text(`📍 Address: ${p.address}`);
+    else if (p.latitude && p.longitude) doc.text(`📍 GPS: ${p.latitude.toFixed(6)}, ${p.longitude.toFixed(6)}`);
+    if (p.weather) doc.text(`🌤️ Weather: ${p.weather}`);
+    if (p.complianceScore !== undefined) doc.text(`📊 Compliance: ${p.complianceScore}/100`);
+    if (p.verificationHash) doc.text(`🔒 Hash: ${p.verificationHash}`);
+    if (p.notes) doc.text(`📝 Notes: ${p.notes}`);
     doc.moveDown(0.5);
-
-    // Embed photo
-    if (fs.existsSync(photo.photoPath)) {
-      try {
-        doc.image(photo.photoPath, { fit: [500, 350], align: 'center', valign: 'center' });
-      } catch (e) {
-        doc.fillColor('#F44336').text('⚠️ Could not embed image').fillColor('#000');
-      }
+    if (fs.existsSync(p.photoPath)) {
+      try { doc.image(p.photoPath, { fit: [500, 350], align: 'center', valign: 'center' }); } catch { doc.fillColor('#F44336').text('⚠️ Could not embed').fillColor('#000'); }
     } else {
-      doc.fillColor('#F44336').text('⚠️ Photo file missing').fillColor('#000');
+      doc.fillColor('#F44336').text('⚠️ Missing file').fillColor('#000');
     }
-
     doc.moveDown(0.5);
-    doc.fontSize(8).font('Helvetica').fillColor('#888')
-      .text('🔒 Tamper‑Proof Evidence – Verified by Future Jobs Pro AI', { align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor('#888').text('🔒 Tamper‑Proof Evidence', { align: 'center' });
     doc.fillColor('#000');
   }
-
   doc.end();
-
-  return new Promise((resolve, reject) => {
-    stream.on('finish', () => resolve(outputPath));
-    stream.on('error', reject);
-  });
+  return new Promise((resolve, reject) => { stream.on('finish', () => resolve(outputPath)); stream.on('error', reject); });
 }
 
-console.log('🖼️ Watermark Service loaded (with QR, WeatherKit, Hash)');
+console.log('🖼️ Watermark Service loaded (OpenWeather, plain hash, no QR)');
