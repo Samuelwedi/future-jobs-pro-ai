@@ -81,14 +81,13 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
 
     // Apply watermark – get hash back
     const { outputPath, verificationHash } = await applyWatermark(
-      tempInput,
-      tempOutput,
-      metadata,
-      {
-        template: template || 'standard',
-        position: isVideo ? 'bottom-left' : 'bottom-left',
-      }
-    );
+  tempInput,
+  tempOutput,
+  metadata,
+  {
+    position: isVideo ? 'bottom-left' : 'bottom-left',
+  }
+);
 
     // Upload to Cloudinary
     const uploadResult = await cloudinary.uploader.upload(outputPath, {
