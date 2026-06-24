@@ -1,7 +1,7 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Visible, tamper‑proof stamp (like a PDF watermark)
-// No QR, OpenWeatherMap, bold & clear
+// Robust: SVG → PNG → composite (works on all images/videos)
+// No QR, OpenWeatherMap, visible stamp
 // ============================================================
 
 import sharp from 'sharp';
@@ -14,7 +14,6 @@ import crypto from 'crypto';
 const execAsync = promisify(exec);
 
 export interface WatermarkOptions {
-  template?: 'standard' | 'minimal' | 'detailed';
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
   customText?: string;
   fontSize?: number;
@@ -31,17 +30,13 @@ async function fetchWeather(lat: number, lng: number): Promise<string> {
   const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`;
   try {
     const response = await fetch(url);
-    if (!response.ok) {
-      console.warn('OpenWeather API error:', response.status);
-      return 'Weather unavailable';
-    }
+    if (!response.ok) return 'Weather unavailable';
     const data: any = await response.json();
     const temp = Math.round(data.main.temp);
     const condition = data.weather?.[0]?.description || 'unknown';
     const capitalized = condition.charAt(0).toUpperCase() + condition.slice(1);
     return `${capitalized} ${temp}°C`;
-  } catch (error) {
-    console.warn('OpenWeather fetch failed:', error);
+  } catch {
     return 'Weather unavailable';
   }
 }
@@ -51,16 +46,12 @@ async function getAddressFromCoords(lat: number, lng: number): Promise<string | 
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`;
     const response = await fetch(url, {
-      headers: { 'User-Agent': 'Future Jobs Pro AI (support@futurejobsproai.com)' },
+      headers: { 'User-Agent': 'Future Jobs Pro AI' },
     });
     if (!response.ok) return undefined;
     const data: any = await response.json();
-    if (data?.display_name) {
-      return data.display_name.split(',').slice(0, 3).join(',');
-    }
-    return undefined;
-  } catch (e) {
-    console.warn('Reverse geocoding failed:', e);
+    return data?.display_name?.split(',').slice(0, 3).join(',');
+  } catch {
     return undefined;
   }
 }
@@ -77,9 +68,14 @@ function generateVerificationHash(metadata: any): string {
   return crypto.createHash('sha256').update(data).digest('hex').slice(0, 8);
 }
 
-// ---------- XML escape ----------
+// ---------- Escape XML ----------
 function escapeXml(str: string): string {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }
 
 // ============================================================
@@ -88,15 +84,7 @@ function escapeXml(str: string): string {
 export async function applyWatermark(
   inputPath: string,
   outputPath: string,
-  metadata: {
-    latitude?: number;
-    longitude?: number;
-    altitude?: number;
-    direction?: number;
-    weather?: string;
-    address?: string;
-    takenAt?: Date;
-  },
+  metadata: any,
   options: WatermarkOptions = {}
 ): Promise<WatermarkResult> {
   const takenAt = metadata.takenAt || new Date();
@@ -115,22 +103,22 @@ export async function applyWatermark(
   const hash = generateVerificationHash({ ...metadata, address, weather, takenAt });
   const fullMeta = { ...metadata, address, weather, takenAt };
 
-  const isVideo = ['.mp4','.mov','.avi','.m4v','.mkv'].includes(path.extname(inputPath).toLowerCase());
+  const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(
+    path.extname(inputPath).toLowerCase()
+  );
+
   if (isVideo) {
     await applyVideoWatermark(inputPath, outputPath, fullMeta, options, hash);
   } else {
     await applyImageWatermark(inputPath, outputPath, fullMeta, options, hash);
   }
 
-  // Debug: log output file size to confirm overlay
-  const stats = fs.statSync(outputPath);
-  console.log(`📦 Output file size: ${(stats.size / 1024).toFixed(2)} KB`);
-
+  console.log(`📦 Output file size: ${(fs.statSync(outputPath).size / 1024).toFixed(2)} KB`);
   return { outputPath, verificationHash: hash };
 }
 
 // ============================================================
-// IMAGE WATERMARK – Bold, opaque, visible
+// IMAGE WATERMARK – SVG → PNG → composite
 // ============================================================
 async function applyImageWatermark(
   inputPath: string,
@@ -148,14 +136,13 @@ async function applyImageWatermark(
   const image = sharp(inputPath);
   const { width = 800, height = 600 } = await image.metadata();
 
-  // Larger font for readability
   const baseFontSize = opts.fontSize || Math.round(width / 30);
   const lineFontSize = Math.round(baseFontSize * 0.75);
   const smallFontSize = Math.round(lineFontSize * 0.85);
 
   const now = metadata.takenAt || new Date();
-  const dateStr = now.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
-  const timeStr = now.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const lines = [
     { text: opts.customText, fontSize: baseFontSize, bold: true },
@@ -165,8 +152,8 @@ async function applyImageWatermark(
     lines.push({ text: metadata.address, fontSize: lineFontSize, bold: false });
   }
   if (metadata.latitude && metadata.longitude && metadata.address === 'No location') {
-    const latDir = metadata.latitude >=0 ? 'N' : 'S';
-    const lngDir = metadata.longitude >=0 ? 'E' : 'W';
+    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
+    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     lines.push({
       text: `${Math.abs(metadata.latitude).toFixed(6)}°${latDir}  ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`,
       fontSize: lineFontSize,
@@ -202,33 +189,39 @@ async function applyImageWatermark(
     boxY = (height - boxHeight) / 2;
   }
 
-  // Build SVG with bold, visible stamp
+  // Build SVG – simple, no paint-order
   let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
   // Shadow
-  svg += `<rect x="${boxX+2}" y="${boxY+2}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12"
-          fill="rgba(0,0,0,0.3)" />`;
-  // Main box – more opaque
-  svg += `<rect x="${boxX}" y="${boxY}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12"
-          fill="rgba(0,0,0,0.85)" stroke="rgba(255,255,255,0.4)" stroke-width="2" />`;
-  // Text with black stroke for contrast
+  svg += `<rect x="${boxX+2}" y="${boxY+2}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12" fill="rgba(0,0,0,0.3)" />`;
+  // Main box
+  svg += `<rect x="${boxX}" y="${boxY}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12" fill="rgba(0,0,0,0.85)" stroke="rgba(255,255,255,0.4)" stroke-width="2" />`;
+  // Text with black stroke and white fill (stroke first, then fill)
   let textY = boxY + boxPadding + lines[0].fontSize;
   for (const line of lines) {
     const fontWeight = line.bold ? 'bold' : 'normal';
+    // Draw stroke (black) then fill (white) using two separate text elements
+    // This is more compatible than paint-order
     svg += `<text x="${boxX + boxPadding}" y="${textY}" font-size="${line.fontSize}" 
-            fill="white" stroke="black" stroke-width="1.2" 
-            font-family="Arial, sans-serif" font-weight="${fontWeight}" 
-            paint-order="stroke fill">${escapeXml(line.text)}</text>`;
+            fill="black" stroke="none" font-family="sans-serif" font-weight="${fontWeight}">${escapeXml(line.text)}</text>`;
+    svg += `<text x="${boxX + boxPadding}" y="${textY}" font-size="${line.fontSize}" 
+            fill="white" stroke="black" stroke-width="1" font-family="sans-serif" font-weight="${fontWeight}">${escapeXml(line.text)}</text>`;
     textY += line.fontSize * lineHeight;
   }
   svg += '</svg>';
 
-  const svgBuffer = Buffer.from(svg);
-  await sharp(inputPath).composite([{ input: svgBuffer, top: 0, left: 0 }]).toFile(outputPath);
+  // Render SVG to PNG overlay
+  const overlayPng = await sharp(Buffer.from(svg)).png().toBuffer();
+
+  // Composite overlay onto the original image
+  await sharp(inputPath)
+    .composite([{ input: overlayPng, top: 0, left: 0 }])
+    .toFile(outputPath);
+
   console.log(`✅ Image watermark applied (visible stamp): ${path.basename(outputPath)}`);
 }
 
 // ============================================================
-// VIDEO WATERMARK – same style (no QR)
+// VIDEO WATERMARK – same SVG → PNG (already working)
 // ============================================================
 async function applyVideoWatermark(
   inputPath: string,
@@ -241,11 +234,13 @@ async function applyVideoWatermark(
 
   let videoWidth = 1280, videoHeight = 720;
   try {
-    const { stdout } = await execAsync(`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "${inputPath}"`);
+    const { stdout } = await execAsync(
+      `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "${inputPath}"`
+    );
     const dims = stdout.trim().split(',');
     if (dims.length === 2) {
-      videoWidth = parseInt(dims[0],10);
-      videoHeight = parseInt(dims[1],10);
+      videoWidth = parseInt(dims[0], 10);
+      videoHeight = parseInt(dims[1], 10);
     }
   } catch {}
 
@@ -260,8 +255,8 @@ async function applyVideoWatermark(
   const smallFontSize = Math.round(lineFontSize * 0.85);
 
   const now = metadata.takenAt || new Date();
-  const dateStr = now.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
-  const timeStr = now.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const lines = [
     { text: opts.customText, fontSize: baseFontSize, bold: true },
@@ -271,8 +266,8 @@ async function applyVideoWatermark(
     lines.push({ text: metadata.address, fontSize: lineFontSize, bold: false });
   }
   if (metadata.latitude && metadata.longitude && metadata.address === 'No location') {
-    const latDir = metadata.latitude >=0 ? 'N' : 'S';
-    const lngDir = metadata.longitude >=0 ? 'E' : 'W';
+    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
+    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     lines.push({
       text: `${Math.abs(metadata.latitude).toFixed(6)}°${latDir}  ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`,
       fontSize: lineFontSize,
@@ -301,18 +296,17 @@ async function applyVideoWatermark(
   else if (opts.position === 'bottom-right') { boxX = videoWidth - boxWidth - textPadding; boxY = videoHeight - boxHeight - textPadding; }
 
   let svg = `<svg width="${videoWidth}" height="${videoHeight}" xmlns="http://www.w3.org/2000/svg">`;
-  svg += `<rect x="${boxX+2}" y="${boxY+2}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12"
-          fill="rgba(0,0,0,0.3)" />`;
-  svg += `<rect x="${boxX}" y="${boxY}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12"
-          fill="rgba(0,0,0,0.85)" stroke="rgba(255,255,255,0.4)" stroke-width="2" />`;
+  svg += `<rect x="${boxX+2}" y="${boxY+2}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12" fill="rgba(0,0,0,0.3)" />`;
+  svg += `<rect x="${boxX}" y="${boxY}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12" fill="rgba(0,0,0,0.85)" stroke="rgba(255,255,255,0.4)" stroke-width="2" />`;
 
   let textY = boxY + boxPadding + lines[0].fontSize;
   for (const line of lines) {
     const fontWeight = line.bold ? 'bold' : 'normal';
+    // Two passes for stroke and fill (compatible)
     svg += `<text x="${boxX + boxPadding}" y="${textY}" font-size="${line.fontSize}" 
-            fill="white" stroke="black" stroke-width="1.2" 
-            font-family="Arial, sans-serif" font-weight="${fontWeight}" 
-            paint-order="stroke fill">${escapeXml(line.text)}</text>`;
+            fill="black" stroke="none" font-family="sans-serif" font-weight="${fontWeight}">${escapeXml(line.text)}</text>`;
+    svg += `<text x="${boxX + boxPadding}" y="${textY}" font-size="${line.fontSize}" 
+            fill="white" stroke="black" stroke-width="1" font-family="sans-serif" font-weight="${fontWeight}">${escapeXml(line.text)}</text>`;
     textY += line.fontSize * lineHeight;
   }
   svg += '</svg>';
@@ -327,7 +321,6 @@ async function applyVideoWatermark(
     console.error('❌ ffmpeg watermark failed, using fallback copy:', err);
     fs.copyFileSync(inputPath, outputPath);
   }
-
   if (fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
 }
 
@@ -400,4 +393,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve, reject) => { stream.on('finish', ()=>resolve(outputPath)); stream.on('error', reject); });
 }
 
-console.log('🖼️ Watermark Service loaded – visible stamp, OpenWeather, plain hash');
+console.log('🖼️ Watermark Service loaded – robust, visible stamp, OpenWeather, plain hash');
