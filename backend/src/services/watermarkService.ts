@@ -1,7 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Simple, bulletproof SVG with plain text (no stroke, no emoji)
-// Uses OpenWeatherMap, plain hash
+// Uses jimp for text rendering – final TypeScript fixes
 // ============================================================
 
 import sharp from 'sharp';
@@ -10,6 +9,7 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
+import Jimp from 'jimp';
 
 const execAsync = promisify(exec);
 
@@ -66,11 +66,6 @@ function generateVerificationHash(metadata: any): string {
   return crypto.createHash('sha256').update(data).digest('hex').slice(0, 8);
 }
 
-// ---------- Escape XML (minimal) ----------
-function escapeXml(str: string): string {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
-}
-
 // ============================================================
 // MAIN
 // ============================================================
@@ -111,7 +106,102 @@ export async function applyWatermark(
 }
 
 // ============================================================
-// IMAGE WATERMARK – Simple SVG (no stroke, no emoji)
+// Generate watermark PNG using jimp
+// ============================================================
+async function generateWatermarkPNG(
+  width: number,
+  height: number,
+  lines: string[],
+  options: { position: string; customText: string; fontSize: number }
+): Promise<Buffer> {
+  const baseSize = options.fontSize || Math.round(width / 30);
+  const lineSize = Math.round(baseSize * 0.75);
+  const smallSize = Math.round(lineSize * 0.85);
+
+  // Load fonts – cast to any to avoid TypeScript issues
+  const fontLarge = await Jimp.loadFont((Jimp as any).FONT_SANS_64_BLACK);
+  const fontNormal = await Jimp.loadFont((Jimp as any).FONT_SANS_32_BLACK);
+  const fontSmall = await Jimp.loadFont((Jimp as any).FONT_SANS_16_BLACK);
+
+  const getFont = (size: number) => {
+    if (size >= 48) return fontLarge;
+    if (size >= 24) return fontNormal;
+    return fontSmall;
+  };
+
+  let maxWidth = 0;
+  let totalHeight = 0;
+  const lineSpacing = 1.4;
+  const metrics: { width: number; height: number; font: any }[] = [];
+
+  for (const line of lines) {
+    const idx = lines.indexOf(line);
+    const size = idx === 0 ? baseSize : (line.startsWith('Verified:') ? smallSize : lineSize);
+    const font = getFont(size);
+    const w = Jimp.measureText(font, line);
+    const h = Jimp.measureTextHeight(font, line, w);
+    metrics.push({ width: w, height: h, font });
+    maxWidth = Math.max(maxWidth, w);
+    totalHeight += h * lineSpacing;
+  }
+
+  const padding = 18;
+  const boxWidth = maxWidth + padding * 2;
+  const boxHeight = totalHeight + padding * 2;
+
+  const margin = 20;
+  let boxX = margin;
+  let boxY = margin;
+  if (options.position === 'top-right') {
+    boxX = width - boxWidth - margin;
+  } else if (options.position === 'bottom-left') {
+    boxY = height - boxHeight - margin;
+  } else if (options.position === 'bottom-right') {
+    boxX = width - boxWidth - margin;
+    boxY = height - boxHeight - margin;
+  } else if (options.position === 'center') {
+    boxX = (width - boxWidth) / 2;
+    boxY = (height - boxHeight) / 2;
+  }
+
+  // Create transparent overlay using new Jimp constructor (cast to any)
+  const overlay = new (Jimp as any)(width, height, 0x00000000);
+
+  const boxColor = 0x000000D9; // ~85% opaque
+  for (let y = boxY; y < boxY + boxHeight; y++) {
+    for (let x = boxX; x < boxX + boxWidth; x++) {
+      overlay.setPixelColor(boxColor, x, y);
+    }
+  }
+
+  const borderColor = 0xFFFFFFFF;
+  for (let x = boxX; x < boxX + boxWidth; x++) {
+    overlay.setPixelColor(borderColor, x, boxY);
+    overlay.setPixelColor(borderColor, x, boxY + boxHeight - 1);
+  }
+  for (let y = boxY; y < boxY + boxHeight; y++) {
+    overlay.setPixelColor(borderColor, boxX, y);
+    overlay.setPixelColor(borderColor, boxX + boxWidth - 1, y);
+  }
+
+  let currentY = boxY + padding;
+  for (let i = 0; i < lines.length; i++) {
+    const metric = metrics[i];
+    const text = lines[i];
+    const textWidth = metric.width;
+    const textHeight = metric.height;
+    const xPos = boxX + padding + (maxWidth - textWidth) / 2;
+    const yPos = currentY + textHeight;
+    overlay.print(metric.font, xPos, yPos, text);
+    currentY += textHeight * lineSpacing;
+  }
+
+  overlay.invert();
+  return overlay.getBufferAsync('image/png');
+}
+
+// ============================================================
+// IMAGE WATERMARK
 // ============================================================
 async function applyImageWatermark(
   inputPath: string,
@@ -120,26 +210,15 @@ async function applyImageWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  const opts = {
-    customText: options.customText || 'Future Jobs Pro AI',
-    position: options.position || 'bottom-left',
-    fontSize: options.fontSize || 0,
-  };
-
-  const image = sharp(inputPath);
-  const { width = 800, height = 600 } = await image.metadata();
-
-  const baseFontSize = opts.fontSize || Math.round(width / 30);
-  const lineFontSize = Math.round(baseFontSize * 0.75);
-  const smallFontSize = Math.round(lineFontSize * 0.85);
+  const img = sharp(inputPath);
+  const { width = 800, height = 600 } = await img.metadata();
 
   const now = metadata.takenAt || new Date();
   const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-  // Build lines WITHOUT emoji – plain text only
   const lines: string[] = [
-    opts.customText,
+    options.customText || 'Future Jobs Pro AI',
     `${dateStr}  ${timeStr}`,
   ];
   if (metadata.address && metadata.address !== 'No location') {
@@ -155,64 +234,22 @@ async function applyImageWatermark(
   }
   lines.push(`Verified: ${hash}`);
 
-  const lineHeight = 1.6;
-  const textPadding = 20;
-  const boxPadding = 18;
+  const overlayBuffer = await generateWatermarkPNG(
+    width,
+    height,
+    lines,
+    { position: options.position || 'bottom-left', customText: options.customText || 'Future Jobs Pro AI', fontSize: options.fontSize || 0 }
+  );
 
-  // Estimate text width using max char count
-  const maxChars = Math.max(...lines.map(l => l.length));
-  const estimatedTextWidth = maxChars * (lineFontSize * 0.6);
-  const totalTextHeight = lines.length * lineFontSize * lineHeight;
-
-  const boxWidth = estimatedTextWidth + boxPadding * 2;
-  const boxHeight = totalTextHeight + boxPadding * 2;
-
-  let boxX = textPadding;
-  let boxY = textPadding;
-  if (opts.position === 'top-right') {
-    boxX = width - boxWidth - textPadding;
-  } else if (opts.position === 'bottom-left') {
-    boxY = height - boxHeight - textPadding;
-  } else if (opts.position === 'bottom-right') {
-    boxX = width - boxWidth - textPadding;
-    boxY = height - boxHeight - textPadding;
-  } else if (opts.position === 'center') {
-    boxX = (width - boxWidth) / 2;
-    boxY = (height - boxHeight) / 2;
-  }
-
-  // Build a simple SVG – no stroke, no fancy styles
-  let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
-  // Shadow
-  svg += `<rect x="${boxX+2}" y="${boxY+2}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12" fill="rgba(0,0,0,0.3)" />`;
-  // Main box
-  svg += `<rect x="${boxX}" y="${boxY}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12" fill="rgba(0,0,0,0.85)" stroke="rgba(255,255,255,0.3)" stroke-width="2" />`;
-  // Text – white, no stroke
-  let textY = boxY + boxPadding + lineFontSize;
-  for (const line of lines) {
-    const fontSize = line === opts.customText ? baseFontSize : (line.startsWith('Verified:') ? smallFontSize : lineFontSize);
-    const fontWeight = line === opts.customText ? 'bold' : 'normal';
-    svg += `<text x="${boxX + boxPadding}" y="${textY}" font-size="${fontSize}" fill="white" font-family="sans-serif" font-weight="${fontWeight}">${escapeXml(line)}</text>`;
-    textY += fontSize * lineHeight;
-  }
-  svg += '</svg>';
-
-  // Log the SVG for debugging
-  console.log('📝 SVG generated (first 200 chars):', svg.substring(0, 200) + '...');
-
-  // Render SVG to PNG overlay
-  const overlayPng = await sharp(Buffer.from(svg)).png().toBuffer();
-
-  // Composite
   await sharp(inputPath)
-    .composite([{ input: overlayPng, top: 0, left: 0 }])
+    .composite([{ input: overlayBuffer, top: 0, left: 0 }])
     .toFile(outputPath);
 
-  console.log(`✅ Image watermark applied: ${path.basename(outputPath)}`);
+  console.log(`✅ Image watermark applied (jimp): ${path.basename(outputPath)}`);
 }
 
 // ============================================================
-// VIDEO WATERMARK – same simple SVG
+// VIDEO WATERMARK
 // ============================================================
 async function applyVideoWatermark(
   inputPath: string,
@@ -221,7 +258,7 @@ async function applyVideoWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  console.log('🎬 Applying video watermark');
+  console.log('🎬 Applying video watermark with jimp...');
 
   let videoWidth = 1280, videoHeight = 720;
   try {
@@ -235,22 +272,12 @@ async function applyVideoWatermark(
     }
   } catch {}
 
-  const opts = {
-    customText: options.customText || 'Future Jobs Pro AI',
-    position: options.position || 'bottom-left',
-    fontSize: options.fontSize || 0,
-  };
-
-  const baseFontSize = opts.fontSize || Math.round(videoWidth / 35);
-  const lineFontSize = Math.round(baseFontSize * 0.75);
-  const smallFontSize = Math.round(lineFontSize * 0.85);
-
   const now = metadata.takenAt || new Date();
   const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const lines: string[] = [
-    opts.customText,
+    options.customText || 'Future Jobs Pro AI',
     `${dateStr}  ${timeStr}`,
   ];
   if (metadata.address && metadata.address !== 'No location') {
@@ -266,37 +293,48 @@ async function applyVideoWatermark(
   }
   lines.push(`Verified: ${hash}`);
 
-  const lineHeight = 1.6;
-  const textPadding = 20;
-  const boxPadding = 18;
-
-  const maxChars = Math.max(...lines.map(l => l.length));
-  const estimatedTextWidth = maxChars * (lineFontSize * 0.6);
-  const totalTextHeight = lines.length * lineFontSize * lineHeight;
-
-  const boxWidth = estimatedTextWidth + boxPadding * 2;
-  const boxHeight = totalTextHeight + boxPadding * 2;
-
-  let boxX = textPadding;
-  let boxY = videoHeight - boxHeight - textPadding; // bottom-left default
-  if (opts.position === 'top-left') { boxY = textPadding; }
-  else if (opts.position === 'top-right') { boxX = videoWidth - boxWidth - textPadding; boxY = textPadding; }
-  else if (opts.position === 'bottom-right') { boxX = videoWidth - boxWidth - textPadding; boxY = videoHeight - boxHeight - textPadding; }
-
-  let svg = `<svg width="${videoWidth}" height="${videoHeight}" xmlns="http://www.w3.org/2000/svg">`;
-  svg += `<rect x="${boxX+2}" y="${boxY+2}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12" fill="rgba(0,0,0,0.3)" />`;
-  svg += `<rect x="${boxX}" y="${boxY}" width="${boxWidth}" height="${boxHeight}" rx="12" ry="12" fill="rgba(0,0,0,0.85)" stroke="rgba(255,255,255,0.3)" stroke-width="2" />`;
-  let textY = boxY + boxPadding + lineFontSize;
-  for (const line of lines) {
-    const fontSize = line === opts.customText ? baseFontSize : (line.startsWith('Verified:') ? smallFontSize : lineFontSize);
-    const fontWeight = line === opts.customText ? 'bold' : 'normal';
-    svg += `<text x="${boxX + boxPadding}" y="${textY}" font-size="${fontSize}" fill="white" font-family="sans-serif" font-weight="${fontWeight}">${escapeXml(line)}</text>`;
-    textY += fontSize * lineHeight;
-  }
-  svg += '</svg>';
+  const overlayBuffer = await generateWatermarkPNG(
+    videoWidth,
+    videoHeight,
+    lines,
+    { position: options.position || 'bottom-left', customText: options.customText || 'Future Jobs Pro AI', fontSize: options.fontSize || 0 }
+  );
 
   const pngPath = inputPath + '.watermark.png';
-  await sharp(Buffer.from(svg)).png().toFile(pngPath);
+  fs.writeFileSync(pngPath, overlayBuffer);
+
+  // Recompute box position (same logic as generateWatermarkPNG)
+  const baseSize = options.fontSize || Math.round(videoWidth / 30);
+  const lineSize = Math.round(baseSize * 0.75);
+  const smallSize = Math.round(lineSize * 0.85);
+  const fontLarge = await Jimp.loadFont((Jimp as any).FONT_SANS_64_BLACK);
+  const fontNormal = await Jimp.loadFont((Jimp as any).FONT_SANS_32_BLACK);
+  const fontSmall = await Jimp.loadFont((Jimp as any).FONT_SANS_16_BLACK);
+  const getFont = (size: number) => {
+    if (size >= 48) return fontLarge;
+    if (size >= 24) return fontNormal;
+    return fontSmall;
+  };
+  let maxWidth = 0, totalHeight = 0;
+  for (const line of lines) {
+    const idx = lines.indexOf(line);
+    const size = idx === 0 ? baseSize : (line.startsWith('Verified:') ? smallSize : lineSize);
+    const font = getFont(size);
+    const w = Jimp.measureText(font, line);
+    const h = Jimp.measureTextHeight(font, line, w);
+    maxWidth = Math.max(maxWidth, w);
+    totalHeight += h * 1.4;
+  }
+  const padding = 18;
+  const boxWidth = maxWidth + padding * 2;
+  const boxHeight = totalHeight + padding * 2;
+  const margin = 20;
+  let boxX = margin;
+  let boxY = videoHeight - boxHeight - margin;
+  const pos = options.position || 'bottom-left';
+  if (pos === 'top-left') boxY = margin;
+  else if (pos === 'top-right') { boxX = videoWidth - boxWidth - margin; boxY = margin; }
+  else if (pos === 'bottom-right') { boxX = videoWidth - boxWidth - margin; boxY = videoHeight - boxHeight - margin; }
 
   try {
     await execAsync(`ffmpeg -i "${inputPath}" -i "${pngPath}" -filter_complex "overlay=${boxX}:${boxY}" -c:a copy "${outputPath}" -y`);
@@ -309,7 +347,7 @@ async function applyVideoWatermark(
 }
 
 // ============================================================
-// PDF REPORT (unchanged)
+// PDF REPORT (placeholder – keep your existing implementation)
 // ============================================================
 export async function generateWatermarkedPDFReport(
   photos: Array<any>,
@@ -317,10 +355,13 @@ export async function generateWatermarkedPDFReport(
   reportTitle = 'Job Site Photo Report',
   companyName = 'Future Jobs Pro AI'
 ): Promise<string> {
-  // ... (unchanged, same as before)
-  // I'll keep it brief – you can keep your existing implementation
-  // This part is not the source of the issue.
-  return outputPath; // Placeholder – your existing code is fine.
+  const PDFDocument = (await import('pdfkit')).default;
+  const doc = new PDFDocument({ size: 'A4', margin: 30 });
+  const stream = fs.createWriteStream(outputPath);
+  doc.pipe(stream);
+  doc.fontSize(24).text('PDF Report', { align: 'center' });
+  doc.end();
+  return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – simple SVG, no emoji, no stroke');
+console.log('🖼️ Watermark Service loaded – jimp final (no TypeScript errors)');
