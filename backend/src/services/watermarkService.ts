@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses jimp for text rendering – final TypeScript fixes
+// Uses node-canvas for reliable text rendering
 // ============================================================
 
 import sharp from 'sharp';
@@ -9,7 +9,7 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
-import Jimp from 'jimp';
+import { createCanvas, loadImage } from 'canvas';
 
 const execAsync = promisify(exec);
 
@@ -106,43 +106,43 @@ export async function applyWatermark(
 }
 
 // ============================================================
-// Generate watermark PNG using jimp
+// Canvas overlay generator – reliable text rendering
 // ============================================================
-async function generateWatermarkPNG(
+async function generateOverlayBuffer(
   width: number,
   height: number,
   lines: string[],
   options: { position: string; customText: string; fontSize: number }
 ): Promise<Buffer> {
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+
+  // Determine font sizes
   const baseSize = options.fontSize || Math.round(width / 30);
   const lineSize = Math.round(baseSize * 0.75);
   const smallSize = Math.round(lineSize * 0.85);
 
-  // Load fonts – cast to any to avoid TypeScript issues
-  const fontLarge = await Jimp.loadFont((Jimp as any).FONT_SANS_64_BLACK);
-  const fontNormal = await Jimp.loadFont((Jimp as any).FONT_SANS_32_BLACK);
-  const fontSmall = await Jimp.loadFont((Jimp as any).FONT_SANS_16_BLACK);
-
-  const getFont = (size: number) => {
-    if (size >= 48) return fontLarge;
-    if (size >= 24) return fontNormal;
-    return fontSmall;
-  };
-
+  // Measure text and compute box
+  const lineSpacing = 1.5;
   let maxWidth = 0;
-  let totalHeight = 0;
-  const lineSpacing = 1.4;
-  const metrics: { width: number; height: number; font: any }[] = [];
+  const lineHeights: number[] = [];
+  const lineFontSizes: number[] = [];
 
-  for (const line of lines) {
-    const idx = lines.indexOf(line);
-    const size = idx === 0 ? baseSize : (line.startsWith('Verified:') ? smallSize : lineSize);
-    const font = getFont(size);
-    const w = Jimp.measureText(font, line);
-    const h = Jimp.measureTextHeight(font, line, w);
-    metrics.push({ width: w, height: h, font });
-    maxWidth = Math.max(maxWidth, w);
-    totalHeight += h * lineSpacing;
+  ctx.font = `bold ${baseSize}px sans-serif`;
+  let totalHeight = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const isBold = i === 0;
+    const isHash = lines[i].startsWith('Verified:');
+    const fontSize = i === 0 ? baseSize : (isHash ? smallSize : lineSize);
+    ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px sans-serif`;
+    const metrics = ctx.measureText(lines[i]);
+    const textWidth = metrics.width;
+    const textHeight = fontSize * 1.2; // approximate
+    maxWidth = Math.max(maxWidth, textWidth);
+    lineHeights.push(textHeight);
+    lineFontSizes.push(fontSize);
+    totalHeight += textHeight * lineSpacing;
   }
 
   const padding = 18;
@@ -164,40 +164,51 @@ async function generateWatermarkPNG(
     boxY = (height - boxHeight) / 2;
   }
 
-  // Create transparent overlay using new Jimp constructor (cast to any)
-  const overlay = new (Jimp as any)(width, height, 0x00000000);
+  // 1. Draw semi-transparent background
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+  const radius = 12;
+  ctx.beginPath();
+  ctx.moveTo(boxX + radius, boxY);
+  ctx.arcTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + boxHeight, radius);
+  ctx.arcTo(boxX + boxWidth, boxY + boxHeight, boxX, boxY + boxHeight, radius);
+  ctx.arcTo(boxX, boxY + boxHeight, boxX, boxY, radius);
+  ctx.arcTo(boxX, boxY, boxX + boxWidth, boxY, radius);
+  ctx.closePath();
+  ctx.fill();
 
-  const boxColor = 0x000000D9; // ~85% opaque
-  for (let y = boxY; y < boxY + boxHeight; y++) {
-    for (let x = boxX; x < boxX + boxWidth; x++) {
-      overlay.setPixelColor(boxColor, x, y);
-    }
-  }
+  // 2. Draw border
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
 
-  const borderColor = 0xFFFFFFFF;
-  for (let x = boxX; x < boxX + boxWidth; x++) {
-    overlay.setPixelColor(borderColor, x, boxY);
-    overlay.setPixelColor(borderColor, x, boxY + boxHeight - 1);
-  }
-  for (let y = boxY; y < boxY + boxHeight; y++) {
-    overlay.setPixelColor(borderColor, boxX, y);
-    overlay.setPixelColor(borderColor, boxX + boxWidth - 1, y);
-  }
-
-  let currentY = boxY + padding;
+  // 3. Draw text (white)
+  let currentY = boxY + padding + lineHeights[0];
   for (let i = 0; i < lines.length; i++) {
-    const metric = metrics[i];
     const text = lines[i];
-    const textWidth = metric.width;
-    const textHeight = metric.height;
+    const fontSize = lineFontSizes[i];
+    const isBold = i === 0;
+    ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#FFFFFF';
+
+    // Measure again to center horizontally
+    const metrics = ctx.measureText(text);
+    const textWidth = metrics.width;
     const xPos = boxX + padding + (maxWidth - textWidth) / 2;
-    const yPos = currentY + textHeight;
-    overlay.print(metric.font, xPos, yPos, text);
-    currentY += textHeight * lineSpacing;
+    const yPos = currentY;
+
+    // Draw with a subtle shadow for readability
+    ctx.shadowColor = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = 4;
+    ctx.fillText(text, xPos, yPos);
+    ctx.shadowBlur = 0;
+
+    currentY += lineHeights[i] * lineSpacing;
   }
 
-  overlay.invert();
-  return overlay.getBufferAsync('image/png');
+  // Return PNG buffer
+  return canvas.toBuffer('image/png');
 }
 
 // ============================================================
@@ -234,7 +245,7 @@ async function applyImageWatermark(
   }
   lines.push(`Verified: ${hash}`);
 
-  const overlayBuffer = await generateWatermarkPNG(
+  const overlayBuffer = await generateOverlayBuffer(
     width,
     height,
     lines,
@@ -245,11 +256,11 @@ async function applyImageWatermark(
     .composite([{ input: overlayBuffer, top: 0, left: 0 }])
     .toFile(outputPath);
 
-  console.log(`✅ Image watermark applied (jimp): ${path.basename(outputPath)}`);
+  console.log(`✅ Image watermark applied (canvas): ${path.basename(outputPath)}`);
 }
 
 // ============================================================
-// VIDEO WATERMARK
+// VIDEO WATERMARK – same canvas overlay + ffmpeg
 // ============================================================
 async function applyVideoWatermark(
   inputPath: string,
@@ -258,7 +269,7 @@ async function applyVideoWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  console.log('🎬 Applying video watermark with jimp...');
+  console.log('🎬 Applying video watermark with canvas...');
 
   let videoWidth = 1280, videoHeight = 720;
   try {
@@ -293,7 +304,7 @@ async function applyVideoWatermark(
   }
   lines.push(`Verified: ${hash}`);
 
-  const overlayBuffer = await generateWatermarkPNG(
+  const overlayBuffer = await generateOverlayBuffer(
     videoWidth,
     videoHeight,
     lines,
@@ -303,41 +314,18 @@ async function applyVideoWatermark(
   const pngPath = inputPath + '.watermark.png';
   fs.writeFileSync(pngPath, overlayBuffer);
 
-  // Recompute box position (same logic as generateWatermarkPNG)
-  const baseSize = options.fontSize || Math.round(videoWidth / 30);
-  const lineSize = Math.round(baseSize * 0.75);
-  const smallSize = Math.round(lineSize * 0.85);
-  const fontLarge = await Jimp.loadFont((Jimp as any).FONT_SANS_64_BLACK);
-  const fontNormal = await Jimp.loadFont((Jimp as any).FONT_SANS_32_BLACK);
-  const fontSmall = await Jimp.loadFont((Jimp as any).FONT_SANS_16_BLACK);
-  const getFont = (size: number) => {
-    if (size >= 48) return fontLarge;
-    if (size >= 24) return fontNormal;
-    return fontSmall;
-  };
-  let maxWidth = 0, totalHeight = 0;
-  for (const line of lines) {
-    const idx = lines.indexOf(line);
-    const size = idx === 0 ? baseSize : (line.startsWith('Verified:') ? smallSize : lineSize);
-    const font = getFont(size);
-    const w = Jimp.measureText(font, line);
-    const h = Jimp.measureTextHeight(font, line, w);
-    maxWidth = Math.max(maxWidth, w);
-    totalHeight += h * 1.4;
-  }
-  const padding = 18;
-  const boxWidth = maxWidth + padding * 2;
-  const boxHeight = totalHeight + padding * 2;
-  const margin = 20;
-  let boxX = margin;
-  let boxY = videoHeight - boxHeight - margin;
-  const pos = options.position || 'bottom-left';
-  if (pos === 'top-left') boxY = margin;
-  else if (pos === 'top-right') { boxX = videoWidth - boxWidth - margin; boxY = margin; }
-  else if (pos === 'bottom-right') { boxX = videoWidth - boxWidth - margin; boxY = videoHeight - boxHeight - margin; }
+  // Recompute box position (same logic as generateOverlayBuffer)
+  // We'll just use the same coordinates – we can re-use the function but we need to pass width/height.
+  // To avoid duplication, we'll compute in generateOverlayBuffer and return the coordinates.
+  // But to keep it simple, we'll recompute the box position here using the same logic.
+  // Actually, the overlay already has the correct position embedded (it's a full-size canvas).
+  // So we can overlay at (0,0) – but the overlay already has the box drawn at the correct position.
+  // So we can composite at (0,0) without specifying coordinates.
+  // That's what we do in the image watermark – we overlay at (0,0) because the overlay is full-size.
+  // So for video, we'll just use (0,0) as well.
 
   try {
-    await execAsync(`ffmpeg -i "${inputPath}" -i "${pngPath}" -filter_complex "overlay=${boxX}:${boxY}" -c:a copy "${outputPath}" -y`);
+    await execAsync(`ffmpeg -i "${inputPath}" -i "${pngPath}" -filter_complex "overlay=0:0" -c:a copy "${outputPath}" -y`);
     console.log(`✅ Video watermark applied (${videoWidth}x${videoHeight})`);
   } catch (err) {
     console.error('❌ ffmpeg failed, copying original:', err);
@@ -347,7 +335,7 @@ async function applyVideoWatermark(
 }
 
 // ============================================================
-// PDF REPORT (placeholder – keep your existing implementation)
+// PDF REPORT (placeholder)
 // ============================================================
 export async function generateWatermarkedPDFReport(
   photos: Array<any>,
@@ -364,4 +352,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – jimp final (no TypeScript errors)');
+console.log('🖼️ Watermark Service loaded – using node-canvas for reliable text');
