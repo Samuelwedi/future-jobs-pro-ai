@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses node-canvas for reliable text rendering
+// Uses node-canvas with explicit font and debug logs
 // ============================================================
 
 import sharp from 'sharp';
@@ -9,7 +9,7 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
-import { createCanvas, loadImage } from 'canvas';
+import { createCanvas } from 'canvas';
 
 const execAsync = promisify(exec);
 
@@ -106,7 +106,7 @@ export async function applyWatermark(
 }
 
 // ============================================================
-// Canvas overlay generator – reliable text rendering
+// Canvas overlay generator with debug logs
 // ============================================================
 async function generateOverlayBuffer(
   width: number,
@@ -114,36 +114,39 @@ async function generateOverlayBuffer(
   lines: string[],
   options: { position: string; customText: string; fontSize: number }
 ): Promise<Buffer> {
+  console.log(`📐 Generating overlay for ${width}x${height} with ${lines.length} lines`);
+
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext('2d');
 
-  // Determine font sizes
+  // Sizes
   const baseSize = options.fontSize || Math.round(width / 30);
   const lineSize = Math.round(baseSize * 0.75);
   const smallSize = Math.round(lineSize * 0.85);
 
-  // Measure text and compute box
+  // Measure each line to find max width and total height
   const lineSpacing = 1.5;
   let maxWidth = 0;
   const lineHeights: number[] = [];
   const lineFontSizes: number[] = [];
 
-  ctx.font = `bold ${baseSize}px sans-serif`;
-  let totalHeight = 0;
+  // Use a simple font that definitely exists
+  const fontFamily = 'Arial, sans-serif';
 
   for (let i = 0; i < lines.length; i++) {
     const isBold = i === 0;
     const isHash = lines[i].startsWith('Verified:');
     const fontSize = i === 0 ? baseSize : (isHash ? smallSize : lineSize);
-    ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px sans-serif`;
+    ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
     const metrics = ctx.measureText(lines[i]);
     const textWidth = metrics.width;
-    const textHeight = fontSize * 1.2; // approximate
+    const textHeight = fontSize * 1.2; // approximate line height
     maxWidth = Math.max(maxWidth, textWidth);
     lineHeights.push(textHeight);
     lineFontSizes.push(fontSize);
-    totalHeight += textHeight * lineSpacing;
   }
+
+  const totalHeight = lineHeights.reduce((sum, h, i) => sum + h * lineSpacing, 0);
 
   const padding = 18;
   const boxWidth = maxWidth + padding * 2;
@@ -164,15 +167,21 @@ async function generateOverlayBuffer(
     boxY = (height - boxHeight) / 2;
   }
 
-  // 1. Draw semi-transparent background
+  console.log(`📦 Box at (${boxX}, ${boxY}) size ${boxWidth}x${boxHeight}`);
+
+  // 1. Draw semi‑transparent background
   ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
   const radius = 12;
   ctx.beginPath();
   ctx.moveTo(boxX + radius, boxY);
-  ctx.arcTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + boxHeight, radius);
-  ctx.arcTo(boxX + boxWidth, boxY + boxHeight, boxX, boxY + boxHeight, radius);
-  ctx.arcTo(boxX, boxY + boxHeight, boxX, boxY, radius);
-  ctx.arcTo(boxX, boxY, boxX + boxWidth, boxY, radius);
+  ctx.lineTo(boxX + boxWidth - radius, boxY);
+  ctx.quadraticCurveTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + radius);
+  ctx.lineTo(boxX + boxWidth, boxY + boxHeight - radius);
+  ctx.quadraticCurveTo(boxX + boxWidth, boxY + boxHeight, boxX + boxWidth - radius, boxY + boxHeight);
+  ctx.lineTo(boxX + radius, boxY + boxHeight);
+  ctx.quadraticCurveTo(boxX, boxY + boxHeight, boxX, boxY + boxHeight - radius);
+  ctx.lineTo(boxX, boxY + radius);
+  ctx.quadraticCurveTo(boxX, boxY, boxX + radius, boxY);
   ctx.closePath();
   ctx.fill();
 
@@ -181,34 +190,37 @@ async function generateOverlayBuffer(
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // 3. Draw text (white)
+  // 3. Draw each line
   let currentY = boxY + padding + lineHeights[0];
   for (let i = 0; i < lines.length; i++) {
-    const text = lines[i];
-    const fontSize = lineFontSizes[i];
     const isBold = i === 0;
-    ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px sans-serif`;
-    ctx.textAlign = 'left';
+    const fontSize = lineFontSizes[i];
+    ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#FFFFFF';
-
-    // Measure again to center horizontally
-    const metrics = ctx.measureText(text);
-    const textWidth = metrics.width;
-    const xPos = boxX + padding + (maxWidth - textWidth) / 2;
+    const textWidth = ctx.measureText(lines[i]).width;
+    const xPos = boxX + boxWidth / 2;
     const yPos = currentY;
 
-    // Draw with a subtle shadow for readability
+    console.log(`📝 Line ${i+1}: "${lines[i]}" at (${xPos}, ${yPos}) size ${fontSize}px`);
+
+    // Shadow for readability
     ctx.shadowColor = 'rgba(0,0,0,0.8)';
     ctx.shadowBlur = 4;
-    ctx.fillText(text, xPos, yPos);
+    ctx.fillText(lines[i], xPos, yPos);
     ctx.shadowBlur = 0;
 
     currentY += lineHeights[i] * lineSpacing;
   }
 
-  // Return PNG buffer
-  return canvas.toBuffer('image/png');
+  // Write overlay to temp file for debugging (optional)
+  const debugPath = '/tmp/watermark_overlay.png';
+  const buffer = canvas.toBuffer('image/png');
+  fs.writeFileSync(debugPath, buffer);
+  console.log(`🔍 Overlay saved to ${debugPath} for inspection`);
+
+  return buffer;
 }
 
 // ============================================================
@@ -314,16 +326,6 @@ async function applyVideoWatermark(
   const pngPath = inputPath + '.watermark.png';
   fs.writeFileSync(pngPath, overlayBuffer);
 
-  // Recompute box position (same logic as generateOverlayBuffer)
-  // We'll just use the same coordinates – we can re-use the function but we need to pass width/height.
-  // To avoid duplication, we'll compute in generateOverlayBuffer and return the coordinates.
-  // But to keep it simple, we'll recompute the box position here using the same logic.
-  // Actually, the overlay already has the correct position embedded (it's a full-size canvas).
-  // So we can overlay at (0,0) – but the overlay already has the box drawn at the correct position.
-  // So we can composite at (0,0) without specifying coordinates.
-  // That's what we do in the image watermark – we overlay at (0,0) because the overlay is full-size.
-  // So for video, we'll just use (0,0) as well.
-
   try {
     await execAsync(`ffmpeg -i "${inputPath}" -i "${pngPath}" -filter_complex "overlay=0:0" -c:a copy "${outputPath}" -y`);
     console.log(`✅ Video watermark applied (${videoWidth}x${videoHeight})`);
@@ -352,4 +354,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – using node-canvas for reliable text');
+console.log('🖼️ Watermark Service loaded – canvas with debug logs');
