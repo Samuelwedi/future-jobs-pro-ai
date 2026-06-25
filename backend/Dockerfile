@@ -1,20 +1,34 @@
 FROM node:22-alpine
 
-RUN apk add --no-cache ffmpeg
+# Install system dependencies for node-canvas + ffmpeg
+RUN apk add --no-cache \
+    build-base \
+    cairo-dev \
+    pango-dev \
+    jpeg-dev \
+    giflib-dev \
+    librsvg-dev \
+    python3 \
+    ffmpeg
 
 WORKDIR /app
 
 COPY package*.json ./
+
+# Install dependencies (including canvas – this will build successfully now)
 RUN npm ci
 
 COPY . .
+
+# Build TypeScript
 RUN npm run build
 
+# Remove dev dependencies (optional, but keeps image smaller)
 RUN npm prune --omit=dev
 
 EXPOSE 8080
 
-# Create a startup script that logs before running
+# Startup script (unchanged)
 RUN echo '#!/bin/sh' > /start.sh && \
     echo 'echo "=== Starting container ==="' >> /start.sh && \
     echo 'echo "--- Environment ---"' >> /start.sh && \
