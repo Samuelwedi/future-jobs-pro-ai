@@ -1,6 +1,6 @@
 // ============================================================
-// WATERMARK SERVICE – Future Jobs Pro AI
-// Final: emoji font with fallback to plain text
+// WATERMARK SERVICE – Future Jobs Pro AI (stable version)
+// Uses ffmpeg drawtext with text file – reliable
 // ============================================================
 
 import * as fs from 'fs';
@@ -21,40 +21,6 @@ export interface WatermarkOptions {
 export interface WatermarkResult {
   outputPath: string;
   verificationHash: string;
-}
-
-// ---------- Emoji font paths (Alpine) ----------
-const EMOJI_FONT_PATHS = [
-  '/usr/share/fonts/noto/NotoColorEmoji.ttf',
-  '/usr/share/fonts/noto/NotoEmoji-Regular.ttf',
-  '/usr/share/fonts/ttf/NotoColorEmoji.ttf',
-];
-let EMOJI_FONT = '';
-for (const p of EMOJI_FONT_PATHS) {
-  if (fs.existsSync(p)) {
-    EMOJI_FONT = p;
-    break;
-  }
-}
-console.log(`🔤 Emoji font found: ${EMOJI_FONT || 'NOT FOUND – using fallback'}`);
-
-// ---------- Helper: get weather label (emoji or text) ----------
-function getWeatherLabel(weather: string): string {
-  const useEmoji = !!EMOJI_FONT;
-  if (useEmoji) {
-    const lower = weather.toLowerCase();
-    if (lower.includes('rain') || lower.includes('drizzle')) return '🌧️';
-    if (lower.includes('cloud') || lower.includes('overcast')) return '☁️';
-    if (lower.includes('clear') || lower.includes('sun')) return '☀️';
-    if (lower.includes('snow')) return '❄️';
-    return '🌤️';
-  }
-  // fallback plain text
-  return 'Weather:';
-}
-
-function getVerifiedLabel(): string {
-  return EMOJI_FONT ? '🔒' : 'Verified:';
 }
 
 // ---------- OpenWeatherMap ----------
@@ -180,7 +146,7 @@ async function getDimensions(inputPath: string): Promise<{ width: number; height
 }
 
 // ============================================================
-// Build ffmpeg drawtext command
+// Build ffmpeg drawtext command using text file
 // ============================================================
 async function buildDrawtextCommand(
   inputPath: string,
@@ -194,16 +160,13 @@ async function buildDrawtextCommand(
   const lineSpacing = Math.round(fontSize * 0.4);
 
   const text = lines.join('\n');
-
   const textFile = inputPath + '.text.txt';
   fs.writeFileSync(textFile, text, 'utf-8');
+  console.log(`📝 Text file created at ${textFile} with ${lines.length} lines`);
 
   const margin = 20;
   const x = margin;
   const y = `h - (text_h + ${margin})`;
-
-  // Use emoji font if available
-  const fontFileOption = EMOJI_FONT ? `:fontfile=${EMOJI_FONT}` : '';
 
   const ffmpegCmd =
     `ffmpeg -i "${inputPath}" ` +
@@ -215,15 +178,16 @@ async function buildDrawtextCommand(
     `fontsize=${fontSize}:` +
     `x=${x}:` +
     `y=${y}:` +
-    `line_spacing=${lineSpacing}${fontFileOption}" ` +
+    `line_spacing=${lineSpacing}" ` +
     (path.extname(inputPath).toLowerCase() === '.mp4' ? '-c:a copy ' : '-frames:v 1 ') +
     `"${outputPath}" -y`;
 
+  console.log(`🎬 ffmpeg command: ${ffmpegCmd.substring(0, 200)}...`);
   return ffmpegCmd;
 }
 
 // ============================================================
-// Build text lines (with fallback)
+// Build text lines (no emoji – plain labels)
 // ============================================================
 function buildTextLines(metadata: any, options: WatermarkOptions, hash: string): string[] {
   const now = metadata.takenAt || new Date();
@@ -232,7 +196,7 @@ function buildTextLines(metadata: any, options: WatermarkOptions, hash: string):
   const company = options.customText || 'Future Jobs Pro AI';
   const lines: string[] = [company, formattedTime];
 
-  // Address (no emoji)
+  // Address
   if (metadata.address && metadata.address !== 'No location') {
     const addr = metadata.address;
     if (addr.length > 40) {
@@ -253,11 +217,10 @@ function buildTextLines(metadata: any, options: WatermarkOptions, hash: string):
   }
 
   // Weather
-  const weatherPrefix = getWeatherLabel(metadata.weather || '');
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
-    lines.push(`${weatherPrefix} ${metadata.weather}`);
+    lines.push(`Weather: ${metadata.weather}`);
   } else {
-    lines.push(`${weatherPrefix} Weather not available`);
+    lines.push('Weather: Not available');
   }
 
   // GPS
@@ -269,8 +232,7 @@ function buildTextLines(metadata: any, options: WatermarkOptions, hash: string):
   }
 
   // Verified
-  const verifiedPrefix = getVerifiedLabel();
-  lines.push(`${verifiedPrefix} ${hash}`);
+  lines.push(`Verified: ${hash}`);
 
   return lines;
 }
@@ -286,7 +248,6 @@ async function applyImageWatermark(
   hash: string
 ): Promise<void> {
   console.log('🖼️ Applying image watermark...');
-
   const dims = await getDimensions(inputPath);
   console.log(`📐 Image dimensions: ${dims.width}x${dims.height}`);
 
@@ -317,7 +278,6 @@ async function applyVideoWatermark(
   hash: string
 ): Promise<void> {
   console.log('🎬 Applying video watermark...');
-
   const dims = await getDimensions(inputPath);
   console.log(`📐 Video dimensions: ${dims.width}x${dims.height}`);
 
@@ -354,4 +314,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – emoji fallback ready');
+console.log('🖼️ Watermark Service loaded – stable version with plain labels');

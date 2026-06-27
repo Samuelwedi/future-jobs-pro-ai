@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -237,19 +238,29 @@ export default function CameraView() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         const isVideo = asset.type === 'video';
+        
+        // Validate file exists and is not empty
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+          if (!fileInfo.exists || fileInfo.size === 0) {
+            Alert.alert('Error', 'The captured file is empty or corrupted. Please try again.');
+            setIsProcessing(false);
+            return;
+          }
+          console.log(`📁 ${isVideo ? 'Video' : 'Photo'} size: ${(fileInfo.size / 1024).toFixed(2)} KB`);
+        } catch (err) {
+          console.warn('Could not check file:', err);
+          // Continue anyway – maybe it will work
+        }
+        
         await uploadFile(asset.uri, isVideo);
       } else {
-        // User cancelled – do nothing
+        // User cancelled
         if (isMounted.current) setIsProcessing(false);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to launch camera.');
       if (isMounted.current) setIsProcessing(false);
-    } finally {
-      // We'll set isProcessing false inside uploadFile or here if cancelled
-      if (!isMounted.current) return;
-      // If the upload hasn't started, reset processing flag
-      // But uploadFile will set it false on completion.
     }
   };
 
