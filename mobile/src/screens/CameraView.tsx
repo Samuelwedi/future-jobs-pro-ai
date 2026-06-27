@@ -47,19 +47,41 @@ export default function CameraView() {
   const [watermarkTemplate, setWatermarkTemplate] = useState('standard');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [lastScore, setLastScore] = useState<number | null>(null);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
 
   useEffect(() => {
     if (!permission?.granted) requestPermission();
-  }, [permission]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
-        setCurrentLocation(loc);
-      } catch (e) { /* proceed without GPS */ }
-    })();
+    // Initial location fetch (optional – we'll also fetch on demand)
+    fetchLocation();
   }, []);
+
+  const fetchLocation = async (): Promise<Location.LocationObject | null> => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.BestForNavigation,
+        });
+        setCurrentLocation(loc);
+        return loc;
+      }
+    } catch (e) {
+      console.warn('Location fetch failed:', e);
+    }
+    return null;
+  };
+
+  // Ensure location before upload – if not ready, fetch it
+  const ensureLocation = async (): Promise<Location.LocationObject | null> => {
+    if (currentLocation) return currentLocation;
+    setIsGettingLocation(true);
+    try {
+      const loc = await fetchLocation();
+      return loc;
+    } finally {
+      setIsGettingLocation(false);
+    }
+  };
 
   const goBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
@@ -80,16 +102,25 @@ export default function CameraView() {
   const uploadFile = async (uri: string, isVideo: boolean = false) => {
     setIsTakingPicture(true);
     try {
+      // Ensure we have location before upload
+      const loc = await ensureLocation();
+
       const extraFields: Record<string, string> = {
         userId: user?.id || '',
         projectId,
         template: watermarkTemplate,
       };
       if (timeEntryId) extraFields.timeEntryId = timeEntryId;
-      if (currentLocation) {
-        extraFields.latitude = currentLocation.coords.latitude.toString();
-        extraFields.longitude = currentLocation.coords.longitude.toString();
+      if (loc) {
+        extraFields.latitude = loc.coords.latitude.toString();
+        extraFields.longitude = loc.coords.longitude.toString();
+        // Also pass altitude and direction if available
+        if (loc.coords.altitude) extraFields.altitude = loc.coords.altitude.toString();
+        if (loc.coords.heading) extraFields.direction = loc.coords.heading.toString();
+      } else {
+        console.warn('⚠️ No location available – watermark will show placeholders');
       }
+
       if (isVideo) extraFields.fileType = 'video';
 
       const response = await api.uploadFileWithData<UploadResponse>(
@@ -111,7 +142,7 @@ export default function CameraView() {
         issues,
         projectId,
         fileType: isVideo ? 'video' : 'image',
-      }, currentLocation ? { lat: currentLocation.coords.latitude, lng: currentLocation.coords.longitude } : undefined).catch(() => {});
+      }, loc ? { lat: loc.coords.latitude, lng: loc.coords.longitude } : undefined).catch(() => {});
 
       if (passed) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -138,7 +169,7 @@ export default function CameraView() {
   };
 
   const takePhoto = async () => {
-    if (!cameraRef.current || isTakingPicture || isRecording) return;
+    if (!cameraRef.current || isTakingPicture || isRecording || isGettingLocation) return;
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 1, exif: true });
       await uploadFile(photo.uri, false);
@@ -148,7 +179,7 @@ export default function CameraView() {
   };
 
   const startRecording = async () => {
-    if (!cameraRef.current || isRecording || isTakingPicture) return;
+    if (!cameraRef.current || isRecording || isTakingPicture || isGettingLocation) return;
     setIsRecording(true);
     try {
       const video = await cameraRef.current.recordAsync({
@@ -190,6 +221,8 @@ export default function CameraView() {
   previewLines.push(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
   if (currentLocation) {
     previewLines.push(`${currentLocation.coords.latitude.toFixed(4)}, ${currentLocation.coords.longitude.toFixed(4)}`);
+  } else {
+    previewLines.push('Getting GPS...');
   }
   if (watermarkTemplate === 'map-style' && currentLocation) {
     previewLines.push(`maps.google.com/?q=${currentLocation.coords.latitude},${currentLocation.coords.longitude}`);
@@ -276,17 +309,21 @@ export default function CameraView() {
           <TouchableOpacity
             style={[styles.captureButton, { backgroundColor: isRecording ? '#F44336' : '#FFFFFF' }]}
             onPress={isRecording ? stopRecording : startRecording}
-            disabled={isTakingPicture}
+            disabled={isTakingPicture || isGettingLocation}
           >
             <View style={[styles.captureInner, isRecording && styles.captureRecording]} />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={styles.captureButton} onPress={takePhoto} disabled={isTakingPicture}>
-            <View style={[styles.captureInner, isTakingPicture && styles.captureInnerDisabled]} />
+          <TouchableOpacity
+            style={styles.captureButton}
+            onPress={takePhoto}
+            disabled={isTakingPicture || isGettingLocation}
+          >
+            <View style={[styles.captureInner, (isTakingPicture || isGettingLocation) && styles.captureInnerDisabled]} />
           </TouchableOpacity>
         )}
         <Text style={styles.captureHint}>
-          {isRecording ? 'Tap to Stop' : mode === 'video' ? 'Tap to Record' : 'Tap to Capture'}
+          {isGettingLocation ? 'Getting GPS...' : isRecording ? 'Tap to Stop' : mode === 'video' ? 'Tap to Record' : 'Tap to Capture'}
         </Text>
       </View>
     </View>

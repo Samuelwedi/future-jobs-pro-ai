@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses ffmpeg drawtext with emojis, reliable box
+// Uses ffmpeg drawtext with text file, placeholders for missing data
 // ============================================================
 
 import * as fs from 'fs';
@@ -65,7 +65,7 @@ function generateVerificationHash(metadata: any): string {
   return crypto.createHash('sha256').update(data).digest('hex').slice(0, 8);
 }
 
-// ---------- Format local time ----------
+// ---------- Format local time (America/Edmonton) ----------
 function formatLocalTime(date: Date): string {
   const options: Intl.DateTimeFormatOptions = {
     timeZone: 'America/Edmonton',
@@ -121,7 +121,7 @@ export async function applyWatermark(
 }
 
 // ============================================================
-// Helper: get dimensions
+// Helper: get image/video dimensions
 // ============================================================
 async function getDimensions(inputPath: string): Promise<{ width: number; height: number }> {
   const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(
@@ -146,7 +146,7 @@ async function getDimensions(inputPath: string): Promise<{ width: number; height
 }
 
 // ============================================================
-// Build drawtext command
+// Build ffmpeg drawtext command using a text file
 // ============================================================
 async function buildDrawtextCommand(
   inputPath: string,
@@ -155,16 +155,15 @@ async function buildDrawtextCommand(
   options: WatermarkOptions,
   width: number,
   height: number
-): Promise<string> {
-  // Font size proportional to image width
-  const fontSize = options.fontSize || Math.round(width / 35);
-  const lineSpacing = Math.round(fontSize * 0.5);
+): Promise<{ cmd: string; textFile: string }> {
+  // Font size proportional to width (min 20, max 48)
+  const fontSize = Math.min(48, Math.max(20, options.fontSize || Math.round(width / 35)));
+  const lineSpacing = Math.round(fontSize * 0.4);
 
   // Build text with newlines
   const text = lines.join('\n');
-  console.log('📝 Text file content:\n', text); // DEBUG
 
-  // Write to temp file
+  // Write text to a temporary file (avoids escaping issues)
   const textFile = inputPath + '.text.txt';
   fs.writeFileSync(textFile, text, 'utf-8');
 
@@ -172,26 +171,26 @@ async function buildDrawtextCommand(
   const x = margin;
   const y = `h - (text_h + ${margin})`;
 
-  const ffmpegCmd =
+  // Use textfile for the text content – no fontfile (use default system font)
+  const cmd =
     `ffmpeg -i "${inputPath}" ` +
     `-vf "drawtext=textfile='${textFile}':` +
     `fontcolor=white:` +
     `box=1:` +
-    `boxcolor=black@0.85:` +
-    `boxborderw=15:` +
+    `boxcolor=black@0.8:` +
+    `boxborderw=12:` +
     `fontsize=${fontSize}:` +
     `x=${x}:` +
     `y=${y}:` +
-    `line_spacing=${lineSpacing}:` +
-    `fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" ` +
+    `line_spacing=${lineSpacing}" ` +
     (path.extname(inputPath).toLowerCase() === '.mp4' ? '-c:a copy ' : '-frames:v 1 ') +
     `"${outputPath}" -y`;
 
-  return ffmpegCmd;
+  return { cmd, textFile };
 }
 
 // ============================================================
-// Apply image watermark
+// Apply watermark (image)
 // ============================================================
 async function applyImageWatermark(
   inputPath: string,
@@ -208,37 +207,39 @@ async function applyImageWatermark(
   const now = metadata.takenAt || new Date();
   const formattedTime = formatLocalTime(now);
 
-  // Build lines with emojis – match old project style
+  // Build lines – include placeholders if data missing
   const company = options.customText || 'Future Jobs Pro AI';
-  const lines: string[] = [
-    company,
-    `🕐 ${formattedTime}`,
-  ];
+  const lines: string[] = [company, formattedTime];
 
-  // Address
+  // Address – split if too long (>40 chars)
   if (metadata.address && metadata.address !== 'No location') {
     const addr = metadata.address;
-    // Split long addresses
-    if (addr.length > 45) {
+    if (addr.length > 40) {
+      // Find a comma or space to split
       const parts = addr.split(',');
       if (parts.length >= 2) {
-        lines.push(`📍 ${parts[0].trim()}`);
-        lines.push(`   ${parts.slice(1).join(',').trim()}`);
+        lines.push(parts[0].trim());
+        lines.push(parts.slice(1).join(',').trim());
       } else {
+        // Split at space near 35 chars
         const mid = Math.min(35, addr.length);
         let splitIdx = addr.lastIndexOf(' ', mid);
         if (splitIdx < 0) splitIdx = mid;
-        lines.push(`📍 ${addr.substring(0, splitIdx)}`);
-        lines.push(`   ${addr.substring(splitIdx + 1)}`);
+        lines.push(addr.substring(0, splitIdx));
+        lines.push(addr.substring(splitIdx + 1));
       }
     } else {
-      lines.push(`📍 ${addr}`);
+      lines.push(addr);
     }
+  } else {
+    lines.push('📍 Location not available');
   }
 
   // Weather
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
-    lines.push(`🌤️ ${metadata.weather}`);
+    lines.push(`Weather: ${metadata.weather}`);
+  } else {
+    lines.push('🌤️ Weather not available');
   }
 
   // GPS coordinates
@@ -246,14 +247,15 @@ async function applyImageWatermark(
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     const gps = `${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`;
-    lines.push(`🛰️ ${gps}`);
+    lines.push(gps);
+  } else {
+    lines.push('🛰️ GPS not available');
   }
 
   // Verification hash
-  lines.push(`🔒 Verified: ${hash}`);
+  lines.push(`Verified: ${hash}`);
 
-  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
-  const textFile = inputPath + '.text.txt';
+  const { cmd, textFile } = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
 
   try {
     console.log('🎬 Running ffmpeg drawtext...');
@@ -268,7 +270,7 @@ async function applyImageWatermark(
 }
 
 // ============================================================
-// Apply video watermark
+// Apply watermark (video)
 // ============================================================
 async function applyVideoWatermark(
   inputPath: string,
@@ -286,45 +288,47 @@ async function applyVideoWatermark(
   const formattedTime = formatLocalTime(now);
 
   const company = options.customText || 'Future Jobs Pro AI';
-  const lines: string[] = [
-    company,
-    `🕐 ${formattedTime}`,
-  ];
+  const lines: string[] = [company, formattedTime];
 
   if (metadata.address && metadata.address !== 'No location') {
     const addr = metadata.address;
-    if (addr.length > 45) {
+    if (addr.length > 40) {
       const parts = addr.split(',');
       if (parts.length >= 2) {
-        lines.push(`📍 ${parts[0].trim()}`);
-        lines.push(`   ${parts.slice(1).join(',').trim()}`);
+        lines.push(parts[0].trim());
+        lines.push(parts.slice(1).join(',').trim());
       } else {
         const mid = Math.min(35, addr.length);
         let splitIdx = addr.lastIndexOf(' ', mid);
         if (splitIdx < 0) splitIdx = mid;
-        lines.push(`📍 ${addr.substring(0, splitIdx)}`);
-        lines.push(`   ${addr.substring(splitIdx + 1)}`);
+        lines.push(addr.substring(0, splitIdx));
+        lines.push(addr.substring(splitIdx + 1));
       }
     } else {
-      lines.push(`📍 ${addr}`);
+      lines.push(addr);
     }
+  } else {
+    lines.push('📍 Location not available');
   }
 
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
-    lines.push(`🌤️ ${metadata.weather}`);
+    lines.push(`Weather: ${metadata.weather}`);
+  } else {
+    lines.push('🌤️ Weather not available');
   }
 
   if (metadata.latitude && metadata.longitude) {
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     const gps = `${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`;
-    lines.push(`🛰️ ${gps}`);
+    lines.push(gps);
+  } else {
+    lines.push('🛰️ GPS not available');
   }
 
-  lines.push(`🔒 Verified: ${hash}`);
+  lines.push(`Verified: ${hash}`);
 
-  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
-  const textFile = inputPath + '.text.txt';
+  const { cmd, textFile } = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
 
   try {
     await execAsync(cmd);
@@ -338,7 +342,7 @@ async function applyVideoWatermark(
 }
 
 // ============================================================
-// PDF REPORT placeholder
+// PDF REPORT (placeholder)
 // ============================================================
 export async function generateWatermarkedPDFReport(
   photos: Array<any>,
@@ -355,4 +359,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – ffmpeg drawtext with emojis, text file, debug logs');
+console.log('🖼️ Watermark Service loaded – ffmpeg drawtext with text file, placeholders, local timezone');
