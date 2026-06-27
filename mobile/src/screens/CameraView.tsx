@@ -44,6 +44,7 @@ export default function CameraView() {
   const [isRecording, setIsRecording] = useState(false);
   const [mode, setMode] = useState<'photo' | 'video'>('photo');
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
+  const [address, setAddress] = useState<string | null>(null); // ✅ ADDED: reverse‑geocoded address
   const [watermarkTemplate, setWatermarkTemplate] = useState('standard');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [lastScore, setLastScore] = useState<number | null>(null);
@@ -51,7 +52,6 @@ export default function CameraView() {
 
   useEffect(() => {
     if (!permission?.granted) requestPermission();
-    // Initial location fetch (optional – we'll also fetch on demand)
     fetchLocation();
   }, []);
 
@@ -63,6 +63,24 @@ export default function CameraView() {
           accuracy: Location.Accuracy.BestForNavigation,
         });
         setCurrentLocation(loc);
+
+        // ✅ ADDED: reverse‑geocode to get address
+        try {
+          const addr = await Location.reverseGeocodeAsync(loc.coords);
+          if (addr && addr[0]) {
+            const parts = [
+              addr[0].name,
+              addr[0].street,
+              addr[0].city,
+              addr[0].region,
+              addr[0].postalCode,
+            ].filter(Boolean);
+            setAddress(parts.join(', '));
+          }
+        } catch (e) {
+          console.warn('Reverse geocode failed:', e);
+        }
+
         return loc;
       }
     } catch (e) {
@@ -71,7 +89,6 @@ export default function CameraView() {
     return null;
   };
 
-  // Ensure location before upload – if not ready, fetch it
   const ensureLocation = async (): Promise<Location.LocationObject | null> => {
     if (currentLocation) return currentLocation;
     setIsGettingLocation(true);
@@ -102,7 +119,6 @@ export default function CameraView() {
   const uploadFile = async (uri: string, isVideo: boolean = false) => {
     setIsTakingPicture(true);
     try {
-      // Ensure we have location before upload
       const loc = await ensureLocation();
 
       const extraFields: Record<string, string> = {
@@ -114,9 +130,9 @@ export default function CameraView() {
       if (loc) {
         extraFields.latitude = loc.coords.latitude.toString();
         extraFields.longitude = loc.coords.longitude.toString();
-        // Also pass altitude and direction if available
         if (loc.coords.altitude) extraFields.altitude = loc.coords.altitude.toString();
         if (loc.coords.heading) extraFields.direction = loc.coords.heading.toString();
+        if (address) extraFields.address = address; // ✅ ADDED: send address to backend
       } else {
         console.warn('⚠️ No location available – watermark will show placeholders');
       }
@@ -217,30 +233,30 @@ export default function CameraView() {
 
   const now = new Date();
   const previewLines: string[] = [];
-  previewLines.push('Future Jobs Pro AI');
-  previewLines.push(`${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
+  previewLines.push('📍 ' + (address || 'Getting location...')); // ✅ ADDED emoji + address
+  previewLines.push('🕐 ' + now.toLocaleString()); // ✅ ADDED emoji
   if (currentLocation) {
-    previewLines.push(`${currentLocation.coords.latitude.toFixed(4)}, ${currentLocation.coords.longitude.toFixed(4)}`);
+    const lat = currentLocation.coords.latitude.toFixed(6);
+    const lng = currentLocation.coords.longitude.toFixed(6);
+    previewLines.push(`🛰️ ${lat}°N, ${lng}°W`); // ✅ ADDED emoji
   } else {
-    previewLines.push('Getting GPS...');
+    previewLines.push('🛰️ Getting GPS...');
   }
   if (watermarkTemplate === 'map-style' && currentLocation) {
     previewLines.push(`maps.google.com/?q=${currentLocation.coords.latitude},${currentLocation.coords.longitude}`);
   }
   if (watermarkTemplate === 'detailed') {
-    previewLines.push('Altitude: -- m   Weather: --');
+    previewLines.push('🌡️ Altitude: -- m   Weather: --'); // ✅ ADDED emoji
   }
 
   return (
     <View style={styles.container}>
       <ExpoCamera ref={cameraRef} style={styles.camera} facing="back" />
 
-      {/* Back Button - Top Left */}
       <TouchableOpacity style={styles.backArrow} onPress={goBack}>
         <Ionicons name="arrow-back" size={28} color="#FFF" />
       </TouchableOpacity>
 
-      {/* Mode Toggle */}
       <View style={styles.modeToggle}>
         <TouchableOpacity
           style={[styles.modeBtn, mode === 'photo' && styles.modeBtnActive]}
