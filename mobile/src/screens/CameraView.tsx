@@ -229,13 +229,16 @@ export default function CameraView() {
   };
 
   const startRecording = async () => {
-    // Extra readiness check: camera must be ready AND video-ready flag must be set
+    // 1. Guard: camera must be ready
     if (!isCameraReady || !isVideoReady || !cameraRef.current || isRecording || isTakingPicture) {
       Alert.alert('Camera not ready', 'Please wait a moment and try again.');
       return;
     }
 
-    // Increase delay to ensure camera is fully settled
+    // 2. Immediately set video ready flag to false to prevent double‑tap
+    setIsVideoReady(false);
+
+    // 3. Wait an extra 500ms to ensure camera is fully settled
     await new Promise(resolve => setTimeout(resolve, 500));
 
     setIsRecording(true);
@@ -259,25 +262,28 @@ export default function CameraView() {
     } catch (error: any) {
       console.error('Recording error:', error);
       if (error.message?.includes('Camera is not ready') || error.message?.includes('Camera is busy')) {
-        // Reset camera readiness and try to recover
-        setIsCameraReady(false);
-        setIsVideoReady(false);
         Alert.alert('Camera Busy', 'Please wait a moment and try again.');
-        // Re-trigger readiness after a delay
+        // Reset readiness flags and re‑enable after a delay
+        setIsCameraReady(false);
         setTimeout(() => {
           if (isMounted.current) {
             setIsCameraReady(true);
-            // Set video ready after another small delay
             setTimeout(() => {
               if (isMounted.current) setIsVideoReady(true);
-            }, 500);
+            }, 1500);
           }
         }, 1000);
       } else {
         Alert.alert('Recording Error', error.message || 'Failed to record video. Please try again.');
       }
     } finally {
-      if (isMounted.current) setIsRecording(false);
+      if (isMounted.current) {
+        setIsRecording(false);
+        // Re‑enable video ready after a delay (for the next recording)
+        setTimeout(() => {
+          if (isMounted.current) setIsVideoReady(true);
+        }, 1000);
+      }
     }
   };
 
@@ -329,13 +335,13 @@ export default function CameraView() {
         onCameraReady={() => {
           console.log('📸 Camera ready');
           setIsCameraReady(true);
-          // Video needs extra time to become ready
+          // Video needs extra time to become ready – increased to 1500ms
           setTimeout(() => {
             if (isMounted.current) {
               setIsVideoReady(true);
               console.log('🎥 Video recording ready');
             }
-          }, 800);
+          }, 1500);
         }}
         onMountError={(error) => {
           console.error('Camera mount error:', error);
