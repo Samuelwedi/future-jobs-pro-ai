@@ -1,7 +1,7 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Clean professional watermark with correct emojis
-// Uses ffmpeg drawtext, local timezone, address splitting
+// Final: correct weather emojis, lock emoji for Verified
+// Uses ffmpeg drawtext with text file, local timezone
 // ============================================================
 
 import * as fs from 'fs';
@@ -82,6 +82,16 @@ function formatLocalTime(date: Date): string {
   return formatter.format(date);
 }
 
+// ---------- Get weather emoji ----------
+function getWeatherEmoji(weather: string): string {
+  const lower = weather.toLowerCase();
+  if (lower.includes('rain') || lower.includes('drizzle') || lower.includes('shower')) return '🌧️';
+  if (lower.includes('cloud') || lower.includes('overcast') || lower.includes('fog')) return '☁️';
+  if (lower.includes('clear') || lower.includes('sun') || lower.includes('fair')) return '☀️';
+  if (lower.includes('snow') || lower.includes('ice') || lower.includes('sleet')) return '❄️';
+  return '🌤️'; // default
+}
+
 // ============================================================
 // MAIN
 // ============================================================
@@ -147,7 +157,7 @@ async function getDimensions(inputPath: string): Promise<{ width: number; height
 }
 
 // ============================================================
-// Build ffmpeg drawtext command using a text file
+// Build ffmpeg drawtext command
 // ============================================================
 async function buildDrawtextCommand(
   inputPath: string,
@@ -207,7 +217,7 @@ async function applyImageWatermark(
   const company = options.customText || 'Future Jobs Pro AI';
   const lines: string[] = [company, formattedTime];
 
-  // Address (no icon)
+  // Address (no emoji)
   if (metadata.address && metadata.address !== 'No location') {
     const addr = metadata.address;
     if (addr.length > 40) {
@@ -227,13 +237,10 @@ async function applyImageWatermark(
     }
   }
 
-  // Weather with weather emoji (we'll use a simple generic sun/cloud)
-  const weatherEmoji = metadata.weather?.toLowerCase().includes('rain') ? '🌧️' :
-                       metadata.weather?.toLowerCase().includes('cloud') ? '☁️' :
-                       metadata.weather?.toLowerCase().includes('clear') ? '☀️' :
-                       '🌤️';
+  // Weather with correct emoji
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
-    lines.push(`${weatherEmoji} ${metadata.weather}`);
+    const emoji = getWeatherEmoji(metadata.weather);
+    lines.push(`${emoji} ${metadata.weather}`);
   } else {
     lines.push('🌤️ Weather not available');
   }
@@ -246,7 +253,7 @@ async function applyImageWatermark(
     lines.push(gps);
   }
 
-  // Verification with lock emoji
+  // Verified with lock emoji
   lines.push(`🔒 Verified: ${hash}`);
 
   const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
@@ -304,12 +311,9 @@ async function applyVideoWatermark(
     }
   }
 
-  const weatherEmoji = metadata.weather?.toLowerCase().includes('rain') ? '🌧️' :
-                       metadata.weather?.toLowerCase().includes('cloud') ? '☁️' :
-                       metadata.weather?.toLowerCase().includes('clear') ? '☀️' :
-                       '🌤️';
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
-    lines.push(`${weatherEmoji} ${metadata.weather}`);
+    const emoji = getWeatherEmoji(metadata.weather);
+    lines.push(`${emoji} ${metadata.weather}`);
   } else {
     lines.push('🌤️ Weather not available');
   }
@@ -355,4 +359,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – clean emojis, professional layout');
+console.log('🖼️ Watermark Service loaded – final emojis (☀️☁️🌧️❄️) and 🔒 Verified');
