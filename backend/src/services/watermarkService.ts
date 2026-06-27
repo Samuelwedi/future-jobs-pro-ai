@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses ffmpeg drawtext with textfile for reliable multi-line
+// Uses ffmpeg drawtext with textfile (reliable escaping)
 // ============================================================
 
 import * as fs from 'fs';
@@ -23,6 +23,7 @@ export interface WatermarkResult {
   verificationHash: string;
 }
 
+// ---------- OpenWeatherMap ----------
 async function fetchWeather(lat: number, lng: number): Promise<string> {
   const apiKey = process.env.OPENWEATHER_API_KEY || '5747418241c0b06e9b0dc9223223479f';
   const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`;
@@ -39,6 +40,7 @@ async function fetchWeather(lat: number, lng: number): Promise<string> {
   }
 }
 
+// ---------- Reverse Geocode ----------
 async function getAddressFromCoords(lat: number, lng: number): Promise<string | undefined> {
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`;
@@ -51,6 +53,7 @@ async function getAddressFromCoords(lat: number, lng: number): Promise<string | 
   }
 }
 
+// ---------- Hash ----------
 function generateVerificationHash(metadata: any): string {
   const data = JSON.stringify({
     lat: metadata.latitude || 0,
@@ -62,6 +65,7 @@ function generateVerificationHash(metadata: any): string {
   return crypto.createHash('sha256').update(data).digest('hex').slice(0, 8);
 }
 
+// ---------- Format date in local timezone (America/Edmonton) ----------
 function formatLocalTime(date: Date): string {
   const options: Intl.DateTimeFormatOptions = {
     timeZone: 'America/Edmonton',
@@ -77,6 +81,9 @@ function formatLocalTime(date: Date): string {
   return formatter.format(date);
 }
 
+// ============================================================
+// MAIN
+// ============================================================
 export async function applyWatermark(
   inputPath: string,
   outputPath: string,
@@ -113,6 +120,9 @@ export async function applyWatermark(
   return { outputPath, verificationHash: hash };
 }
 
+// ============================================================
+// Helper: get image/video dimensions
+// ============================================================
 async function getDimensions(inputPath: string): Promise<{ width: number; height: number }> {
   const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(
     path.extname(inputPath).toLowerCase()
@@ -135,45 +145,51 @@ async function getDimensions(inputPath: string): Promise<{ width: number; height
   }
 }
 
-async function applyWatermarkWithFfmpeg(
+// ============================================================
+// Build ffmpeg command with textfile (reliable)
+// ============================================================
+async function buildDrawtextCommand(
   inputPath: string,
   outputPath: string,
   lines: string[],
   options: WatermarkOptions,
   width: number,
-  height: number,
-  isVideo: boolean
-): Promise<void> {
-  // Create a temporary text file with the lines
-  const textFile = inputPath + '.txt';
-  fs.writeFileSync(textFile, lines.join('\n'), 'utf-8');
-
+  height: number
+): Promise<{ cmd: string; textFilePath: string }> {
   const fontSize = options.fontSize || Math.round(width / 35);
+  const lineSpacing = Math.round(fontSize * 0.5);
+
+  // Write lines to a temporary text file
+  const textFilePath = inputPath + '.txt';
+  const textContent = lines.join('\n');
+  fs.writeFileSync(textFilePath, textContent, 'utf-8');
+
+  // Position: bottom-left with margin
   const margin = 20;
   const x = margin;
   const y = `h - (text_h + ${margin})`;
 
-  // Use textfile to read from file (handles newlines correctly)
   const cmd =
     `ffmpeg -i "${inputPath}" ` +
-    `-vf "drawtext=textfile='${textFile}':fontcolor=white:box=1:boxcolor=black@0.8:boxborderw=10:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10" ` +
-    (isVideo ? '-c:a copy ' : '-frames:v 1 ') +
+    `-vf "drawtext=textfile='${textFilePath}':` +
+    `fontcolor=white:` +
+    `box=1:` +
+    `boxcolor=black@0.8:` +
+    `boxborderw=10:` +
+    `fontsize=${fontSize}:` +
+    `x=${x}:` +
+    `y=${y}:` +
+    `line_spacing=${lineSpacing}:` +
+    `fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" ` +
+    (path.extname(inputPath).toLowerCase() === '.mp4' ? '-c:a copy ' : '-frames:v 1 ') +
     `"${outputPath}" -y`;
 
-  console.log(`🎬 Running ffmpeg with textfile`);
-
-  try {
-    await execAsync(cmd);
-    console.log(`✅ Watermark applied successfully`);
-  } catch (err) {
-    console.error('❌ ffmpeg failed, copying original:', err);
-    fs.copyFileSync(inputPath, outputPath);
-  } finally {
-    // Clean up temp file
-    if (fs.existsSync(textFile)) fs.unlinkSync(textFile);
-  }
+  return { cmd, textFilePath };
 }
 
+// ============================================================
+// IMAGE WATERMARK
+// ============================================================
 async function applyImageWatermark(
   inputPath: string,
   outputPath: string,
@@ -181,7 +197,7 @@ async function applyImageWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  console.log('🖼️ Applying image watermark with ffmpeg textfile...');
+  console.log('🖼️ Applying image watermark with ffmpeg drawtext...');
 
   const dims = await getDimensions(inputPath);
   console.log(`📐 Image dimensions: ${dims.width}x${dims.height}`);
@@ -196,19 +212,42 @@ async function applyImageWatermark(
   if (metadata.address && metadata.address !== 'No location') {
     lines.push(metadata.address);
   }
+  if (metadata.latitude && metadata.longitude && metadata.address === 'No location') {
+    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
+    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
+    lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
+  }
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
     lines.push(`Weather: ${metadata.weather}`);
   }
-  if (metadata.latitude && metadata.longitude) {
+  if (metadata.latitude && metadata.longitude && metadata.address && metadata.address !== 'No location') {
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
   }
   lines.push(`Verified: ${hash}`);
 
-  await applyWatermarkWithFfmpeg(inputPath, outputPath, lines, options, dims.width, dims.height, false);
+  // Log the lines for debugging
+  console.log('📝 Watermark lines:', lines);
+
+  const { cmd, textFilePath } = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
+
+  console.log(`🎬 Running ffmpeg for image...`);
+
+  try {
+    await execAsync(cmd);
+    console.log(`✅ Image watermark applied via ffmpeg drawtext: ${path.basename(outputPath)}`);
+  } catch (err) {
+    console.error('❌ ffmpeg drawtext failed, copying original:', err);
+    fs.copyFileSync(inputPath, outputPath);
+  } finally {
+    if (fs.existsSync(textFilePath)) fs.unlinkSync(textFilePath);
+  }
 }
 
+// ============================================================
+// VIDEO WATERMARK – same drawtext with textfile
+// ============================================================
 async function applyVideoWatermark(
   inputPath: string,
   outputPath: string,
@@ -216,7 +255,7 @@ async function applyVideoWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  console.log('🎬 Applying video watermark with ffmpeg textfile...');
+  console.log('🎬 Applying video watermark with ffmpeg drawtext...');
 
   const dims = await getDimensions(inputPath);
   console.log(`📐 Video dimensions: ${dims.width}x${dims.height}`);
@@ -231,19 +270,39 @@ async function applyVideoWatermark(
   if (metadata.address && metadata.address !== 'No location') {
     lines.push(metadata.address);
   }
+  if (metadata.latitude && metadata.longitude && metadata.address === 'No location') {
+    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
+    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
+    lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
+  }
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
     lines.push(`Weather: ${metadata.weather}`);
   }
-  if (metadata.latitude && metadata.longitude) {
+  if (metadata.latitude && metadata.longitude && metadata.address && metadata.address !== 'No location') {
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
   }
   lines.push(`Verified: ${hash}`);
 
-  await applyWatermarkWithFfmpeg(inputPath, outputPath, lines, options, dims.width, dims.height, true);
+  console.log('📝 Watermark lines:', lines);
+
+  const { cmd, textFilePath } = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
+
+  try {
+    await execAsync(cmd);
+    console.log(`✅ Video watermark applied via ffmpeg drawtext`);
+  } catch (err) {
+    console.error('❌ ffmpeg drawtext failed, copying original:', err);
+    fs.copyFileSync(inputPath, outputPath);
+  } finally {
+    if (fs.existsSync(textFilePath)) fs.unlinkSync(textFilePath);
+  }
 }
 
+// ============================================================
+// PDF REPORT (placeholder)
+// ============================================================
 export async function generateWatermarkedPDFReport(
   photos: Array<any>,
   outputPath: string,
@@ -259,4 +318,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – ffmpeg textfile, local timezone, professional box');
+console.log('🖼️ Watermark Service loaded – ffmpeg drawtext with textfile (reliable)');
