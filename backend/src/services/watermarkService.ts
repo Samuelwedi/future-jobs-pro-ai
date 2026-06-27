@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses ffmpeg drawtext – no canvas, no sharp
+// Uses ffmpeg drawtext with local timezone and professional box
 // ============================================================
 
 import * as fs from 'fs';
@@ -8,6 +8,7 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
+import sharp from 'sharp';
 
 const execAsync = promisify(exec);
 
@@ -64,6 +65,23 @@ function generateVerificationHash(metadata: any): string {
   return crypto.createHash('sha256').update(data).digest('hex').slice(0, 8);
 }
 
+// ---------- Format date in local timezone (America/Edmonton) ----------
+function formatLocalTime(date: Date): string {
+  // Use America/Edmonton (Calgary)
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: 'America/Edmonton',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  };
+  const formatter = new Intl.DateTimeFormat('en-US', options);
+  return formatter.format(date);
+}
+
 // ============================================================
 // MAIN
 // ============================================================
@@ -104,18 +122,77 @@ export async function applyWatermark(
 }
 
 // ============================================================
-// Helper: escape text for ffmpeg drawtext
+// Helper: get image/video dimensions
 // ============================================================
-function escapeForDrawtext(text: string): string {
-  return text
-    .replace(/\\/g, '\\\\')   // backslash
-    .replace(/:/g, '\\:')     // colon
-    .replace(/"/g, '\\"')     // double quote
-    .replace(/'/g, "\\'");    // single quote
+async function getDimensions(inputPath: string): Promise<{ width: number; height: number }> {
+  const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(
+    path.extname(inputPath).toLowerCase()
+  );
+  if (isVideo) {
+    try {
+      const { stdout } = await execAsync(
+        `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "${inputPath}"`
+      );
+      const dims = stdout.trim().split(',');
+      if (dims.length === 2) {
+        return { width: parseInt(dims[0], 10), height: parseInt(dims[1], 10) };
+      }
+    } catch {}
+    return { width: 1280, height: 720 };
+  } else {
+    const img = sharp(inputPath);
+    const meta = await img.metadata();
+    return { width: meta.width || 800, height: meta.height || 600 };
+  }
 }
 
 // ============================================================
-// IMAGE WATERMARK – using ffmpeg drawtext
+// Build ffmpeg drawtext command with professional box
+// ============================================================
+async function buildDrawtextCommand(
+  inputPath: string,
+  outputPath: string,
+  lines: string[],
+  options: WatermarkOptions,
+  width: number,
+  height: number
+): Promise<string> {
+  // Font size proportional to image width
+  const fontSize = options.fontSize || Math.round(width / 35);
+  const lineSpacing = Math.round(fontSize * 0.5);
+
+  // Build the text with newlines (escaped for ffmpeg)
+  const text = lines.join('\\n');
+  const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/:/g, '\\:');
+
+  // Position: bottom-left with margin
+  const margin = 20;
+  const x = margin;
+  const y = `h - (text_h + ${margin})`;
+
+  // Use a box with padding and rounded corners? drawtext doesn't support rounded corners,
+  // but we can use box=1 and boxborderw to simulate padding.
+  // We'll use a black background with 80% opacity, white text.
+  const ffmpegCmd =
+    `ffmpeg -i "${inputPath}" ` +
+    `-vf "drawtext=text='${escapedText}':` +
+    `fontcolor=white:` +
+    `box=1:` +
+    `boxcolor=black@0.8:` +
+    `boxborderw=10:` +
+    `fontsize=${fontSize}:` +
+    `x=${x}:` +
+    `y=${y}:` +
+    `line_spacing=${lineSpacing}:` +
+    `fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" ` +
+    (path.extname(inputPath).toLowerCase() === '.mp4' ? '-c:a copy ' : '-frames:v 1 ') +
+    `"${outputPath}" -y`;
+
+  return ffmpegCmd;
+}
+
+// ============================================================
+// IMAGE WATERMARK
 // ============================================================
 async function applyImageWatermark(
   inputPath: string,
@@ -126,13 +203,16 @@ async function applyImageWatermark(
 ): Promise<void> {
   console.log('🖼️ Applying image watermark with ffmpeg drawtext...');
 
-  const now = metadata.takenAt || new Date();
-  const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const dims = await getDimensions(inputPath);
+  console.log(`📐 Image dimensions: ${dims.width}x${dims.height}`);
 
+  const now = metadata.takenAt || new Date();
+  const formattedTime = formatLocalTime(now);
+
+  // Build lines – mirror old project format
   const lines: string[] = [
     options.customText || 'Future Jobs Pro AI',
-    `${dateStr}  ${timeStr}`,
+    formattedTime,
   ];
   if (metadata.address && metadata.address !== 'No location') {
     lines.push(metadata.address);
@@ -140,35 +220,34 @@ async function applyImageWatermark(
   if (metadata.latitude && metadata.longitude && metadata.address === 'No location') {
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
-    lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}  ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
+    lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
   }
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
     lines.push(`Weather: ${metadata.weather}`);
   }
+  // Add GPS coordinates as last line (if not already included)
+  if (metadata.latitude && metadata.longitude && metadata.address && metadata.address !== 'No location') {
+    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
+    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
+    lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
+  }
   lines.push(`Verified: ${hash}`);
 
-  const escapedLines = lines.map(escapeForDrawtext);
-  const textWithNewlines = escapedLines.join('\\n');
+  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
 
-  const fontSize = options.fontSize || 24;
-  const x = 20;
-  const y = 'h - text_h - 20';
+  console.log(`🎬 Running: ffmpeg drawtext for image`);
 
-  const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "drawtext=text='${textWithNewlines}':fontcolor=white:box=1:boxcolor=black@0.85:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10" -frames:v 1 "${outputPath}" -y`;
-
-  console.log('🎬 Running ffmpeg for image...');
   try {
-    await execAsync(ffmpegCmd);
+    await execAsync(cmd);
     console.log(`✅ Image watermark applied via ffmpeg drawtext: ${path.basename(outputPath)}`);
   } catch (err) {
-    console.error('❌ ffmpeg drawtext failed, falling back to copy:', err);
+    console.error('❌ ffmpeg drawtext failed, copying original:', err);
     fs.copyFileSync(inputPath, outputPath);
-    console.warn('⚠️ Used fallback copy (no watermark)');
   }
 }
 
 // ============================================================
-// VIDEO WATERMARK – using ffmpeg drawtext
+// VIDEO WATERMARK – same drawtext
 // ============================================================
 async function applyVideoWatermark(
   inputPath: string,
@@ -179,13 +258,15 @@ async function applyVideoWatermark(
 ): Promise<void> {
   console.log('🎬 Applying video watermark with ffmpeg drawtext...');
 
+  const dims = await getDimensions(inputPath);
+  console.log(`📐 Video dimensions: ${dims.width}x${dims.height}`);
+
   const now = metadata.takenAt || new Date();
-  const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const formattedTime = formatLocalTime(now);
 
   const lines: string[] = [
     options.customText || 'Future Jobs Pro AI',
-    `${dateStr}  ${timeStr}`,
+    formattedTime,
   ];
   if (metadata.address && metadata.address !== 'No location') {
     lines.push(metadata.address);
@@ -193,24 +274,22 @@ async function applyVideoWatermark(
   if (metadata.latitude && metadata.longitude && metadata.address === 'No location') {
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
-    lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}  ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
+    lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
   }
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
     lines.push(`Weather: ${metadata.weather}`);
   }
+  if (metadata.latitude && metadata.longitude && metadata.address && metadata.address !== 'No location') {
+    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
+    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
+    lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
+  }
   lines.push(`Verified: ${hash}`);
 
-  const escapedLines = lines.map(escapeForDrawtext);
-  const textWithNewlines = escapedLines.join('\\n');
-
-  const fontSize = options.fontSize || 24;
-  const x = 20;
-  const y = 'h - text_h - 20';
-
-  const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "drawtext=text='${textWithNewlines}':fontcolor=white:box=1:boxcolor=black@0.85:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10" -c:a copy "${outputPath}" -y`;
+  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
 
   try {
-    await execAsync(ffmpegCmd);
+    await execAsync(cmd);
     console.log(`✅ Video watermark applied via ffmpeg drawtext`);
   } catch (err) {
     console.error('❌ ffmpeg drawtext failed, copying original:', err);
@@ -236,4 +315,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – ffmpeg drawtext (final, no canvas)');
+console.log('🖼️ Watermark Service loaded – ffmpeg drawtext with local timezone, professional box');
