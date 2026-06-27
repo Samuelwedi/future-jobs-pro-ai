@@ -1,10 +1,18 @@
 FROM node:22-alpine
 
-# Install ffmpeg and fonts for drawtext
+# Install system dependencies: ffmpeg + emoji font support
 RUN apk add --no-cache \
+    build-base \
+    cairo-dev \
+    pango-dev \
+    jpeg-dev \
+    giflib-dev \
+    librsvg-dev \
+    python3 \
     ffmpeg \
     fontconfig \
-    ttf-dejavu
+    ttf-freefont \
+    noto-fonts-emoji
 
 WORKDIR /app
 
@@ -18,6 +26,7 @@ RUN npm prune --omit=dev
 
 EXPOSE 8080
 
+# Startup script with logging
 RUN echo '#!/bin/sh' > /start.sh && \
     echo 'echo "=== Starting container ==="' >> /start.sh && \
     echo 'echo "--- Environment ---"' >> /start.sh && \
