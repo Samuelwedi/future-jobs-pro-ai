@@ -1,7 +1,7 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses ffmpeg drawtext with emoji support, local timezone,
-// address splitting, and professional box layout.
+// Clean professional watermark with correct emojis
+// Uses ffmpeg drawtext, local timezone, address splitting
 // ============================================================
 
 import * as fs from 'fs';
@@ -157,14 +157,11 @@ async function buildDrawtextCommand(
   width: number,
   height: number
 ): Promise<string> {
-  // Font size proportional to width
   const fontSize = options.fontSize || Math.round(width / 35);
   const lineSpacing = Math.round(fontSize * 0.4);
 
-  // Build text with newlines
   const text = lines.join('\n');
 
-  // Write text to a temporary file (avoids escaping issues)
   const textFile = inputPath + '.text.txt';
   fs.writeFileSync(textFile, text, 'utf-8');
 
@@ -172,7 +169,6 @@ async function buildDrawtextCommand(
   const x = margin;
   const y = `h - (text_h + ${margin})`;
 
-  // Use no specific fontfile – rely on system fonts (includes emoji support via noto-fonts-emoji)
   const ffmpegCmd =
     `ffmpeg -i "${inputPath}" ` +
     `-vf "drawtext=textfile='${textFile}':` +
@@ -187,7 +183,6 @@ async function buildDrawtextCommand(
     (path.extname(inputPath).toLowerCase() === '.mp4' ? '-c:a copy ' : '-frames:v 1 ') +
     `"${outputPath}" -y`;
 
-  // Clean up text file after command execution (we'll do it after running)
   return ffmpegCmd;
 }
 
@@ -209,35 +204,36 @@ async function applyImageWatermark(
   const now = metadata.takenAt || new Date();
   const formattedTime = formatLocalTime(now);
 
-  // Build lines – with emojis
   const company = options.customText || 'Future Jobs Pro AI';
   const lines: string[] = [company, formattedTime];
 
-  // Address – split if too long (> 40 chars)
+  // Address (no icon)
   if (metadata.address && metadata.address !== 'No location') {
     const addr = metadata.address;
-    // Split into chunks of max 40 chars (with a space break)
     if (addr.length > 40) {
       const parts = addr.split(',');
       if (parts.length >= 2) {
-        lines.push(`📍 ${parts[0].trim()}`);
+        lines.push(parts[0].trim());
         lines.push(parts.slice(1).join(',').trim());
       } else {
-        // Split at space near 35 chars
         const mid = Math.min(35, addr.length);
         let splitIdx = addr.lastIndexOf(' ', mid);
         if (splitIdx < 0) splitIdx = mid;
-        lines.push(`📍 ${addr.substring(0, splitIdx)}`);
+        lines.push(addr.substring(0, splitIdx));
         lines.push(addr.substring(splitIdx + 1));
       }
     } else {
-      lines.push(`📍 ${addr}`);
+      lines.push(addr);
     }
   }
 
-  // Weather with emoji
+  // Weather with weather emoji (we'll use a simple generic sun/cloud)
+  const weatherEmoji = metadata.weather?.toLowerCase().includes('rain') ? '🌧️' :
+                       metadata.weather?.toLowerCase().includes('cloud') ? '☁️' :
+                       metadata.weather?.toLowerCase().includes('clear') ? '☀️' :
+                       '🌤️';
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
-    lines.push(`🌤️ ${metadata.weather}`);
+    lines.push(`${weatherEmoji} ${metadata.weather}`);
   } else {
     lines.push('🌤️ Weather not available');
   }
@@ -250,12 +246,11 @@ async function applyImageWatermark(
     lines.push(gps);
   }
 
-  // Verification hash with lock emoji
+  // Verification with lock emoji
   lines.push(`🔒 Verified: ${hash}`);
 
   const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
 
-  // Execute ffmpeg
   const textFile = inputPath + '.text.txt';
   try {
     console.log('🎬 Running ffmpeg drawtext...');
@@ -270,7 +265,7 @@ async function applyImageWatermark(
 }
 
 // ============================================================
-// Apply watermark (video) – identical to image
+// Apply watermark (video)
 // ============================================================
 async function applyVideoWatermark(
   inputPath: string,
@@ -295,22 +290,26 @@ async function applyVideoWatermark(
     if (addr.length > 40) {
       const parts = addr.split(',');
       if (parts.length >= 2) {
-        lines.push(`📍 ${parts[0].trim()}`);
+        lines.push(parts[0].trim());
         lines.push(parts.slice(1).join(',').trim());
       } else {
         const mid = Math.min(35, addr.length);
         let splitIdx = addr.lastIndexOf(' ', mid);
         if (splitIdx < 0) splitIdx = mid;
-        lines.push(`📍 ${addr.substring(0, splitIdx)}`);
+        lines.push(addr.substring(0, splitIdx));
         lines.push(addr.substring(splitIdx + 1));
       }
     } else {
-      lines.push(`📍 ${addr}`);
+      lines.push(addr);
     }
   }
 
+  const weatherEmoji = metadata.weather?.toLowerCase().includes('rain') ? '🌧️' :
+                       metadata.weather?.toLowerCase().includes('cloud') ? '☁️' :
+                       metadata.weather?.toLowerCase().includes('clear') ? '☀️' :
+                       '🌤️';
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
-    lines.push(`🌤️ ${metadata.weather}`);
+    lines.push(`${weatherEmoji} ${metadata.weather}`);
   } else {
     lines.push('🌤️ Weather not available');
   }
@@ -356,4 +355,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – ffmpeg drawtext with emojis, text file, line splitting');
+console.log('🖼️ Watermark Service loaded – clean emojis, professional layout');
