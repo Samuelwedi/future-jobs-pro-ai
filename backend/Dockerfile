@@ -1,6 +1,6 @@
 FROM node:22-alpine
 
-# Install system dependencies: ffmpeg + fonts for drawtext
+# Install ffmpeg and fonts for drawtext
 RUN apk add --no-cache \
     ffmpeg \
     fontconfig \
@@ -18,7 +18,6 @@ RUN npm prune --omit=dev
 
 EXPOSE 8080
 
-# Startup script
 RUN echo '#!/bin/sh' > /start.sh && \
     echo 'echo "=== Starting container ==="' >> /start.sh && \
     echo 'echo "--- Environment ---"' >> /start.sh && \

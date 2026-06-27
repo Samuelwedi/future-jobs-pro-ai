@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses ffmpeg drawtext with proper escaping
+// Uses ffmpeg drawtext – no canvas, no sharp
 // ============================================================
 
 import * as fs from 'fs';
@@ -107,10 +107,9 @@ export async function applyWatermark(
 // Helper: escape text for ffmpeg drawtext
 // ============================================================
 function escapeForDrawtext(text: string): string {
-  // Escape colons, backslashes, double quotes, and single quotes
   return text
     .replace(/\\/g, '\\\\')   // backslash
-    .replace(/:/g, '\\:')     // colon (important!)
+    .replace(/:/g, '\\:')     // colon
     .replace(/"/g, '\\"')     // double quote
     .replace(/'/g, "\\'");    // single quote
 }
@@ -148,7 +147,6 @@ async function applyImageWatermark(
   }
   lines.push(`Verified: ${hash}`);
 
-  // Escape each line individually
   const escapedLines = lines.map(escapeForDrawtext);
   const textWithNewlines = escapedLines.join('\\n');
 
@@ -156,7 +154,6 @@ async function applyImageWatermark(
   const x = 20;
   const y = 'h - text_h - 20';
 
-  // Use a box with black background at 85% opacity, white text
   const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "drawtext=text='${textWithNewlines}':fontcolor=white:box=1:boxcolor=black@0.85:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10" -frames:v 1 "${outputPath}" -y`;
 
   console.log('🎬 Running ffmpeg for image...');
@@ -165,7 +162,6 @@ async function applyImageWatermark(
     console.log(`✅ Image watermark applied via ffmpeg drawtext: ${path.basename(outputPath)}`);
   } catch (err) {
     console.error('❌ ffmpeg drawtext failed, falling back to copy:', err);
-    // Fallback: copy original
     fs.copyFileSync(inputPath, outputPath);
     console.warn('⚠️ Used fallback copy (no watermark)');
   }
@@ -240,4 +236,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – ffmpeg drawtext (colons escaped)');
+console.log('🖼️ Watermark Service loaded – ffmpeg drawtext (final, no canvas)');
