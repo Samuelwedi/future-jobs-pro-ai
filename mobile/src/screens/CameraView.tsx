@@ -42,6 +42,7 @@ export default function CameraView() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<ExpoCamera>(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [isVideoReady, setIsVideoReady] = useState(false);
   const [isTakingPicture, setIsTakingPicture] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [mode, setMode] = useState<'photo' | 'video'>('photo');
@@ -228,13 +229,14 @@ export default function CameraView() {
   };
 
   const startRecording = async () => {
-    if (!isCameraReady || !cameraRef.current || isRecording || isTakingPicture) {
-      Alert.alert('Camera not ready', 'Please wait for camera to initialize');
+    // Extra readiness check: camera must be ready AND video-ready flag must be set
+    if (!isCameraReady || !isVideoReady || !cameraRef.current || isRecording || isTakingPicture) {
+      Alert.alert('Camera not ready', 'Please wait a moment and try again.');
       return;
     }
 
-    // Small delay to ensure camera is settled
-    await new Promise(resolve => setTimeout(resolve, 300));
+    // Increase delay to ensure camera is fully settled
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     setIsRecording(true);
     try {
@@ -242,10 +244,9 @@ export default function CameraView() {
 
       console.log('🎬 Starting video recording...');
 
-      // Use type assertion to bypass TypeScript error on 'quality'
       const video = await cameraRef.current.recordAsync({
         maxDuration: 1800,
-        quality: '1080p' as any,  // Fix: cast to any to avoid TypeScript error
+        quality: '1080p' as any,
         mute: muteAudio,
       } as any);
 
@@ -257,9 +258,21 @@ export default function CameraView() {
       }
     } catch (error: any) {
       console.error('Recording error:', error);
-      if (error.message?.includes('Camera is not ready')) {
+      if (error.message?.includes('Camera is not ready') || error.message?.includes('Camera is busy')) {
+        // Reset camera readiness and try to recover
         setIsCameraReady(false);
+        setIsVideoReady(false);
         Alert.alert('Camera Busy', 'Please wait a moment and try again.');
+        // Re-trigger readiness after a delay
+        setTimeout(() => {
+          if (isMounted.current) {
+            setIsCameraReady(true);
+            // Set video ready after another small delay
+            setTimeout(() => {
+              if (isMounted.current) setIsVideoReady(true);
+            }, 500);
+          }
+        }, 1000);
       } else {
         Alert.alert('Recording Error', error.message || 'Failed to record video. Please try again.');
       }
@@ -316,6 +329,13 @@ export default function CameraView() {
         onCameraReady={() => {
           console.log('📸 Camera ready');
           setIsCameraReady(true);
+          // Video needs extra time to become ready
+          setTimeout(() => {
+            if (isMounted.current) {
+              setIsVideoReady(true);
+              console.log('🎥 Video recording ready');
+            }
+          }, 800);
         }}
         onMountError={(error) => {
           console.error('Camera mount error:', error);
@@ -390,7 +410,6 @@ export default function CameraView() {
         </View>
       )}
 
-      {/* Mute toggle */}
       {mode === 'video' && (
         <TouchableOpacity
           style={styles.muteToggle}
@@ -412,7 +431,7 @@ export default function CameraView() {
           <TouchableOpacity
             style={[styles.captureButton, { backgroundColor: isRecording ? '#F44336' : '#FFFFFF' }]}
             onPress={isRecording ? stopRecording : startRecording}
-            disabled={!isCameraReady || isTakingPicture}
+            disabled={!isCameraReady || !isVideoReady || isTakingPicture}
           >
             <View style={[styles.captureInner, isRecording && styles.captureRecording]} />
           </TouchableOpacity>
