@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses ffmpeg drawtext for reliable text overlay
+// Uses ffmpeg drawtext with proper escaping
 // ============================================================
 
 import * as fs from 'fs';
@@ -104,11 +104,15 @@ export async function applyWatermark(
 }
 
 // ============================================================
-// Helper: generate text file for ffmpeg drawtext
+// Helper: escape text for ffmpeg drawtext
 // ============================================================
-function generateTextFile(lines: string[]): string {
-  // Escape special characters for ffmpeg drawtext
-  return lines.map(line => line.replace(/:/g, '\\:').replace(/'/g, "\\'")).join('\\n');
+function escapeForDrawtext(text: string): string {
+  // Escape colons, backslashes, double quotes, and single quotes
+  return text
+    .replace(/\\/g, '\\\\')   // backslash
+    .replace(/:/g, '\\:')     // colon (important!)
+    .replace(/"/g, '\\"')     // double quote
+    .replace(/'/g, "\\'");    // single quote
 }
 
 // ============================================================
@@ -144,31 +148,26 @@ async function applyImageWatermark(
   }
   lines.push(`Verified: ${hash}`);
 
-  // Escape double quotes and backslashes for ffmpeg command
-  const escapedText = lines.map(line => line.replace(/\\/g, '\\\\').replace(/"/g, '\\"')).join('\\n');
+  // Escape each line individually
+  const escapedLines = lines.map(escapeForDrawtext);
+  const textWithNewlines = escapedLines.join('\\n');
 
-  // Build ffmpeg command with drawtext
-  // Use a simple box with background color, white text, and position bottom-left
   const fontSize = options.fontSize || 24;
   const x = 20;
-  const y = 'h - text_h - 20'; // bottom-left with margin
+  const y = 'h - text_h - 20';
 
-  const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "drawtext=text='${escapedText}':fontcolor=white:box=1:boxcolor=black@0.85:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" -frames:v 1 "${outputPath}" -y`;
+  // Use a box with black background at 85% opacity, white text
+  const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "drawtext=text='${textWithNewlines}':fontcolor=white:box=1:boxcolor=black@0.85:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10" -frames:v 1 "${outputPath}" -y`;
 
   console.log('🎬 Running ffmpeg for image...');
   try {
     await execAsync(ffmpegCmd);
     console.log(`✅ Image watermark applied via ffmpeg drawtext: ${path.basename(outputPath)}`);
   } catch (err) {
-    console.error('❌ ffmpeg drawtext failed, falling back to sharp composite...', err);
-    // Fallback: use the previous overlay method (but we'll try to at least copy the original)
-    try {
-      // Minimal fallback: just copy the original
-      fs.copyFileSync(inputPath, outputPath);
-      console.warn('⚠️ Used fallback copy (no watermark)');
-    } catch (copyErr) {
-      console.error('❌ Fallback copy also failed:', copyErr);
-    }
+    console.error('❌ ffmpeg drawtext failed, falling back to copy:', err);
+    // Fallback: copy original
+    fs.copyFileSync(inputPath, outputPath);
+    console.warn('⚠️ Used fallback copy (no watermark)');
   }
 }
 
@@ -205,13 +204,14 @@ async function applyVideoWatermark(
   }
   lines.push(`Verified: ${hash}`);
 
-  const escapedText = lines.map(line => line.replace(/\\/g, '\\\\').replace(/"/g, '\\"')).join('\\n');
+  const escapedLines = lines.map(escapeForDrawtext);
+  const textWithNewlines = escapedLines.join('\\n');
 
   const fontSize = options.fontSize || 24;
   const x = 20;
   const y = 'h - text_h - 20';
 
-  const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "drawtext=text='${escapedText}':fontcolor=white:box=1:boxcolor=black@0.85:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" -c:a copy "${outputPath}" -y`;
+  const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "drawtext=text='${textWithNewlines}':fontcolor=white:box=1:boxcolor=black@0.85:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10" -c:a copy "${outputPath}" -y`;
 
   try {
     await execAsync(ffmpegCmd);
@@ -240,4 +240,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – ffmpeg drawtext (final)');
+console.log('🖼️ Watermark Service loaded – ffmpeg drawtext (colons escaped)');
