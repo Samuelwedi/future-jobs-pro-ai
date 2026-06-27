@@ -50,6 +50,19 @@ export default function CameraView() {
   const [watermarkTemplate, setWatermarkTemplate] = useState('standard');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [lastScore, setLastScore] = useState<number | null>(null);
+  const [muteAudio, setMuteAudio] = useState(false);
+
+  const isMounted = useRef(true);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      if (isRecording && cameraRef.current) {
+        cameraRef.current.stopRecording();
+      }
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -77,7 +90,7 @@ export default function CameraView() {
         const loc = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.BestForNavigation,
         });
-        setCurrentLocation(loc);
+        if (isMounted.current) setCurrentLocation(loc);
 
         try {
           const addr = await Location.reverseGeocodeAsync(loc.coords);
@@ -89,7 +102,7 @@ export default function CameraView() {
               addr[0].region,
               addr[0].postalCode,
             ].filter(Boolean);
-            setAddress(parts.join(', '));
+            if (isMounted.current) setAddress(parts.join(', '));
           }
         } catch (e) {
           console.warn('Reverse geocode failed:', e);
@@ -168,7 +181,7 @@ export default function CameraView() {
       const issues = response?.compliance?.issues ?? [];
       const suggestions = response?.compliance?.suggestions ?? [];
 
-      setLastScore(score);
+      if (isMounted.current) setLastScore(score);
 
       api.recordAIEvent(isVideo ? 'video_taken' : 'photo_taken', {
         complianceScore: score,
@@ -197,7 +210,7 @@ export default function CameraView() {
     } catch (error: any) {
       Alert.alert('Upload Failed', error.message || 'Could not upload. Please check your connection.');
     } finally {
-      setIsTakingPicture(false);
+      if (isMounted.current) setIsTakingPicture(false);
     }
   };
 
@@ -219,14 +232,24 @@ export default function CameraView() {
       Alert.alert('Camera not ready', 'Please wait for camera to initialize');
       return;
     }
+
+    // Small delay to ensure camera is settled
+    await new Promise(resolve => setTimeout(resolve, 300));
+
     setIsRecording(true);
     try {
       await ensureLocation();
-      // Fix: use 'quality' and cast to any to bypass TypeScript's type checking
+
+      console.log('🎬 Starting video recording...');
+
+      // Use type assertion to bypass TypeScript error on 'quality'
       const video = await cameraRef.current.recordAsync({
         maxDuration: 1800,
-        quality: '1080p',
+        quality: '1080p' as any,  // Fix: cast to any to avoid TypeScript error
+        mute: muteAudio,
       } as any);
+
+      console.log('✅ Recording finished, file:', video?.uri);
       if (video) {
         await uploadFile(video.uri, true);
       } else {
@@ -234,9 +257,14 @@ export default function CameraView() {
       }
     } catch (error: any) {
       console.error('Recording error:', error);
-      Alert.alert('Recording Error', error.message || 'Failed to record video. Please try again.');
+      if (error.message?.includes('Camera is not ready')) {
+        setIsCameraReady(false);
+        Alert.alert('Camera Busy', 'Please wait a moment and try again.');
+      } else {
+        Alert.alert('Recording Error', error.message || 'Failed to record video. Please try again.');
+      }
     } finally {
-      setIsRecording(false);
+      if (isMounted.current) setIsRecording(false);
     }
   };
 
@@ -288,6 +316,10 @@ export default function CameraView() {
         onCameraReady={() => {
           console.log('📸 Camera ready');
           setIsCameraReady(true);
+        }}
+        onMountError={(error) => {
+          console.error('Camera mount error:', error);
+          Alert.alert('Camera Error', 'Failed to mount camera. Please restart the app.');
         }}
       />
 
@@ -356,6 +388,23 @@ export default function CameraView() {
         <View style={[styles.scoreBadge, { backgroundColor: lastScore >= 70 ? '#4CAF50' : '#F44336' }]}>
           <Text style={styles.scoreText}>{lastScore}/100</Text>
         </View>
+      )}
+
+      {/* Mute toggle */}
+      {mode === 'video' && (
+        <TouchableOpacity
+          style={styles.muteToggle}
+          onPress={() => setMuteAudio(!muteAudio)}
+        >
+          <MaterialIcons
+            name={muteAudio ? 'mic-off' : 'mic'}
+            size={24}
+            color="#FFF"
+          />
+          <Text style={styles.muteToggleText}>
+            {muteAudio ? 'Muted' : 'Audio'}
+          </Text>
+        </TouchableOpacity>
       )}
 
       <View style={styles.captureButtonContainer}>
@@ -469,6 +518,23 @@ const styles = StyleSheet.create({
   templateOptionDesc: { color: '#AAA', fontSize: 12, marginTop: 2 },
   scoreBadge: { position: 'absolute', top: 120, left: 20, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
   scoreText: { color: '#FFF', fontWeight: 'bold', fontSize: 14 },
+  muteToggle: {
+    position: 'absolute',
+    bottom: 160,
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  muteToggleText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '500',
+  },
   captureButtonContainer: { position: 'absolute', bottom: 50, left: 0, right: 0, alignItems: 'center' },
   captureButton: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
   captureInner: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#FFFFFF', borderWidth: 3, borderColor: '#0A0A0A' },

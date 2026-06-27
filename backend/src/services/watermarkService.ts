@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Final: emoji font with fallback to plain text
+// Stable version – plain text labels, no emoji font issues
 // ============================================================
 
 import * as fs from 'fs';
@@ -21,40 +21,6 @@ export interface WatermarkOptions {
 export interface WatermarkResult {
   outputPath: string;
   verificationHash: string;
-}
-
-// ---------- Emoji font paths (Alpine) ----------
-const EMOJI_FONT_PATHS = [
-  '/usr/share/fonts/noto/NotoColorEmoji.ttf',
-  '/usr/share/fonts/noto/NotoEmoji-Regular.ttf',
-  '/usr/share/fonts/ttf/NotoColorEmoji.ttf',
-];
-let EMOJI_FONT = '';
-for (const p of EMOJI_FONT_PATHS) {
-  if (fs.existsSync(p)) {
-    EMOJI_FONT = p;
-    break;
-  }
-}
-console.log(`🔤 Emoji font found: ${EMOJI_FONT || 'NOT FOUND – using fallback'}`);
-
-// ---------- Helper: get weather label (emoji or text) ----------
-function getWeatherLabel(weather: string): string {
-  const useEmoji = !!EMOJI_FONT;
-  if (useEmoji) {
-    const lower = weather.toLowerCase();
-    if (lower.includes('rain') || lower.includes('drizzle')) return '🌧️';
-    if (lower.includes('cloud') || lower.includes('overcast')) return '☁️';
-    if (lower.includes('clear') || lower.includes('sun')) return '☀️';
-    if (lower.includes('snow')) return '❄️';
-    return '🌤️';
-  }
-  // fallback plain text
-  return 'Weather:';
-}
-
-function getVerifiedLabel(): string {
-  return EMOJI_FONT ? '🔒' : 'Verified:';
 }
 
 // ---------- OpenWeatherMap ----------
@@ -180,7 +146,7 @@ async function getDimensions(inputPath: string): Promise<{ width: number; height
 }
 
 // ============================================================
-// Build ffmpeg drawtext command
+// Build ffmpeg drawtext command – using text parameter (no file)
 // ============================================================
 async function buildDrawtextCommand(
   inputPath: string,
@@ -193,21 +159,22 @@ async function buildDrawtextCommand(
   const fontSize = options.fontSize || Math.round(width / 35);
   const lineSpacing = Math.round(fontSize * 0.4);
 
+  // Join lines with newline and escape special characters
   const text = lines.join('\n');
-
-  const textFile = inputPath + '.text.txt';
-  fs.writeFileSync(textFile, text, 'utf-8');
+  // Escape single quotes and backslashes for ffmpeg
+  const escapedText = text.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/:/g, '\\:');
 
   const margin = 20;
   const x = margin;
   const y = `h - (text_h + ${margin})`;
 
-  // Use emoji font if available
-  const fontFileOption = EMOJI_FONT ? `:fontfile=${EMOJI_FONT}` : '';
+  // Use DejaVu Sans (available in Alpine) – no emoji, but reliable
+  const fontFile = '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
+  const fontOption = fs.existsSync(fontFile) ? `:fontfile=${fontFile}` : '';
 
   const ffmpegCmd =
     `ffmpeg -i "${inputPath}" ` +
-    `-vf "drawtext=textfile='${textFile}':` +
+    `-vf "drawtext=text='${escapedText}':` +
     `fontcolor=white:` +
     `box=1:` +
     `boxcolor=black@0.8:` +
@@ -215,7 +182,7 @@ async function buildDrawtextCommand(
     `fontsize=${fontSize}:` +
     `x=${x}:` +
     `y=${y}:` +
-    `line_spacing=${lineSpacing}${fontFileOption}" ` +
+    `line_spacing=${lineSpacing}${fontOption}" ` +
     (path.extname(inputPath).toLowerCase() === '.mp4' ? '-c:a copy ' : '-frames:v 1 ') +
     `"${outputPath}" -y`;
 
@@ -223,7 +190,7 @@ async function buildDrawtextCommand(
 }
 
 // ============================================================
-// Build text lines (with fallback)
+// Build text lines (plain, no emojis)
 // ============================================================
 function buildTextLines(metadata: any, options: WatermarkOptions, hash: string): string[] {
   const now = metadata.takenAt || new Date();
@@ -232,7 +199,6 @@ function buildTextLines(metadata: any, options: WatermarkOptions, hash: string):
   const company = options.customText || 'Future Jobs Pro AI';
   const lines: string[] = [company, formattedTime];
 
-  // Address (no emoji)
   if (metadata.address && metadata.address !== 'No location') {
     const addr = metadata.address;
     if (addr.length > 40) {
@@ -252,15 +218,12 @@ function buildTextLines(metadata: any, options: WatermarkOptions, hash: string):
     }
   }
 
-  // Weather
-  const weatherPrefix = getWeatherLabel(metadata.weather || '');
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
-    lines.push(`${weatherPrefix} ${metadata.weather}`);
+    lines.push(`Weather: ${metadata.weather}`);
   } else {
-    lines.push(`${weatherPrefix} Weather not available`);
+    lines.push('Weather: Not available');
   }
 
-  // GPS
   if (metadata.latitude && metadata.longitude) {
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
@@ -268,9 +231,7 @@ function buildTextLines(metadata: any, options: WatermarkOptions, hash: string):
     lines.push(gps);
   }
 
-  // Verified
-  const verifiedPrefix = getVerifiedLabel();
-  lines.push(`${verifiedPrefix} ${hash}`);
+  lines.push(`Verified: ${hash}`);
 
   return lines;
 }
@@ -293,7 +254,6 @@ async function applyImageWatermark(
   const lines = buildTextLines(metadata, options, hash);
   const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
 
-  const textFile = inputPath + '.text.txt';
   try {
     console.log('🎬 Running ffmpeg drawtext...');
     await execAsync(cmd);
@@ -301,8 +261,6 @@ async function applyImageWatermark(
   } catch (err) {
     console.error('❌ ffmpeg drawtext failed, copying original:', err);
     fs.copyFileSync(inputPath, outputPath);
-  } finally {
-    if (fs.existsSync(textFile)) fs.unlinkSync(textFile);
   }
 }
 
@@ -324,15 +282,12 @@ async function applyVideoWatermark(
   const lines = buildTextLines(metadata, options, hash);
   const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
 
-  const textFile = inputPath + '.text.txt';
   try {
     await execAsync(cmd);
     console.log(`✅ Video watermark applied`);
   } catch (err) {
     console.error('❌ ffmpeg drawtext failed, copying original:', err);
     fs.copyFileSync(inputPath, outputPath);
-  } finally {
-    if (fs.existsSync(textFile)) fs.unlinkSync(textFile);
   }
 }
 
@@ -354,4 +309,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – emoji fallback ready');
+console.log('🖼️ Watermark Service loaded – stable plain‑text version');
