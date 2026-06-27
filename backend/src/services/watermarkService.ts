@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Canvas overlay with debug upload + forced opaque composite
+// Uses ffmpeg for image/video overlay (reliable)
 // ============================================================
 
 import sharp from 'sharp';
@@ -9,18 +9,10 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
-import { v2 as cloudinary } from 'cloudinary';
 const canvas = require('canvas');
 const { createCanvas } = canvas;
 
 const execAsync = promisify(exec);
-
-// Configure Cloudinary for debug uploads
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
 
 export interface WatermarkOptions {
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
@@ -115,7 +107,7 @@ export async function applyWatermark(
 }
 
 // ============================================================
-// Canvas overlay generator (with debug upload)
+// Canvas overlay generator (creates overlay PNG)
 // ============================================================
 async function generateOverlayBuffer(
   width: number,
@@ -134,7 +126,7 @@ async function generateOverlayBuffer(
   const lineSpacing = 1.5;
   const fontFamily = 'Arial, sans-serif';
 
-  // Measure each line to get max width and total height
+  // Measure each line
   let maxWidth = 0;
   const lineHeights: number[] = [];
   const lineFontSizes: number[] = [];
@@ -171,10 +163,10 @@ async function generateOverlayBuffer(
     boxY = (height - boxHeight) / 2;
   }
 
-  // Start with transparent canvas
+  // Clear canvas
   ctx.clearRect(0, 0, width, height);
 
-  // Draw background box with full opacity, then reduce overall opacity using globalAlpha
+  // Draw semi‑transparent background
   ctx.globalAlpha = 0.85;
   ctx.fillStyle = 'black';
   const radius = 12;
@@ -186,14 +178,14 @@ async function generateOverlayBuffer(
   ctx.arcTo(boxX, boxY, boxX + boxWidth, boxY, radius);
   ctx.closePath();
   ctx.fill();
-  ctx.globalAlpha = 1.0; // reset for text
+  ctx.globalAlpha = 1.0;
 
-  // Draw border (fully opaque)
+  // Border
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Draw text – fully opaque white
+  // Draw text (white)
   let currentY = boxY + padding;
   for (let i = 0; i < lines.length; i++) {
     const isBold = i === 0;
@@ -208,24 +200,11 @@ async function generateOverlayBuffer(
     currentY += lineHeights[i] * lineSpacing;
   }
 
-  const buffer = canvasObj.toBuffer('image/png');
-
-  // DEBUG: Upload overlay to Cloudinary so we can view it
-  try {
-    const uploadResult = await cloudinary.uploader.upload(
-      `data:image/png;base64,${buffer.toString('base64')}`,
-      { folder: 'debug/watermark_overlay', public_id: `overlay-${Date.now()}` }
-    );
-    console.log(`🔍 Debug overlay uploaded: ${uploadResult.secure_url}`);
-  } catch (err) {
-    console.warn('⚠️ Could not upload debug overlay:', err);
-  }
-
-  return buffer;
+  return canvasObj.toBuffer('image/png');
 }
 
 // ============================================================
-// IMAGE WATERMARK – using sharp composite with overlay
+// IMAGE WATERMARK – using ffmpeg (reliable overlay)
 // ============================================================
 async function applyImageWatermark(
   inputPath: string,
@@ -265,23 +244,26 @@ async function applyImageWatermark(
     { position: options.position || 'bottom-left', customText: options.customText || 'Future Jobs Pro AI', fontSize: options.fontSize || 0 }
   );
 
-  // Composite with explicit blend and no alpha issues
-  await sharp(inputPath)
-    .composite([
-      {
-        input: overlayBuffer,
-        top: 0,
-        left: 0,
-        blend: 'over',
-      },
-    ])
-    .toFile(outputPath);
+  // Save overlay to temp file
+  const overlayPath = inputPath + '.overlay.png';
+  fs.writeFileSync(overlayPath, overlayBuffer);
 
-  console.log(`✅ Image watermark applied (canvas): ${path.basename(outputPath)}`);
+  try {
+    // Use ffmpeg to overlay PNG on image (output as JPEG)
+    // -i input -i overlay -filter_complex "overlay=0:0" -frames:v 1 output
+    await execAsync(`ffmpeg -i "${inputPath}" -i "${overlayPath}" -filter_complex "overlay=0:0" -frames:v 1 "${outputPath}" -y`);
+    console.log(`✅ Image watermark applied via ffmpeg: ${path.basename(outputPath)}`);
+  } catch (err) {
+    console.error('❌ ffmpeg overlay failed, fallback to sharp:', err);
+    // Fallback to sharp composite
+    await sharp(inputPath).composite([{ input: overlayBuffer, top: 0, left: 0 }]).toFile(outputPath);
+  } finally {
+    if (fs.existsSync(overlayPath)) fs.unlinkSync(overlayPath);
+  }
 }
 
 // ============================================================
-// VIDEO WATERMARK – same canvas overlay + ffmpeg
+// VIDEO WATERMARK – same ffmpeg overlay
 // ============================================================
 async function applyVideoWatermark(
   inputPath: string,
@@ -290,7 +272,7 @@ async function applyVideoWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  console.log('🎬 Applying video watermark with canvas...');
+  console.log('🎬 Applying video watermark with ffmpeg...');
 
   let videoWidth = 1280, videoHeight = 720;
   try {
@@ -332,17 +314,18 @@ async function applyVideoWatermark(
     { position: options.position || 'bottom-left', customText: options.customText || 'Future Jobs Pro AI', fontSize: options.fontSize || 0 }
   );
 
-  const pngPath = inputPath + '.watermark.png';
-  fs.writeFileSync(pngPath, overlayBuffer);
+  const overlayPath = inputPath + '.overlay.png';
+  fs.writeFileSync(overlayPath, overlayBuffer);
 
   try {
-    await execAsync(`ffmpeg -i "${inputPath}" -i "${pngPath}" -filter_complex "overlay=0:0" -c:a copy "${outputPath}" -y`);
-    console.log(`✅ Video watermark applied (${videoWidth}x${videoHeight})`);
+    // Overlay at (0,0) because overlay is full‑size
+    await execAsync(`ffmpeg -i "${inputPath}" -i "${overlayPath}" -filter_complex "overlay=0:0" -c:a copy "${outputPath}" -y`);
+    console.log(`✅ Video watermark applied via ffmpeg (${videoWidth}x${videoHeight})`);
   } catch (err) {
     console.error('❌ ffmpeg failed, copying original:', err);
     fs.copyFileSync(inputPath, outputPath);
   }
-  if (fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
+  if (fs.existsSync(overlayPath)) fs.unlinkSync(overlayPath);
 }
 
 // ============================================================
@@ -363,4 +346,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – canvas with debug upload and composite fix');
+console.log('🖼️ Watermark Service loaded – ffmpeg overlay (final)');
