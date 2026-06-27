@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { CameraView as ExpoCamera, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
-import { Audio } from 'expo-av'; // ✅ for microphone permission
+import { Audio } from 'expo-av';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -40,7 +40,8 @@ export default function CameraView() {
   const timeEntryId: string = route?.params?.timeEntryId || '';
 
   const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef<any>(null);
+  const cameraRef = useRef<ExpoCamera>(null);
+  const [isCameraReady, setIsCameraReady] = useState(false);
   const [isTakingPicture, setIsTakingPicture] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [mode, setMode] = useState<'photo' | 'video'>('photo');
@@ -54,7 +55,6 @@ export default function CameraView() {
     (async () => {
       if (!permission?.granted) requestPermission();
 
-      // Request microphone permission for video recording
       if (Platform.OS !== 'web') {
         try {
           const { status: audioStatus } = await Audio.requestPermissionsAsync();
@@ -202,7 +202,10 @@ export default function CameraView() {
   };
 
   const takePhoto = async () => {
-    if (!cameraRef.current || isTakingPicture || isRecording) return;
+    if (!isCameraReady || !cameraRef.current || isTakingPicture || isRecording) {
+      Alert.alert('Camera not ready', 'Please wait for camera to initialize');
+      return;
+    }
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 1, exif: true });
       await uploadFile(photo.uri, false);
@@ -212,15 +215,23 @@ export default function CameraView() {
   };
 
   const startRecording = async () => {
-    if (!cameraRef.current || isRecording || isTakingPicture) return;
+    if (!isCameraReady || !cameraRef.current || isRecording || isTakingPicture) {
+      Alert.alert('Camera not ready', 'Please wait for camera to initialize');
+      return;
+    }
     setIsRecording(true);
     try {
       await ensureLocation();
+      // Fix: use 'quality' and cast to any to bypass TypeScript's type checking
       const video = await cameraRef.current.recordAsync({
         maxDuration: 1800,
         quality: '1080p',
-      });
-      await uploadFile(video.uri, true);
+      } as any);
+      if (video) {
+        await uploadFile(video.uri, true);
+      } else {
+        Alert.alert('Error', 'Recording failed – no video data');
+      }
     } catch (error: any) {
       console.error('Recording error:', error);
       Alert.alert('Recording Error', error.message || 'Failed to record video. Please try again.');
@@ -270,7 +281,15 @@ export default function CameraView() {
 
   return (
     <View style={styles.container}>
-      <ExpoCamera ref={cameraRef} style={styles.camera} facing="back" />
+      <ExpoCamera
+        ref={cameraRef}
+        style={styles.camera}
+        facing="back"
+        onCameraReady={() => {
+          console.log('📸 Camera ready');
+          setIsCameraReady(true);
+        }}
+      />
 
       <TouchableOpacity style={styles.backArrow} onPress={goBack}>
         <Ionicons name="arrow-back" size={28} color="#FFF" />
@@ -344,7 +363,7 @@ export default function CameraView() {
           <TouchableOpacity
             style={[styles.captureButton, { backgroundColor: isRecording ? '#F44336' : '#FFFFFF' }]}
             onPress={isRecording ? stopRecording : startRecording}
-            disabled={isTakingPicture}
+            disabled={!isCameraReady || isTakingPicture}
           >
             <View style={[styles.captureInner, isRecording && styles.captureRecording]} />
           </TouchableOpacity>
@@ -352,7 +371,7 @@ export default function CameraView() {
           <TouchableOpacity
             style={styles.captureButton}
             onPress={takePhoto}
-            disabled={isTakingPicture}
+            disabled={!isCameraReady || isTakingPicture}
           >
             <View style={[styles.captureInner, isTakingPicture && styles.captureInnerDisabled]} />
           </TouchableOpacity>
