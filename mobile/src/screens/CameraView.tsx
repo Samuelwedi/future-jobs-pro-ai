@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { CameraView as ExpoCamera, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
+import { Audio } from 'expo-av'; // ✅ for microphone permission
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -44,15 +45,29 @@ export default function CameraView() {
   const [isRecording, setIsRecording] = useState(false);
   const [mode, setMode] = useState<'photo' | 'video'>('photo');
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
-  const [address, setAddress] = useState<string | null>(null); // ✅ ADDED: reverse‑geocoded address
+  const [address, setAddress] = useState<string | null>(null);
   const [watermarkTemplate, setWatermarkTemplate] = useState('standard');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [lastScore, setLastScore] = useState<number | null>(null);
-  const [isGettingLocation, setIsGettingLocation] = useState(false);
 
   useEffect(() => {
-    if (!permission?.granted) requestPermission();
-    fetchLocation();
+    (async () => {
+      if (!permission?.granted) requestPermission();
+
+      // Request microphone permission for video recording
+      if (Platform.OS !== 'web') {
+        try {
+          const { status: audioStatus } = await Audio.requestPermissionsAsync();
+          if (audioStatus !== 'granted') {
+            console.warn('Microphone permission denied – video will have no audio');
+          }
+        } catch (e) {
+          console.warn('Audio permission request failed:', e);
+        }
+      }
+
+      fetchLocation();
+    })();
   }, []);
 
   const fetchLocation = async (): Promise<Location.LocationObject | null> => {
@@ -64,7 +79,6 @@ export default function CameraView() {
         });
         setCurrentLocation(loc);
 
-        // ✅ ADDED: reverse‑geocode to get address
         try {
           const addr = await Location.reverseGeocodeAsync(loc.coords);
           if (addr && addr[0]) {
@@ -91,13 +105,16 @@ export default function CameraView() {
 
   const ensureLocation = async (): Promise<Location.LocationObject | null> => {
     if (currentLocation) return currentLocation;
-    setIsGettingLocation(true);
-    try {
-      const loc = await fetchLocation();
-      return loc;
-    } finally {
-      setIsGettingLocation(false);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const loc = await fetchLocation();
+        if (loc) return loc;
+      } catch (e) {
+        console.warn(`Location attempt ${attempt + 1} failed:`, e);
+      }
+      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 500));
     }
+    return null;
   };
 
   const goBack = () => {
@@ -132,7 +149,7 @@ export default function CameraView() {
         extraFields.longitude = loc.coords.longitude.toString();
         if (loc.coords.altitude) extraFields.altitude = loc.coords.altitude.toString();
         if (loc.coords.heading) extraFields.direction = loc.coords.heading.toString();
-        if (address) extraFields.address = address; // ✅ ADDED: send address to backend
+        if (address) extraFields.address = address;
       } else {
         console.warn('⚠️ No location available – watermark will show placeholders');
       }
@@ -185,7 +202,7 @@ export default function CameraView() {
   };
 
   const takePhoto = async () => {
-    if (!cameraRef.current || isTakingPicture || isRecording || isGettingLocation) return;
+    if (!cameraRef.current || isTakingPicture || isRecording) return;
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 1, exif: true });
       await uploadFile(photo.uri, false);
@@ -195,16 +212,18 @@ export default function CameraView() {
   };
 
   const startRecording = async () => {
-    if (!cameraRef.current || isRecording || isTakingPicture || isGettingLocation) return;
+    if (!cameraRef.current || isRecording || isTakingPicture) return;
     setIsRecording(true);
     try {
+      await ensureLocation();
       const video = await cameraRef.current.recordAsync({
         maxDuration: 1800,
         quality: '1080p',
       });
       await uploadFile(video.uri, true);
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to record video');
+      console.error('Recording error:', error);
+      Alert.alert('Recording Error', error.message || 'Failed to record video. Please try again.');
     } finally {
       setIsRecording(false);
     }
@@ -233,12 +252,12 @@ export default function CameraView() {
 
   const now = new Date();
   const previewLines: string[] = [];
-  previewLines.push('📍 ' + (address || 'Getting location...')); // ✅ ADDED emoji + address
-  previewLines.push('🕐 ' + now.toLocaleString()); // ✅ ADDED emoji
+  previewLines.push('📍 ' + (address || 'Getting location...'));
+  previewLines.push('🕐 ' + now.toLocaleString());
   if (currentLocation) {
     const lat = currentLocation.coords.latitude.toFixed(6);
     const lng = currentLocation.coords.longitude.toFixed(6);
-    previewLines.push(`🛰️ ${lat}°N, ${lng}°W`); // ✅ ADDED emoji
+    previewLines.push(`🛰️ ${lat}°N, ${lng}°W`);
   } else {
     previewLines.push('🛰️ Getting GPS...');
   }
@@ -246,7 +265,7 @@ export default function CameraView() {
     previewLines.push(`maps.google.com/?q=${currentLocation.coords.latitude},${currentLocation.coords.longitude}`);
   }
   if (watermarkTemplate === 'detailed') {
-    previewLines.push('🌡️ Altitude: -- m   Weather: --'); // ✅ ADDED emoji
+    previewLines.push('🌡️ Altitude: -- m   Weather: --');
   }
 
   return (
@@ -325,7 +344,7 @@ export default function CameraView() {
           <TouchableOpacity
             style={[styles.captureButton, { backgroundColor: isRecording ? '#F44336' : '#FFFFFF' }]}
             onPress={isRecording ? stopRecording : startRecording}
-            disabled={isTakingPicture || isGettingLocation}
+            disabled={isTakingPicture}
           >
             <View style={[styles.captureInner, isRecording && styles.captureRecording]} />
           </TouchableOpacity>
@@ -333,13 +352,13 @@ export default function CameraView() {
           <TouchableOpacity
             style={styles.captureButton}
             onPress={takePhoto}
-            disabled={isTakingPicture || isGettingLocation}
+            disabled={isTakingPicture}
           >
-            <View style={[styles.captureInner, (isTakingPicture || isGettingLocation) && styles.captureInnerDisabled]} />
+            <View style={[styles.captureInner, isTakingPicture && styles.captureInnerDisabled]} />
           </TouchableOpacity>
         )}
         <Text style={styles.captureHint}>
-          {isGettingLocation ? 'Getting GPS...' : isRecording ? 'Tap to Stop' : mode === 'video' ? 'Tap to Record' : 'Tap to Capture'}
+          {isRecording ? 'Tap to Stop' : mode === 'video' ? 'Tap to Record' : 'Tap to Capture'}
         </Text>
       </View>
     </View>
