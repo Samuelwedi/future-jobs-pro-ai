@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses ffmpeg drawtext with local timezone and professional box
+// Uses ffmpeg drawtext with textfile for reliable multi-line
 // ============================================================
 
 import * as fs from 'fs';
@@ -23,7 +23,6 @@ export interface WatermarkResult {
   verificationHash: string;
 }
 
-// ---------- OpenWeatherMap ----------
 async function fetchWeather(lat: number, lng: number): Promise<string> {
   const apiKey = process.env.OPENWEATHER_API_KEY || '5747418241c0b06e9b0dc9223223479f';
   const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`;
@@ -40,7 +39,6 @@ async function fetchWeather(lat: number, lng: number): Promise<string> {
   }
 }
 
-// ---------- Reverse Geocode ----------
 async function getAddressFromCoords(lat: number, lng: number): Promise<string | undefined> {
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`;
@@ -53,7 +51,6 @@ async function getAddressFromCoords(lat: number, lng: number): Promise<string | 
   }
 }
 
-// ---------- Hash ----------
 function generateVerificationHash(metadata: any): string {
   const data = JSON.stringify({
     lat: metadata.latitude || 0,
@@ -65,9 +62,7 @@ function generateVerificationHash(metadata: any): string {
   return crypto.createHash('sha256').update(data).digest('hex').slice(0, 8);
 }
 
-// ---------- Format date in local timezone (America/Edmonton) ----------
 function formatLocalTime(date: Date): string {
-  // Use America/Edmonton (Calgary)
   const options: Intl.DateTimeFormatOptions = {
     timeZone: 'America/Edmonton',
     year: 'numeric',
@@ -82,9 +77,6 @@ function formatLocalTime(date: Date): string {
   return formatter.format(date);
 }
 
-// ============================================================
-// MAIN
-// ============================================================
 export async function applyWatermark(
   inputPath: string,
   outputPath: string,
@@ -121,9 +113,6 @@ export async function applyWatermark(
   return { outputPath, verificationHash: hash };
 }
 
-// ============================================================
-// Helper: get image/video dimensions
-// ============================================================
 async function getDimensions(inputPath: string): Promise<{ width: number; height: number }> {
   const isVideo = ['.mp4', '.mov', '.avi', '.m4v', '.mkv'].includes(
     path.extname(inputPath).toLowerCase()
@@ -146,54 +135,45 @@ async function getDimensions(inputPath: string): Promise<{ width: number; height
   }
 }
 
-// ============================================================
-// Build ffmpeg drawtext command with professional box
-// ============================================================
-async function buildDrawtextCommand(
+async function applyWatermarkWithFfmpeg(
   inputPath: string,
   outputPath: string,
   lines: string[],
   options: WatermarkOptions,
   width: number,
-  height: number
-): Promise<string> {
-  // Font size proportional to image width
+  height: number,
+  isVideo: boolean
+): Promise<void> {
+  // Create a temporary text file with the lines
+  const textFile = inputPath + '.txt';
+  fs.writeFileSync(textFile, lines.join('\n'), 'utf-8');
+
   const fontSize = options.fontSize || Math.round(width / 35);
-  const lineSpacing = Math.round(fontSize * 0.5);
-
-  // Build the text with newlines (escaped for ffmpeg)
-  const text = lines.join('\\n');
-  const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/:/g, '\\:');
-
-  // Position: bottom-left with margin
   const margin = 20;
   const x = margin;
   const y = `h - (text_h + ${margin})`;
 
-  // Use a box with padding and rounded corners? drawtext doesn't support rounded corners,
-  // but we can use box=1 and boxborderw to simulate padding.
-  // We'll use a black background with 80% opacity, white text.
-  const ffmpegCmd =
+  // Use textfile to read from file (handles newlines correctly)
+  const cmd =
     `ffmpeg -i "${inputPath}" ` +
-    `-vf "drawtext=text='${escapedText}':` +
-    `fontcolor=white:` +
-    `box=1:` +
-    `boxcolor=black@0.8:` +
-    `boxborderw=10:` +
-    `fontsize=${fontSize}:` +
-    `x=${x}:` +
-    `y=${y}:` +
-    `line_spacing=${lineSpacing}:` +
-    `fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" ` +
-    (path.extname(inputPath).toLowerCase() === '.mp4' ? '-c:a copy ' : '-frames:v 1 ') +
+    `-vf "drawtext=textfile='${textFile}':fontcolor=white:box=1:boxcolor=black@0.8:boxborderw=10:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10" ` +
+    (isVideo ? '-c:a copy ' : '-frames:v 1 ') +
     `"${outputPath}" -y`;
 
-  return ffmpegCmd;
+  console.log(`🎬 Running ffmpeg with textfile`);
+
+  try {
+    await execAsync(cmd);
+    console.log(`✅ Watermark applied successfully`);
+  } catch (err) {
+    console.error('❌ ffmpeg failed, copying original:', err);
+    fs.copyFileSync(inputPath, outputPath);
+  } finally {
+    // Clean up temp file
+    if (fs.existsSync(textFile)) fs.unlinkSync(textFile);
+  }
 }
 
-// ============================================================
-// IMAGE WATERMARK
-// ============================================================
 async function applyImageWatermark(
   inputPath: string,
   outputPath: string,
@@ -201,7 +181,7 @@ async function applyImageWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  console.log('🖼️ Applying image watermark with ffmpeg drawtext...');
+  console.log('🖼️ Applying image watermark with ffmpeg textfile...');
 
   const dims = await getDimensions(inputPath);
   console.log(`📐 Image dimensions: ${dims.width}x${dims.height}`);
@@ -209,7 +189,6 @@ async function applyImageWatermark(
   const now = metadata.takenAt || new Date();
   const formattedTime = formatLocalTime(now);
 
-  // Build lines – mirror old project format
   const lines: string[] = [
     options.customText || 'Future Jobs Pro AI',
     formattedTime,
@@ -217,38 +196,19 @@ async function applyImageWatermark(
   if (metadata.address && metadata.address !== 'No location') {
     lines.push(metadata.address);
   }
-  if (metadata.latitude && metadata.longitude && metadata.address === 'No location') {
-    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
-    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
-    lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
-  }
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
     lines.push(`Weather: ${metadata.weather}`);
   }
-  // Add GPS coordinates as last line (if not already included)
-  if (metadata.latitude && metadata.longitude && metadata.address && metadata.address !== 'No location') {
+  if (metadata.latitude && metadata.longitude) {
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
   }
   lines.push(`Verified: ${hash}`);
 
-  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
-
-  console.log(`🎬 Running: ffmpeg drawtext for image`);
-
-  try {
-    await execAsync(cmd);
-    console.log(`✅ Image watermark applied via ffmpeg drawtext: ${path.basename(outputPath)}`);
-  } catch (err) {
-    console.error('❌ ffmpeg drawtext failed, copying original:', err);
-    fs.copyFileSync(inputPath, outputPath);
-  }
+  await applyWatermarkWithFfmpeg(inputPath, outputPath, lines, options, dims.width, dims.height, false);
 }
 
-// ============================================================
-// VIDEO WATERMARK – same drawtext
-// ============================================================
 async function applyVideoWatermark(
   inputPath: string,
   outputPath: string,
@@ -256,7 +216,7 @@ async function applyVideoWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  console.log('🎬 Applying video watermark with ffmpeg drawtext...');
+  console.log('🎬 Applying video watermark with ffmpeg textfile...');
 
   const dims = await getDimensions(inputPath);
   console.log(`📐 Video dimensions: ${dims.width}x${dims.height}`);
@@ -271,35 +231,19 @@ async function applyVideoWatermark(
   if (metadata.address && metadata.address !== 'No location') {
     lines.push(metadata.address);
   }
-  if (metadata.latitude && metadata.longitude && metadata.address === 'No location') {
-    const latDir = metadata.latitude >= 0 ? 'N' : 'S';
-    const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
-    lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
-  }
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
     lines.push(`Weather: ${metadata.weather}`);
   }
-  if (metadata.latitude && metadata.longitude && metadata.address && metadata.address !== 'No location') {
+  if (metadata.latitude && metadata.longitude) {
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     lines.push(`${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`);
   }
   lines.push(`Verified: ${hash}`);
 
-  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
-
-  try {
-    await execAsync(cmd);
-    console.log(`✅ Video watermark applied via ffmpeg drawtext`);
-  } catch (err) {
-    console.error('❌ ffmpeg drawtext failed, copying original:', err);
-    fs.copyFileSync(inputPath, outputPath);
-  }
+  await applyWatermarkWithFfmpeg(inputPath, outputPath, lines, options, dims.width, dims.height, true);
 }
 
-// ============================================================
-// PDF REPORT (placeholder)
-// ============================================================
 export async function generateWatermarkedPDFReport(
   photos: Array<any>,
   outputPath: string,
@@ -315,4 +259,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – ffmpeg drawtext with local timezone, professional box');
+console.log('🖼️ Watermark Service loaded – ffmpeg textfile, local timezone, professional box');
