@@ -12,7 +12,7 @@ RUN apk add --no-cache \
     ffmpeg \
     fontconfig \
     ttf-freefont \
-    noto-fonts-emoji
+    font-noto-emoji
 
 WORKDIR /app
 
