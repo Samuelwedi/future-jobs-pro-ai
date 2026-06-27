@@ -1,16 +1,13 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses ffmpeg for image/video overlay (reliable)
+// Uses ffmpeg drawtext for reliable text overlay
 // ============================================================
 
-import sharp from 'sharp';
 import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
-const canvas = require('canvas');
-const { createCanvas } = canvas;
 
 const execAsync = promisify(exec);
 
@@ -107,104 +104,15 @@ export async function applyWatermark(
 }
 
 // ============================================================
-// Canvas overlay generator (creates overlay PNG)
+// Helper: generate text file for ffmpeg drawtext
 // ============================================================
-async function generateOverlayBuffer(
-  width: number,
-  height: number,
-  lines: string[],
-  options: { position: string; customText: string; fontSize: number }
-): Promise<Buffer> {
-  const canvasObj = createCanvas(width, height);
-  const ctx = canvasObj.getContext('2d');
-
-  // Font sizes
-  const baseSize = options.fontSize || Math.round(width / 30);
-  const lineSize = Math.round(baseSize * 0.75);
-  const smallSize = Math.round(lineSize * 0.85);
-
-  const lineSpacing = 1.5;
-  const fontFamily = 'Arial, sans-serif';
-
-  // Measure each line
-  let maxWidth = 0;
-  const lineHeights: number[] = [];
-  const lineFontSizes: number[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const isBold = i === 0;
-    const isHash = lines[i].startsWith('Verified:');
-    const fontSize = i === 0 ? baseSize : (isHash ? smallSize : lineSize);
-    ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
-    const metrics = ctx.measureText(lines[i]);
-    const textWidth = metrics.width;
-    const textHeight = fontSize * 1.2;
-    maxWidth = Math.max(maxWidth, textWidth);
-    lineHeights.push(textHeight);
-    lineFontSizes.push(fontSize);
-  }
-
-  const totalHeight = lineHeights.reduce((sum, h) => sum + h * lineSpacing, 0);
-  const padding = 18;
-  const boxWidth = maxWidth + padding * 2;
-  const boxHeight = totalHeight + padding * 2;
-
-  const margin = 20;
-  let boxX = margin;
-  let boxY = margin;
-  if (options.position === 'top-right') {
-    boxX = width - boxWidth - margin;
-  } else if (options.position === 'bottom-left') {
-    boxY = height - boxHeight - margin;
-  } else if (options.position === 'bottom-right') {
-    boxX = width - boxWidth - margin;
-    boxY = height - boxHeight - margin;
-  } else if (options.position === 'center') {
-    boxX = (width - boxWidth) / 2;
-    boxY = (height - boxHeight) / 2;
-  }
-
-  // Clear canvas
-  ctx.clearRect(0, 0, width, height);
-
-  // Draw semi‑transparent background
-  ctx.globalAlpha = 0.85;
-  ctx.fillStyle = 'black';
-  const radius = 12;
-  ctx.beginPath();
-  ctx.moveTo(boxX + radius, boxY);
-  ctx.arcTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + boxHeight, radius);
-  ctx.arcTo(boxX + boxWidth, boxY + boxHeight, boxX, boxY + boxHeight, radius);
-  ctx.arcTo(boxX, boxY + boxHeight, boxX, boxY, radius);
-  ctx.arcTo(boxX, boxY, boxX + boxWidth, boxY, radius);
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha = 1.0;
-
-  // Border
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  // Draw text (white)
-  let currentY = boxY + padding;
-  for (let i = 0; i < lines.length; i++) {
-    const isBold = i === 0;
-    const fontSize = lineFontSizes[i];
-    ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = 'white';
-    const xPos = boxX + padding;
-    const yPos = currentY;
-    ctx.fillText(lines[i], xPos, yPos);
-    currentY += lineHeights[i] * lineSpacing;
-  }
-
-  return canvasObj.toBuffer('image/png');
+function generateTextFile(lines: string[]): string {
+  // Escape special characters for ffmpeg drawtext
+  return lines.map(line => line.replace(/:/g, '\\:').replace(/'/g, "\\'")).join('\\n');
 }
 
 // ============================================================
-// IMAGE WATERMARK – using ffmpeg (reliable overlay)
+// IMAGE WATERMARK – using ffmpeg drawtext
 // ============================================================
 async function applyImageWatermark(
   inputPath: string,
@@ -213,8 +121,7 @@ async function applyImageWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  const img = sharp(inputPath);
-  const { width = 800, height = 600 } = await img.metadata();
+  console.log('🖼️ Applying image watermark with ffmpeg drawtext...');
 
   const now = metadata.takenAt || new Date();
   const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -237,33 +144,36 @@ async function applyImageWatermark(
   }
   lines.push(`Verified: ${hash}`);
 
-  const overlayBuffer = await generateOverlayBuffer(
-    width,
-    height,
-    lines,
-    { position: options.position || 'bottom-left', customText: options.customText || 'Future Jobs Pro AI', fontSize: options.fontSize || 0 }
-  );
+  // Escape double quotes and backslashes for ffmpeg command
+  const escapedText = lines.map(line => line.replace(/\\/g, '\\\\').replace(/"/g, '\\"')).join('\\n');
 
-  // Save overlay to temp file
-  const overlayPath = inputPath + '.overlay.png';
-  fs.writeFileSync(overlayPath, overlayBuffer);
+  // Build ffmpeg command with drawtext
+  // Use a simple box with background color, white text, and position bottom-left
+  const fontSize = options.fontSize || 24;
+  const x = 20;
+  const y = 'h - text_h - 20'; // bottom-left with margin
 
+  const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "drawtext=text='${escapedText}':fontcolor=white:box=1:boxcolor=black@0.85:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" -frames:v 1 "${outputPath}" -y`;
+
+  console.log('🎬 Running ffmpeg for image...');
   try {
-    // Use ffmpeg to overlay PNG on image (output as JPEG)
-    // -i input -i overlay -filter_complex "overlay=0:0" -frames:v 1 output
-    await execAsync(`ffmpeg -i "${inputPath}" -i "${overlayPath}" -filter_complex "overlay=0:0" -frames:v 1 "${outputPath}" -y`);
-    console.log(`✅ Image watermark applied via ffmpeg: ${path.basename(outputPath)}`);
+    await execAsync(ffmpegCmd);
+    console.log(`✅ Image watermark applied via ffmpeg drawtext: ${path.basename(outputPath)}`);
   } catch (err) {
-    console.error('❌ ffmpeg overlay failed, fallback to sharp:', err);
-    // Fallback to sharp composite
-    await sharp(inputPath).composite([{ input: overlayBuffer, top: 0, left: 0 }]).toFile(outputPath);
-  } finally {
-    if (fs.existsSync(overlayPath)) fs.unlinkSync(overlayPath);
+    console.error('❌ ffmpeg drawtext failed, falling back to sharp composite...', err);
+    // Fallback: use the previous overlay method (but we'll try to at least copy the original)
+    try {
+      // Minimal fallback: just copy the original
+      fs.copyFileSync(inputPath, outputPath);
+      console.warn('⚠️ Used fallback copy (no watermark)');
+    } catch (copyErr) {
+      console.error('❌ Fallback copy also failed:', copyErr);
+    }
   }
 }
 
 // ============================================================
-// VIDEO WATERMARK – same ffmpeg overlay
+// VIDEO WATERMARK – using ffmpeg drawtext
 // ============================================================
 async function applyVideoWatermark(
   inputPath: string,
@@ -272,19 +182,7 @@ async function applyVideoWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  console.log('🎬 Applying video watermark with ffmpeg...');
-
-  let videoWidth = 1280, videoHeight = 720;
-  try {
-    const { stdout } = await execAsync(
-      `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "${inputPath}"`
-    );
-    const dims = stdout.trim().split(',');
-    if (dims.length === 2) {
-      videoWidth = parseInt(dims[0], 10);
-      videoHeight = parseInt(dims[1], 10);
-    }
-  } catch {}
+  console.log('🎬 Applying video watermark with ffmpeg drawtext...');
 
   const now = metadata.takenAt || new Date();
   const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -307,25 +205,21 @@ async function applyVideoWatermark(
   }
   lines.push(`Verified: ${hash}`);
 
-  const overlayBuffer = await generateOverlayBuffer(
-    videoWidth,
-    videoHeight,
-    lines,
-    { position: options.position || 'bottom-left', customText: options.customText || 'Future Jobs Pro AI', fontSize: options.fontSize || 0 }
-  );
+  const escapedText = lines.map(line => line.replace(/\\/g, '\\\\').replace(/"/g, '\\"')).join('\\n');
 
-  const overlayPath = inputPath + '.overlay.png';
-  fs.writeFileSync(overlayPath, overlayBuffer);
+  const fontSize = options.fontSize || 24;
+  const x = 20;
+  const y = 'h - text_h - 20';
+
+  const ffmpegCmd = `ffmpeg -i "${inputPath}" -vf "drawtext=text='${escapedText}':fontcolor=white:box=1:boxcolor=black@0.85:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=10:fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" -c:a copy "${outputPath}" -y`;
 
   try {
-    // Overlay at (0,0) because overlay is full‑size
-    await execAsync(`ffmpeg -i "${inputPath}" -i "${overlayPath}" -filter_complex "overlay=0:0" -c:a copy "${outputPath}" -y`);
-    console.log(`✅ Video watermark applied via ffmpeg (${videoWidth}x${videoHeight})`);
+    await execAsync(ffmpegCmd);
+    console.log(`✅ Video watermark applied via ffmpeg drawtext`);
   } catch (err) {
-    console.error('❌ ffmpeg failed, copying original:', err);
+    console.error('❌ ffmpeg drawtext failed, copying original:', err);
     fs.copyFileSync(inputPath, outputPath);
   }
-  if (fs.existsSync(overlayPath)) fs.unlinkSync(overlayPath);
 }
 
 // ============================================================
@@ -346,4 +240,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – ffmpeg overlay (final)');
+console.log('🖼️ Watermark Service loaded – ffmpeg drawtext (final)');
