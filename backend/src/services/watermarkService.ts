@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Canvas overlay (no shadows, simplified metrics)
+// Canvas overlay with debug upload + forced opaque composite
 // ============================================================
 
 import sharp from 'sharp';
@@ -9,10 +9,18 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
+import { v2 as cloudinary } from 'cloudinary';
 const canvas = require('canvas');
 const { createCanvas } = canvas;
 
 const execAsync = promisify(exec);
+
+// Configure Cloudinary for debug uploads
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 export interface WatermarkOptions {
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
@@ -107,7 +115,7 @@ export async function applyWatermark(
 }
 
 // ============================================================
-// Canvas overlay generator (simplified – no shadows)
+// Canvas overlay generator (with debug upload)
 // ============================================================
 async function generateOverlayBuffer(
   width: number,
@@ -137,7 +145,7 @@ async function generateOverlayBuffer(
     ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
     const metrics = ctx.measureText(lines[i]);
     const textWidth = metrics.width;
-    const textHeight = fontSize * 1.2; // approximate
+    const textHeight = fontSize * 1.2;
     maxWidth = Math.max(maxWidth, textWidth);
     lineHeights.push(textHeight);
     lineFontSizes.push(fontSize);
@@ -163,8 +171,12 @@ async function generateOverlayBuffer(
     boxY = (height - boxHeight) / 2;
   }
 
-  // Draw background box
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+  // Start with transparent canvas
+  ctx.clearRect(0, 0, width, height);
+
+  // Draw background box with full opacity, then reduce overall opacity using globalAlpha
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = 'black';
   const radius = 12;
   ctx.beginPath();
   ctx.moveTo(boxX + radius, boxY);
@@ -174,13 +186,14 @@ async function generateOverlayBuffer(
   ctx.arcTo(boxX, boxY, boxX + boxWidth, boxY, radius);
   ctx.closePath();
   ctx.fill();
+  ctx.globalAlpha = 1.0; // reset for text
 
-  // Border
+  // Draw border (fully opaque)
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // Draw text – left aligned, top baseline to avoid miscalculations
+  // Draw text – fully opaque white
   let currentY = boxY + padding;
   for (let i = 0; i < lines.length; i++) {
     const isBold = i === 0;
@@ -188,20 +201,31 @@ async function generateOverlayBuffer(
     ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#FFFFFF';
-    // Use the left padding, no centering to simplify
+    ctx.fillStyle = 'white';
     const xPos = boxX + padding;
     const yPos = currentY;
     ctx.fillText(lines[i], xPos, yPos);
     currentY += lineHeights[i] * lineSpacing;
   }
 
-  // Return PNG buffer
-  return canvasObj.toBuffer('image/png');
+  const buffer = canvasObj.toBuffer('image/png');
+
+  // DEBUG: Upload overlay to Cloudinary so we can view it
+  try {
+    const uploadResult = await cloudinary.uploader.upload(
+      `data:image/png;base64,${buffer.toString('base64')}`,
+      { folder: 'debug/watermark_overlay', public_id: `overlay-${Date.now()}` }
+    );
+    console.log(`🔍 Debug overlay uploaded: ${uploadResult.secure_url}`);
+  } catch (err) {
+    console.warn('⚠️ Could not upload debug overlay:', err);
+  }
+
+  return buffer;
 }
 
 // ============================================================
-// IMAGE WATERMARK
+// IMAGE WATERMARK – using sharp composite with overlay
 // ============================================================
 async function applyImageWatermark(
   inputPath: string,
@@ -241,19 +265,16 @@ async function applyImageWatermark(
     { position: options.position || 'bottom-left', customText: options.customText || 'Future Jobs Pro AI', fontSize: options.fontSize || 0 }
   );
 
-  // Verify the overlay buffer is valid by checking its dimensions with sharp
-  const overlaySharp = sharp(overlayBuffer);
-  const meta = await overlaySharp.metadata().catch(() => null);
-  if (!meta) {
-    console.error('❌ Generated overlay is not a valid image – falling back to copy');
-    fs.copyFileSync(inputPath, outputPath);
-    return;
-  }
-
-  console.log(`📐 Overlay dimensions: ${meta.width}x${meta.height}, original: ${width}x${height}`);
-
+  // Composite with explicit blend and no alpha issues
   await sharp(inputPath)
-    .composite([{ input: overlayBuffer, top: 0, left: 0, blend: 'over' }])
+    .composite([
+      {
+        input: overlayBuffer,
+        top: 0,
+        left: 0,
+        blend: 'over',
+      },
+    ])
     .toFile(outputPath);
 
   console.log(`✅ Image watermark applied (canvas): ${path.basename(outputPath)}`);
@@ -314,18 +335,6 @@ async function applyVideoWatermark(
   const pngPath = inputPath + '.watermark.png';
   fs.writeFileSync(pngPath, overlayBuffer);
 
-  // Verify overlay
-  const overlaySharp = sharp(overlayBuffer);
-  const meta = await overlaySharp.metadata().catch(() => null);
-  if (!meta) {
-    console.error('❌ Generated overlay is invalid – copying original');
-    fs.copyFileSync(inputPath, outputPath);
-    if (fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
-    return;
-  }
-  console.log(`📐 Video overlay: ${meta.width}x${meta.height}`);
-
-  // Overlay at (0,0) because the overlay is full-size
   try {
     await execAsync(`ffmpeg -i "${inputPath}" -i "${pngPath}" -filter_complex "overlay=0:0" -c:a copy "${outputPath}" -y`);
     console.log(`✅ Video watermark applied (${videoWidth}x${videoHeight})`);
@@ -354,4 +363,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – canvas simplified (no shadows, left aligned)');
+console.log('🖼️ Watermark Service loaded – canvas with debug upload and composite fix');
