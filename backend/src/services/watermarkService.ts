@@ -1,6 +1,6 @@
 // ============================================================
 // WATERMARK SERVICE – Future Jobs Pro AI
-// Uses node-canvas with explicit font and debug logs
+// Canvas overlay (no shadows, simplified metrics)
 // ============================================================
 
 import sharp from 'sharp';
@@ -9,7 +9,8 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
-import { createCanvas } from 'canvas';
+const canvas = require('canvas');
+const { createCanvas } = canvas;
 
 const execAsync = promisify(exec);
 
@@ -106,7 +107,7 @@ export async function applyWatermark(
 }
 
 // ============================================================
-// Canvas overlay generator with debug logs
+// Canvas overlay generator (simplified – no shadows)
 // ============================================================
 async function generateOverlayBuffer(
   width: number,
@@ -114,25 +115,21 @@ async function generateOverlayBuffer(
   lines: string[],
   options: { position: string; customText: string; fontSize: number }
 ): Promise<Buffer> {
-  console.log(`📐 Generating overlay for ${width}x${height} with ${lines.length} lines`);
+  const canvasObj = createCanvas(width, height);
+  const ctx = canvasObj.getContext('2d');
 
-  const canvas = createCanvas(width, height);
-  const ctx = canvas.getContext('2d');
-
-  // Sizes
+  // Font sizes
   const baseSize = options.fontSize || Math.round(width / 30);
   const lineSize = Math.round(baseSize * 0.75);
   const smallSize = Math.round(lineSize * 0.85);
 
-  // Measure each line to find max width and total height
   const lineSpacing = 1.5;
+  const fontFamily = 'Arial, sans-serif';
+
+  // Measure each line to get max width and total height
   let maxWidth = 0;
   const lineHeights: number[] = [];
   const lineFontSizes: number[] = [];
-
-  // Use a simple font that definitely exists
-  const fontFamily = 'Arial, sans-serif';
-
   for (let i = 0; i < lines.length; i++) {
     const isBold = i === 0;
     const isHash = lines[i].startsWith('Verified:');
@@ -140,14 +137,13 @@ async function generateOverlayBuffer(
     ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
     const metrics = ctx.measureText(lines[i]);
     const textWidth = metrics.width;
-    const textHeight = fontSize * 1.2; // approximate line height
+    const textHeight = fontSize * 1.2; // approximate
     maxWidth = Math.max(maxWidth, textWidth);
     lineHeights.push(textHeight);
     lineFontSizes.push(fontSize);
   }
 
-  const totalHeight = lineHeights.reduce((sum, h, i) => sum + h * lineSpacing, 0);
-
+  const totalHeight = lineHeights.reduce((sum, h) => sum + h * lineSpacing, 0);
   const padding = 18;
   const boxWidth = maxWidth + padding * 2;
   const boxHeight = totalHeight + padding * 2;
@@ -167,60 +163,41 @@ async function generateOverlayBuffer(
     boxY = (height - boxHeight) / 2;
   }
 
-  console.log(`📦 Box at (${boxX}, ${boxY}) size ${boxWidth}x${boxHeight}`);
-
-  // 1. Draw semi‑transparent background
+  // Draw background box
   ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
   const radius = 12;
   ctx.beginPath();
   ctx.moveTo(boxX + radius, boxY);
-  ctx.lineTo(boxX + boxWidth - radius, boxY);
-  ctx.quadraticCurveTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + radius);
-  ctx.lineTo(boxX + boxWidth, boxY + boxHeight - radius);
-  ctx.quadraticCurveTo(boxX + boxWidth, boxY + boxHeight, boxX + boxWidth - radius, boxY + boxHeight);
-  ctx.lineTo(boxX + radius, boxY + boxHeight);
-  ctx.quadraticCurveTo(boxX, boxY + boxHeight, boxX, boxY + boxHeight - radius);
-  ctx.lineTo(boxX, boxY + radius);
-  ctx.quadraticCurveTo(boxX, boxY, boxX + radius, boxY);
+  ctx.arcTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + boxHeight, radius);
+  ctx.arcTo(boxX + boxWidth, boxY + boxHeight, boxX, boxY + boxHeight, radius);
+  ctx.arcTo(boxX, boxY + boxHeight, boxX, boxY, radius);
+  ctx.arcTo(boxX, boxY, boxX + boxWidth, boxY, radius);
   ctx.closePath();
   ctx.fill();
 
-  // 2. Draw border
+  // Border
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // 3. Draw each line
-  let currentY = boxY + padding + lineHeights[0];
+  // Draw text – left aligned, top baseline to avoid miscalculations
+  let currentY = boxY + padding;
   for (let i = 0; i < lines.length; i++) {
     const isBold = i === 0;
     const fontSize = lineFontSizes[i];
     ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSize}px ${fontFamily}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
     ctx.fillStyle = '#FFFFFF';
-    const textWidth = ctx.measureText(lines[i]).width;
-    const xPos = boxX + boxWidth / 2;
+    // Use the left padding, no centering to simplify
+    const xPos = boxX + padding;
     const yPos = currentY;
-
-    console.log(`📝 Line ${i+1}: "${lines[i]}" at (${xPos}, ${yPos}) size ${fontSize}px`);
-
-    // Shadow for readability
-    ctx.shadowColor = 'rgba(0,0,0,0.8)';
-    ctx.shadowBlur = 4;
     ctx.fillText(lines[i], xPos, yPos);
-    ctx.shadowBlur = 0;
-
     currentY += lineHeights[i] * lineSpacing;
   }
 
-  // Write overlay to temp file for debugging (optional)
-  const debugPath = '/tmp/watermark_overlay.png';
-  const buffer = canvas.toBuffer('image/png');
-  fs.writeFileSync(debugPath, buffer);
-  console.log(`🔍 Overlay saved to ${debugPath} for inspection`);
-
-  return buffer;
+  // Return PNG buffer
+  return canvasObj.toBuffer('image/png');
 }
 
 // ============================================================
@@ -264,8 +241,19 @@ async function applyImageWatermark(
     { position: options.position || 'bottom-left', customText: options.customText || 'Future Jobs Pro AI', fontSize: options.fontSize || 0 }
   );
 
+  // Verify the overlay buffer is valid by checking its dimensions with sharp
+  const overlaySharp = sharp(overlayBuffer);
+  const meta = await overlaySharp.metadata().catch(() => null);
+  if (!meta) {
+    console.error('❌ Generated overlay is not a valid image – falling back to copy');
+    fs.copyFileSync(inputPath, outputPath);
+    return;
+  }
+
+  console.log(`📐 Overlay dimensions: ${meta.width}x${meta.height}, original: ${width}x${height}`);
+
   await sharp(inputPath)
-    .composite([{ input: overlayBuffer, top: 0, left: 0 }])
+    .composite([{ input: overlayBuffer, top: 0, left: 0, blend: 'over' }])
     .toFile(outputPath);
 
   console.log(`✅ Image watermark applied (canvas): ${path.basename(outputPath)}`);
@@ -326,6 +314,18 @@ async function applyVideoWatermark(
   const pngPath = inputPath + '.watermark.png';
   fs.writeFileSync(pngPath, overlayBuffer);
 
+  // Verify overlay
+  const overlaySharp = sharp(overlayBuffer);
+  const meta = await overlaySharp.metadata().catch(() => null);
+  if (!meta) {
+    console.error('❌ Generated overlay is invalid – copying original');
+    fs.copyFileSync(inputPath, outputPath);
+    if (fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
+    return;
+  }
+  console.log(`📐 Video overlay: ${meta.width}x${meta.height}`);
+
+  // Overlay at (0,0) because the overlay is full-size
   try {
     await execAsync(`ffmpeg -i "${inputPath}" -i "${pngPath}" -filter_complex "overlay=0:0" -c:a copy "${outputPath}" -y`);
     console.log(`✅ Video watermark applied (${videoWidth}x${videoHeight})`);
@@ -354,4 +354,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – canvas with debug logs');
+console.log('🖼️ Watermark Service loaded – canvas simplified (no shadows, left aligned)');
