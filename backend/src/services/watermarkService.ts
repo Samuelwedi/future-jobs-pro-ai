@@ -1,6 +1,5 @@
 // ============================================================
-// WATERMARK SERVICE – Future Jobs Pro AI (stable version)
-// Uses ffmpeg drawtext with text file – reliable
+// WATERMARK SERVICE – with video re‑encode to H.264
 // ============================================================
 
 import * as fs from 'fs';
@@ -116,7 +115,8 @@ export async function applyWatermark(
     await applyImageWatermark(inputPath, outputPath, fullMeta, options, hash);
   }
 
-  console.log(`📦 Output file size: ${(fs.statSync(outputPath).size / 1024).toFixed(2)} KB`);
+  const stats = fs.statSync(outputPath);
+  console.log(`📦 Output file size: ${(stats.size / 1024).toFixed(2)} KB`);
   return { outputPath, verificationHash: hash };
 }
 
@@ -136,7 +136,9 @@ async function getDimensions(inputPath: string): Promise<{ width: number; height
       if (dims.length === 2) {
         return { width: parseInt(dims[0], 10), height: parseInt(dims[1], 10) };
       }
-    } catch {}
+    } catch (e) {
+      console.warn('⚠️ ffprobe failed, using default 1280x720');
+    }
     return { width: 1280, height: 720 };
   } else {
     const img = sharp(inputPath);
@@ -146,57 +148,14 @@ async function getDimensions(inputPath: string): Promise<{ width: number; height
 }
 
 // ============================================================
-// Build ffmpeg drawtext command using text file
-// ============================================================
-async function buildDrawtextCommand(
-  inputPath: string,
-  outputPath: string,
-  lines: string[],
-  options: WatermarkOptions,
-  width: number,
-  height: number
-): Promise<string> {
-  const fontSize = options.fontSize || Math.round(width / 35);
-  const lineSpacing = Math.round(fontSize * 0.4);
-
-  const text = lines.join('\n');
-  const textFile = inputPath + '.text.txt';
-  fs.writeFileSync(textFile, text, 'utf-8');
-  console.log(`📝 Text file created at ${textFile} with ${lines.length} lines`);
-
-  const margin = 20;
-  const x = margin;
-  const y = `h - (text_h + ${margin})`;
-
-  const ffmpegCmd =
-    `ffmpeg -i "${inputPath}" ` +
-    `-vf "drawtext=textfile='${textFile}':` +
-    `fontcolor=white:` +
-    `box=1:` +
-    `boxcolor=black@0.8:` +
-    `boxborderw=12:` +
-    `fontsize=${fontSize}:` +
-    `x=${x}:` +
-    `y=${y}:` +
-    `line_spacing=${lineSpacing}" ` +
-    (path.extname(inputPath).toLowerCase() === '.mp4' ? '-c:a copy ' : '-frames:v 1 ') +
-    `"${outputPath}" -y`;
-
-  console.log(`🎬 ffmpeg command: ${ffmpegCmd.substring(0, 200)}...`);
-  return ffmpegCmd;
-}
-
-// ============================================================
-// Build text lines (no emoji – plain labels)
+// Build text lines (plain labels)
 // ============================================================
 function buildTextLines(metadata: any, options: WatermarkOptions, hash: string): string[] {
   const now = metadata.takenAt || new Date();
   const formattedTime = formatLocalTime(now);
-
   const company = options.customText || 'Future Jobs Pro AI';
   const lines: string[] = [company, formattedTime];
 
-  // Address
   if (metadata.address && metadata.address !== 'No location') {
     const addr = metadata.address;
     if (addr.length > 40) {
@@ -216,14 +175,12 @@ function buildTextLines(metadata: any, options: WatermarkOptions, hash: string):
     }
   }
 
-  // Weather
   if (metadata.weather && metadata.weather !== 'Weather unavailable') {
     lines.push(`Weather: ${metadata.weather}`);
   } else {
     lines.push('Weather: Not available');
   }
 
-  // GPS
   if (metadata.latitude && metadata.longitude) {
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
@@ -231,14 +188,58 @@ function buildTextLines(metadata: any, options: WatermarkOptions, hash: string):
     lines.push(gps);
   }
 
-  // Verified
   lines.push(`Verified: ${hash}`);
-
   return lines;
 }
 
 // ============================================================
-// Apply watermark (image)
+// BUILD FFMPEG COMMAND – with re‑encode to H.264/AAC
+// ============================================================
+async function buildDrawtextCommand(
+  inputPath: string,
+  outputPath: string,
+  lines: string[],
+  options: WatermarkOptions,
+  width: number,
+  height: number,
+  isVideo: boolean
+): Promise<string> {
+  const fontSize = options.fontSize || Math.round(width / 35);
+  const lineSpacing = Math.round(fontSize * 0.4);
+
+  const text = lines.join('\n');
+  const textFile = inputPath + '.text.txt';
+  fs.writeFileSync(textFile, text, 'utf-8');
+
+  const margin = 20;
+  const x = margin;
+  const y = `h - (text_h + ${margin})`;
+
+  let cmd =
+    `ffmpeg -i "${inputPath}" ` +
+    `-vf "drawtext=textfile='${textFile}':` +
+    `fontcolor=white:` +
+    `box=1:` +
+    `boxcolor=black@0.8:` +
+    `boxborderw=12:` +
+    `fontsize=${fontSize}:` +
+    `x=${x}:` +
+    `y=${y}:` +
+    `line_spacing=${lineSpacing}" `;
+
+  if (isVideo) {
+    // RE‑ENCODE to H.264/AAC for broad compatibility
+    cmd += `-c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart `;
+  } else {
+    cmd += `-frames:v 1 `;
+  }
+  cmd += `"${outputPath}" -y`;
+
+  return cmd;
+}
+
+// ============================================================
+// IMAGE WATERMARK
 // ============================================================
 async function applyImageWatermark(
   inputPath: string,
@@ -249,18 +250,15 @@ async function applyImageWatermark(
 ): Promise<void> {
   console.log('🖼️ Applying image watermark...');
   const dims = await getDimensions(inputPath);
-  console.log(`📐 Image dimensions: ${dims.width}x${dims.height}`);
-
   const lines = buildTextLines(metadata, options, hash);
-  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
+  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height, false);
 
   const textFile = inputPath + '.text.txt';
   try {
-    console.log('🎬 Running ffmpeg drawtext...');
     await execAsync(cmd);
     console.log(`✅ Image watermark applied: ${path.basename(outputPath)}`);
   } catch (err) {
-    console.error('❌ ffmpeg drawtext failed, copying original:', err);
+    console.error('❌ ffmpeg failed for image, copying original:', err);
     fs.copyFileSync(inputPath, outputPath);
   } finally {
     if (fs.existsSync(textFile)) fs.unlinkSync(textFile);
@@ -268,7 +266,7 @@ async function applyImageWatermark(
 }
 
 // ============================================================
-// Apply watermark (video)
+// VIDEO WATERMARK – with re‑encode and fallback
 // ============================================================
 async function applyVideoWatermark(
   inputPath: string,
@@ -277,19 +275,34 @@ async function applyVideoWatermark(
   options: WatermarkOptions,
   hash: string
 ): Promise<void> {
-  console.log('🎬 Applying video watermark...');
-  const dims = await getDimensions(inputPath);
-  console.log(`📐 Video dimensions: ${dims.width}x${dims.height}`);
+  console.log('🎬 Applying video watermark with re‑encode...');
+  const inputStats = fs.statSync(inputPath);
+  console.log(`📥 Input video size: ${(inputStats.size / 1024).toFixed(2)} KB`);
 
+  const dims = await getDimensions(inputPath);
   const lines = buildTextLines(metadata, options, hash);
-  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height);
+  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height, true);
 
   const textFile = inputPath + '.text.txt';
   try {
+    console.log('🎬 Running ffmpeg with H.264/AAC re‑encode...');
     await execAsync(cmd);
-    console.log(`✅ Video watermark applied`);
-  } catch (err) {
-    console.error('❌ ffmpeg drawtext failed, copying original:', err);
+
+    if (fs.existsSync(outputPath)) {
+      const outStats = fs.statSync(outputPath);
+      if (outStats.size < 5000) {
+        console.warn(`⚠️ Output video too small (${outStats.size} bytes). Falling back to original.`);
+        fs.copyFileSync(inputPath, outputPath);
+      } else {
+        console.log(`✅ Video watermarked and re‑encoded: ${(outStats.size / 1024).toFixed(2)} KB`);
+      }
+    } else {
+      console.error('❌ Output file missing, copying original.');
+      fs.copyFileSync(inputPath, outputPath);
+    }
+  } catch (err: any) {
+    console.error('❌ ffmpeg failed for video:', err.message);
+    console.log('🔄 Falling back to original video (no watermark).');
     fs.copyFileSync(inputPath, outputPath);
   } finally {
     if (fs.existsSync(textFile)) fs.unlinkSync(textFile);
@@ -314,4 +327,4 @@ export async function generateWatermarkedPDFReport(
   return new Promise((resolve) => { stream.on('finish', () => resolve(outputPath)); });
 }
 
-console.log('🖼️ Watermark Service loaded – stable version with plain labels');
+console.log('🖼️ Watermark Service loaded – video re‑encode to H.264/AAC');
