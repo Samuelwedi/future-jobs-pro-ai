@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
   ActivityIndicator, Platform,
 } from 'react-native';
-import { CameraView as ExpoCamera, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -39,12 +39,9 @@ export default function CameraView() {
   const projectId: string = route?.params?.projectId || '';
   const timeEntryId: string = route?.params?.timeEntryId || '';
 
-  const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef<ExpoCamera>(null);
-  const [isCameraReady, setIsCameraReady] = useState(false);
-  const [isVideoReady, setIsVideoReady] = useState(false);
-  const [isTakingPicture, setIsTakingPicture] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+  const [hasAudioPermission, setHasAudioPermission] = useState<boolean | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [mode, setMode] = useState<'photo' | 'video'>('photo');
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
   const [address, setAddress] = useState<string | null>(null);
@@ -57,27 +54,19 @@ export default function CameraView() {
 
   useEffect(() => {
     isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-      if (isRecording && cameraRef.current) {
-        cameraRef.current.stopRecording();
-      }
-    };
+    return () => { isMounted.current = false; };
   }, []);
 
   useEffect(() => {
     (async () => {
-      if (!permission?.granted) requestPermission();
+      // Request camera permission
+      const { status: camStatus } = await ImagePicker.requestCameraPermissionsAsync();
+      setHasCameraPermission(camStatus === 'granted');
 
+      // Request microphone permission (only needed for video)
       if (Platform.OS !== 'web') {
-        try {
-          const { status: audioStatus } = await Audio.requestPermissionsAsync();
-          if (audioStatus !== 'granted') {
-            console.warn('Microphone permission denied – video will have no audio');
-          }
-        } catch (e) {
-          console.warn('Audio permission request failed:', e);
-        }
+        const { status: audioStatus } = await Audio.requestPermissionsAsync();
+        setHasAudioPermission(audioStatus === 'granted');
       }
 
       fetchLocation();
@@ -148,7 +137,7 @@ export default function CameraView() {
   }
 
   const uploadFile = async (uri: string, isVideo: boolean = false) => {
-    setIsTakingPicture(true);
+    setIsProcessing(true);
     try {
       const loc = await ensureLocation();
 
@@ -211,103 +200,66 @@ export default function CameraView() {
     } catch (error: any) {
       Alert.alert('Upload Failed', error.message || 'Could not upload. Please check your connection.');
     } finally {
-      if (isMounted.current) setIsTakingPicture(false);
+      if (isMounted.current) setIsProcessing(false);
     }
   };
 
-  const takePhoto = async () => {
-    if (!isCameraReady || !cameraRef.current || isTakingPicture || isRecording) {
-      Alert.alert('Camera not ready', 'Please wait for camera to initialize');
-      return;
+  const launchNativeCamera = async () => {
+    if (hasCameraPermission === false) {
+      Alert.alert('Permission required', 'Please grant camera permission.');
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      setHasCameraPermission(status === 'granted');
+      if (status !== 'granted') return;
     }
+
+    // For video, check audio permission
+    if (mode === 'video' && hasAudioPermission === false) {
+      const { status } = await Audio.requestPermissionsAsync();
+      setHasAudioPermission(status === 'granted');
+      if (status !== 'granted') {
+        Alert.alert('Audio required', 'Microphone permission is needed for video recording.');
+        return;
+      }
+    }
+
+    setIsProcessing(true);
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 1, exif: true });
-      await uploadFile(photo.uri, false);
-    } catch (error: any) {
-      Alert.alert('Error', 'Failed to take photo');
-    }
-  };
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: mode === 'photo' 
+          ? ImagePicker.MediaTypeOptions.Images 
+          : ImagePicker.MediaTypeOptions.Videos,
+        allowsEditing: false,
+        quality: 0.9,
+        videoMaxDuration: 1800, // 30 minutes max
+        videoQuality: ImagePicker.UIImagePickerControllerQualityType.High,
+      });
 
-  const startRecording = async () => {
-    // 1. Guard: camera must be ready
-    if (!isCameraReady || !isVideoReady || !cameraRef.current || isRecording || isTakingPicture) {
-      Alert.alert('Camera not ready', 'Please wait a moment and try again.');
-      return;
-    }
-
-    // 2. Immediately set video ready flag to false to prevent double‑tap
-    setIsVideoReady(false);
-
-    // 3. Wait an extra 500ms to ensure camera is fully settled
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    setIsRecording(true);
-    try {
-      await ensureLocation();
-
-      console.log('🎬 Starting video recording...');
-
-      const video = await cameraRef.current.recordAsync({
-        maxDuration: 1800,
-        quality: '1080p' as any,
-        mute: muteAudio,
-      } as any);
-
-      console.log('✅ Recording finished, file:', video?.uri);
-      if (video) {
-        await uploadFile(video.uri, true);
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const isVideo = asset.type === 'video';
+        await uploadFile(asset.uri, isVideo);
       } else {
-        Alert.alert('Error', 'Recording failed – no video data');
+        // User cancelled – do nothing
+        if (isMounted.current) setIsProcessing(false);
       }
     } catch (error: any) {
-      console.error('Recording error:', error);
-      if (error.message?.includes('Camera is not ready') || error.message?.includes('Camera is busy')) {
-        Alert.alert('Camera Busy', 'Please wait a moment and try again.');
-        // Reset readiness flags and re‑enable after a delay
-        setIsCameraReady(false);
-        setTimeout(() => {
-          if (isMounted.current) {
-            setIsCameraReady(true);
-            setTimeout(() => {
-              if (isMounted.current) setIsVideoReady(true);
-            }, 1500);
-          }
-        }, 1000);
-      } else {
-        Alert.alert('Recording Error', error.message || 'Failed to record video. Please try again.');
-      }
+      Alert.alert('Error', error.message || 'Failed to launch camera.');
+      if (isMounted.current) setIsProcessing(false);
     } finally {
-      if (isMounted.current) {
-        setIsRecording(false);
-        // Re‑enable video ready after a delay (for the next recording)
-        setTimeout(() => {
-          if (isMounted.current) setIsVideoReady(true);
-        }, 1000);
-      }
+      // We'll set isProcessing false inside uploadFile or here if cancelled
+      if (!isMounted.current) return;
+      // If the upload hasn't started, reset processing flag
+      // But uploadFile will set it false on completion.
     }
   };
 
-  const stopRecording = () => {
-    if (cameraRef.current && isRecording) {
-      cameraRef.current.stopRecording();
-      setIsRecording(false);
-    }
-  };
-
-  if (!permission) {
+  if (hasCameraPermission === null) {
     return (
       <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /></View>
     );
   }
-  if (!permission.granted) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>Camera permission denied</Text>
-        <TouchableOpacity style={styles.backButton} onPress={goBack}><Text style={styles.backButtonText}>Go Back</Text></TouchableOpacity>
-      </View>
-    );
-  }
 
+  // Build preview text (metadata that will be added to the watermark)
   const now = new Date();
   const previewLines: string[] = [];
   previewLines.push('📍 ' + (address || 'Getting location...'));
@@ -328,130 +280,105 @@ export default function CameraView() {
 
   return (
     <View style={styles.container}>
-      <ExpoCamera
-        ref={cameraRef}
-        style={styles.camera}
-        facing="back"
-        onCameraReady={() => {
-          console.log('📸 Camera ready');
-          setIsCameraReady(true);
-          // Video needs extra time to become ready – increased to 1500ms
-          setTimeout(() => {
-            if (isMounted.current) {
-              setIsVideoReady(true);
-              console.log('🎥 Video recording ready');
-            }
-          }, 1500);
-        }}
-        onMountError={(error) => {
-          console.error('Camera mount error:', error);
-          Alert.alert('Camera Error', 'Failed to mount camera. Please restart the app.');
-        }}
-      />
-
-      <TouchableOpacity style={styles.backArrow} onPress={goBack}>
-        <Ionicons name="arrow-back" size={28} color="#FFF" />
-      </TouchableOpacity>
-
-      <View style={styles.modeToggle}>
-        <TouchableOpacity
-          style={[styles.modeBtn, mode === 'photo' && styles.modeBtnActive]}
-          onPress={() => setMode('photo')}
-        >
-          <Text style={[styles.modeText, mode === 'photo' && styles.modeTextActive]}>📸 Photo</Text>
+      <View style={styles.previewArea}>
+        <TouchableOpacity style={styles.backArrow} onPress={goBack}>
+          <Ionicons name="arrow-back" size={28} color="#FFF" />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.modeBtn, mode === 'video' && styles.modeBtnActive]}
-          onPress={() => setMode('video')}
-        >
-          <Text style={[styles.modeText, mode === 'video' && styles.modeTextActive]}>🎬 Video</Text>
-        </TouchableOpacity>
-      </View>
 
-      <View style={styles.watermarkPreview}>
-        {previewLines.map((line, idx) => (
-          <Text key={idx} style={styles.watermarkPreviewText}>{line}</Text>
-        ))}
-      </View>
+        <View style={styles.modeToggle}>
+          <TouchableOpacity
+            style={[styles.modeBtn, mode === 'photo' && styles.modeBtnActive]}
+            onPress={() => setMode('photo')}
+          >
+            <Text style={[styles.modeText, mode === 'photo' && styles.modeTextActive]}>📸 Photo</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeBtn, mode === 'video' && styles.modeBtnActive]}
+            onPress={() => setMode('video')}
+          >
+            <Text style={[styles.modeText, mode === 'video' && styles.modeTextActive]}>🎬 Video</Text>
+          </TouchableOpacity>
+        </View>
 
-      <TouchableOpacity
-        style={styles.templateToggle}
-        onPress={() => setShowTemplatePicker(!showTemplatePicker)}
-      >
-        <MaterialIcons name="style" size={22} color="#FFF" />
-        <Text style={styles.templateToggleText}>
-          {TEMPLATES.find(t => t.id === watermarkTemplate)?.label || watermarkTemplate}
-        </Text>
-      </TouchableOpacity>
-
-      {showTemplatePicker && (
-        <View style={styles.templatePicker}>
-          <Text style={styles.pickerTitle}>Watermark Style</Text>
-          {TEMPLATES.map((t) => (
-            <TouchableOpacity
-              key={t.id}
-              style={[styles.templateOption, watermarkTemplate === t.id && styles.templateOptionSelected]}
-              onPress={() => {
-                setWatermarkTemplate(t.id);
-                setShowTemplatePicker(false);
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.templateOptionTitle, watermarkTemplate === t.id && styles.templateOptionTitleSelected]}>
-                  {t.label}
-                </Text>
-                <Text style={styles.templateOptionDesc}>{t.desc}</Text>
-              </View>
-              {watermarkTemplate === t.id && (
-                <MaterialIcons name="check-circle" size={22} color="#00D4FF" />
-              )}
-            </TouchableOpacity>
+        <View style={styles.watermarkPreview}>
+          {previewLines.map((line, idx) => (
+            <Text key={idx} style={styles.watermarkPreviewText}>{line}</Text>
           ))}
         </View>
-      )}
 
-      {lastScore !== null && (
-        <View style={[styles.scoreBadge, { backgroundColor: lastScore >= 70 ? '#4CAF50' : '#F44336' }]}>
-          <Text style={styles.scoreText}>{lastScore}/100</Text>
-        </View>
-      )}
-
-      {mode === 'video' && (
         <TouchableOpacity
-          style={styles.muteToggle}
-          onPress={() => setMuteAudio(!muteAudio)}
+          style={styles.templateToggle}
+          onPress={() => setShowTemplatePicker(!showTemplatePicker)}
         >
-          <MaterialIcons
-            name={muteAudio ? 'mic-off' : 'mic'}
-            size={24}
-            color="#FFF"
-          />
-          <Text style={styles.muteToggleText}>
-            {muteAudio ? 'Muted' : 'Audio'}
+          <MaterialIcons name="style" size={22} color="#FFF" />
+          <Text style={styles.templateToggleText}>
+            {TEMPLATES.find(t => t.id === watermarkTemplate)?.label || watermarkTemplate}
           </Text>
         </TouchableOpacity>
-      )}
 
-      <View style={styles.captureButtonContainer}>
-        {mode === 'video' ? (
+        {showTemplatePicker && (
+          <View style={styles.templatePicker}>
+            <Text style={styles.pickerTitle}>Watermark Style</Text>
+            {TEMPLATES.map((t) => (
+              <TouchableOpacity
+                key={t.id}
+                style={[styles.templateOption, watermarkTemplate === t.id && styles.templateOptionSelected]}
+                onPress={() => {
+                  setWatermarkTemplate(t.id);
+                  setShowTemplatePicker(false);
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.templateOptionTitle, watermarkTemplate === t.id && styles.templateOptionTitleSelected]}>
+                    {t.label}
+                  </Text>
+                  <Text style={styles.templateOptionDesc}>{t.desc}</Text>
+                </View>
+                {watermarkTemplate === t.id && (
+                  <MaterialIcons name="check-circle" size={22} color="#00D4FF" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
+        {lastScore !== null && (
+          <View style={[styles.scoreBadge, { backgroundColor: lastScore >= 70 ? '#4CAF50' : '#F44336' }]}>
+            <Text style={styles.scoreText}>{lastScore}/100</Text>
+          </View>
+        )}
+
+        {mode === 'video' && (
           <TouchableOpacity
-            style={[styles.captureButton, { backgroundColor: isRecording ? '#F44336' : '#FFFFFF' }]}
-            onPress={isRecording ? stopRecording : startRecording}
-            disabled={!isCameraReady || !isVideoReady || isTakingPicture}
+            style={styles.muteToggle}
+            onPress={() => setMuteAudio(!muteAudio)}
           >
-            <View style={[styles.captureInner, isRecording && styles.captureRecording]} />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.captureButton}
-            onPress={takePhoto}
-            disabled={!isCameraReady || isTakingPicture}
-          >
-            <View style={[styles.captureInner, isTakingPicture && styles.captureInnerDisabled]} />
+            <MaterialIcons
+              name={muteAudio ? 'mic-off' : 'mic'}
+              size={24}
+              color="#FFF"
+            />
+            <Text style={styles.muteToggleText}>
+              {muteAudio ? 'Muted' : 'Audio'}
+            </Text>
           </TouchableOpacity>
         )}
+      </View>
+
+      <View style={styles.captureButtonContainer}>
+        <TouchableOpacity
+          style={[styles.captureButton, isProcessing && styles.captureButtonDisabled]}
+          onPress={launchNativeCamera}
+          disabled={isProcessing}
+        >
+          {isProcessing ? (
+            <ActivityIndicator size="large" color="#0A0A0A" />
+          ) : (
+            <View style={styles.captureInner} />
+          )}
+        </TouchableOpacity>
         <Text style={styles.captureHint}>
-          {isRecording ? 'Tap to Stop' : mode === 'video' ? 'Tap to Record' : 'Tap to Capture'}
+          {isProcessing ? 'Processing...' : mode === 'video' ? 'Tap to Record (native app)' : 'Tap to Capture (native app)'}
         </Text>
       </View>
     </View>
@@ -459,31 +386,28 @@ export default function CameraView() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
+  container: { flex: 1, backgroundColor: '#0A0A0A' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
-  camera: { flex: 1 },
+  previewArea: {
+    flex: 1,
+    paddingTop: 60,
+    paddingHorizontal: 20,
+  },
   backArrow: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    zIndex: 10,
+    marginBottom: 20,
     padding: 8,
   },
   modeToggle: {
-    position: 'absolute',
-    top: 60,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 20,
-    zIndex: 10,
+    marginBottom: 20,
   },
   modeBtn: {
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   modeBtnActive: {
     backgroundColor: 'rgba(0,212,255,0.3)',
@@ -493,31 +417,28 @@ const styles = StyleSheet.create({
   modeText: { color: '#FFF', fontSize: 14, fontWeight: '500' },
   modeTextActive: { color: '#00D4FF' },
   watermarkPreview: {
-    position: 'absolute',
-    top: 120,
-    right: 20,
     backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 10,
-    maxWidth: '60%',
+    marginVertical: 16,
+    alignSelf: 'flex-start',
   },
   watermarkPreviewText: {
     color: '#FFF',
-    fontSize: 12,
-    textAlign: 'right',
-    lineHeight: 18,
+    fontSize: 13,
+    textAlign: 'left',
+    lineHeight: 20,
   },
   templateToggle: {
-    position: 'absolute',
-    top: 180,
-    left: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 25,
+    alignSelf: 'flex-start',
+    marginVertical: 8,
   },
   templateToggleText: {
     color: '#FFF',
@@ -526,13 +447,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   templatePicker: {
-    position: 'absolute',
-    top: 230,
-    left: 20,
     backgroundColor: 'rgba(20,20,20,0.95)',
     borderRadius: 14,
     padding: 12,
-    width: 240,
+    marginVertical: 8,
+    width: '100%',
     maxHeight: 300,
   },
   pickerTitle: { color: '#888', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', marginBottom: 10, marginLeft: 4 },
@@ -541,31 +460,62 @@ const styles = StyleSheet.create({
   templateOptionTitle: { color: '#FFF', fontSize: 15, fontWeight: '500' },
   templateOptionTitleSelected: { color: '#00D4FF', fontWeight: '700' },
   templateOptionDesc: { color: '#AAA', fontSize: 12, marginTop: 2 },
-  scoreBadge: { position: 'absolute', top: 120, left: 20, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  scoreBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginVertical: 8,
+  },
   scoreText: { color: '#FFF', fontWeight: 'bold', fontSize: 14 },
   muteToggle: {
-    position: 'absolute',
-    bottom: 160,
-    left: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     gap: 6,
+    alignSelf: 'flex-start',
+    marginVertical: 8,
   },
   muteToggleText: {
     color: '#FFF',
     fontSize: 13,
     fontWeight: '500',
   },
-  captureButtonContainer: { position: 'absolute', bottom: 50, left: 0, right: 0, alignItems: 'center' },
-  captureButton: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
-  captureInner: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#FFFFFF', borderWidth: 3, borderColor: '#0A0A0A' },
-  captureRecording: { backgroundColor: '#F44336', borderColor: '#F44336' },
-  captureInnerDisabled: { backgroundColor: '#AAA' },
-  captureHint: { color: '#FFF', fontSize: 13, opacity: 0.8 },
+  captureButtonContainer: {
+    position: 'absolute',
+    bottom: 50,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  captureButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  captureButtonDisabled: {
+    opacity: 0.6,
+  },
+  captureInner: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    borderColor: '#0A0A0A',
+  },
+  captureHint: {
+    color: '#FFF',
+    fontSize: 13,
+    opacity: 0.8,
+  },
   errorText: { color: '#FFF', fontSize: 18, marginBottom: 24, textAlign: 'center' },
   backButton: { backgroundColor: '#00D4FF', paddingHorizontal: 32, paddingVertical: 12, borderRadius: 8 },
   backButtonText: { color: '#0A0A0A', fontSize: 16, fontWeight: '600' },
