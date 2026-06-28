@@ -16,7 +16,7 @@ const getCompanyId = async (req: any): Promise<string | null> => {
   }
 };
 
-// GET /api/media/projects – list projects that have media
+// GET /api/media/projects
 router.get('/projects', async (req, res) => {
   try {
     const companyId = await getCompanyId(req);
@@ -43,7 +43,7 @@ router.get('/projects', async (req, res) => {
   }
 });
 
-// GET /api/media/project/:projectId/months – months with media
+// GET /api/media/project/:projectId/months
 router.get('/project/:projectId/months', async (req, res) => {
   try {
     const companyId = await getCompanyId(req);
@@ -52,7 +52,6 @@ router.get('/project/:projectId/months', async (req, res) => {
     }
     const { projectId } = req.params;
 
-    // Verify project belongs to company
     const projectCheck = await pool.query(
       'SELECT id FROM projects WHERE id = $1 AND company_id = $2',
       [projectId, companyId]
@@ -61,12 +60,13 @@ router.get('/project/:projectId/months', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
 
+    // Use COALESCE to fallback to created_at if taken_at is missing
     const result = await pool.query(`
-      SELECT DISTINCT TO_CHAR(taken_at, 'YYYY-MM') as month
+      SELECT DISTINCT TO_CHAR(COALESCE(taken_at, created_at), 'YYYY-MM') as month
       FROM (
-        SELECT taken_at FROM photos WHERE project_id = $1
+        SELECT taken_at, NULL as created_at FROM photos WHERE project_id = $1
         UNION
-        SELECT taken_at FROM voice_notes WHERE project_id = $1
+        SELECT NULL as taken_at, created_at FROM voice_notes WHERE project_id = $1
       ) media
       ORDER BY month DESC
     `, [projectId]);
@@ -78,7 +78,7 @@ router.get('/project/:projectId/months', async (req, res) => {
   }
 });
 
-// GET /api/media/project/:projectId/month/:yearMonth – all media for that month
+// GET /api/media/project/:projectId/month/:yearMonth
 router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
   try {
     const companyId = await getCompanyId(req);
@@ -87,7 +87,6 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
     }
     const { projectId, yearMonth } = req.params;
 
-    // Verify project belongs to company
     const projectCheck = await pool.query(
       'SELECT id FROM projects WHERE id = $1 AND company_id = $2',
       [projectId, companyId]
@@ -129,13 +128,13 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         'voice_note' as type,
         id,
         audio_url as url,
-        taken_at,
+        COALESCE(taken_at, created_at) as taken_at,
         metadata,
         NULL as verification_hash,
         transcript,
         duration_seconds as duration
       FROM voice_notes
-      WHERE project_id = $1 AND TO_CHAR(taken_at, 'YYYY-MM') = $2
+      WHERE project_id = $1 AND TO_CHAR(COALESCE(taken_at, created_at), 'YYYY-MM') = $2
 
       ORDER BY taken_at DESC
     `, [projectId, yearMonth]);

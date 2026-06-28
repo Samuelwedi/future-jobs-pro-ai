@@ -39,3 +39,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Stripe key files (one‑off scripts)
+backend/fix-*.js
+backend/*-stripe-*.js

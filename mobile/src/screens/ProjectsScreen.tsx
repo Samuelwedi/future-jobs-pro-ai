@@ -1,159 +1,120 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator,
-  RefreshControl, Modal, TextInput, Alert, Linking, Platform,
+  View, Text, StyleSheet, FlatList, TouchableOpacity,
+  Alert, ActivityIndicator, RefreshControl,
+  TextInput, Modal,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
-import * as DocumentPicker from 'expo-document-picker';
-
-interface Project {
-  id: string;
-  name: string;
-  client_name: string;
-  address: string;
-  status: string;
-  created_at: string;
-}
+import { useAuth } from '../context/AuthContext';
 
 export default function ProjectsScreen() {
+  const { user } = useAuth();
   const navigation = useNavigation<any>();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newClientName, setNewClientName] = useState('');
-  const [newAddress, setNewAddress] = useState('');
-  const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [editingProject, setEditingProject] = useState<any>(null);
+  const [projectName, setProjectName] = useState('');
+  const [clientName, setClientName] = useState('');
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
 
   const fetchProjects = async () => {
     try {
-      const response = await api.get<{ success: boolean; projects: Project[] }>('/projects/active');
-      setProjects(response.projects || []);
+      const res: any = await api.get('/projects');
+      setProjects(res.projects || []);
     } catch (error) {
-      console.error('Failed to load projects:', error);
+      console.error(error);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
       setRefreshing(false);
     }
   };
-
-  useEffect(() => { fetchProjects(); }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchProjects();
   };
 
-  const pickFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-      });
-      if (!result.canceled && result.assets && result.assets[0]) {
-        const file = result.assets[0];
-        setSelectedFile({ uri: file.uri, name: file.name, type: file.mimeType || 'application/octet-stream' });
-      }
-    } catch (err) {
-      console.error('File pick error:', err);
-      Alert.alert('Error', 'Could not select file');
-    }
-  };
-
-  const openMaps = (address: string) => {
-    if (!address) return;
-    const encoded = encodeURIComponent(address);
-    const url = Platform.OS === 'ios'
-      ? `http://maps.apple.com/?q=${encoded}`
-      : `https://www.google.com/maps/search/?api=1&query=${encoded}`;
-    Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open maps'));
-  };
-
-  const handleCreateProject = async () => {
-    if (!newName.trim()) {
+  const handleSaveProject = async () => {
+    if (!projectName.trim()) {
       Alert.alert('Error', 'Project name is required');
       return;
     }
-    setCreating(true);
     try {
-      const projectRes = await api.post<{ success: boolean; project: Project }>('/projects', {
-        name: newName.trim(),
-        client_name: newClientName.trim() || null,
-        address: newAddress.trim() || null,
-      });
-      console.log('Project creation response:', projectRes);
-      
-      if (!projectRes.success || !projectRes.project) {
-        throw new Error('Invalid response from server');
+      const payload = {
+        name: projectName.trim(),
+        client_name: clientName.trim() || null,
+        company_id: user?.companyId,
+      };
+      if (editingProject) {
+        await api.put(`/projects/${editingProject.id}`, payload);
+        Alert.alert('Success', 'Project updated');
+      } else {
+        await api.post('/projects', payload);
+        Alert.alert('Success', 'Project created');
       }
-      const projectId = projectRes.project.id;
-      if (!projectId) throw new Error('Project ID missing in response');
-      
-      if (selectedFile) {
-        const token = await api.getToken();
-        const formData = new FormData();
-        formData.append('file', {
-          uri: selectedFile.uri,
-          type: selectedFile.type,
-          name: selectedFile.name,
-        } as any);
-        await fetch(`https://future-jobs-pro-ai-production.up.railway.app/api/projects/${projectId}/attachments`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'multipart/form-data',
-          },
-          body: formData,
-        });
-      }
-      
-      Alert.alert('Success', 'Project created');
       setModalVisible(false);
-      setNewName('');
-      setNewClientName('');
-      setNewAddress('');
-      setSelectedFile(null);
+      setProjectName('');
+      setClientName('');
+      setEditingProject(null);
       fetchProjects();
     } catch (error: any) {
-      console.error('Create project error:', error);
-      Alert.alert('Error', error.message || 'Failed to create project');
-    } finally {
-      setCreating(false);
+      Alert.alert('Error', error.message || 'Failed to save project');
     }
   };
 
-  const renderProject = ({ item }: { item: Project }) => (
-    <TouchableOpacity
-      style={styles.projectCard}
-      onPress={() =>
-        navigation.navigate('ProjectAlbum', {
-          projectId: item.id,
-          projectName: item.name,
-        })
+  const handleDelete = (project: any) => {
+    Alert.alert('Delete Project', `Delete "${project.name}"?`, [
+      { text: 'Cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.delete(`/projects/${project.id}`);
+            Alert.alert('Deleted', 'Project removed');
+            fetchProjects();
+          } catch (err: any) {
+            Alert.alert('Error', err.message);
+          }
+        }
       }
-    >
-      <View style={styles.projectInfo}>
+    ]);
+  };
+
+  const openEditModal = (project: any) => {
+    setEditingProject(project);
+    setProjectName(project.name);
+    setClientName(project.client_name || '');
+    setModalVisible(true);
+  };
+
+  const renderProject = ({ item }: { item: any }) => (
+    <View style={styles.projectCard}>
+      <TouchableOpacity style={styles.projectInfo} onPress={() => navigation.navigate('ProjectAlbum', { projectId: item.id, projectName: item.name })}>
         <Text style={styles.projectName}>{item.name}</Text>
-        <Text style={styles.clientName}>{item.client_name}</Text>
-        <TouchableOpacity onPress={() => openMaps(item.address)} disabled={!item.address}>
-          <Text style={[styles.address, !item.address && styles.addressDisabled]}>
-            {item.address || 'No address'}
-          </Text>
+        {item.client_name && <Text style={styles.clientName}>{item.client_name}</Text>}
+        <Text style={styles.status}>{item.status || 'active'}</Text>
+      </TouchableOpacity>
+      <View style={styles.actions}>
+        <TouchableOpacity onPress={() => openEditModal(item)} style={styles.actionBtn}>
+          <MaterialIcons name="edit" size={22} color="#00D4FF" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => handleDelete(item)} style={styles.actionBtn}>
+          <MaterialIcons name="delete" size={22} color="#F44336" />
         </TouchableOpacity>
       </View>
-      <MaterialIcons name="chevron-right" size={24} color="#888" />
-    </TouchableOpacity>
+    </View>
   );
 
-  if (isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#00D4FF" />
-      </View>
-    );
+  if (loading) {
+    return <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /></View>;
   }
 
   return (
@@ -168,58 +129,42 @@ export default function ProjectsScreen() {
 
       <FlatList
         data={projects}
-        keyExtractor={(item) => item.id}
+        keyExtractor={item => item.id}
         renderItem={renderProject}
-        contentContainerStyle={styles.listContent}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />
-        }
-        ListEmptyComponent={<Text style={styles.emptyText}>No projects found</Text>}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
+        ListEmptyComponent={<Text style={styles.emptyText}>No projects yet. Tap + to create one.</Text>}
       />
 
-      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
+      <TouchableOpacity style={styles.fab} onPress={() => { setEditingProject(null); setProjectName(''); setClientName(''); setModalVisible(true); }}>
         <MaterialIcons name="add" size={28} color="#0A0A0A" />
       </TouchableOpacity>
 
+      {/* Modal for Create/Edit */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Create Project</Text>
+            <Text style={styles.modalTitle}>{editingProject ? 'Edit Project' : 'New Project'}</Text>
             <TextInput
               style={styles.input}
-              placeholder="Project Name *"
+              placeholder="Project Name"
               placeholderTextColor="#888"
-              value={newName}
-              onChangeText={setNewName}
+              value={projectName}
+              onChangeText={setProjectName}
             />
             <TextInput
               style={styles.input}
               placeholder="Client Name (optional)"
               placeholderTextColor="#888"
-              value={newClientName}
-              onChangeText={setNewClientName}
+              value={clientName}
+              onChangeText={setClientName}
             />
-            <TextInput
-              style={styles.input}
-              placeholder="Address (optional)"
-              placeholderTextColor="#888"
-              value={newAddress}
-              onChangeText={setNewAddress}
-            />
-            <TouchableOpacity style={styles.fileBtn} onPress={pickFile}>
-              <MaterialIcons name="attach-file" size={24} color="#00D4FF" />
-              <Text style={styles.fileBtnText}>{selectedFile ? selectedFile.name : 'Attach PDF/Word/Excel (optional)'}</Text>
-            </TouchableOpacity>
             <View style={styles.modalActions}>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.cancelBtn}>
-                <Text style={styles.cancelText}>Cancel</Text>
+              <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setModalVisible(false)}>
+                <Text style={styles.btnText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleCreateProject}
-                style={styles.submitBtn}
-                disabled={creating}
-              >
-                <Text style={styles.submitText}>{creating ? 'Creating...' : 'Create'}</Text>
+              <TouchableOpacity style={[styles.btn, styles.saveBtn]} onPress={handleSaveProject}>
+                <Text style={[styles.btnText, { color: '#0A0A0A' }]}>Save</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -232,33 +177,27 @@ export default function ProjectsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  headerTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold', marginLeft: 16 },
-  listContent: { paddingHorizontal: 20, paddingBottom: 80 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 60, paddingHorizontal: 20, paddingBottom: 20 },
+  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  list: { padding: 16 },
   projectCard: {
-    backgroundColor: '#1A1A1A',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: '#1A1A1A',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: '#333',
   },
   projectInfo: { flex: 1 },
   projectName: { color: '#FFF', fontSize: 16, fontWeight: '600' },
-  clientName: { color: '#888', fontSize: 14, marginTop: 4 },
-  address: { color: '#00D4FF', fontSize: 12, marginTop: 4, textDecorationLine: 'underline' },
-  addressDisabled: { color: '#888', textDecorationLine: 'none' },
-  emptyText: { color: '#888', fontSize: 16, textAlign: 'center', marginTop: 40 },
+  clientName: { color: '#888', fontSize: 14, marginTop: 2 },
+  status: { color: '#4CAF50', fontSize: 12, marginTop: 4 },
+  actions: { flexDirection: 'row', gap: 12 },
+  actionBtn: { padding: 6 },
+  emptyText: { color: '#888', textAlign: 'center', marginTop: 40, fontSize: 16 },
   fab: {
     position: 'absolute',
     bottom: 30,
@@ -274,29 +213,10 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 24 },
   modalTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
-  input: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 10,
-    padding: 12,
-    color: '#FFF',
-    borderWidth: 1,
-    borderColor: '#333',
-    marginBottom: 12,
-  },
-  fileBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0A0A0A',
-    borderRadius: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#333',
-    marginBottom: 12,
-  },
-  fileBtnText: { color: '#00D4FF', marginLeft: 8, fontSize: 14, flex: 1 },
+  input: { backgroundColor: '#0A0A0A', borderRadius: 10, padding: 12, color: '#FFF', borderWidth: 1, borderColor: '#333', marginBottom: 12 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 },
-  cancelBtn: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10, borderWidth: 1, borderColor: '#888' },
-  cancelText: { color: '#888' },
-  submitBtn: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#00D4FF' },
-  submitText: { color: '#0A0A0A', fontWeight: '600' },
+  btn: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10 },
+  cancelBtn: { borderWidth: 1, borderColor: '#888' },
+  saveBtn: { backgroundColor: '#00D4FF' },
+  btnText: { color: '#FFF', fontWeight: '600', fontSize: 16 },
 });
