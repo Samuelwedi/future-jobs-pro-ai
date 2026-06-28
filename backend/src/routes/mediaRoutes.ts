@@ -20,16 +20,19 @@ const getCompanyId = async (req: any): Promise<string | null> => {
 router.get('/projects', async (req, res) => {
   try {
     const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    if (!companyId) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
 
     const result = await pool.query(`
-      SELECT DISTINCT project_id, p.name as project_name
-      FROM (
-        SELECT project_id FROM photos WHERE company_id = $1
+      SELECT DISTINCT p.id as project_id, p.name as project_name
+      FROM projects p
+      WHERE p.company_id = $1
+      AND EXISTS (
+        SELECT 1 FROM photos WHERE photos.project_id = p.id
         UNION
-        SELECT project_id FROM voice_notes WHERE company_id = $1
-      ) media
-      JOIN projects p ON p.id = media.project_id
+        SELECT 1 FROM voice_notes WHERE voice_notes.project_id = p.id
+      )
       ORDER BY project_name
     `, [companyId]);
 
@@ -44,18 +47,29 @@ router.get('/projects', async (req, res) => {
 router.get('/project/:projectId/months', async (req, res) => {
   try {
     const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false });
+    if (!companyId) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
     const { projectId } = req.params;
+
+    // Verify project belongs to company
+    const projectCheck = await pool.query(
+      'SELECT id FROM projects WHERE id = $1 AND company_id = $2',
+      [projectId, companyId]
+    );
+    if (projectCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
 
     const result = await pool.query(`
       SELECT DISTINCT TO_CHAR(taken_at, 'YYYY-MM') as month
       FROM (
-        SELECT taken_at FROM photos WHERE project_id = $1 AND company_id = $2
+        SELECT taken_at FROM photos WHERE project_id = $1
         UNION
-        SELECT taken_at FROM voice_notes WHERE project_id = $1 AND company_id = $2
+        SELECT taken_at FROM voice_notes WHERE project_id = $1
       ) media
       ORDER BY month DESC
-    `, [projectId, companyId]);
+    `, [projectId]);
 
     res.json({ success: true, months: result.rows.map(r => r.month) });
   } catch (error) {
@@ -68,8 +82,19 @@ router.get('/project/:projectId/months', async (req, res) => {
 router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
   try {
     const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false });
+    if (!companyId) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
     const { projectId, yearMonth } = req.params;
+
+    // Verify project belongs to company
+    const projectCheck = await pool.query(
+      'SELECT id FROM projects WHERE id = $1 AND company_id = $2',
+      [projectId, companyId]
+    );
+    if (projectCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
 
     const result = await pool.query(`
       SELECT 
@@ -82,7 +107,7 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         NULL as transcript,
         NULL as duration
       FROM photos
-      WHERE project_id = $1 AND company_id = $2 AND TO_CHAR(taken_at, 'YYYY-MM') = $3
+      WHERE project_id = $1 AND TO_CHAR(taken_at, 'YYYY-MM') = $2
 
       UNION ALL
 
@@ -96,7 +121,7 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         NULL as transcript,
         NULL as duration
       FROM photos
-      WHERE project_id = $1 AND company_id = $2 AND TO_CHAR(taken_at, 'YYYY-MM') = $3 AND file_type = 'video'
+      WHERE project_id = $1 AND TO_CHAR(taken_at, 'YYYY-MM') = $2 AND file_type = 'video'
 
       UNION ALL
 
@@ -110,10 +135,10 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         transcript,
         duration_seconds as duration
       FROM voice_notes
-      WHERE project_id = $1 AND company_id = $2 AND TO_CHAR(taken_at, 'YYYY-MM') = $3
+      WHERE project_id = $1 AND TO_CHAR(taken_at, 'YYYY-MM') = $2
 
       ORDER BY taken_at DESC
-    `, [projectId, companyId, yearMonth]);
+    `, [projectId, yearMonth]);
 
     res.json({ success: true, media: result.rows });
   } catch (error) {
