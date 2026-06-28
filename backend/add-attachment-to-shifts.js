@@ -4,8 +4,9 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejec
 
 (async () => {
   try {
-    await pool.query(`ALTER TABLE voice_notes ADD COLUMN IF NOT EXISTS taken_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();`);
-    console.log('✅ taken_at column added to voice_notes');
+    await pool.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS attachment_url TEXT;`);
+    await pool.query(`ALTER TABLE shifts ADD COLUMN IF NOT EXISTS attachment_type TEXT;`);
+    console.log('✅ attachment_url and attachment_type columns added to shifts');
   } catch (err) {
     console.error('❌ Migration error:', err);
   } finally {

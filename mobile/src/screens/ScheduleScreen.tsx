@@ -7,6 +7,8 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
 import {
   format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addDays, subMonths, addMonths, isSameMonth, isSameDay,
@@ -21,6 +23,8 @@ interface Shift {
   start_time: string;
   end_time: string;
   notes?: string;
+  attachment_url?: string; // new
+  attachment_type?: string;
 }
 
 interface Employee {
@@ -33,6 +37,7 @@ interface Employee {
 interface Project {
   id: string;
   name: string;
+  address?: string;
 }
 
 export default function ScheduleScreen() {
@@ -59,9 +64,32 @@ export default function ScheduleScreen() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
 
+  // ---- NEW: Searchable project states ----
+  const [projectSearchText, setProjectSearchText] = useState('');
+  const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+
   // ---- NEW: Employee selection for shift creation ----
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [showEmployeePickerModal, setShowEmployeePickerModal] = useState(false);
+
+  // ---- NEW: File attachment states ----
+  const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+
+  // Filter projects when search text changes
+  useEffect(() => {
+    if (projectSearchText.trim().length > 0) {
+      const filtered = projects.filter(p =>
+        p.name.toLowerCase().includes(projectSearchText.toLowerCase())
+      );
+      setFilteredProjects(filtered);
+      setShowProjectDropdown(true);
+    } else {
+      setFilteredProjects(projects);
+      setShowProjectDropdown(false);
+    }
+  }, [projectSearchText, projects]);
 
   useFocusEffect(useCallback(() => {
     if (user?.role === 'boss' || user?.role === 'manager') {
@@ -147,6 +175,27 @@ export default function ScheduleScreen() {
     setCurrentMonth(prev => dir === -1 ? subMonths(prev, 1) : addMonths(prev, 1));
   };
 
+  // ---- Pick file for attachment ----
+  const pickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+               'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+               'application/msword', 'application/vnd.ms-excel'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      setSelectedFile({
+        uri: asset.uri,
+        name: asset.name,
+        type: asset.mimeType || 'application/octet-stream',
+      });
+    } catch (err) {
+      Alert.alert('Error', 'Failed to pick file');
+    }
+  };
+
   // ---- Create Shift ----
   const handleCreateShift = async () => {
     if (!newShiftName.trim()) {
@@ -157,7 +206,34 @@ export default function ScheduleScreen() {
       Alert.alert('Required', 'Please select at least one employee.');
       return;
     }
+    setUploadingFile(true);
     try {
+      // Upload file if selected
+      let attachmentUrl: string | null = null;
+      let attachmentType: string | null = null;
+      if (selectedFile) {
+        try {
+          const formData = new FormData();
+          formData.append('file', {
+            uri: selectedFile.uri,
+            name: selectedFile.name,
+            type: selectedFile.type,
+          } as any);
+          formData.append('purpose', 'shift_attachment');
+          const uploadRes = await api.uploadFileWithData<{ url: string; type: string }>(
+            '/upload', // We need a dedicated upload endpoint for attachments
+            selectedFile.uri,
+            { purpose: 'shift_attachment' },
+            'file'
+          );
+          attachmentUrl = uploadRes.url;
+          attachmentType = uploadRes.type || selectedFile.type;
+        } catch (err) {
+          console.error('File upload failed:', err);
+          Alert.alert('Warning', 'Could not upload file, continuing without attachment.');
+        }
+      }
+
       await api.post('/schedule/shifts', {
         name: newShiftName,
         date: format(selectedDate, 'yyyy-MM-dd'),
@@ -165,7 +241,9 @@ export default function ScheduleScreen() {
         endTime: newShiftEnd,
         notes: newShiftNotes,
         projectId: selectedProjectId,
-        employeeIds: selectedEmployeeIds, // <-- send selected employees
+        employeeIds: selectedEmployeeIds,
+        attachmentUrl,
+        attachmentType,
       });
       Alert.alert('✅ Created', 'Shift has been added.');
       setCreateModalVisible(false);
@@ -175,13 +253,18 @@ export default function ScheduleScreen() {
       setNewShiftNotes('');
       setSelectedProjectId('');
       setSelectedEmployeeIds([]);
+      setSelectedFile(null);
+      setProjectSearchText('');
+      setFilteredProjects([]);
+      setShowProjectDropdown(false);
       fetchShifts();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Could not create shift.');
+    } finally {
+      setUploadingFile(false);
     }
   };
 
-  // ---- Toggle employee selection ----
   const toggleEmployeeSelection = (empId: string) => {
     setSelectedEmployeeIds(prev =>
       prev.includes(empId)
@@ -190,7 +273,6 @@ export default function ScheduleScreen() {
     );
   };
 
-  // ---- Open create modal ----
   const openCreateModal = () => {
     setNewShiftName('');
     setNewShiftStart('09:00');
@@ -198,6 +280,10 @@ export default function ScheduleScreen() {
     setNewShiftNotes('');
     setSelectedProjectId('');
     setSelectedEmployeeIds([]);
+    setSelectedFile(null);
+    setProjectSearchText('');
+    setFilteredProjects([]);
+    setShowProjectDropdown(false);
     setCreateModalVisible(true);
   };
 
@@ -288,6 +374,12 @@ export default function ScheduleScreen() {
             <Text style={styles.shiftName}>{item.name}</Text>
             <Text style={styles.shiftProject}>{item.project_name}</Text>
             <Text style={styles.shiftTime}>{item.start_time} → {item.end_time}</Text>
+            {item.attachment_url && (
+              <View style={styles.attachmentBadge}>
+                <MaterialIcons name="attach-file" size={14} color="#00D4FF" />
+                <Text style={styles.attachmentBadgeText}>Attachment</Text>
+              </View>
+            )}
           </TouchableOpacity>
         )}
         keyExtractor={item => item.id}
@@ -296,95 +388,137 @@ export default function ScheduleScreen() {
         ListEmptyComponent={<Text style={styles.empty}>No shifts on this day</Text>}
       />
 
-      {/* ===== CREATE SHIFT MODAL (with employee selection) ===== */}
+      {/* ===== CREATE SHIFT MODAL ===== */}
       <Modal visible={createModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Shift for {format(selectedDate, 'MMM d, yyyy')}</Text>
-              <TouchableOpacity onPress={() => setCreateModalVisible(false)}>
-                <MaterialIcons name="close" size={24} color="#FFF" />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>New Shift for {format(selectedDate, 'MMM d, yyyy')}</Text>
+                <TouchableOpacity onPress={() => setCreateModalVisible(false)}>
+                  <MaterialIcons name="close" size={24} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Shift Name"
+                placeholderTextColor="#888"
+                value={newShiftName}
+                onChangeText={setNewShiftName}
+              />
+              <View style={styles.row}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Start (HH:MM)"
+                  placeholderTextColor="#888"
+                  value={newShiftStart}
+                  onChangeText={setNewShiftStart}
+                />
+                <TextInput
+                  style={[styles.input, { flex: 1, marginLeft: 8 }]}
+                  placeholder="End (HH:MM)"
+                  placeholderTextColor="#888"
+                  value={newShiftEnd}
+                  onChangeText={setNewShiftEnd}
+                />
+              </View>
+
+              {/* ---- SEARCHABLE PROJECT PICKER ---- */}
+              <View style={styles.projectSearchContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Search project..."
+                  placeholderTextColor="#888"
+                  value={projectSearchText}
+                  onChangeText={setProjectSearchText}
+                  onFocus={() => setShowProjectDropdown(true)}
+                />
+                {showProjectDropdown && filteredProjects.length > 0 && (
+                  <View style={styles.projectDropdown}>
+                    {filteredProjects.map(proj => (
+                      <TouchableOpacity
+                        key={proj.id}
+                        style={[
+                          styles.projectItem,
+                          selectedProjectId === proj.id && styles.projectItemActive
+                        ]}
+                        onPress={() => {
+                          setSelectedProjectId(proj.id);
+                          setProjectSearchText(proj.name);
+                          setShowProjectDropdown(false);
+                        }}
+                      >
+                        <Text style={[styles.projectItemText, selectedProjectId === proj.id && styles.projectItemTextActive]}>
+                          {proj.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                {showProjectDropdown && projectSearchText.length > 0 && filteredProjects.length === 0 && (
+                  <View style={styles.projectDropdown}>
+                    <Text style={styles.noProjectsText}>No projects found</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Employee Selection Button */}
+              <TouchableOpacity
+                style={styles.employeeSelectBtn}
+                onPress={() => setShowEmployeePickerModal(true)}
+              >
+                <MaterialIcons name="people" size={20} color="#00D4FF" />
+                <Text style={styles.employeeSelectText}>
+                  {selectedEmployeeIds.length === 0
+                    ? 'Select Employees'
+                    : `${selectedEmployeeIds.length} employee${selectedEmployeeIds.length > 1 ? 's' : ''} selected`}
+                </Text>
               </TouchableOpacity>
-            </View>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Shift Name"
-              placeholderTextColor="#888"
-              value={newShiftName}
-              onChangeText={setNewShiftName}
-            />
-            <View style={styles.row}>
               <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Start (HH:MM)"
+                style={styles.input}
+                placeholder="Notes (optional)"
                 placeholderTextColor="#888"
-                value={newShiftStart}
-                onChangeText={setNewShiftStart}
+                value={newShiftNotes}
+                onChangeText={setNewShiftNotes}
               />
-              <TextInput
-                style={[styles.input, { flex: 1, marginLeft: 8 }]}
-                placeholder="End (HH:MM)"
-                placeholderTextColor="#888"
-                value={newShiftEnd}
-                onChangeText={setNewShiftEnd}
-              />
-            </View>
 
-            {/* Project Picker */}
-            <View style={styles.pickerWrapper}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {projects.map(proj => (
-                  <TouchableOpacity
-                    key={proj.id}
-                    style={[styles.projectChip, selectedProjectId === proj.id && styles.projectChipActive]}
-                    onPress={() => setSelectedProjectId(proj.id)}
-                  >
-                    <Text style={[styles.projectChipText, selectedProjectId === proj.id && styles.projectChipTextActive]}>
-                      {proj.name}
-                    </Text>
+              {/* ---- FILE ATTACHMENT SECTION ---- */}
+              <View style={styles.attachmentSection}>
+                <TouchableOpacity style={styles.attachBtn} onPress={pickFile}>
+                  <MaterialIcons name="attach-file" size={20} color="#00D4FF" />
+                  <Text style={styles.attachBtnText}>
+                    {selectedFile ? `Attached: ${selectedFile.name}` : 'Attach file (PDF, Word, Excel)'}
+                  </Text>
+                </TouchableOpacity>
+                {selectedFile && (
+                  <TouchableOpacity onPress={() => setSelectedFile(null)} style={styles.removeAttach}>
+                    <MaterialIcons name="close" size={18} color="#F44336" />
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
-              {projects.length === 0 && (
-                <Text style={{ color: '#888' }}>No projects available</Text>
-              )}
-            </View>
+                )}
+              </View>
 
-            {/* ---- NEW: Employee Selection Button ---- */}
-            <TouchableOpacity
-              style={styles.employeeSelectBtn}
-              onPress={() => setShowEmployeePickerModal(true)}
-            >
-              <MaterialIcons name="people" size={20} color="#00D4FF" />
-              <Text style={styles.employeeSelectText}>
-                {selectedEmployeeIds.length === 0
-                  ? 'Select Employees'
-                  : `${selectedEmployeeIds.length} employee${selectedEmployeeIds.length > 1 ? 's' : ''} selected`}
-              </Text>
-            </TouchableOpacity>
-
-            <TextInput
-              style={styles.input}
-              placeholder="Notes (optional)"
-              placeholderTextColor="#888"
-              value={newShiftNotes}
-              onChangeText={setNewShiftNotes}
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setCreateModalVisible(false)}>
-                <Text style={styles.btnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.btn, styles.createBtn]} onPress={handleCreateShift}>
-                <Text style={[styles.btnText, { color: '#0A0A0A' }]}>Create</Text>
-              </TouchableOpacity>
-            </View>
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setCreateModalVisible(false)}>
+                  <Text style={styles.btnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.btn, styles.createBtn]}
+                  onPress={handleCreateShift}
+                  disabled={uploadingFile}
+                >
+                  <Text style={[styles.btnText, { color: '#0A0A0A' }]}>
+                    {uploadingFile ? 'Uploading...' : 'Create'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* ===== EMPLOYEE PICKER MODAL for shift creation ===== */}
+      {/* ===== EMPLOYEE PICKER MODAL ===== */}
       <Modal visible={showEmployeePickerModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -422,7 +556,7 @@ export default function ScheduleScreen() {
         </View>
       </Modal>
 
-      {/* ===== SHIFT DETAIL MODAL (unchanged) ===== */}
+      {/* ===== SHIFT DETAIL MODAL ===== */}
       <Modal visible={!!selectedShift} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -433,7 +567,7 @@ export default function ScheduleScreen() {
               </TouchableOpacity>
             </View>
             {selectedShift && (
-              <View>
+              <ScrollView>
                 <Text style={styles.detailLabel}>Shift</Text>
                 <Text style={styles.detailValue}>{selectedShift.name}</Text>
                 <Text style={styles.detailLabel}>Project</Text>
@@ -452,19 +586,31 @@ export default function ScheduleScreen() {
                     <Text style={styles.detailValue}>{selectedShift.notes}</Text>
                   </>
                 )}
+                {selectedShift.attachment_url && (
+                  <>
+                    <Text style={styles.detailLabel}>Attachment</Text>
+                    <TouchableOpacity
+                      style={styles.downloadBtn}
+                      onPress={() => Linking.openURL(selectedShift.attachment_url!)}
+                    >
+                      <MaterialIcons name="download" size={20} color="#00D4FF" />
+                      <Text style={styles.downloadBtnText}>Open Attachment</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
                 {selectedShift.project_address && (
                   <TouchableOpacity style={styles.directionsBtn} onPress={() => handleOpenDirections(selectedShift.project_address)}>
                     <MaterialIcons name="directions" size={20} color="#0A0A0A" />
                     <Text style={styles.directionsBtnText}>Get Directions</Text>
                   </TouchableOpacity>
                 )}
-              </View>
+              </ScrollView>
             )}
           </View>
         </View>
       </Modal>
 
-      {/* ===== EMPLOYEE PICKER MODAL (view switcher – unchanged) ===== */}
+      {/* ===== EMPLOYEE PICKER (view switcher) ===== */}
       <Modal visible={showEmployeePicker} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -533,19 +679,30 @@ const styles = StyleSheet.create({
   shiftName: { color: '#FFF', fontSize: 17, fontWeight: '600' },
   shiftProject: { color: '#AAA', fontSize: 14, marginTop: 4 },
   shiftTime: { color: '#888', fontSize: 14, marginTop: 4 },
+  attachmentBadge: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 4 },
+  attachmentBadgeText: { color: '#00D4FF', fontSize: 12 },
   empty: { color: '#888', textAlign: 'center', marginTop: 40, fontSize: 16 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 24 },
+  modalContent: { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 24, maxHeight: '90%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   input: { backgroundColor: '#0A0A0A', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10, color: '#FFF', fontSize: 16, marginBottom: 12, borderWidth: 1, borderColor: '#333' },
   row: { flexDirection: 'row' },
-  pickerWrapper: { marginBottom: 12 },
-  projectChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, borderWidth: 1, borderColor: '#333', marginRight: 8 },
-  projectChipActive: { backgroundColor: '#00D4FF', borderColor: '#00D4FF' },
-  projectChipText: { color: '#AAA', fontSize: 14 },
-  projectChipTextActive: { color: '#0A0A0A', fontWeight: '600' },
-  // Employee selection button
+  projectSearchContainer: { marginBottom: 12 },
+  projectDropdown: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    maxHeight: 150,
+    marginTop: -8,
+    paddingVertical: 4,
+  },
+  projectItem: { paddingVertical: 10, paddingHorizontal: 14 },
+  projectItemActive: { backgroundColor: '#00D4FF20' },
+  projectItemText: { color: '#FFF', fontSize: 14 },
+  projectItemTextActive: { color: '#00D4FF', fontWeight: '600' },
+  noProjectsText: { color: '#888', padding: 12, textAlign: 'center' },
   employeeSelectBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -558,6 +715,21 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   employeeSelectText: { color: '#00D4FF', marginLeft: 8, fontSize: 14, flex: 1 },
+  attachmentSection: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  attachBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0A0A0A',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#333',
+    gap: 8,
+  },
+  attachBtnText: { color: '#AAA', fontSize: 14, flex: 1 },
+  removeAttach: { padding: 8 },
   employeeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#222' },
   employeeRowActive: { backgroundColor: '#1A3A4A' },
   employeeName: { color: '#FFF', fontSize: 16 },
@@ -571,4 +743,6 @@ const styles = StyleSheet.create({
   detailValue: { color: '#FFF', fontSize: 16, marginTop: 2 },
   directionsBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#00D4FF', paddingVertical: 12, borderRadius: 10, marginTop: 20, gap: 8 },
   directionsBtnText: { color: '#0A0A0A', fontWeight: '600', fontSize: 15 },
+  downloadBtn: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 8 },
+  downloadBtnText: { color: '#00D4FF', fontSize: 15 },
 });

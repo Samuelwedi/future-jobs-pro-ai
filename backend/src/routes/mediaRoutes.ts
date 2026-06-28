@@ -60,7 +60,6 @@ router.get('/project/:projectId/months', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
 
-    // Use COALESCE to fallback to created_at if taken_at is missing
     const result = await pool.query(`
       SELECT DISTINCT TO_CHAR(COALESCE(taken_at, created_at), 'YYYY-MM') as month
       FROM (

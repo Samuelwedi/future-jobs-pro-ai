@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   Alert, ActivityIndicator, RefreshControl,
-  TextInput, Modal,
+  TextInput, Modal, ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../services/api';
@@ -19,6 +19,7 @@ export default function ProjectsScreen() {
   const [editingProject, setEditingProject] = useState<any>(null);
   const [projectName, setProjectName] = useState('');
   const [clientName, setClientName] = useState('');
+  const [projectAddress, setProjectAddress] = useState(''); // NEW
 
   useEffect(() => {
     fetchProjects();
@@ -50,6 +51,7 @@ export default function ProjectsScreen() {
       const payload = {
         name: projectName.trim(),
         client_name: clientName.trim() || null,
+        address: projectAddress.trim() || null, // include address
         company_id: user?.companyId,
       };
       if (editingProject) {
@@ -62,6 +64,7 @@ export default function ProjectsScreen() {
       setModalVisible(false);
       setProjectName('');
       setClientName('');
+      setProjectAddress('');
       setEditingProject(null);
       fetchProjects();
     } catch (error: any) {
@@ -92,14 +95,19 @@ export default function ProjectsScreen() {
     setEditingProject(project);
     setProjectName(project.name);
     setClientName(project.client_name || '');
+    setProjectAddress(project.address || '');
     setModalVisible(true);
   };
 
   const renderProject = ({ item }: { item: any }) => (
     <View style={styles.projectCard}>
-      <TouchableOpacity style={styles.projectInfo} onPress={() => navigation.navigate('ProjectAlbum', { projectId: item.id, projectName: item.name })}>
+      <TouchableOpacity
+        style={styles.projectInfo}
+        onPress={() => navigation.navigate('ProjectAlbum', { projectId: item.id, projectName: item.name })}
+      >
         <Text style={styles.projectName}>{item.name}</Text>
         {item.client_name && <Text style={styles.clientName}>{item.client_name}</Text>}
+        {item.address && <Text style={styles.addressText} numberOfLines={1}>{item.address}</Text>}
         <Text style={styles.status}>{item.status || 'active'}</Text>
       </TouchableOpacity>
       <View style={styles.actions}>
@@ -136,7 +144,10 @@ export default function ProjectsScreen() {
         ListEmptyComponent={<Text style={styles.emptyText}>No projects yet. Tap + to create one.</Text>}
       />
 
-      <TouchableOpacity style={styles.fab} onPress={() => { setEditingProject(null); setProjectName(''); setClientName(''); setModalVisible(true); }}>
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => { setEditingProject(null); setProjectName(''); setClientName(''); setProjectAddress(''); setModalVisible(true); }}
+      >
         <MaterialIcons name="add" size={28} color="#0A0A0A" />
       </TouchableOpacity>
 
@@ -144,29 +155,40 @@ export default function ProjectsScreen() {
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{editingProject ? 'Edit Project' : 'New Project'}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Project Name"
-              placeholderTextColor="#888"
-              value={projectName}
-              onChangeText={setProjectName}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Client Name (optional)"
-              placeholderTextColor="#888"
-              value={clientName}
-              onChangeText={setClientName}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setModalVisible(false)}>
-                <Text style={styles.btnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.btn, styles.saveBtn]} onPress={handleSaveProject}>
-                <Text style={[styles.btnText, { color: '#0A0A0A' }]}>Save</Text>
-              </TouchableOpacity>
-            </View>
+            <ScrollView>
+              <Text style={styles.modalTitle}>{editingProject ? 'Edit Project' : 'New Project'}</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Project Name"
+                placeholderTextColor="#888"
+                value={projectName}
+                onChangeText={setProjectName}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Client Name (optional)"
+                placeholderTextColor="#888"
+                value={clientName}
+                onChangeText={setClientName}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Address (optional – used for directions)"
+                placeholderTextColor="#888"
+                value={projectAddress}
+                onChangeText={setProjectAddress}
+                multiline
+                numberOfLines={2}
+              />
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setModalVisible(false)}>
+                  <Text style={styles.btnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.btn, styles.saveBtn]} onPress={handleSaveProject}>
+                  <Text style={[styles.btnText, { color: '#0A0A0A' }]}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -194,6 +216,7 @@ const styles = StyleSheet.create({
   projectInfo: { flex: 1 },
   projectName: { color: '#FFF', fontSize: 16, fontWeight: '600' },
   clientName: { color: '#888', fontSize: 14, marginTop: 2 },
+  addressText: { color: '#AAA', fontSize: 12, marginTop: 2 },
   status: { color: '#4CAF50', fontSize: 12, marginTop: 4 },
   actions: { flexDirection: 'row', gap: 12 },
   actionBtn: { padding: 6 },
@@ -211,7 +234,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 24 },
+  modalContent: { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 24, maxHeight: '80%' },
   modalTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
   input: { backgroundColor: '#0A0A0A', borderRadius: 10, padding: 12, color: '#FFF', borderWidth: 1, borderColor: '#333', marginBottom: 12 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 },
