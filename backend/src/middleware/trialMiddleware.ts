@@ -13,24 +13,12 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
     return next();
   }
 
-  // ---- BYPASS FOR TEST USER ----
-  const testUserHeader = req.headers['x-test-user'];
-  if (testUserHeader === 'samuel@test.com') {
-    // Set a dummy user object for the test user
-    (req as any).user = { id: 'e0f62298-03f1-4908-bac2-8415e5a9d0e5', email: 'samuel@test.com', companyId: 'ed1887d9-3ffd-46e4-b281-338c8ad03a66' };
-    (req as any).companyId = 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
-    console.log('🧪 Test user bypassed trial check');
-    return next();
-  }
-
   try {
     const decoded = verifyToken(req);
     (req as any).user = decoded;
     (req as any).companyId = decoded.companyId || 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
 
-    // Additional trial logic here...
-    // (Keep the rest of the trial logic as is)
-
+    // Trial logic
     const userRes = await pool.query(
       `SELECT trial_ends_at, grace_ends_at, stripe_payment_method_id, paid_months
        FROM users WHERE id = $1`,
@@ -83,7 +71,7 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
 
     next();
   } catch (error: any) {
-    console.error('Trial check error:', error.message);
+    console.error('❌ Trial check error:', error.message);
     return res.status(401).json({ success: false, message: error.message });
   }
 };
