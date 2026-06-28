@@ -89,6 +89,7 @@ import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
 import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
+import mediaRoutes from './routes/mediaRoutes'; app.use('/api/media', mediaRoutes);
 
 // ----- Helper: extract userId from JWT (using verifyToken) -----
 const getUserId = (req: Request): string | null => {

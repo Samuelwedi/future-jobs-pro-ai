@@ -35,6 +35,9 @@ import TermsScreen from './src/screens/TermsScreen';
 import AboutScreen from './src/screens/AboutScreen';
 import SecurityScreen from './src/screens/SecurityScreen';
 import SupportScreen from './src/screens/SupportScreen';
+import FoldersScreen from './src/screens/FoldersScreen';
+import ProjectMediaScreen from './src/screens/ProjectMediaScreen';
+import MonthMediaScreen from './src/screens/MonthMediaScreen';
 
 const Stack = createStackNavigator();
 
@@ -117,6 +120,9 @@ function AppNavigator() {
               <Stack.Screen name="About" component={AboutScreen} />
               <Stack.Screen name="Security" component={SecurityScreen} />
               <Stack.Screen name="Support" component={SupportScreen} />
+              <Stack.Screen name="Folders" component={FoldersScreen} />
+<Stack.Screen name="ProjectMedia" component={ProjectMediaScreen} />
+<Stack.Screen name="MonthMedia" component={MonthMediaScreen} />
             </>
           )}
         </Stack.Navigator>

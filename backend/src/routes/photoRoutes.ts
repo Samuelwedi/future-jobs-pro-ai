@@ -3,33 +3,29 @@ import express, { Request, Response } from 'express';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import { pool } from '../config/database';
-import { applyWatermark, generateWatermarkedPDFReport } from '../services/watermarkService';
+import { applyWatermark } from '../services/watermarkService';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 
 const router = express.Router();
 
-// Create temp directory for watermark processing
 const tempDir = path.join(__dirname, '../../uploads/temp');
 if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
 }
 
-// Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Multer: allow up to 1 GB for large video files
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 1024 * 1024 * 1024 },
 });
 
-// Helper: get company_id from JWT
 const getCompanyId = async (req: Request): Promise<string | null> => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -42,7 +38,6 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   }
 };
 
-// POST /api/photos/upload – handles both images and videos with watermark + hash
 router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -59,16 +54,13 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       return res.status(400).json({ success: false, message: 'Missing userId or projectId' });
     }
 
-    // Determine file type
     const isVideo = req.file.mimetype.startsWith('video/');
     const ext = isVideo ? '.mp4' : '.jpg';
     const tempInput = path.join(tempDir, `input-${Date.now()}${ext}`);
     const tempOutput = path.join(tempDir, `watermarked-${Date.now()}${ext}`);
 
-    // Write uploaded buffer to temp file
     fs.writeFileSync(tempInput, req.file.buffer);
 
-    // Build metadata for watermark
     const metadata = {
       latitude: latitude ? parseFloat(latitude) : undefined,
       longitude: longitude ? parseFloat(longitude) : undefined,
@@ -79,28 +71,32 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
       takenAt: new Date(),
     };
 
-    // Apply watermark – get hash back
     const { outputPath, verificationHash } = await applyWatermark(
-  tempInput,
-  tempOutput,
-  metadata,
-  {
-    position: isVideo ? 'bottom-left' : 'bottom-left',
-  }
-);
+      tempInput,
+      tempOutput,
+      metadata,
+      { position: isVideo ? 'bottom-left' : 'bottom-left' }
+    );
 
-    // Upload to Cloudinary
+    // --- DYNAMIC FOLDER PATH ---
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const mediaType = isVideo ? 'videos' : 'photos';
+    const folderPath = `future-jobs-pro-ai/projects/${projectId}/${year}-${month}/${mediaType}`;
+
     const uploadResult = await cloudinary.uploader.upload(outputPath, {
-      folder: `future-jobs-pro-ai/projects/${projectId}`,
+      folder: folderPath,
       resource_type: isVideo ? 'video' : 'image',
     });
 
     const fileUrl = uploadResult.secure_url;
 
-    // Save record to database (including verification_hash)
     const result = await pool.query(
-      `INSERT INTO photos (company_id, user_id, project_id, time_entry_id, s3_key, taken_at, latitude, longitude, metadata, file_type, verification_hash)
-       VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, $8, $9, $10) RETURNING id`,
+      `INSERT INTO photos (
+        company_id, user_id, project_id, time_entry_id, s3_key, taken_at,
+        latitude, longitude, metadata, file_type, verification_hash, folder_path
+      ) VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, $8, $9, $10, $11) RETURNING id`,
       [
         companyId,
         userId,
@@ -112,22 +108,19 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
         JSON.stringify({ template, watermarked: true, address, weather, verificationHash }),
         isVideo ? 'video' : 'image',
         verificationHash,
+        folderPath,
       ]
     );
 
-    // Clean up temp files
     fs.unlinkSync(tempInput);
     fs.unlinkSync(tempOutput);
 
-    // Mock compliance score (you can integrate AI later)
     const complianceScore = isVideo ? 80 : 85;
-    const passed = complianceScore >= 70;
-
     res.json({
       success: true,
       photoId: result.rows[0].id,
       verificationHash,
-      compliance: { passed, score: complianceScore, issues: [], suggestions: ['Good file'] },
+      compliance: { passed: complianceScore >= 70, score: complianceScore, issues: [], suggestions: ['Good file'] },
       fileType: isVideo ? 'video' : 'image',
     });
   } catch (error: any) {
@@ -136,7 +129,7 @@ router.post('/upload', upload.single('file'), async (req: Request, res: Response
   }
 });
 
-// GET /api/photos/verify/:id – Tamper‑proof verification endpoint
+// GET /api/photos/verify/:id
 router.get('/verify/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -160,7 +153,6 @@ router.get('/verify/:id', async (req: Request, res: Response) => {
       return res.json({ success: true, verified: false, message: 'No hash stored for this photo' });
     }
 
-    // Recompute hash from stored data
     const meta = photo.metadata || {};
     const address = meta.address || photo.address || '';
     const weather = meta.weather || photo.weather || '';
@@ -193,7 +185,7 @@ router.get('/verify/:id', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/photos/company – all photos for the user's company
+// GET /api/photos/company
 router.get('/company', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -210,7 +202,7 @@ router.get('/company', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/photos/project/:projectId – photos for a specific project
+// GET /api/photos/project/:projectId
 router.get('/project/:projectId', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);

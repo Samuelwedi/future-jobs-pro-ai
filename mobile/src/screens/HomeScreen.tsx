@@ -163,7 +163,8 @@ export default function HomeScreen() {
     { icon: 'event', color: '#9C27B0', gradient: ['#9C27B0', '#7B1FA2'], label: 'Schedule', screen: 'Schedule' },
     { icon: 'chatbubbles', color: '#00BCD4', gradient: ['#00BCD4', '#0097A7'], label: 'Chat', screen: 'ChatList', IconSet: Ionicons },
     { icon: 'map', color: '#4CAF50', gradient: ['#4CAF50', '#388E3C'], label: 'Crew', screen: 'CrewTracking', IconSet: Ionicons },
-  ];
+  { icon: 'folder', color: '#9C27B0', gradient: ['#9C27B0', '#7B1FA2'], label: 'Folders', screen: 'Folders', needsProject: false, IconSet: MaterialIcons },
+];
 
   return (
     <View style={styles.wrapper}>
