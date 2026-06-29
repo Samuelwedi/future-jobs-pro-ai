@@ -61,12 +61,13 @@ router.get('/project/:projectId/months', async (req, res) => {
     }
 
     const result = await pool.query(`
-      SELECT DISTINCT TO_CHAR(COALESCE(p.taken_at, v.created_at), 'YYYY-MM') as month
+      SELECT DISTINCT TO_CHAR(COALESCE(media.taken_at, media.created_at), 'YYYY-MM') as month
       FROM (
         SELECT taken_at, NULL as created_at FROM photos WHERE project_id = $1
         UNION
         SELECT NULL as taken_at, created_at FROM voice_notes WHERE project_id = $1
       ) media
+      WHERE COALESCE(media.taken_at, media.created_at) IS NOT NULL
       ORDER BY month DESC
     `, [projectId]);
 
