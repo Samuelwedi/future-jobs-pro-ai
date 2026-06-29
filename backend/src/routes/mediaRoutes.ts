@@ -16,13 +16,10 @@ const getCompanyId = async (req: any): Promise<string | null> => {
   }
 };
 
-// GET /api/media/projects
 router.get('/projects', async (req, res) => {
   try {
     const companyId = await getCompanyId(req);
-    if (!companyId) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const result = await pool.query(`
       SELECT DISTINCT p.id as project_id, p.name as project_name
@@ -43,13 +40,10 @@ router.get('/projects', async (req, res) => {
   }
 });
 
-// GET /api/media/project/:projectId/months
 router.get('/project/:projectId/months', async (req, res) => {
   try {
     const companyId = await getCompanyId(req);
-    if (!companyId) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
     const { projectId } = req.params;
 
     const projectCheck = await pool.query(
@@ -77,13 +71,10 @@ router.get('/project/:projectId/months', async (req, res) => {
   }
 });
 
-// GET /api/media/project/:projectId/month/:yearMonth
 router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
   try {
     const companyId = await getCompanyId(req);
-    if (!companyId) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
     const { projectId, yearMonth } = req.params;
 
     const projectCheck = await pool.query(

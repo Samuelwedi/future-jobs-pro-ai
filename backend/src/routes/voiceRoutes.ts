@@ -38,7 +38,6 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   }
 };
 
-// POST /api/voice/process
 router.post('/process', upload.single('audio'), async (req: Request, res: Response) => {
   console.log('\n🎙️  ========== NEW VOICE NOTE ==========');
   try {
@@ -51,13 +50,11 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
       return res.status(400).json({ success: false, message: 'Missing userId or projectId' });
     }
 
-    // Get company ID
     const companyId = await getCompanyId(req);
     if (!companyId) {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
 
-    // --- DYNAMIC FOLDER PATH ---
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -68,21 +65,21 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
       `data:audio/m4a;base64,${req.file.buffer.toString('base64')}`,
       {
         folder: folderPath,
-        resource_type: 'video', // audio is treated as video
+        resource_type: 'video',
         public_id: `audio_${Date.now()}`,
       }
     );
 
     const audioUrl = uploadResult.secure_url;
-    console.log('🎵 Audio uploaded to Cloudinary:', audioUrl);
+    console.log('🎵 Audio URL:', audioUrl);
 
-    // Process the audio (transcription, etc.)
+    // Process transcription
     const tempFile = `/tmp/voice-${Date.now()}.m4a`;
     fs.writeFileSync(tempFile, req.file.buffer);
     const result = await processVoiceNote(tempFile, userId, projectId, timeEntryId);
     fs.unlinkSync(tempFile);
 
-    // Save to voice_notes table with audio_url and folder_path
+    // Insert with audio_url
     const query = `
       INSERT INTO voice_notes
       (company_id, user_id, project_id, time_entry_id, audio_url, transcript, duration_seconds, taken_at, folder_path, metadata)
@@ -118,7 +115,6 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
   }
 });
 
-// GET /api/voice/project/:projectId
 router.get('/project/:projectId', async (req, res) => {
   try {
     const companyId = await getCompanyId(req);
