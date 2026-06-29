@@ -38,6 +38,7 @@ import SupportScreen from './src/screens/SupportScreen';
 import FoldersScreen from './src/screens/FoldersScreen';
 import ProjectMediaScreen from './src/screens/ProjectMediaScreen';
 import MonthMediaScreen from './src/screens/MonthMediaScreen';
+import { api } from './src/services/api';
 
 const Stack = createStackNavigator();
 
@@ -71,6 +72,16 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 function AppNavigator() {
   const { isAuthenticated, isLoading } = useAuth();
   const isProcessing = useRef(false);
+  const navigationRef = useRef<any>(null);
+
+  useEffect(() => {
+    // Set the 401 handler to navigate to Login
+    api.setUnauthorizedHandler(() => {
+      if (navigationRef.current) {
+        navigationRef.current.navigate('Login');
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const cleanup = listenToNetworkChanges(async (online) => {
@@ -121,8 +132,8 @@ function AppNavigator() {
               <Stack.Screen name="Security" component={SecurityScreen} />
               <Stack.Screen name="Support" component={SupportScreen} />
               <Stack.Screen name="Folders" component={FoldersScreen} />
-<Stack.Screen name="ProjectMedia" component={ProjectMediaScreen} />
-<Stack.Screen name="MonthMedia" component={MonthMediaScreen} />
+              <Stack.Screen name="ProjectMedia" component={ProjectMediaScreen} />
+              <Stack.Screen name="MonthMedia" component={MonthMediaScreen} />
             </>
           )}
         </Stack.Navigator>

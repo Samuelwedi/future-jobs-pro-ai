@@ -1,5 +1,5 @@
 // ============================================
-// MOBILE API SERVICE (with DELETE support)
+// MOBILE API SERVICE (with DELETE support & 401 handling)
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
@@ -19,6 +19,7 @@ console.log('🚀 API_URL:', API_URL);
 class ApiService {
   private client: AxiosInstance;
   private token: string | null = null;
+  private onUnauthorized: (() => void) | null = null;
 
   constructor() {
     this.client = axios.create({
@@ -27,13 +28,11 @@ class ApiService {
       headers: { 'Content-Type': 'application/json' },
     });
 
-    // Interceptor to add Authorization header
+    // --- Request interceptor: add token ---
     this.client.interceptors.request.use(
       async (config) => {
-        // Use cached token first
         let token = this.token;
         if (!token) {
-          // Fallback: read from SecureStore
           token = await SecureStore.getItemAsync('authToken');
           if (token) {
             this.token = token;
@@ -47,7 +46,7 @@ class ApiService {
           console.log('⚠️ No token available for request:', config.url);
         }
 
-        // Always send test user header (for review)
+        // Send test user header (for review)
         config.headers['X-Test-User'] = 'samuel@test.com';
 
         return config;
@@ -57,6 +56,26 @@ class ApiService {
         return Promise.reject(error);
       }
     );
+
+    // --- Response interceptor: handle 401 ---
+    this.client.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        if (error.response?.status === 401) {
+          console.warn('🔑 Token expired – redirecting to login');
+          await this.clearToken();
+          if (this.onUnauthorized) {
+            this.onUnauthorized();
+          }
+        }
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  // Set handler for unauthorized responses
+  setUnauthorizedHandler(handler: () => void): void {
+    this.onUnauthorized = handler;
   }
 
   async setToken(token: string): Promise<void> {
