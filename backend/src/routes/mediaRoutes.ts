@@ -60,7 +60,6 @@ router.get('/project/:projectId/months', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
 
-    // FIX: Use the subquery alias "media" and its columns
     const result = await pool.query(`
       SELECT DISTINCT TO_CHAR(COALESCE(media.taken_at, media.created_at), 'YYYY-MM') as month
       FROM (
@@ -106,7 +105,7 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         NULL::text as transcript,
         NULL::text as duration
       FROM photos
-      WHERE project_id = $1 AND TO_CHAR(taken_at, 'YYYY-MM') = $2
+      WHERE project_id = $1 AND TO_CHAR(taken_at, 'YYYY-MM') = $2 AND file_type = 'image'
 
       UNION ALL
 

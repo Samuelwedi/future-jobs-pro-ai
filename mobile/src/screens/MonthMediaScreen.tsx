@@ -1,37 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList, 
-  ActivityIndicator, Image, Modal, Dimensions,
+  View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator,
+  Image, Modal, SafeAreaView, Alert,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { Audio, Video } from 'expo-av';
-
-const { width, height } = Dimensions.get('window');
-
-type MediaItem = {
-  id: string;
-  type: 'photo' | 'video' | 'voice_note';
-  url: string;
-  taken_at: string;
-  metadata?: any;
-  verification_hash?: string;
-  transcript?: string;
-  duration?: string;
-};
+import { Audio, Video, ResizeMode } from 'expo-av';
 
 export default function MonthMediaScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { projectId, yearMonth, projectName } = route.params;
-  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [media, setMedia] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
-  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [selectedMedia, setSelectedMedia] = useState<any | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const videoRef = useRef<Video>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
+  const videoRef = useRef<Video>(null);
 
   useEffect(() => {
     fetchMedia();
@@ -53,70 +39,65 @@ export default function MonthMediaScreen() {
     }
   };
 
-  const openMedia = (item: MediaItem) => {
-    setSelectedItem(item);
-    setIsModalVisible(true);
-    setIsPlaying(false);
-  };
-
-  const closeModal = () => {
-    setIsModalVisible(false);
-    setSelectedItem(null);
-    setIsPlaying(false);
-    if (videoRef.current) {
-      videoRef.current.stopAsync();
+  const handlePlayAudio = async (url: string) => {
+    if (!url) {
+      Alert.alert('Error', 'Audio file URL is missing');
+      return;
     }
-    if (soundRef.current) {
-      soundRef.current.stopAsync();
-      soundRef.current.unloadAsync();
-      soundRef.current = null;
-    }
-  };
-
-  const playVoiceNote = async () => {
-    if (!selectedItem || selectedItem.type !== 'voice_note') return;
     try {
       if (soundRef.current) {
         await soundRef.current.unloadAsync();
         soundRef.current = null;
+        setIsPlaying(false);
       }
       const { sound } = await Audio.Sound.createAsync(
-        { uri: selectedItem.url },
+        { uri: url },
         { shouldPlay: true }
       );
       soundRef.current = sound;
       setIsPlaying(true);
-      // @ts-ignore – didJustFinish exists on success status
       sound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.didJustFinish) {
+        if (status.isLoaded && status.didJustFinish) {
           setIsPlaying(false);
-          sound.unloadAsync();
-          soundRef.current = null;
         }
       });
     } catch (error) {
-      console.error('Error playing voice note:', error);
+      Alert.alert('Error', 'Could not play audio');
+    }
+  };
+
+  const handleStopAudio = async () => {
+    if (soundRef.current) {
+      await soundRef.current.stopAsync();
+      await soundRef.current.unloadAsync();
+      soundRef.current = null;
       setIsPlaying(false);
     }
   };
 
-  const togglePlayVoice = () => {
-    if (isPlaying) {
-      soundRef.current?.pauseAsync();
-      setIsPlaying(false);
-    } else {
-      playVoiceNote();
-    }
-  };
-
-  const renderMediaItem = ({ item }: { item: MediaItem }) => {
+  const renderMediaItem = ({ item }: { item: any }) => {
     const isPhoto = item.type === 'photo';
     const isVideo = item.type === 'video';
     const isVoice = item.type === 'voice_note';
 
     return (
-      <TouchableOpacity style={styles.mediaCard} onPress={() => openMedia(item)}>
-        {isPhoto && <Image source={{ uri: item.url }} style={styles.thumbnail} />}
+      <TouchableOpacity
+        style={styles.mediaCard}
+        onPress={() => {
+          if (isVoice && item.url) {
+            if (isPlaying) {
+              handleStopAudio();
+            } else {
+              handlePlayAudio(item.url);
+            }
+            return;
+          }
+          setSelectedMedia(item);
+        }}
+      >
+        {isPhoto && (
+          <Image source={{ uri: item.url }} style={styles.thumbnail} />
+        )}
         {isVideo && (
           <View style={styles.thumbnailPlaceholder}>
             <Ionicons name="videocam" size={32} color="#FFF" />
@@ -125,62 +106,59 @@ export default function MonthMediaScreen() {
         )}
         {isVoice && (
           <View style={styles.thumbnailPlaceholder}>
-            <Ionicons name="mic" size={32} color="#FFF" />
-            <Text style={styles.thumbnailLabel}>Voice Note</Text>
+            <Ionicons
+              name={isPlaying ? 'pause-circle' : 'play-circle'}
+              size={32}
+              color="#00D4FF"
+            />
+            <Text style={styles.thumbnailLabel}>
+              {isPlaying ? 'Playing...' : 'Tap to Play'}
+            </Text>
           </View>
         )}
         <View style={styles.mediaInfo}>
-          <Text style={styles.mediaType}>{isPhoto ? '📷 Photo' : isVideo ? '🎬 Video' : '🎙️ Voice Note'}</Text>
-          <Text style={styles.mediaDate}>{new Date(item.taken_at).toLocaleString()}</Text>
-          {item.transcript && <Text style={styles.transcriptPreview} numberOfLines={2}>{item.transcript}</Text>}
-          {item.verification_hash && <Text style={styles.hash}>🔒 {item.verification_hash}</Text>}
-          {item.duration && <Text style={styles.duration}>⏱️ {item.duration}s</Text>}
+          <Text style={styles.mediaType}>
+            {isPhoto ? '📷 Photo' : isVideo ? '🎬 Video' : '🎙️ Voice Note'}
+          </Text>
+          <Text style={styles.mediaDate}>
+            {new Date(item.taken_at).toLocaleString()}
+          </Text>
+          {item.transcript && (
+            <Text style={styles.transcriptPreview} numberOfLines={2}>
+              {item.transcript}
+            </Text>
+          )}
+          {item.verification_hash && (
+            <Text style={styles.hash}>🔒 {item.verification_hash}</Text>
+          )}
         </View>
-        <MaterialIcons name="chevron-right" size={24} color="#888" />
+        <TouchableOpacity
+          onPress={() => setSelectedMedia(item)}
+          style={styles.openBtn}
+        >
+          <MaterialIcons name="open-in-new" size={24} color="#00D4FF" />
+        </TouchableOpacity>
       </TouchableOpacity>
     );
   };
 
-  const renderModalContent = () => {
-    if (!selectedItem) return null;
-
-    if (selectedItem.type === 'photo') {
-      return (
-        <Image source={{ uri: selectedItem.url }} style={styles.fullscreenImage} resizeMode="contain" />
-      );
+  const closeModal = () => {
+    setSelectedMedia(null);
+    if (soundRef.current) {
+      soundRef.current.stopAsync();
+      soundRef.current.unloadAsync();
+      soundRef.current = null;
+      setIsPlaying(false);
     }
-
-    if (selectedItem.type === 'video') {
-      return (
-        <Video
-          ref={videoRef}
-          source={{ uri: selectedItem.url }}
-          style={styles.fullscreenVideo}
-          useNativeControls
-          resizeMode="contain"
-          shouldPlay
-          isLooping={false}
-        />
-      );
-    }
-
-    if (selectedItem.type === 'voice_note') {
-      return (
-        <View style={styles.voiceNotePlayer}>
-          <TouchableOpacity style={styles.playButton} onPress={togglePlayVoice}>
-            <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={80} color="#00D4FF" />
-          </TouchableOpacity>
-          <Text style={styles.voiceNoteTranscript}>{selectedItem.transcript || 'No transcript available'}</Text>
-          {selectedItem.duration && <Text style={styles.voiceNoteDuration}>Duration: {selectedItem.duration}s</Text>}
-          {selectedItem.verification_hash && <Text style={styles.hash}>🔒 {selectedItem.verification_hash}</Text>}
-        </View>
-      );
-    }
-
-    return null;
   };
 
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /></View>;
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#00D4FF" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -188,28 +166,98 @@ export default function MonthMediaScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{projectName} - {yearMonth}</Text>
+        <Text style={styles.headerTitle}>
+          {projectName} - {yearMonth}
+        </Text>
         <View style={{ width: 24 }} />
       </View>
 
       <FlatList
         data={media}
-        keyExtractor={item => item.id}
+        keyExtractor={(item) => `${item.id}-${item.type}`} // Ensure uniqueness
         renderItem={renderMediaItem}
         contentContainerStyle={styles.list}
-        ListEmptyComponent={<Text style={styles.emptyText}>No media for this month</Text>}
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>No media for this month</Text>
+        }
       />
 
-      {/* Modal for viewing media */}
-      <Modal visible={isModalVisible} animationType="fade" transparent={false}>
-        <View style={styles.modalContainer}>
-          <TouchableOpacity style={styles.closeButton} onPress={closeModal}>
-            <Ionicons name="close" size={30} color="#FFF" />
+      {/* Full-screen Media Modal */}
+      <Modal
+        visible={!!selectedMedia}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={closeModal}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <TouchableOpacity style={styles.closeModalBtn} onPress={closeModal}>
+            <MaterialIcons name="close" size={30} color="#FFF" />
           </TouchableOpacity>
-          <View style={styles.modalContent}>
-            {renderModalContent()}
-          </View>
-        </View>
+
+          {selectedMedia && (
+            <View style={styles.modalContent}>
+              {selectedMedia.type === 'photo' && (
+                <Image
+                  source={{ uri: selectedMedia.url }}
+                  style={styles.fullImage}
+                  resizeMode="contain"
+                />
+              )}
+
+              {selectedMedia.type === 'video' && (
+                <Video
+                  ref={videoRef}
+                  source={{ uri: selectedMedia.url }}
+                  style={styles.fullVideo}
+                  resizeMode={ResizeMode.CONTAIN}
+                  shouldPlay
+                  useNativeControls
+                  isLooping={false}
+                />
+              )}
+
+              {selectedMedia.type === 'voice_note' && (
+                <View style={styles.voicePlayer}>
+                  <TouchableOpacity
+                    style={styles.playBtn}
+                    onPress={() => {
+                      if (isPlaying) {
+                        handleStopAudio();
+                      } else {
+                        handlePlayAudio(selectedMedia.url);
+                      }
+                    }}
+                  >
+                    <Ionicons
+                      name={isPlaying ? 'pause-circle' : 'play-circle'}
+                      size={64}
+                      color="#00D4FF"
+                    />
+                  </TouchableOpacity>
+                  <Text style={styles.voiceTranscript}>
+                    {selectedMedia.transcript || 'No transcript available'}
+                  </Text>
+                  {selectedMedia.duration && (
+                    <Text style={styles.voiceDuration}>
+                      Duration: {selectedMedia.duration}s
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              <View style={styles.modalMeta}>
+                <Text style={styles.modalDate}>
+                  {new Date(selectedMedia.taken_at).toLocaleString()}
+                </Text>
+                {selectedMedia.verification_hash && (
+                  <Text style={styles.modalHash}>
+                    🔒 {selectedMedia.verification_hash}
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -217,29 +265,115 @@ export default function MonthMediaScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 60, paddingHorizontal: 20, paddingBottom: 20 },
-  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold', flex: 1, marginLeft: 12 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  headerTitle: {
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    flex: 1,
+    marginLeft: 12,
+  },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list: { padding: 16 },
-  mediaCard: { flexDirection: 'row', backgroundColor: '#1A1A1A', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#333', alignItems: 'center' },
-  thumbnail: { width: 80, height: 80, borderRadius: 8, marginRight: 12 },
-  thumbnailPlaceholder: { width: 80, height: 80, borderRadius: 8, marginRight: 12, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' },
-  thumbnailLabel: { color: '#AAA', fontSize: 10, marginTop: 4 },
+  mediaCard: {
+    flexDirection: 'row',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#333',
+    alignItems: 'center',
+  },
+  thumbnail: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  thumbnailPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    marginRight: 12,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  thumbnailLabel: {
+    color: '#FFF',
+    fontSize: 10,
+    marginTop: 4,
+  },
   mediaInfo: { flex: 1 },
   mediaType: { color: '#00D4FF', fontSize: 14, fontWeight: '600' },
   mediaDate: { color: '#888', fontSize: 12, marginTop: 2 },
   transcriptPreview: { color: '#CCC', fontSize: 12, marginTop: 2 },
   hash: { color: '#4CAF50', fontSize: 11, marginTop: 2 },
-  duration: { color: '#888', fontSize: 11, marginTop: 2 },
+  openBtn: { padding: 8 },
   emptyText: { color: '#888', textAlign: 'center', marginTop: 40, fontSize: 16 },
-
-  modalContainer: { flex: 1, backgroundColor: '#000' },
-  closeButton: { position: 'absolute', top: 40, right: 20, zIndex: 10 },
-  modalContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  fullscreenImage: { width: '100%', height: '80%' },
-  fullscreenVideo: { width: '100%', height: '80%' },
-  voiceNotePlayer: { alignItems: 'center', padding: 20 },
-  playButton: { marginBottom: 20 },
-  voiceNoteTranscript: { color: '#FFF', fontSize: 16, textAlign: 'center', marginBottom: 10 },
-  voiceNoteDuration: { color: '#888', fontSize: 14, marginBottom: 10 },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    paddingTop: 60,
+  },
+  closeModalBtn: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
+  },
+  modalContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  fullImage: {
+    width: '100%',
+    height: '80%',
+  },
+  fullVideo: {
+    width: '100%',
+    height: '80%',
+    backgroundColor: '#000',
+  },
+  voicePlayer: {
+    alignItems: 'center',
+    padding: 20,
+  },
+  playBtn: {
+    marginBottom: 20,
+  },
+  voiceTranscript: {
+    color: '#FFF',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  voiceDuration: {
+    color: '#888',
+    fontSize: 14,
+  },
+  modalMeta: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  modalDate: {
+    color: '#AAA',
+    fontSize: 14,
+  },
+  modalHash: {
+    color: '#4CAF50',
+    fontSize: 13,
+    marginTop: 4,
+  },
 });
