@@ -4,3 +4,5 @@ dist/
 .env
 uploads/
 *.log
+"backend/fix-*.js" 
+"backend/*-stripe-*.js" 
