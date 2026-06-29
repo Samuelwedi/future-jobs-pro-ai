@@ -39,6 +39,7 @@ import FoldersScreen from './src/screens/FoldersScreen';
 import ProjectMediaScreen from './src/screens/ProjectMediaScreen';
 import MonthMediaScreen from './src/screens/MonthMediaScreen';
 import { api } from './src/services/api';
+import MonthMediaTypeScreen from './src/screens/MonthMediaTypeScreen';
 
 const Stack = createStackNavigator();
 
@@ -134,6 +135,7 @@ function AppNavigator() {
               <Stack.Screen name="Folders" component={FoldersScreen} />
               <Stack.Screen name="ProjectMedia" component={ProjectMediaScreen} />
               <Stack.Screen name="MonthMedia" component={MonthMediaScreen} />
+              <Stack.Screen name="MonthMediaType" component={MonthMediaTypeScreen} />
             </>
           )}
         </Stack.Navigator>

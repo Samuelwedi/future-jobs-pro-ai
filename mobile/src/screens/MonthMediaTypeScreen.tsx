@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Image, Modal, SafeAreaView, Alert, FlatList,
+  View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator,
+  Image, Modal, SafeAreaView, Alert,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Audio, Video, ResizeMode } from 'expo-av';
 
-export default function MediaListScreen() {
+export default function MonthMediaTypeScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { projectId, yearMonth, projectName, type, title } = route.params;
+  const { projectId, yearMonth, projectName, mediaType } = route.params;
   const [media, setMedia] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState<any | null>(null);
@@ -31,7 +31,7 @@ export default function MediaListScreen() {
   const fetchMedia = async () => {
     try {
       const res: any = await api.get(`/media/project/${projectId}/month/${yearMonth}`);
-      const filtered = (res.media || []).filter((item: any) => item.type === type);
+      const filtered = (res.media || []).filter((item: any) => item.type === mediaType);
       setMedia(filtered);
     } catch (e) {
       console.error(e);
@@ -76,7 +76,7 @@ export default function MediaListScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: any }) => {
+  const renderMediaItem = ({ item }: { item: any }) => {
     const isPhoto = item.type === 'photo';
     const isVideo = item.type === 'video';
     const isVoice = item.type === 'voice_note';
@@ -161,6 +161,12 @@ export default function MediaListScreen() {
     );
   }
 
+  const typeLabels: Record<string, string> = {
+    photo: 'Photos',
+    video: 'Videos',
+    voice_note: 'Voice Notes',
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -168,7 +174,7 @@ export default function MediaListScreen() {
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {title} - {projectName}
+          {projectName} - {yearMonth} - {typeLabels[mediaType] || mediaType}
         </Text>
         <View style={{ width: 24 }} />
       </View>
@@ -176,14 +182,14 @@ export default function MediaListScreen() {
       <FlatList
         data={media}
         keyExtractor={(item) => `${item.id}-${item.type}`}
-        renderItem={renderItem}
+        renderItem={renderMediaItem}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No {title.toLowerCase()} in this month</Text>
+          <Text style={styles.emptyText}>No {typeLabels[mediaType] || mediaType} for this month</Text>
         }
       />
 
-      {/* Full-screen Media Modal (same as before) */}
+      {/* Full-screen Media Modal (unchanged) */}
       <Modal
         visible={!!selectedMedia}
         transparent={true}
