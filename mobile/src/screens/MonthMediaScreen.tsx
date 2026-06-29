@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator,
-  Image, Modal, SafeAreaView, Alert,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
+  Image, Modal, SafeAreaView, Alert, SectionList,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../services/api';
@@ -152,6 +152,13 @@ export default function MonthMediaScreen() {
     }
   };
 
+  // Group media by type
+  const sections = [
+    { title: '📷 Photos', data: media.filter(m => m.type === 'photo') },
+    { title: '🎬 Videos', data: media.filter(m => m.type === 'video') },
+    { title: '🎙️ Voice Notes', data: media.filter(m => m.type === 'voice_note') },
+  ].filter(section => section.data.length > 0);
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -172,17 +179,27 @@ export default function MonthMediaScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <FlatList
-        data={media}
-        keyExtractor={(item) => `${item.id}-${item.type}`} // Ensure uniqueness
-        renderItem={renderMediaItem}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
+      {sections.length > 0 ? (
+        <SectionList
+          sections={sections}
+          keyExtractor={(item) => `${item.id}-${item.type}`}
+          renderItem={renderMediaItem}
+          renderSectionHeader={({ section: { title, data } }) => (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionHeaderText}>{title}</Text>
+              <Text style={styles.sectionHeaderCount}>{data.length}</Text>
+            </View>
+          )}
+          contentContainerStyle={styles.list}
+          stickySectionHeadersEnabled={false}
+        />
+      ) : (
+        <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>No media for this month</Text>
-        }
-      />
+        </View>
+      )}
 
-      {/* Full-screen Media Modal */}
+      {/* Full-screen Media Modal (unchanged) */}
       <Modal
         visible={!!selectedMedia}
         transparent={true}
@@ -282,6 +299,26 @@ const styles = StyleSheet.create({
   },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list: { padding: 16 },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1A1A1A',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  sectionHeaderText: {
+    color: '#00D4FF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  sectionHeaderCount: {
+    color: '#888',
+    fontSize: 14,
+  },
   mediaCard: {
     flexDirection: 'row',
     backgroundColor: '#1A1A1A',
@@ -318,7 +355,8 @@ const styles = StyleSheet.create({
   transcriptPreview: { color: '#CCC', fontSize: 12, marginTop: 2 },
   hash: { color: '#4CAF50', fontSize: 11, marginTop: 2 },
   openBtn: { padding: 8 },
-  emptyText: { color: '#888', textAlign: 'center', marginTop: 40, fontSize: 16 },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyText: { color: '#888', fontSize: 16, textAlign: 'center' },
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.95)',
