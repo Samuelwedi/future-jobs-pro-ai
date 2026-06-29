@@ -61,13 +61,12 @@ router.get('/project/:projectId/months', async (req, res) => {
     }
 
     const result = await pool.query(`
-      SELECT DISTINCT TO_CHAR(COALESCE(media.taken_at, media.created_at), 'YYYY-MM') as month
+      SELECT DISTINCT TO_CHAR(COALESCE(photos.taken_at, voice_notes.created_at), 'YYYY-MM') as month
       FROM (
-        SELECT taken_at, NULL as created_at FROM photos WHERE project_id = $1
+        SELECT taken_at, NULL::timestamp as created_at FROM photos WHERE project_id = $1
         UNION
-        SELECT NULL as taken_at, created_at FROM voice_notes WHERE project_id = $1
+        SELECT NULL::timestamp as taken_at, created_at FROM voice_notes WHERE project_id = $1
       ) media
-      WHERE COALESCE(media.taken_at, media.created_at) IS NOT NULL
       ORDER BY month DESC
     `, [projectId]);
 
@@ -98,43 +97,43 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
     const result = await pool.query(`
       SELECT 
         'photo' as type,
-        p.id,
-        p.s3_key as url,
-        p.taken_at,
-        p.metadata,
-        p.verification_hash,
-        NULL as transcript,
-        NULL as duration
-      FROM photos p
-      WHERE p.project_id = $1 AND TO_CHAR(p.taken_at, 'YYYY-MM') = $2
+        id,
+        s3_key as url,
+        taken_at,
+        metadata,
+        verification_hash,
+        NULL::text as transcript,
+        NULL::text as duration
+      FROM photos
+      WHERE project_id = $1 AND TO_CHAR(taken_at, 'YYYY-MM') = $2
 
       UNION ALL
 
       SELECT 
         'video' as type,
-        p.id,
-        p.s3_key as url,
-        p.taken_at,
-        p.metadata,
-        p.verification_hash,
-        NULL as transcript,
-        NULL as duration
-      FROM photos p
-      WHERE p.project_id = $1 AND TO_CHAR(p.taken_at, 'YYYY-MM') = $2 AND p.file_type = 'video'
+        id,
+        s3_key as url,
+        taken_at,
+        metadata,
+        verification_hash,
+        NULL::text as transcript,
+        NULL::text as duration
+      FROM photos
+      WHERE project_id = $1 AND TO_CHAR(taken_at, 'YYYY-MM') = $2 AND file_type = 'video'
 
       UNION ALL
 
       SELECT 
         'voice_note' as type,
-        v.id,
-        v.audio_url as url,
-        COALESCE(v.taken_at, v.created_at) as taken_at,
-        NULL as metadata,
-        NULL as verification_hash,
-        v.transcript,
-        v.duration_seconds as duration
-      FROM voice_notes v
-      WHERE v.project_id = $1 AND TO_CHAR(COALESCE(v.taken_at, v.created_at), 'YYYY-MM') = $2
+        id,
+        audio_url as url,
+        COALESCE(taken_at, created_at) as taken_at,
+        NULL::jsonb as metadata,
+        NULL::text as verification_hash,
+        transcript,
+        duration_seconds::text as duration
+      FROM voice_notes
+      WHERE project_id = $1 AND TO_CHAR(COALESCE(taken_at, created_at), 'YYYY-MM') = $2
 
       ORDER BY taken_at DESC
     `, [projectId, yearMonth]);
