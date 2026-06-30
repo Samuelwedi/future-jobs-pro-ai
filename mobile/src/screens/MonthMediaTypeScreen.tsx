@@ -11,7 +11,7 @@ import { Audio, Video, ResizeMode } from 'expo-av';
 export default function MonthMediaTypeScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { projectId, yearMonth, projectName, mediaType } = route.params;
+  const { projectId, yearMonth, projectName, mediaType } = route.params || {};
   const [media, setMedia] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState<any | null>(null);
@@ -22,8 +22,12 @@ export default function MonthMediaTypeScreen() {
   const videoRef = useRef<Video>(null);
 
   useEffect(() => {
-    console.log('📱 [MonthMediaType] Params:', { projectId, yearMonth, projectName, mediaType });
-    fetchMedia();
+    if (projectId && yearMonth && mediaType) {
+      fetchMedia();
+    } else {
+      Alert.alert('Error', 'Missing parameters');
+      setLoading(false);
+    }
     return () => {
       if (soundRef.current) {
         soundRef.current.unloadAsync();
@@ -33,18 +37,16 @@ export default function MonthMediaTypeScreen() {
 
   const fetchMedia = async () => {
     try {
-      const url = `/media/project/${projectId}/month/${yearMonth}`;
-      console.log(`📱 [MonthMediaType] Fetching: ${url}`);
-      const res: any = await api.get(url);
-      console.log('📱 [MonthMediaType] Full response:', JSON.stringify(res, null, 2));
-      const allMedia = res.media || [];
-      console.log(`📱 [MonthMediaType] Total items: ${allMedia.length}`);
-      console.log('📱 [MonthMediaType] Types in response:', allMedia.map((item: any) => item.type));
-      const filtered = allMedia.filter((item: any) => item.type === mediaType);
-      console.log(`📱 [MonthMediaType] Filtered (${mediaType}): ${filtered.length} items`);
+      console.log('📱 Fetching media for:', { projectId, yearMonth, mediaType });
+      const res: any = await api.get(`/media/project/${projectId}/month/${yearMonth}`);
+      console.log('📱 Response:', res);
+      const mediaItems = res.media || [];
+      const filtered = mediaItems.filter((item: any) => item && item.type === mediaType);
+      console.log(`📱 Found ${filtered.length} items`);
       setMedia(filtered);
     } catch (e) {
-      console.error('📱 [MonthMediaType] Fetch error:', e);
+      console.error('📱 Fetch error:', e);
+      Alert.alert('Error', 'Failed to load media');
     } finally {
       setLoading(false);
     }
@@ -87,10 +89,13 @@ export default function MonthMediaTypeScreen() {
   };
 
   const renderMediaItem = ({ item }: { item: any }) => {
+    // Safety: if item is malformed, skip
+    if (!item || !item.type) return null;
+
     const isPhoto = item.type === 'photo';
     const isVideo = item.type === 'video';
     const isVoice = item.type === 'voice_note';
-    const hasAudio = isVoice && item.url && item.url !== 'null';
+    const hasAudio = isVoice && item.url && item.url !== 'null' && item.url !== '';
 
     return (
       <TouchableOpacity
@@ -137,7 +142,7 @@ export default function MonthMediaTypeScreen() {
             {isPhoto ? '📷 Photo' : isVideo ? '🎬 Video' : '🎙️ Voice Note'}
           </Text>
           <Text style={styles.mediaDate}>
-            {new Date(item.taken_at).toLocaleString()}
+            {item.taken_at ? new Date(item.taken_at).toLocaleString() : 'Unknown date'}
           </Text>
           {item.transcript && (
             <Text style={styles.transcriptPreview} numberOfLines={2}>
@@ -191,18 +196,18 @@ export default function MonthMediaTypeScreen() {
           <Ionicons name="arrow-back" size={28} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {projectName} - {yearMonth} - {typeLabels[mediaType] || mediaType}
+          {projectName || 'Project'} - {yearMonth || ''} - {typeLabels[mediaType || ''] || mediaType || 'Media'}
         </Text>
         <View style={{ width: 24 }} />
       </View>
 
       <FlatList
         data={media}
-        keyExtractor={(item) => `${item.id}-${item.type}`}
+        keyExtractor={(item, index) => (item && item.id ? `${item.id}-${item.type}` : `item-${index}`)}
         renderItem={renderMediaItem}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No {typeLabels[mediaType] || mediaType} for this month</Text>
+          <Text style={styles.emptyText}>No {typeLabels[mediaType || ''] || 'media'} for this month</Text>
         }
       />
 
@@ -301,7 +306,7 @@ export default function MonthMediaTypeScreen() {
 
               <View style={styles.modalMeta}>
                 <Text style={styles.modalDate}>
-                  {new Date(selectedMedia.taken_at).toLocaleString()}
+                  {selectedMedia.taken_at ? new Date(selectedMedia.taken_at).toLocaleString() : 'Unknown date'}
                 </Text>
                 {selectedMedia.verification_hash && (
                   <Text style={styles.modalHash}>

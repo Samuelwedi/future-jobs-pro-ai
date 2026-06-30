@@ -11,7 +11,7 @@ import { Audio, Video, ResizeMode } from 'expo-av';
 export default function MonthMediaTypeScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { projectId, yearMonth, projectName, mediaType } = route.params;
+  const { projectId, yearMonth, projectName, mediaType } = route.params || {};
   const [media, setMedia] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState<any | null>(null);
@@ -23,6 +23,13 @@ export default function MonthMediaTypeScreen() {
 
   useEffect(() => {
     console.log('📱 [MonthMediaType] Params:', { projectId, yearMonth, projectName, mediaType });
+    // Guard: if mediaType is missing, show error and stop
+    if (!mediaType) {
+      console.error('❌ mediaType is undefined');
+      Alert.alert('Error', 'Media type is missing');
+      setLoading(false);
+      return;
+    }
     fetchMedia();
     return () => {
       if (soundRef.current) {
@@ -39,11 +46,11 @@ export default function MonthMediaTypeScreen() {
       console.log('📱 [MonthMediaType] Full response:', JSON.stringify(res, null, 2));
       const allMedia = res.media || [];
       console.log(`📱 [MonthMediaType] Total items: ${allMedia.length}`);
-      console.log('📱 [MonthMediaType] Types in response:', allMedia.map((item: any) => item.type));
-      // Filter by mediaType – be case-insensitive
-      const filtered = allMedia.filter((item: any) => 
-        item.type && item.type.toLowerCase() === mediaType.toLowerCase()
-      );
+      // Filter by mediaType – safe: check item.type exists before calling toLowerCase
+      const filtered = allMedia.filter((item: any) => {
+        if (!item || !item.type) return false;
+        return item.type.toLowerCase() === mediaType.toLowerCase();
+      });
       console.log(`📱 [MonthMediaType] Filtered (${mediaType}): ${filtered.length} items`);
       setMedia(filtered);
     } catch (e) {
@@ -90,6 +97,9 @@ export default function MonthMediaTypeScreen() {
   };
 
   const renderMediaItem = ({ item }: { item: any }) => {
+    // Guard: if item is malformed, return null
+    if (!item || !item.type) return null;
+
     const isPhoto = item.type === 'photo';
     const isVideo = item.type === 'video';
     const isVoice = item.type === 'voice_note';
@@ -194,18 +204,18 @@ export default function MonthMediaTypeScreen() {
           <Ionicons name="arrow-back" size={28} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {projectName} - {yearMonth} - {typeLabels[mediaType] || mediaType}
+          {projectName || 'Project'} - {yearMonth || ''} - {typeLabels[mediaType] || mediaType || 'Media'}
         </Text>
         <View style={{ width: 24 }} />
       </View>
 
       <FlatList
         data={media}
-        keyExtractor={(item) => `${item.id}-${item.type}`}
+        keyExtractor={(item, index) => (item.id ? `${item.id}-${item.type}` : `item-${index}`)}
         renderItem={renderMediaItem}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No {typeLabels[mediaType] || mediaType} for this month</Text>
+          <Text style={styles.emptyText}>No {typeLabels[mediaType] || 'media'} for this month</Text>
         }
       />
 
