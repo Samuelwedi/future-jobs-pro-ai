@@ -6,8 +6,7 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-// ✅ Import Audio and Video correctly, and ResizeMode
-import { Audio, Video, ResizeMode } from 'expo-av';
+import { Audio, Video, ResizeMode } from 'expo-av';   // ✅ correct import
 
 export default function MonthMediaTypeScreen() {
   const navigation = useNavigation<any>();
@@ -246,13 +245,13 @@ export default function MonthMediaTypeScreen() {
                       ref={videoRef}
                       source={{ uri: selectedMedia.url }}
                       style={styles.fullVideo}
-                      resizeMode={ResizeMode.CONTAIN}   // ✅ Use ResizeMode.CONTAIN
+                      resizeMode={ResizeMode.CONTAIN}
                       shouldPlay={true}
                       useNativeControls={true}
                       isLooping={false}
                       onLoadStart={() => setVideoLoading(true)}
                       onLoad={() => setVideoLoading(false)}
-                      onError={(error) => {
+                      onError={(error: any) => {   // ✅ added type annotation
                         setVideoLoading(false);
                         setVideoError(true);
                         console.error('Video error:', error);

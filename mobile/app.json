@@ -56,7 +56,8 @@
           }
         }
       ],
-      "react-native-video"
+      "react-native-video",
+      "expo-video"
     ],
     "extra": {
       "eas": {
