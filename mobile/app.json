@@ -55,7 +55,8 @@
             "kotlinVersion": "2.0.21"
           }
         }
-      ]
+      ],
+      "react-native-video"
     ],
     "extra": {
       "eas": {

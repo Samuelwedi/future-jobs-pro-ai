@@ -6,7 +6,9 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { Audio, Video, ResizeMode } from 'expo-av';
+import { Audio } from 'expo-av';
+// Use react-native-video for more reliable video playback
+import Video from 'react-native-video';
 
 export default function MonthMediaTypeScreen() {
   const navigation = useNavigation<any>();
@@ -19,8 +21,7 @@ export default function MonthMediaTypeScreen() {
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
-  const videoRef = useRef<Video>(null);
-
+  const videoRef = useRef<any>(null);
   useEffect(() => {
     console.log('📱 [MonthMediaType] Params received:', route.params);
     const finalMediaType = mediaType || 'photo';
@@ -275,10 +276,10 @@ export default function MonthMediaTypeScreen() {
                       ref={videoRef}
                       source={{ uri: selectedMedia.url }}
                       style={styles.fullVideo}
-                      resizeMode={ResizeMode.CONTAIN}
-                      shouldPlay={true}
-                      useNativeControls={true}
-                      isLooping={false}
+                      resizeMode="contain"
+                      controls={true}
+                      paused={false}
+                      repeat={false}
                       onLoadStart={() => setVideoLoading(true)}
                       onLoad={() => setVideoLoading(false)}
                       onError={(error) => {
@@ -435,6 +436,7 @@ const styles = StyleSheet.create({
   fullVideo: {
     width: '100%',
     height: '100%',
+    backgroundColor: '#000',
   },
   videoLoading: {
     position: 'absolute',
