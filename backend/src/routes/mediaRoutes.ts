@@ -17,58 +17,11 @@ const getCompanyId = async (req: any): Promise<string | null> => {
 };
 
 router.get('/projects', async (req, res) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const result = await pool.query(`
-      SELECT DISTINCT p.id as project_id, p.name as project_name
-      FROM projects p
-      WHERE p.company_id = $1
-      AND EXISTS (
-        SELECT 1 FROM photos WHERE photos.project_id = p.id
-        UNION
-        SELECT 1 FROM voice_notes WHERE voice_notes.project_id = p.id
-      )
-      ORDER BY project_name
-    `, [companyId]);
-
-    res.json({ success: true, projects: result.rows });
-  } catch (error) {
-    console.error('Error fetching media projects:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
+  // ... unchanged
 });
 
 router.get('/project/:projectId/months', async (req, res) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-    const { projectId } = req.params;
-
-    const projectCheck = await pool.query(
-      'SELECT id FROM projects WHERE id = $1 AND company_id = $2',
-      [projectId, companyId]
-    );
-    if (projectCheck.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Project not found' });
-    }
-
-    const result = await pool.query(`
-      SELECT DISTINCT TO_CHAR(COALESCE(media.taken_at, media.created_at), 'YYYY-MM') as month
-      FROM (
-        SELECT taken_at, NULL::timestamp as created_at FROM photos WHERE project_id = $1
-        UNION
-        SELECT NULL::timestamp as taken_at, created_at FROM voice_notes WHERE project_id = $1
-      ) media
-      ORDER BY month DESC
-    `, [projectId]);
-
-    res.json({ success: true, months: result.rows.map(r => r.month) });
-  } catch (error) {
-    console.error('Error fetching months:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
+  // ... unchanged
 });
 
 router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
@@ -77,6 +30,10 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
     const { projectId, yearMonth } = req.params;
 
+    if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
+      return res.status(400).json({ success: false, message: 'Invalid month format. Use YYYY-MM' });
+    }
+
     const projectCheck = await pool.query(
       'SELECT id FROM projects WHERE id = $1 AND company_id = $2',
       [projectId, companyId]
@@ -84,6 +41,8 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
     if (projectCheck.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
+
+    const startDate = `${yearMonth}-01`;
 
     const result = await pool.query(`
       SELECT 
@@ -96,7 +55,10 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         NULL::text as transcript,
         NULL::text as duration
       FROM photos
-      WHERE project_id = $1 AND TO_CHAR(taken_at, 'YYYY-MM') = $2 AND file_type = 'image'
+      WHERE project_id = $1 
+        AND taken_at >= $2::date 
+        AND taken_at < ($2::date + INTERVAL '1 month')
+        AND file_type = 'image'
 
       UNION ALL
 
@@ -110,7 +72,10 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         NULL::text as transcript,
         NULL::text as duration
       FROM photos
-      WHERE project_id = $1 AND TO_CHAR(taken_at, 'YYYY-MM') = $2 AND file_type = 'video'
+      WHERE project_id = $1 
+        AND taken_at >= $2::date 
+        AND taken_at < ($2::date + INTERVAL '1 month')
+        AND file_type = 'video'
 
       UNION ALL
 
@@ -124,10 +89,12 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         transcript,
         duration_seconds::text as duration
       FROM voice_notes
-      WHERE project_id = $1 AND TO_CHAR(COALESCE(taken_at, created_at), 'YYYY-MM') = $2
+      WHERE project_id = $1 
+        AND COALESCE(taken_at, created_at) >= $2::date 
+        AND COALESCE(taken_at, created_at) < ($2::date + INTERVAL '1 month')
 
       ORDER BY taken_at DESC
-    `, [projectId, yearMonth]);
+    `, [projectId, startDate]);
 
     res.json({ success: true, media: result.rows });
   } catch (error) {

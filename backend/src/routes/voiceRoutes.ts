@@ -79,7 +79,7 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
     const result = await processVoiceNote(tempFile, userId, projectId, timeEntryId);
     fs.unlinkSync(tempFile);
 
-    // Insert with audio_url
+    // Insert with company_id and audio_url
     const query = `
       INSERT INTO voice_notes
       (company_id, user_id, project_id, time_entry_id, audio_url, transcript, duration_seconds, taken_at, folder_path, metadata)

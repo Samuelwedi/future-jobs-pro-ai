@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator,
-  Image, Modal, SafeAreaView, Alert,
+  Image, Modal, SafeAreaView, Alert, Linking,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../services/api';
@@ -23,7 +23,6 @@ export default function MonthMediaTypeScreen() {
 
   useEffect(() => {
     console.log('📱 [MonthMediaType] Params received:', route.params);
-    // If mediaType is undefined, set a default
     const finalMediaType = mediaType || 'photo';
     console.log(`📱 [MonthMediaType] Using mediaType: ${finalMediaType}`);
     if (projectId && yearMonth) {
@@ -45,7 +44,6 @@ export default function MonthMediaTypeScreen() {
       console.log(`📱 [MonthMediaType] Fetching: ${url}`);
       const res: any = await api.get(url);
       const allMedia = res.media || [];
-      // Filter by type (case-insensitive)
       const filtered = allMedia.filter((item: any) =>
         item && item.type && item.type.toLowerCase() === type.toLowerCase()
       );
@@ -248,8 +246,28 @@ export default function MonthMediaTypeScreen() {
                     <View style={styles.videoErrorContainer}>
                       <Ionicons name="alert-circle" size={48} color="#F44336" />
                       <Text style={styles.videoErrorText}>Could not load video</Text>
-                      <TouchableOpacity onPress={() => { setVideoError(false); setVideoLoading(true); }}>
-                        <Text style={{ color: '#00D4FF', marginTop: 8 }}>Retry</Text>
+                      <TouchableOpacity
+                        style={styles.browserBtn}
+                        onPress={() => {
+                          if (selectedMedia?.url) {
+                            Linking.openURL(selectedMedia.url);
+                          }
+                        }}
+                      >
+                        <Text style={styles.browserBtnText}>Open in Browser</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.retryBtn}
+                        onPress={() => {
+                          setVideoError(false);
+                          setVideoLoading(true);
+                          // Force re-render of video
+                          setTimeout(() => {
+                            setVideoLoading(false);
+                          }, 500);
+                        }}
+                      >
+                        <Text style={styles.retryBtnText}>Retry</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -423,10 +441,34 @@ const styles = StyleSheet.create({
   },
   videoErrorContainer: {
     alignItems: 'center',
+    padding: 20,
   },
   videoErrorText: {
     color: '#F44336',
-    marginTop: 8,
+    fontSize: 16,
+    marginBottom: 12,
+  },
+  browserBtn: {
+    backgroundColor: '#00D4FF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  browserBtnText: {
+    color: '#0A0A0A',
+    fontWeight: '600',
+  },
+  retryBtn: {
+    borderWidth: 1,
+    borderColor: '#00D4FF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryBtnText: {
+    color: '#00D4FF',
+    fontWeight: '600',
   },
   voicePlayer: {
     alignItems: 'center',
