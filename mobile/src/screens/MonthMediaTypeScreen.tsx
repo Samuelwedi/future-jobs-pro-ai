@@ -251,7 +251,7 @@ export default function MonthMediaTypeScreen() {
                       isLooping={false}
                       onLoadStart={() => setVideoLoading(true)}
                       onLoad={() => setVideoLoading(false)}
-                      onError={(error: any) => {   // ✅ added type annotation
+                      onError={(error: any) => {
                         setVideoLoading(false);
                         setVideoError(true);
                         console.error('Video error:', error);
