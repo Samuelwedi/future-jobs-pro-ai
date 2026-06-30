@@ -16,10 +16,13 @@ export default function MonthMediaTypeScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState<any | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
   const videoRef = useRef<Video>(null);
 
   useEffect(() => {
+    console.log('📱 [MonthMediaType] Params:', { projectId, yearMonth, projectName, mediaType });
     fetchMedia();
     return () => {
       if (soundRef.current) {
@@ -30,11 +33,21 @@ export default function MonthMediaTypeScreen() {
 
   const fetchMedia = async () => {
     try {
-      const res: any = await api.get(`/media/project/${projectId}/month/${yearMonth}`);
-      const filtered = (res.media || []).filter((item: any) => item.type === mediaType);
+      const url = `/media/project/${projectId}/month/${yearMonth}`;
+      console.log(`📱 [MonthMediaType] Fetching: ${url}`);
+      const res: any = await api.get(url);
+      console.log('📱 [MonthMediaType] Full response:', JSON.stringify(res, null, 2));
+      const allMedia = res.media || [];
+      console.log(`📱 [MonthMediaType] Total items: ${allMedia.length}`);
+      console.log('📱 [MonthMediaType] Types in response:', allMedia.map((item: any) => item.type));
+      // Filter by mediaType – be case-insensitive
+      const filtered = allMedia.filter((item: any) => 
+        item.type && item.type.toLowerCase() === mediaType.toLowerCase()
+      );
+      console.log(`📱 [MonthMediaType] Filtered (${mediaType}): ${filtered.length} items`);
       setMedia(filtered);
     } catch (e) {
-      console.error(e);
+      console.error('📱 [MonthMediaType] Fetch error:', e);
     } finally {
       setLoading(false);
     }
@@ -150,6 +163,8 @@ export default function MonthMediaTypeScreen() {
 
   const closeModal = () => {
     setSelectedMedia(null);
+    setVideoLoading(false);
+    setVideoError(false);
     if (soundRef.current) {
       soundRef.current.stopAsync();
       soundRef.current.unloadAsync();
@@ -194,7 +209,6 @@ export default function MonthMediaTypeScreen() {
         }
       />
 
-      {/* Full-screen Media Modal */}
       <Modal
         visible={!!selectedMedia}
         transparent={true}
@@ -217,15 +231,37 @@ export default function MonthMediaTypeScreen() {
               )}
 
               {selectedMedia.type === 'video' && (
-                <Video
-                  ref={videoRef}
-                  source={{ uri: selectedMedia.url }}
-                  style={styles.fullVideo}
-                  resizeMode={ResizeMode.CONTAIN}
-                  shouldPlay
-                  useNativeControls
-                  isLooping={false}
-                />
+                <View style={styles.videoContainer}>
+                  {videoLoading && (
+                    <ActivityIndicator size="large" color="#00D4FF" style={styles.videoLoading} />
+                  )}
+                  {videoError ? (
+                    <View style={styles.videoErrorContainer}>
+                      <Ionicons name="alert-circle" size={48} color="#F44336" />
+                      <Text style={styles.videoErrorText}>Could not load video</Text>
+                      <TouchableOpacity onPress={() => { setVideoError(false); setVideoLoading(true); }}>
+                        <Text style={{ color: '#00D4FF', marginTop: 8 }}>Retry</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <Video
+                      ref={videoRef}
+                      source={{ uri: selectedMedia.url }}
+                      style={styles.fullVideo}
+                      resizeMode={ResizeMode.CONTAIN}
+                      shouldPlay={true}
+                      useNativeControls={true}
+                      isLooping={false}
+                      onLoadStart={() => setVideoLoading(true)}
+                      onLoad={() => setVideoLoading(false)}
+                      onError={(error) => {
+                        setVideoLoading(false);
+                        setVideoError(true);
+                        console.error('Video error:', error);
+                      }}
+                    />
+                  )}
+                </View>
               )}
 
               {selectedMedia.type === 'voice_note' && (
@@ -362,10 +398,26 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '80%',
   },
-  fullVideo: {
+  videoContainer: {
     width: '100%',
     height: '80%',
     backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  videoLoading: {
+    position: 'absolute',
+  },
+  videoErrorContainer: {
+    alignItems: 'center',
+  },
+  videoErrorText: {
+    color: '#F44336',
+    marginTop: 8,
   },
   voicePlayer: {
     alignItems: 'center',

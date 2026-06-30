@@ -16,10 +16,13 @@ export default function MonthMediaTypeScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState<any | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
   const videoRef = useRef<Video>(null);
 
   useEffect(() => {
+    console.log('📱 [MonthMediaType] Params:', { projectId, yearMonth, projectName, mediaType });
     fetchMedia();
     return () => {
       if (soundRef.current) {
@@ -30,11 +33,18 @@ export default function MonthMediaTypeScreen() {
 
   const fetchMedia = async () => {
     try {
-      const res: any = await api.get(`/media/project/${projectId}/month/${yearMonth}`);
-      const filtered = (res.media || []).filter((item: any) => item.type === mediaType);
+      const url = `/media/project/${projectId}/month/${yearMonth}`;
+      console.log(`📱 [MonthMediaType] Fetching: ${url}`);
+      const res: any = await api.get(url);
+      console.log('📱 [MonthMediaType] Full response:', JSON.stringify(res, null, 2));
+      const allMedia = res.media || [];
+      console.log(`📱 [MonthMediaType] Total items: ${allMedia.length}`);
+      console.log('📱 [MonthMediaType] Types in response:', allMedia.map((item: any) => item.type));
+      const filtered = allMedia.filter((item: any) => item.type === mediaType);
+      console.log(`📱 [MonthMediaType] Filtered (${mediaType}): ${filtered.length} items`);
       setMedia(filtered);
     } catch (e) {
-      console.error(e);
+      console.error('📱 [MonthMediaType] Fetch error:', e);
     } finally {
       setLoading(false);
     }
@@ -42,7 +52,7 @@ export default function MonthMediaTypeScreen() {
 
   const handlePlayAudio = async (url: string) => {
     if (!url) {
-      Alert.alert('Error', 'Audio file URL is missing');
+      Alert.alert('Audio Not Available', 'This voice note does not have an audio file.');
       return;
     }
     try {
@@ -80,16 +90,21 @@ export default function MonthMediaTypeScreen() {
     const isPhoto = item.type === 'photo';
     const isVideo = item.type === 'video';
     const isVoice = item.type === 'voice_note';
+    const hasAudio = isVoice && item.url && item.url !== 'null';
 
     return (
       <TouchableOpacity
         style={styles.mediaCard}
         onPress={() => {
-          if (isVoice && item.url) {
-            if (isPlaying) {
-              handleStopAudio();
+          if (isVoice) {
+            if (hasAudio) {
+              if (isPlaying) {
+                handleStopAudio();
+              } else {
+                handlePlayAudio(item.url);
+              }
             } else {
-              handlePlayAudio(item.url);
+              Alert.alert('Audio Not Available', 'This voice note does not have an audio file.');
             }
             return;
           }
@@ -108,12 +123,12 @@ export default function MonthMediaTypeScreen() {
         {isVoice && (
           <View style={styles.thumbnailPlaceholder}>
             <Ionicons
-              name={isPlaying ? 'pause-circle' : 'play-circle'}
+              name={isPlaying ? 'pause-circle' : hasAudio ? 'play-circle' : 'alert-circle'}
               size={32}
-              color="#00D4FF"
+              color={hasAudio ? '#00D4FF' : '#888'}
             />
-            <Text style={styles.thumbnailLabel}>
-              {isPlaying ? 'Playing...' : 'Tap to Play'}
+            <Text style={[styles.thumbnailLabel, !hasAudio && { color: '#888' }]}>
+              {isPlaying ? 'Playing...' : hasAudio ? 'Tap to Play' : 'No Audio'}
             </Text>
           </View>
         )}
@@ -145,6 +160,8 @@ export default function MonthMediaTypeScreen() {
 
   const closeModal = () => {
     setSelectedMedia(null);
+    setVideoLoading(false);
+    setVideoError(false);
     if (soundRef.current) {
       soundRef.current.stopAsync();
       soundRef.current.unloadAsync();
@@ -171,7 +188,7 @@ export default function MonthMediaTypeScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color="#FFF" />
+          <Ionicons name="arrow-back" size={28} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
           {projectName} - {yearMonth} - {typeLabels[mediaType] || mediaType}
@@ -189,7 +206,6 @@ export default function MonthMediaTypeScreen() {
         }
       />
 
-      {/* Full-screen Media Modal (unchanged) */}
       <Modal
         visible={!!selectedMedia}
         transparent={true}
@@ -198,7 +214,7 @@ export default function MonthMediaTypeScreen() {
       >
         <SafeAreaView style={styles.modalContainer}>
           <TouchableOpacity style={styles.closeModalBtn} onPress={closeModal}>
-            <MaterialIcons name="close" size={30} color="#FFF" />
+            <Ionicons name="arrow-back" size={28} color="#FFF" />
           </TouchableOpacity>
 
           {selectedMedia && (
@@ -212,42 +228,73 @@ export default function MonthMediaTypeScreen() {
               )}
 
               {selectedMedia.type === 'video' && (
-                <Video
-                  ref={videoRef}
-                  source={{ uri: selectedMedia.url }}
-                  style={styles.fullVideo}
-                  resizeMode={ResizeMode.CONTAIN}
-                  shouldPlay
-                  useNativeControls
-                  isLooping={false}
-                />
+                <View style={styles.videoContainer}>
+                  {videoLoading && (
+                    <ActivityIndicator size="large" color="#00D4FF" style={styles.videoLoading} />
+                  )}
+                  {videoError ? (
+                    <View style={styles.videoErrorContainer}>
+                      <Ionicons name="alert-circle" size={48} color="#F44336" />
+                      <Text style={styles.videoErrorText}>Could not load video</Text>
+                      <TouchableOpacity onPress={() => { setVideoError(false); setVideoLoading(true); }}>
+                        <Text style={{ color: '#00D4FF', marginTop: 8 }}>Retry</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <Video
+                      ref={videoRef}
+                      source={{ uri: selectedMedia.url }}
+                      style={styles.fullVideo}
+                      resizeMode={ResizeMode.CONTAIN}
+                      shouldPlay={true}
+                      useNativeControls={true}
+                      isLooping={false}
+                      onLoadStart={() => setVideoLoading(true)}
+                      onLoad={() => setVideoLoading(false)}
+                      onError={(error) => {
+                        setVideoLoading(false);
+                        setVideoError(true);
+                        console.error('Video error:', error);
+                      }}
+                    />
+                  )}
+                </View>
               )}
 
               {selectedMedia.type === 'voice_note' && (
                 <View style={styles.voicePlayer}>
-                  <TouchableOpacity
-                    style={styles.playBtn}
-                    onPress={() => {
-                      if (isPlaying) {
-                        handleStopAudio();
-                      } else {
-                        handlePlayAudio(selectedMedia.url);
-                      }
-                    }}
-                  >
-                    <Ionicons
-                      name={isPlaying ? 'pause-circle' : 'play-circle'}
-                      size={64}
-                      color="#00D4FF"
-                    />
-                  </TouchableOpacity>
-                  <Text style={styles.voiceTranscript}>
-                    {selectedMedia.transcript || 'No transcript available'}
-                  </Text>
-                  {selectedMedia.duration && (
-                    <Text style={styles.voiceDuration}>
-                      Duration: {selectedMedia.duration}s
-                    </Text>
+                  {selectedMedia.url && selectedMedia.url !== 'null' ? (
+                    <>
+                      <TouchableOpacity
+                        style={styles.playBtn}
+                        onPress={() => {
+                          if (isPlaying) {
+                            handleStopAudio();
+                          } else {
+                            handlePlayAudio(selectedMedia.url);
+                          }
+                        }}
+                      >
+                        <Ionicons
+                          name={isPlaying ? 'pause-circle' : 'play-circle'}
+                          size={64}
+                          color="#00D4FF"
+                        />
+                      </TouchableOpacity>
+                      <Text style={styles.voiceTranscript}>
+                        {selectedMedia.transcript || 'No transcript available'}
+                      </Text>
+                      {selectedMedia.duration && (
+                        <Text style={styles.voiceDuration}>
+                          Duration: {selectedMedia.duration}s
+                        </Text>
+                      )}
+                    </>
+                  ) : (
+                    <View style={styles.noAudioContainer}>
+                      <Ionicons name="alert-circle" size={64} color="#888" />
+                      <Text style={styles.noAudioText}>Audio file not available</Text>
+                    </View>
                   )}
                 </View>
               )}
@@ -334,7 +381,7 @@ const styles = StyleSheet.create({
   closeModalBtn: {
     position: 'absolute',
     top: 20,
-    right: 20,
+    left: 20,
     zIndex: 10,
     padding: 8,
   },
@@ -348,10 +395,26 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '80%',
   },
-  fullVideo: {
+  videoContainer: {
     width: '100%',
     height: '80%',
     backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  videoLoading: {
+    position: 'absolute',
+  },
+  videoErrorContainer: {
+    alignItems: 'center',
+  },
+  videoErrorText: {
+    color: '#F44336',
+    marginTop: 8,
   },
   voicePlayer: {
     alignItems: 'center',
@@ -369,6 +432,15 @@ const styles = StyleSheet.create({
   voiceDuration: {
     color: '#888',
     fontSize: 14,
+  },
+  noAudioContainer: {
+    alignItems: 'center',
+    padding: 20,
+  },
+  noAudioText: {
+    color: '#888',
+    fontSize: 18,
+    marginTop: 12,
   },
   modalMeta: {
     marginTop: 16,
