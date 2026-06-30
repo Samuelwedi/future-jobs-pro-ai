@@ -55,14 +55,7 @@
             "kotlinVersion": "2.0.21"
           }
         }
-      ],
-      "react-native-video",
-      "expo-video"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "bcc71783-5078-4ef3-8760-56b83cc4508f"
-      }
-    }
+      ]
+    ]
   }
 }
