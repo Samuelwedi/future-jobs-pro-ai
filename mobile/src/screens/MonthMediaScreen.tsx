@@ -23,7 +23,6 @@ export default function MonthMediaScreen() {
 
   const fetchCounts = async () => {
     try {
-      console.log('📱 [MonthMedia] Fetching counts for:', { projectId, yearMonth });
       const res: any = await api.get(`/media/project/${projectId}/month/${yearMonth}`);
       const mediaItems = res.media || [];
       const photos = mediaItems.filter((m: any) => m && m.type === 'photo').length;
@@ -31,7 +30,8 @@ export default function MonthMediaScreen() {
       const voice_notes = mediaItems.filter((m: any) => m && m.type === 'voice_note').length;
       setCounts({ photos, videos, voice_notes });
     } catch (e) {
-      console.error('📱 [MonthMedia] Fetch error:', e);
+      console.error('Fetch error:', e);
+      Alert.alert('Error', 'Failed to load media counts');
     } finally {
       setLoading(false);
     }
@@ -69,13 +69,16 @@ export default function MonthMediaScreen() {
             key={folder.type}
             style={[styles.folderCard, { borderColor: folder.color }]}
             onPress={() => {
-              console.log(`📱 [MonthMedia] Navigating to ${folder.type} with params:`, { projectId, yearMonth, projectName, mediaType: folder.type });
-              navigation.navigate('MonthMediaType', {
-                projectId,
-                yearMonth,
-                projectName,
-                mediaType: folder.type,
-              });
+              if (projectId && yearMonth && projectName) {
+                navigation.navigate('MonthMediaType', {
+                  projectId,
+                  yearMonth,
+                  projectName,
+                  mediaType: folder.type,
+                });
+              } else {
+                Alert.alert('Error', 'Missing project information');
+              }
             }}
           >
             <MaterialIcons name={folder.icon as any} size={40} color={folder.color} />

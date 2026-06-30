@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator,
-  Image, Modal, SafeAreaView, Alert, Linking,
+  Image, Modal, SafeAreaView, Alert,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
-// Use react-native-video for more reliable video playback
-import Video from 'react-native-video';
+// ✅ Import Audio and Video correctly, and ResizeMode
+import { Audio, Video, ResizeMode } from 'expo-av';
 
 export default function MonthMediaTypeScreen() {
   const navigation = useNavigation<any>();
@@ -21,15 +20,12 @@ export default function MonthMediaTypeScreen() {
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
-  const videoRef = useRef<any>(null);
+  const videoRef = useRef<Video>(null);
+
   useEffect(() => {
-    console.log('📱 [MonthMediaType] Params received:', route.params);
-    const finalMediaType = mediaType || 'photo';
-    console.log(`📱 [MonthMediaType] Using mediaType: ${finalMediaType}`);
-    if (projectId && yearMonth) {
-      fetchMedia(finalMediaType);
+    if (projectId && yearMonth && mediaType) {
+      fetchMedia();
     } else {
-      Alert.alert('Error', 'Missing project or month');
       setLoading(false);
     }
     return () => {
@@ -39,19 +35,14 @@ export default function MonthMediaTypeScreen() {
     };
   }, []);
 
-  const fetchMedia = async (type: string) => {
+  const fetchMedia = async () => {
     try {
-      const url = `/media/project/${projectId}/month/${yearMonth}`;
-      console.log(`📱 [MonthMediaType] Fetching: ${url}`);
-      const res: any = await api.get(url);
-      const allMedia = res.media || [];
-      const filtered = allMedia.filter((item: any) =>
-        item && item.type && item.type.toLowerCase() === type.toLowerCase()
-      );
-      console.log(`📱 [MonthMediaType] Found ${filtered.length} items of type ${type}`);
+      const res: any = await api.get(`/media/project/${projectId}/month/${yearMonth}`);
+      const mediaItems = res.media || [];
+      const filtered = mediaItems.filter((item: any) => item && item.type === mediaType);
       setMedia(filtered);
     } catch (e) {
-      console.error('📱 [MonthMediaType] Fetch error:', e);
+      console.error('Fetch error:', e);
       Alert.alert('Error', 'Failed to load media');
     } finally {
       setLoading(false);
@@ -193,7 +184,6 @@ export default function MonthMediaTypeScreen() {
     video: 'Videos',
     voice_note: 'Voice Notes',
   };
-  const displayLabel = typeLabels[mediaType || ''] || mediaType || 'Media';
 
   return (
     <View style={styles.container}>
@@ -202,7 +192,7 @@ export default function MonthMediaTypeScreen() {
           <Ionicons name="arrow-back" size={28} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {projectName || 'Project'} - {yearMonth || ''} - {displayLabel}
+          {projectName || 'Project'} - {yearMonth || ''} - {typeLabels[mediaType || ''] || mediaType || 'Media'}
         </Text>
         <View style={{ width: 24 }} />
       </View>
@@ -213,7 +203,7 @@ export default function MonthMediaTypeScreen() {
         renderItem={renderMediaItem}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No {displayLabel} for this month</Text>
+          <Text style={styles.emptyText}>No {typeLabels[mediaType || ''] || 'media'} for this month</Text>
         }
       />
 
@@ -247,28 +237,8 @@ export default function MonthMediaTypeScreen() {
                     <View style={styles.videoErrorContainer}>
                       <Ionicons name="alert-circle" size={48} color="#F44336" />
                       <Text style={styles.videoErrorText}>Could not load video</Text>
-                      <TouchableOpacity
-                        style={styles.browserBtn}
-                        onPress={() => {
-                          if (selectedMedia?.url) {
-                            Linking.openURL(selectedMedia.url);
-                          }
-                        }}
-                      >
-                        <Text style={styles.browserBtnText}>Open in Browser</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.retryBtn}
-                        onPress={() => {
-                          setVideoError(false);
-                          setVideoLoading(true);
-                          // Force re-render of video
-                          setTimeout(() => {
-                            setVideoLoading(false);
-                          }, 500);
-                        }}
-                      >
-                        <Text style={styles.retryBtnText}>Retry</Text>
+                      <TouchableOpacity onPress={() => { setVideoError(false); setVideoLoading(true); }}>
+                        <Text style={{ color: '#00D4FF', marginTop: 8 }}>Retry</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -276,10 +246,10 @@ export default function MonthMediaTypeScreen() {
                       ref={videoRef}
                       source={{ uri: selectedMedia.url }}
                       style={styles.fullVideo}
-                      resizeMode="contain"
-                      controls={true}
-                      paused={false}
-                      repeat={false}
+                      resizeMode={ResizeMode.CONTAIN}   // ✅ Use ResizeMode.CONTAIN
+                      shouldPlay={true}
+                      useNativeControls={true}
+                      isLooping={false}
                       onLoadStart={() => setVideoLoading(true)}
                       onLoad={() => setVideoLoading(false)}
                       onError={(error) => {
@@ -436,41 +406,16 @@ const styles = StyleSheet.create({
   fullVideo: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#000',
   },
   videoLoading: {
     position: 'absolute',
   },
   videoErrorContainer: {
     alignItems: 'center',
-    padding: 20,
   },
   videoErrorText: {
     color: '#F44336',
-    fontSize: 16,
-    marginBottom: 12,
-  },
-  browserBtn: {
-    backgroundColor: '#00D4FF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  browserBtnText: {
-    color: '#0A0A0A',
-    fontWeight: '600',
-  },
-  retryBtn: {
-    borderWidth: 1,
-    borderColor: '#00D4FF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  retryBtnText: {
-    color: '#00D4FF',
-    fontWeight: '600',
+    marginTop: 8,
   },
   voicePlayer: {
     alignItems: 'center',
