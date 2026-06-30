@@ -23,11 +23,10 @@ class ApiService {
 
   constructor() {
     this.client = axios.create({
-      baseURL: API_URL,
-      timeout: 30000,
-      headers: { 'Content-Type': 'application/json' },
-    });
-
+  baseURL: API_URL,
+  timeout: 60000, // Increase to 60 seconds
+  headers: { 'Content-Type': 'application/json' },
+});
     // --- Request interceptor: add token ---
     this.client.interceptors.request.use(
       async (config) => {
