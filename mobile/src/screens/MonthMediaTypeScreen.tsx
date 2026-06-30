@@ -22,10 +22,14 @@ export default function MonthMediaTypeScreen() {
   const videoRef = useRef<Video>(null);
 
   useEffect(() => {
-    if (projectId && yearMonth && mediaType) {
-      fetchMedia();
+    console.log('📱 [MonthMediaType] Params received:', route.params);
+    // If mediaType is undefined, set a default
+    const finalMediaType = mediaType || 'photo';
+    console.log(`📱 [MonthMediaType] Using mediaType: ${finalMediaType}`);
+    if (projectId && yearMonth) {
+      fetchMedia(finalMediaType);
     } else {
-      Alert.alert('Error', 'Missing parameters');
+      Alert.alert('Error', 'Missing project or month');
       setLoading(false);
     }
     return () => {
@@ -35,17 +39,20 @@ export default function MonthMediaTypeScreen() {
     };
   }, []);
 
-  const fetchMedia = async () => {
+  const fetchMedia = async (type: string) => {
     try {
-      console.log('📱 Fetching media for:', { projectId, yearMonth, mediaType });
-      const res: any = await api.get(`/media/project/${projectId}/month/${yearMonth}`);
-      console.log('📱 Response:', res);
-      const mediaItems = res.media || [];
-      const filtered = mediaItems.filter((item: any) => item && item.type === mediaType);
-      console.log(`📱 Found ${filtered.length} items`);
+      const url = `/media/project/${projectId}/month/${yearMonth}`;
+      console.log(`📱 [MonthMediaType] Fetching: ${url}`);
+      const res: any = await api.get(url);
+      const allMedia = res.media || [];
+      // Filter by type (case-insensitive)
+      const filtered = allMedia.filter((item: any) =>
+        item && item.type && item.type.toLowerCase() === type.toLowerCase()
+      );
+      console.log(`📱 [MonthMediaType] Found ${filtered.length} items of type ${type}`);
       setMedia(filtered);
     } catch (e) {
-      console.error('📱 Fetch error:', e);
+      console.error('📱 [MonthMediaType] Fetch error:', e);
       Alert.alert('Error', 'Failed to load media');
     } finally {
       setLoading(false);
@@ -89,7 +96,6 @@ export default function MonthMediaTypeScreen() {
   };
 
   const renderMediaItem = ({ item }: { item: any }) => {
-    // Safety: if item is malformed, skip
     if (!item || !item.type) return null;
 
     const isPhoto = item.type === 'photo';
@@ -188,6 +194,7 @@ export default function MonthMediaTypeScreen() {
     video: 'Videos',
     voice_note: 'Voice Notes',
   };
+  const displayLabel = typeLabels[mediaType || ''] || mediaType || 'Media';
 
   return (
     <View style={styles.container}>
@@ -196,7 +203,7 @@ export default function MonthMediaTypeScreen() {
           <Ionicons name="arrow-back" size={28} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {projectName || 'Project'} - {yearMonth || ''} - {typeLabels[mediaType || ''] || mediaType || 'Media'}
+          {projectName || 'Project'} - {yearMonth || ''} - {displayLabel}
         </Text>
         <View style={{ width: 24 }} />
       </View>
@@ -207,7 +214,7 @@ export default function MonthMediaTypeScreen() {
         renderItem={renderMediaItem}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No {typeLabels[mediaType || ''] || 'media'} for this month</Text>
+          <Text style={styles.emptyText}>No {displayLabel} for this month</Text>
         }
       />
 
