@@ -1,16 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { useNavigation } from '@react-navigation/native';
+import * as FileSystem from 'expo-file-system';
+import { Audio } from 'expo-av';
 
 interface Message {
   text: string;
   isUser: boolean;
+  approvalId?: string;
+  actionType?: string;
 }
 
 export default function AIAssistantScreen() {
@@ -21,9 +25,11 @@ export default function AIAssistantScreen() {
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
-  // Load conversation history (same as web)
+  // Load conversation history
   useEffect(() => {
     if (!user) return;
     api.get(`/lucy/history`)
@@ -39,21 +45,116 @@ export default function AIAssistantScreen() {
       .catch(() => {});
   }, [user]);
 
-  const sendMessage = async () => {
-    if (!input.trim()) return;
-    const userMessage = input.trim();
-    setMessages(prev => [...prev, { text: userMessage, isUser: true }]);
-    setInput('');
+  const sendMessage = async (text: string) => {
+    if (!text.trim()) return;
+    setMessages(prev => [...prev, { text: text.trim(), isUser: true }]);
     setLoading(true);
-
     try {
-      const data = await api.post<any>('/lucy', { message: userMessage });
-      const botText = data?.[0]?.text || "I'm not sure how to respond to that.";
-      setMessages(prev => [...prev, { text: botText, isUser: false }]);
+      const data = await api.post<any>('/lucy', { message: text.trim() });
+      const botText = data?.text || data?.[0]?.text || "I'm not sure how to respond to that.";
+      const approvalId = data?.approvalId || null;
+      setMessages(prev => [...prev, { text: botText, isUser: false, approvalId }]);
     } catch (err: any) {
       setMessages(prev => [...prev, { text: 'Sorry, Lucy is taking a break.', isUser: false }]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    sendMessage(input);
+    setInput('');
+  };
+
+  // ----- Voice Recording -----
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission required', 'Please grant microphone access.');
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(recording);
+      setIsRecording(true);
+    } catch (err) {
+      Alert.alert('Error', 'Could not start recording.');
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+    setIsRecording(false);
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+      if (uri) {
+        // Upload to voice/process to get transcript
+        const transcript = await transcribeAudio(uri);
+        if (transcript) {
+          // Send transcript as message
+          sendMessage(transcript);
+        } else {
+          Alert.alert('No speech detected', 'Please try again.');
+        }
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to process recording.');
+    }
+  };
+
+  const transcribeAudio = async (uri: string): Promise<string> => {
+    try {
+      const formData = new FormData();
+      formData.append('audio', {
+        uri,
+        name: 'voice.m4a',
+        type: 'audio/m4a',
+      } as any);
+      formData.append('userId', user?.id || '');
+      formData.append('projectId', '00000000-0000-0000-0000-000000000000'); // dummy project, not used
+      const response = await api.uploadFileWithData<{ transcript: string }>(
+        '/voice/process',
+        uri,
+        { userId: user?.id || '', projectId: '00000000-0000-0000-0000-000000000000' },
+        'audio'
+      );
+      return response.transcript || '';
+    } catch (err) {
+      console.error('Transcription error:', err);
+      return '';
+    }
+  };
+
+  const handleApprove = async (approvalId: string) => {
+    try {
+      await api.post(`/approvals/${approvalId}/approve`);
+      Alert.alert('Approved', 'Action has been executed.');
+      setMessages(prev => prev.map(msg =>
+        msg.approvalId === approvalId ? { ...msg, approvalId: undefined } : msg
+      ));
+    } catch (err) {
+      Alert.alert('Error', 'Could not approve.');
+    }
+  };
+
+  const handleReject = async (approvalId: string) => {
+    try {
+      await api.post(`/approvals/${approvalId}/reject`);
+      Alert.alert('Rejected', 'Action has been cancelled.');
+      setMessages(prev => prev.map(msg =>
+        msg.approvalId === approvalId ? { ...msg, approvalId: undefined } : msg
+      ));
+    } catch (err) {
+      Alert.alert('Error', 'Could not reject.');
     }
   };
 
@@ -71,13 +172,31 @@ export default function AIAssistantScreen() {
         data={messages}
         keyExtractor={(_, i) => String(i)}
         renderItem={({ item }) => (
-          <View style={[styles.bubble, item.isUser ? styles.bubbleMe : styles.bubbleThem]}>
-            {!item.isUser && (
-              <View style={styles.avatar}>
-                <Ionicons name="chatbubble-ellipses" size={20} color="#00D4FF" />
+          <View>
+            <View style={[styles.bubble, item.isUser ? styles.bubbleMe : styles.bubbleThem]}>
+              {!item.isUser && (
+                <View style={styles.avatar}>
+                  <Ionicons name="chatbubble-ellipses" size={20} color="#00D4FF" />
+                </View>
+              )}
+              <Text style={styles.msgText}>{item.text}</Text>
+            </View>
+            {!item.isUser && item.approvalId && (
+              <View style={styles.approvalRow}>
+                <TouchableOpacity
+                  style={[styles.approvalBtn, styles.approveBtn]}
+                  onPress={() => handleApprove(item.approvalId!)}
+                >
+                  <Text style={styles.approvalBtnText}>✅ Approve</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.approvalBtn, styles.rejectBtn]}
+                  onPress={() => handleReject(item.approvalId!)}
+                >
+                  <Text style={styles.approvalBtnText}>❌ Reject</Text>
+                </TouchableOpacity>
               </View>
             )}
-            <Text style={styles.msgText}>{item.text}</Text>
           </View>
         )}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
@@ -90,10 +209,13 @@ export default function AIAssistantScreen() {
           placeholderTextColor="#888"
           value={input}
           onChangeText={setInput}
-          onSubmitEditing={sendMessage}
+          onSubmitEditing={handleSend}
           returnKeyType="send"
         />
-        <TouchableOpacity onPress={sendMessage} disabled={loading || !input.trim()}>
+        <TouchableOpacity onPress={isRecording ? stopRecording : startRecording} style={styles.micBtn}>
+          <MaterialIcons name={isRecording ? 'stop' : 'mic'} size={28} color={isRecording ? '#F44336' : '#00D4FF'} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleSend} disabled={loading || !input.trim()}>
           <MaterialIcons name="send" size={28} color="#00D4FF" />
         </TouchableOpacity>
       </View>
@@ -112,7 +234,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: '#0A0A0A',
     borderBottomWidth: 1,
-    borderBottomColor: '#333'
+    borderBottomColor: '#333',
   },
   backButton: { padding: 8, marginLeft: 4 },
   headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
@@ -121,6 +243,12 @@ const styles = StyleSheet.create({
   bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333', flexDirection: 'row', alignItems: 'center' },
   avatar: { marginRight: 8 },
   msgText: { color: '#FFF', fontSize: 15 },
+  approvalRow: { flexDirection: 'row', marginTop: 4, marginLeft: 8, gap: 12 },
+  approvalBtn: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: '#555' },
+  approveBtn: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
+  rejectBtn: { backgroundColor: '#F44336', borderColor: '#F44336' },
+  approvalBtnText: { color: '#FFF', fontWeight: '600', fontSize: 13 },
   inputBar: { flexDirection: 'row', alignItems: 'center', padding: 12, borderTopWidth: 1, borderTopColor: '#333' },
   input: { flex: 1, backgroundColor: '#1A1A1A', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#FFF', fontSize: 16, marginRight: 12 },
+  micBtn: { padding: 4, marginRight: 8 },
 });

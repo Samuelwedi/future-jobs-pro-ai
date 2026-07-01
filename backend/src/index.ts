@@ -43,18 +43,11 @@ app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ===== EARLY HEALTH CHECK (before any middleware, routing) =====
-app.get('/ping', (req, res) => {
-  res.json({ success: true, message: 'pong' });
-});
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
-});
+app.get('/ping', (req, res) => res.json({ success: true, message: 'pong' }));
+app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
-// ----- Trial middleware -----
 app.use(trialCheck);
 
-// ----- Health Check -----
 app.get('/api/health', async (req: Request, res: Response) => {
   const dbHealthy = await checkDatabaseHealth();
   res.json({ status: dbHealthy ? 'healthy' : 'unhealthy', timestamp: new Date().toISOString(), owner: 'Samuel B.', app: 'Future Jobs Pro AI', version: '1.0.0' });
@@ -84,7 +77,6 @@ import assistantRoutes from './routes/assistantRoutes'; app.use('/api/assistant'
 import taskRoutes from './routes/taskRoutes'; app.use('/api/tasks', taskRoutes);
 import webhookRoutes from './routes/webhookRoutes'; app.use('/api/webhooks', webhookRoutes);
 import ptoRoutes from './routes/ptoRoutes'; app.use('/api/pto', ptoRoutes);
-// import kioskRoutes from './routes/kioskRoutes'; app.use('/api/kiosk', kioskRoutes);
 import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
 import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
@@ -92,7 +84,11 @@ import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', payme
 import mediaRoutes from './routes/mediaRoutes'; app.use('/api/media', mediaRoutes);
 import uploadRoutes from './routes/uploadRoutes'; app.use('/api/upload', uploadRoutes);
 
-// ----- Helper: extract userId from JWT (using verifyToken) -----
+// ===== NEW: Approval Routes =====
+import approvalRoutes from './routes/approvalRoutes';
+app.use('/api/approvals', approvalRoutes);
+
+// ----- Helper: get userId from JWT -----
 const getUserId = (req: Request): string | null => {
   try {
     const decoded = verifyToken(req);
@@ -101,6 +97,16 @@ const getUserId = (req: Request): string | null => {
     return null;
   }
 };
+
+// ----- Helper: create an approval record -----
+async function createApproval(userId: string, actionType: string, payload: any): Promise<string> {
+  const result = await pool.query(
+    `INSERT INTO approvals (user_id, action_type, action_payload, status)
+     VALUES ($1, $2, $3, 'pending') RETURNING id`,
+    [userId, actionType, JSON.stringify(payload)]
+  );
+  return result.rows[0].id;
+}
 
 // ----- Lucy Conversation History -----
 app.get('/api/lucy/history', async (req: Request, res: Response) => {
@@ -190,6 +196,19 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
         name: 'send_chat', description: 'Send a message in team chat',
         parameters: { type: 'object', properties: { message: { type: 'string' }, room: { type: 'string', description: 'room or recipient' } } },
       },
+      // ----- NEW: Create Stripe Invoice -----
+      {
+        name: 'create_invoice', description: 'Create a draft invoice in Stripe',
+        parameters: {
+          type: 'object',
+          properties: {
+            customer_email: { type: 'string', description: 'Customer email address' },
+            amount: { type: 'number', description: 'Amount in dollars' },
+            description: { type: 'string', description: 'Invoice description' },
+          },
+          required: ['customer_email', 'amount'],
+        },
+      },
     ];
 
     const messages = [
@@ -215,19 +234,17 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
     const choice = aiData.choices?.[0];
     if (!choice) return res.json([{ text: "I'm not sure how to help with that." }]);
 
+    let approvalId: string | null = null;
+    let resultText = '';
+
     // Function call handling
     if (choice.finish_reason === 'function_call' && choice.message?.function_call) {
       const { name, arguments: argsStr } = choice.message.function_call;
       const args = JSON.parse(argsStr || '{}');
-      let resultText = '';
       try {
         const authHeader = req.headers.authorization || '';
         let decodedToken: any = null;
-        try {
-          decodedToken = verifyToken(req);
-        } catch (e) {
-          decodedToken = {};
-        }
+        try { decodedToken = verifyToken(req); } catch (e) { decodedToken = {}; }
         const companyId = decodedToken.companyId || null;
 
         switch (name) {
@@ -241,13 +258,14 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'run_payroll': {
             const period = args.period || 'the requested period';
-            const payrollRes = await fetch(`http://localhost:${PORT}/api/payroll/run`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
-              body: JSON.stringify({ period, companyId, userId }),
-            });
-            if (!payrollRes.ok) throw new Error('Payroll service down');
-            const payrollData: any = await payrollRes.json();
-            resultText = payrollData.message || `Payroll for ${period} processed.`;
+            approvalId = await createApproval(userId, 'run_payroll', { period, companyId });
+            resultText = `I've prepared the payroll for ${period}. Please check your phone to approve or reject.`;
+            break;
+          }
+          case 'create_invoice': {
+            const { customer_email, amount, description } = args;
+            approvalId = await createApproval(userId, 'create_invoice', { customer_email, amount, description });
+            resultText = `I've drafted an invoice for ${customer_email} for $${amount}. Please approve or reject on your phone.`;
             break;
           }
           case 'get_payroll_details': {
@@ -270,7 +288,6 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             } else {
               resultText = 'No payroll records found.';
             }
-            console.log('Payroll details fetched:', payrollRows.rows.length, 'rows');
             break;
           }
           case 'create_schedule': {
@@ -415,7 +432,8 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             resultText = 'Message sent.';
             break;
           }
-          default: resultText = 'Command executed.';
+          default:
+            resultText = 'Command executed.';
         }
       } catch (innerErr: any) {
         resultText = `I tried to ${name.replace(/_/g, ' ')}, but the service is currently unavailable. Please try again later.`;
@@ -423,9 +441,13 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
       }
 
       if (userId) await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1,$2,$3)', [userId, 'assistant', resultText]);
-      return res.json([{ text: resultText }]);
+
+      const responsePayload: any = { text: resultText };
+      if (approvalId) responsePayload.approvalId = approvalId;
+      return res.json(responsePayload);
     }
 
+    // No function call – just text reply
     const reply = choice.message?.content || "I'm not sure how to help with that.";
     if (userId) await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1,$2,$3)', [userId, 'assistant', reply]);
     return res.json([{ text: reply }]);
