@@ -26,18 +26,6 @@ const upload = multer({
   }
 });
 
-const getCompanyId = async (req: Request): Promise<string | null> => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  try {
-    const decoded = verifyToken(req);
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
-    return userRes.rows[0]?.company_id || null;
-  } catch {
-    return null;
-  }
-};
-
 router.post('/process', upload.single('audio'), async (req: Request, res: Response) => {
   try {
     if (!req.file) {
@@ -49,9 +37,11 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
       return res.status(400).json({ success: false, message: 'Missing userId or projectId' });
     }
 
-    const companyId = await getCompanyId(req);
+    // --- Fetch company_id from database using userId ---
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+    const companyId = userRes.rows[0]?.company_id;
     if (!companyId) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
+      return res.status(401).json({ success: false, message: 'User has no company' });
     }
 
     // --- Upload to Cloudinary ---
@@ -115,14 +105,17 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
 
 router.get('/project/:projectId', async (req, res) => {
   try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
+    const decoded = verifyToken(req);
+    if (!decoded?.id) return res.status(401).json({ success: false, message: 'Invalid token' });
+
     const { projectId } = req.params;
     const result = await pool.query(
-      'SELECT * FROM voice_notes WHERE project_id = $1 AND company_id = $2 ORDER BY taken_at DESC',
-      [projectId, companyId]
+      'SELECT * FROM voice_notes WHERE project_id = $1 AND user_id = $2 ORDER BY taken_at DESC',
+      [projectId, decoded.id]
     );
     res.json({ success: true, notes: result.rows });
   } catch (error) {
