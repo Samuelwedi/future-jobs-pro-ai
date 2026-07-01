@@ -39,7 +39,6 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
 };
 
 router.post('/process', upload.single('audio'), async (req: Request, res: Response) => {
-  console.log('\n🎙️  ========== NEW VOICE NOTE ==========');
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'No audio file provided' });
@@ -55,12 +54,12 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
 
+    // --- Upload to Cloudinary ---
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const folderPath = `future-jobs-pro-ai/projects/${projectId}/${year}-${month}/voice-notes`;
 
-    // Upload audio to Cloudinary
     const uploadResult = await cloudinary.uploader.upload(
       `data:audio/m4a;base64,${req.file.buffer.toString('base64')}`,
       {
@@ -71,15 +70,14 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
     );
 
     const audioUrl = uploadResult.secure_url;
-    console.log('🎵 Audio URL:', audioUrl);
 
-    // Process transcription
+    // --- Process transcription ---
     const tempFile = `/tmp/voice-${Date.now()}.m4a`;
     fs.writeFileSync(tempFile, req.file.buffer);
     const result = await processVoiceNote(tempFile, userId, projectId, timeEntryId);
     fs.unlinkSync(tempFile);
 
-    // Insert with company_id and audio_url
+    // --- Insert with company_id and audio_url ---
     const query = `
       INSERT INTO voice_notes
       (company_id, user_id, project_id, time_entry_id, audio_url, transcript, duration_seconds, taken_at, folder_path, metadata)
