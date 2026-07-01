@@ -10,15 +10,18 @@ import sys
 import win32com.client
 
 # ===== CONFIGURATION =====
-BACKEND_URL = os.getenv("LUCY_BACKEND_URL", "http://localhost:5000/api/lucy")
+BACKEND_URL = os.getenv("LUCY_BACKEND_URL", "https://future-jobs-pro-ai-production.up.railway.app/api/lucy")
 USER_ID = os.getenv("LUCY_USER_ID", "e0f62298-03f1-4908-bac2-8415e5a9d0e5")
 SAMPLE_RATE = 16000
 CHUNK = 4000
 WAKE_WORD = "hey lucy"
+# Choose your microphone device (from `python -c "import sounddevice as sd; print(sd.query_devices())"`)
+# Use the index number of your active microphone. Default is 1 (Microphone Array).
+DEVICE_ID = 1
 
 # ===== LOAD VOSK MODEL =====
 print("🗣️ Loading Vosk model...")
-# Make sure you have a folder named "model" with the Vosk files
+# Make sure you have a folder named "model" with vosk files
 vosk_model = vosk.Model("model")
 recognizer = vosk.KaldiRecognizer(vosk_model, SAMPLE_RATE)
 recognizer.SetWords(True)
@@ -26,6 +29,7 @@ recognizer.SetWords(True)
 # ===== LOAD WINDOWS TTS =====
 print("🔊 Initializing Windows TTS...")
 speaker = win32com.client.Dispatch("SAPI.SpVoice")
+speaker.Rate = 0  # Speed: -10 to 10
 
 def speak(text):
     print(f"🗣️ Lucy: {text}")
@@ -48,7 +52,7 @@ def transcribe_audio(audio_data):
         return result.get("text", "")
     return ""
 
-def record_command_until_silence(stream):
+def record_command(stream):
     print("🎤 Recording command...")
     audio_buffer = []
     silent_chunks = 0
@@ -56,6 +60,7 @@ def record_command_until_silence(stream):
     while True:
         audio_chunk, _ = stream.read(CHUNK)
         audio_buffer.append(audio_chunk)
+        # Check for silence after at least 2.5 seconds of audio
         if len(audio_buffer) > 10:
             full_audio = np.concatenate(audio_buffer)
             text = transcribe_audio(full_audio)
@@ -72,18 +77,27 @@ def record_command_until_silence(stream):
 
 def main():
     print("👂 Lucy is listening... (Speak 'hey lucy' to wake)")
+    # Set the microphone device
+    sd.default.device = DEVICE_ID
+
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype='int16') as stream:
         continuous_buffer = np.array([], dtype='int16')
         while True:
             audio_chunk, _ = stream.read(CHUNK)
             continuous_buffer = np.append(continuous_buffer, audio_chunk)
+            # Keep only the last 8 seconds
             if len(continuous_buffer) > 8 * SAMPLE_RATE:
                 continuous_buffer = continuous_buffer[-8 * SAMPLE_RATE:]
             text = transcribe_audio(continuous_buffer)
             if text and WAKE_WORD in text.lower():
                 print("🔔 Wake word detected!")
-                command_text = record_command_until_silence(stream)
+                # Respond immediately
+                speak("Yes, I'm listening")
+                # Small delay to let the TTS finish before recording
+                time.sleep(0.5)
+                command_text = record_command(stream)
                 if command_text:
+                    # Remove the wake word from the command
                     command_text = command_text.lower().replace(WAKE_WORD, '').strip()
                     print(f"📝 Command: {command_text}")
                     response_text, approval_id = send_to_backend(command_text)
@@ -91,7 +105,8 @@ def main():
                     if approval_id:
                         speak("Please check your phone to approve or reject.")
                 else:
-                    print("⚠️ No command detected.")
+                    speak("I didn't catch that. Please try again.")
+                # Reset buffers
                 continuous_buffer = np.array([], dtype='int16')
                 recognizer.Reset()
 
