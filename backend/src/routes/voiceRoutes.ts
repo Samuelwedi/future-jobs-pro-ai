@@ -37,14 +37,31 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
       return res.status(400).json({ success: false, message: 'Missing userId or projectId' });
     }
 
-    // Fetch company_id from users table using userId
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
-    const companyId = userRes.rows[0]?.company_id;
+    // --- Fetch company_id from database using userId (fallback) ---
+    let companyId = null;
+    if (req.body.companyId) {
+      companyId = req.body.companyId;
+    } else {
+      const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+      companyId = userRes.rows[0]?.company_id || null;
+    }
+
+    // If still null, try to get from token
     if (!companyId) {
+      try {
+        const decoded = verifyToken(req);
+        companyId = decoded.companyId || null;
+      } catch (e) {}
+    }
+
+    // If still null, return error (but we could set a default for testing)
+    if (!companyId) {
+      // For testing, you can set a default company ID if you know one
+      // companyId = 'ed1887d9-3ffd-46e4-b281-338c8ad03a66'; // uncomment if needed
       return res.status(401).json({ success: false, message: 'User has no company' });
     }
 
-    // Upload to Cloudinary
+    // --- Upload to Cloudinary ---
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -61,13 +78,13 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
 
     const audioUrl = uploadResult.secure_url;
 
-    // Process transcription
+    // --- Process transcription ---
     const tempFile = `/tmp/voice-${Date.now()}.m4a`;
     fs.writeFileSync(tempFile, req.file.buffer);
     const result = await processVoiceNote(tempFile, userId, projectId, timeEntryId);
     fs.unlinkSync(tempFile);
 
-    // Insert with company_id and audio_url
+    // --- Insert with company_id and audio_url ---
     const query = `
       INSERT INTO voice_notes
       (company_id, user_id, project_id, time_entry_id, audio_url, transcript, duration_seconds, taken_at, folder_path, metadata)
