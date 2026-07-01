@@ -7,8 +7,8 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
+import * as Speech from 'expo-speech';
 
 interface Message {
   text: string;
@@ -29,6 +29,7 @@ export default function AIAssistantScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+  const isSpeaking = useRef(false);
 
   // Auto‑record if requested
   useEffect(() => {
@@ -56,6 +57,21 @@ export default function AIAssistantScreen() {
       .catch(() => {});
   }, [user]);
 
+  // ----- Speak Lucy's response aloud -----
+  const speakText = (text: string) => {
+    if (isSpeaking.current) {
+      Speech.stop();
+    }
+    isSpeaking.current = true;
+    Speech.speak(text, {
+      language: 'en-US',
+      pitch: 1.0,
+      rate: 0.9,
+      onDone: () => { isSpeaking.current = false; },
+      onError: () => { isSpeaking.current = false; },
+    });
+  };
+
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
     setMessages(prev => [...prev, { text: text.trim(), isUser: true }]);
@@ -65,8 +81,20 @@ export default function AIAssistantScreen() {
       const botText = data?.text || data?.[0]?.text || "I'm not sure how to respond to that.";
       const approvalId = data?.approvalId || null;
       setMessages(prev => [...prev, { text: botText, isUser: false, approvalId }]);
+      // Speak the response
+      if (botText) {
+        speakText(botText);
+        if (approvalId) {
+          // Delay the approval message to avoid overlapping speech
+          setTimeout(() => {
+            speakText("Please check your phone to approve or reject.");
+          }, 1500);
+        }
+      }
     } catch (err: any) {
-      setMessages(prev => [...prev, { text: 'Sorry, Lucy is taking a break.', isUser: false }]);
+      const errorMsg = 'Sorry, Lucy is taking a break.';
+      setMessages(prev => [...prev, { text: errorMsg, isUser: false }]);
+      speakText(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -79,27 +107,26 @@ export default function AIAssistantScreen() {
   };
 
   // ----- Voice Recording -----
- const startRecording = async () => {
-  try {
-    const permission = await Audio.requestPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission required', 'Please grant microphone access in settings.');
-      return;
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission required', 'Please grant microphone access.');
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(recording);
+      setIsRecording(true);
+    } catch (err) {
+      Alert.alert('Error', 'Could not start recording.');
     }
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
-    });
-    const { recording } = await Audio.Recording.createAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY
-    );
-    setRecording(recording);
-    setIsRecording(true);
-  } catch (err: any) {
-    console.error('Recording start error:', err);
-    Alert.alert('Could not start recording', err.message || 'Please try again.');
-  }
-};
+  };
 
   const stopRecording = async () => {
     if (!recording) return;
@@ -145,6 +172,7 @@ export default function AIAssistantScreen() {
     try {
       await api.post(`/approvals/${approvalId}/approve`);
       Alert.alert('Approved', 'Action has been executed.');
+      speakText('Action approved and executed.');
       setMessages(prev => prev.map(msg =>
         msg.approvalId === approvalId ? { ...msg, approvalId: undefined } : msg
       ));
@@ -157,6 +185,7 @@ export default function AIAssistantScreen() {
     try {
       await api.post(`/approvals/${approvalId}/reject`);
       Alert.alert('Rejected', 'Action has been cancelled.');
+      speakText('Action rejected and cancelled.');
       setMessages(prev => prev.map(msg =>
         msg.approvalId === approvalId ? { ...msg, approvalId: undefined } : msg
       ));
