@@ -57,7 +57,7 @@ export default function AIAssistantScreen() {
       .catch(() => {});
   }, [user]);
 
-  // ----- Speak Lucy's response aloud -----
+  // ----- Speak Lucy's response -----
   const speakText = (text: string) => {
     if (isSpeaking.current) {
       Speech.stop();
@@ -81,11 +81,9 @@ export default function AIAssistantScreen() {
       const botText = data?.text || data?.[0]?.text || "I'm not sure how to respond to that.";
       const approvalId = data?.approvalId || null;
       setMessages(prev => [...prev, { text: botText, isUser: false, approvalId }]);
-      // Speak the response
       if (botText) {
         speakText(botText);
         if (approvalId) {
-          // Delay the approval message to avoid overlapping speech
           setTimeout(() => {
             speakText("Please check your phone to approve or reject.");
           }, 1500);
