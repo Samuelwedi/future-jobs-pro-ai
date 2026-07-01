@@ -3,7 +3,6 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { LanguageProvider } from './src/context/LanguageContext';
-import { VoiceCommandProvider } from './src/context/VoiceCommandContext';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CameraView from './src/screens/CameraView';
@@ -99,47 +98,45 @@ function AppNavigator() {
 
   return (
     <ErrorBoundary>
-      <VoiceCommandProvider>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          {!isAuthenticated ? (
-            <Stack.Screen name="Login" component={LoginScreen} />
-          ) : (
-            <>
-              <Stack.Screen name="Home" component={HomeScreen} />
-              <Stack.Screen name="Camera" component={CameraView} />
-              <Stack.Screen name="VoiceNote" component={VoiceNoteScreen} />
-              <Stack.Screen name="Projects" component={ProjectsScreen} />
-              <Stack.Screen name="ProjectAlbum" component={ProjectAlbumScreen} />
-              <Stack.Screen name="Timesheet" component={TimesheetScreen} />
-              <Stack.Screen name="Schedule" component={ScheduleScreen} />
-              <Stack.Screen name="History" component={HistoryScreen} />
-              <Stack.Screen name="Profile" component={ProfileScreen} />
-              <Stack.Screen name="ChatList" component={ChatListScreen} />
-              <Stack.Screen name="Chat" component={ChatScreen} />
-              <Stack.Screen name="NewChat" component={NewChatScreen} />
-              <Stack.Screen name="CrewTracking" component={CrewTrackingScreen} />
-              <Stack.Screen name="AIAssistant" component={AIAssistantScreen} />
-              <Stack.Screen name="CrewClock" component={CrewClockScreen} />
-              <Stack.Screen name="Tasks" component={TasksScreen} />
-              <Stack.Screen name="PTO" component={PTOScreen} />
-              <Stack.Screen name="Kiosk" component={KioskScreen} />
-              <Stack.Screen name="GPSPlayback" component={GPSPlaybackScreen} />
-              <Stack.Screen name="Team" component={TeamScreen} />
-              <Stack.Screen name="Subscription" component={SubscriptionScreen} />
-              <Stack.Screen name="Contact" component={ContactScreen} />
-              <Stack.Screen name="Privacy" component={PrivacyScreen} />
-              <Stack.Screen name="Terms" component={TermsScreen} />
-              <Stack.Screen name="About" component={AboutScreen} />
-              <Stack.Screen name="Security" component={SecurityScreen} />
-              <Stack.Screen name="Support" component={SupportScreen} />
-              <Stack.Screen name="Folders" component={FoldersScreen} />
-              <Stack.Screen name="ProjectMedia" component={ProjectMediaScreen} />
-              <Stack.Screen name="MonthMedia" component={MonthMediaScreen} />
-              <Stack.Screen name="MonthMediaType" component={MonthMediaTypeScreen} />
-            </>
-          )}
-        </Stack.Navigator>
-      </VoiceCommandProvider>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {!isAuthenticated ? (
+          <Stack.Screen name="Login" component={LoginScreen} />
+        ) : (
+          <>
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Camera" component={CameraView} />
+            <Stack.Screen name="VoiceNote" component={VoiceNoteScreen} />
+            <Stack.Screen name="Projects" component={ProjectsScreen} />
+            <Stack.Screen name="ProjectAlbum" component={ProjectAlbumScreen} />
+            <Stack.Screen name="Timesheet" component={TimesheetScreen} />
+            <Stack.Screen name="Schedule" component={ScheduleScreen} />
+            <Stack.Screen name="History" component={HistoryScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="ChatList" component={ChatListScreen} />
+            <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="NewChat" component={NewChatScreen} />
+            <Stack.Screen name="CrewTracking" component={CrewTrackingScreen} />
+            <Stack.Screen name="AIAssistant" component={AIAssistantScreen} />
+            <Stack.Screen name="CrewClock" component={CrewClockScreen} />
+            <Stack.Screen name="Tasks" component={TasksScreen} />
+            <Stack.Screen name="PTO" component={PTOScreen} />
+            <Stack.Screen name="Kiosk" component={KioskScreen} />
+            <Stack.Screen name="GPSPlayback" component={GPSPlaybackScreen} />
+            <Stack.Screen name="Team" component={TeamScreen} />
+            <Stack.Screen name="Subscription" component={SubscriptionScreen} />
+            <Stack.Screen name="Contact" component={ContactScreen} />
+            <Stack.Screen name="Privacy" component={PrivacyScreen} />
+            <Stack.Screen name="Terms" component={TermsScreen} />
+            <Stack.Screen name="About" component={AboutScreen} />
+            <Stack.Screen name="Security" component={SecurityScreen} />
+            <Stack.Screen name="Support" component={SupportScreen} />
+            <Stack.Screen name="Folders" component={FoldersScreen} />
+            <Stack.Screen name="ProjectMedia" component={ProjectMediaScreen} />
+            <Stack.Screen name="MonthMedia" component={MonthMediaScreen} />
+            <Stack.Screen name="MonthMediaType" component={MonthMediaTypeScreen} />
+          </>
+        )}
+      </Stack.Navigator>
     </ErrorBoundary>
   );
 }

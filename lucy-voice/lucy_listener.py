@@ -45,13 +45,13 @@ def transcribe_audio(audio_data):
     return ""
 
 def main():
-    print("👂 Lucy is listening... (Say 'hey lucy', 'lucy' to wake)")
+    print("👂 Lucy is listening... (Say 'hey lucy' to wake)")
     sd.default.device = DEVICE_ID
 
     buffer_duration = 4
     buffer_samples = int(SAMPLE_RATE * buffer_duration)
     audio_buffer = np.array([], dtype='int16')
-    wake_variations = ["hey lucy", "hi lucy", "hello lucy", "lucy",]
+    wake_variations = ["hey lucy", "hi lucy", "hello lucy", "lucy", "hey"]
 
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype='int16') as stream:
         while True:
@@ -65,11 +65,8 @@ def main():
                 if text and any(v in text.lower() for v in wake_variations):
                     print("🔔 Wake word detected!")
                     speak("Yes, I'm listening.")
-                    # Reset the recognizer to clear the wake word from buffer
                     recognizer.Reset()
-                    # Wait 0.5 seconds to let the user start speaking
                     time.sleep(0.5)
-                    # Record the command for up to 8 seconds
                     command_audio = np.array([], dtype='int16')
                     start_time = time.time()
                     silent_chunks = 0
@@ -82,7 +79,7 @@ def main():
                                 silent_chunks = 0
                             else:
                                 silent_chunks += 1
-                            if silent_chunks > 5:  # ~2.5s silence after command
+                            if silent_chunks > 10:
                                 break
                         if time.time() - start_time > 8:
                             break

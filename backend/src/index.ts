@@ -25,6 +25,10 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
 console.log(`🚀 Using PORT: ${PORT}`);
 const JWT_SECRET = process.env.JWT_SECRET!;
 
+// Base URL for internal API calls (set in .env)
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+console.log(`🔗 BASE_URL: ${BASE_URL}`);
+
 // ----- CORS -----
 app.use(cors({
   origin: [
@@ -83,12 +87,9 @@ import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
 import mediaRoutes from './routes/mediaRoutes'; app.use('/api/media', mediaRoutes);
 import uploadRoutes from './routes/uploadRoutes'; app.use('/api/upload', uploadRoutes);
+import approvalRoutes from './routes/approvalRoutes'; app.use('/api/approvals', approvalRoutes);
 
-// ===== NEW: Approval Routes =====
-import approvalRoutes from './routes/approvalRoutes';
-app.use('/api/approvals', approvalRoutes);
-
-// ----- Helper: get userId from JWT -----
+// ----- Helper: get userId -----
 const getUserId = (req: Request): string | null => {
   try {
     const decoded = verifyToken(req);
@@ -98,7 +99,7 @@ const getUserId = (req: Request): string | null => {
   }
 };
 
-// ----- Helper: create an approval record -----
+// ----- Helper: create approval -----
 async function createApproval(userId: string, actionType: string, payload: any): Promise<string> {
   const result = await pool.query(
     `INSERT INTO approvals (user_id, action_type, action_payload, status)
@@ -106,6 +107,22 @@ async function createApproval(userId: string, actionType: string, payload: any):
     [userId, actionType, JSON.stringify(payload)]
   );
   return result.rows[0].id;
+}
+
+// ----- Helper: get companyId from user -----
+async function getCompanyIdFromUser(userId: string): Promise<string | null> {
+  const res = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+  return res.rows[0]?.company_id || null;
+}
+
+// ----- Helper: format date -----
+function formatDate(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
 }
 
 // ----- Lucy Conversation History -----
@@ -196,7 +213,6 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
         name: 'send_chat', description: 'Send a message in team chat',
         parameters: { type: 'object', properties: { message: { type: 'string' }, room: { type: 'string', description: 'room or recipient' } } },
       },
-      // ----- NEW: Create Stripe Invoice -----
       {
         name: 'create_invoice', description: 'Create a draft invoice in Stripe',
         parameters: {
@@ -214,8 +230,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
     const messages = [
       {
         role: 'system',
-        content:
-          'You are Lucy, a brilliant AI assistant for Future Jobs Pro AI, a workforce management platform. You have full access to the user\'s operations: schedules, timesheets, projects, tasks, PTO, payroll, team, chat, reports, and crew locations. You can execute any of these tasks through functions. Always confirm after executing. Speak warmly and concisely. If a service is temporarily down, say so politely.',
+        content: `You are Lucy, a brilliant AI assistant for Future Jobs Pro AI, a workforce management platform. You have full access to the user's operations: schedules, timesheets, projects, tasks, PTO, payroll, team, chat, reports, and crew locations. You can execute any of these tasks through functions. Always confirm after executing. Speak warmly and concisely. If a service is temporarily down, say so politely.`,
       },
       ...priorMessages,
       { role: 'user', content: message },
@@ -243,17 +258,26 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
       const args = JSON.parse(argsStr || '{}');
       try {
         const authHeader = req.headers.authorization || '';
-        let decodedToken: any = null;
-        try { decodedToken = verifyToken(req); } catch (e) { decodedToken = {}; }
-        const companyId = decodedToken.companyId || null;
+        let companyId = (req as any).companyId || null;
+        if (!companyId && userId) {
+          companyId = await getCompanyIdFromUser(userId);
+          (req as any).companyId = companyId;
+        }
 
         switch (name) {
           case 'get_team_status': {
-            const teamRes = await fetch(`http://localhost:${PORT}/api/team`, { headers: { Authorization: authHeader } });
-            if (!teamRes.ok) throw new Error('Team service down');
-            const teamData: any = await teamRes.json();
-            const count = (teamData.members || []).length;
-            resultText = `You have ${count} team member(s) active.`;
+            if (!companyId) throw new Error('Company ID not found');
+            const teamRes = await pool.query(
+              `SELECT id, first_name, last_name, role FROM users WHERE company_id = $1 AND is_active = true`,
+              [companyId]
+            );
+            const count = teamRes.rows.length;
+            if (count === 0) {
+              resultText = 'No team members are currently active.';
+            } else {
+              const names = teamRes.rows.map(u => `${u.first_name} ${u.last_name}`).join(', ');
+              resultText = `You have ${count} active team member(s): ${names}.`;
+            }
             break;
           }
           case 'run_payroll': {
@@ -292,7 +316,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'create_schedule': {
             const { employee, day, start_time, end_time, notes } = args;
-            const scheduleRes = await fetch(`http://localhost:${PORT}/api/schedule/shifts`, {
+            const scheduleRes = await fetch(`${BASE_URL}/api/schedule/shifts`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
               body: JSON.stringify({
                 name: `Shift for ${employee || 'staff'}`, date: day, startTime: start_time || '09:00', endTime: end_time || '17:00', notes: notes || '', employeeIds: [],
@@ -311,7 +335,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             let start = '', end = '';
             if (period.includes('next')) { start = formatDate(addDays(now, 7)); end = formatDate(addDays(now, 13)); }
             else { start = formatDate(now); end = formatDate(addDays(now, 6)); }
-            const scheduleRes = await fetch(`http://localhost:${PORT}/api/schedule/shifts?start=${start}&end=${end}`, { headers: { Authorization: authHeader } });
+            const scheduleRes = await fetch(`${BASE_URL}/api/schedule/shifts?start=${start}&end=${end}`, { headers: { Authorization: authHeader } });
             if (!scheduleRes.ok) throw new Error('Schedule service down');
             const shifts: any = await scheduleRes.json();
             const count = (shifts.shifts || []).length;
@@ -320,7 +344,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'generate_report': {
             const project = args.project_name || 'Project';
-            const reportRes = await fetch(`http://localhost:${PORT}/api/photos/report`, {
+            const reportRes = await fetch(`${BASE_URL}/api/photos/report`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
               body: JSON.stringify({ projectName: project, reportTitle: `Evidence Report - ${project}` }),
             });
@@ -330,7 +354,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             break;
           }
           case 'clock_in': {
-            const clockRes = await fetch(`http://localhost:${PORT}/api/time-entries/clock-in`, {
+            const clockRes = await fetch(`${BASE_URL}/api/time-entries/clock-in`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
               body: JSON.stringify({ userId, projectId: '', latitude: 0, longitude: 0 }),
             });
@@ -339,7 +363,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             break;
           }
           case 'clock_out': {
-            const clockRes = await fetch(`http://localhost:${PORT}/api/time-entries/clock-out`, {
+            const clockRes = await fetch(`${BASE_URL}/api/time-entries/clock-out`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
               body: JSON.stringify({ userId, timeEntryId: '', latitude: 0, longitude: 0 }),
             });
@@ -351,7 +375,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             const days = args.days || 7;
             const endDate = new Date();
             const startDate = new Date(); startDate.setDate(endDate.getDate() - days);
-            const timesheetRes = await fetch(`http://localhost:${PORT}/api/time-entries?userId=${userId}&start=${formatDate(startDate)}&end=${formatDate(endDate)}`, { headers: { Authorization: authHeader } });
+            const timesheetRes = await fetch(`${BASE_URL}/api/time-entries?userId=${userId}&start=${formatDate(startDate)}&end=${formatDate(endDate)}`, { headers: { Authorization: authHeader } });
             if (!timesheetRes.ok) throw new Error('Timesheet service down');
             const entries: any = await timesheetRes.json();
             const count = (entries.entries || []).length;
@@ -359,7 +383,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             break;
           }
           case 'list_projects': {
-            const projectRes = await fetch(`http://localhost:${PORT}/api/projects`, { headers: { Authorization: authHeader } });
+            const projectRes = await fetch(`${BASE_URL}/api/projects`, { headers: { Authorization: authHeader } });
             if (!projectRes.ok) throw new Error('Project service down');
             const projects: any = await projectRes.json();
             const names = (projects.projects || []).map((p: any) => p.name).join(', ');
@@ -368,7 +392,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'create_project': {
             const { name, client_name } = args;
-            const createRes = await fetch(`http://localhost:${PORT}/api/projects`, {
+            const createRes = await fetch(`${BASE_URL}/api/projects`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
               body: JSON.stringify({ name, client_name }),
             });
@@ -378,7 +402,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'list_tasks': {
             const statusFilter = args.status || '';
-            const taskRes = await fetch(`http://localhost:${PORT}/api/tasks`, { headers: { Authorization: authHeader } });
+            const taskRes = await fetch(`${BASE_URL}/api/tasks`, { headers: { Authorization: authHeader } });
             if (!taskRes.ok) throw new Error('Task service down');
             const tasks: any = await taskRes.json();
             const taskList = (tasks.tasks || []).filter((t: any) => !statusFilter || t.status === statusFilter);
@@ -388,7 +412,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'create_task': {
             const { description, assigned_to } = args;
-            const taskRes = await fetch(`http://localhost:${PORT}/api/tasks`, {
+            const taskRes = await fetch(`${BASE_URL}/api/tasks`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
               body: JSON.stringify({ description, assigned_to }),
             });
@@ -398,7 +422,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'request_pto': {
             const { start_date, end_date, type } = args;
-            const ptoRes = await fetch(`http://localhost:${PORT}/api/pto`, {
+            const ptoRes = await fetch(`${BASE_URL}/api/pto`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
               body: JSON.stringify({ start_date, end_date, type, userId }),
             });
@@ -407,7 +431,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             break;
           }
           case 'list_pto': {
-            const ptoRes = await fetch(`http://localhost:${PORT}/api/pto`, { headers: { Authorization: authHeader } });
+            const ptoRes = await fetch(`${BASE_URL}/api/pto`, { headers: { Authorization: authHeader } });
             if (!ptoRes.ok) throw new Error('PTO service down');
             const ptoData: any = await ptoRes.json();
             const count = (ptoData.requests || []).length;
@@ -415,7 +439,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
             break;
           }
           case 'get_crew_location': {
-            const crewRes = await fetch(`http://localhost:${PORT}/api/crew`, { headers: { Authorization: authHeader } });
+            const crewRes = await fetch(`${BASE_URL}/api/crew`, { headers: { Authorization: authHeader } });
             if (!crewRes.ok) throw new Error('Crew service down');
             const crewData: any = await crewRes.json();
             const locations = (crewData.crew || []).map((c: any) => `${c.name}: lat ${c.latitude}, lng ${c.longitude}`).join('; ');
@@ -424,7 +448,7 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
           }
           case 'send_chat': {
             const { message, room } = args;
-            const chatRes = await fetch(`http://localhost:${PORT}/api/chat/message`, {
+            const chatRes = await fetch(`${BASE_URL}/api/chat/message`, {
               method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: authHeader },
               body: JSON.stringify({ roomId: room, message }),
             });
@@ -441,7 +465,6 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
       }
 
       if (userId) await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1,$2,$3)', [userId, 'assistant', resultText]);
-
       const responsePayload: any = { text: resultText };
       if (approvalId) responsePayload.approvalId = approvalId;
       return res.json(responsePayload);
@@ -456,15 +479,6 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: 'Lucy is taking a break.' });
   }
 });
-
-function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0];
-}
-function addDays(date: Date, days: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
-}
 
 // ----- 404 & error handler -----
 app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
