@@ -6,7 +6,7 @@ import {
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
 
@@ -20,6 +20,7 @@ interface Message {
 export default function AIAssistantScreen() {
   const { user } = useAuth();
   const navigation = useNavigation();
+  const route = useRoute<any>();
   const [messages, setMessages] = useState<Message[]>([
     { text: "Hi! I'm Lucy. I can schedule, run payroll, and generate reports. Try me!", isUser: false },
   ]);
@@ -28,6 +29,16 @@ export default function AIAssistantScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  // Auto‑record if requested
+  useEffect(() => {
+    if (route.params?.autoRecord) {
+      const timer = setTimeout(() => {
+        startRecording();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [route.params?.autoRecord]);
 
   // Load conversation history
   useEffect(() => {
@@ -97,10 +108,8 @@ export default function AIAssistantScreen() {
       const uri = recording.getURI();
       setRecording(null);
       if (uri) {
-        // Upload to voice/process to get transcript
         const transcript = await transcribeAudio(uri);
         if (transcript) {
-          // Send transcript as message
           sendMessage(transcript);
         } else {
           Alert.alert('No speech detected', 'Please try again.');
@@ -113,14 +122,6 @@ export default function AIAssistantScreen() {
 
   const transcribeAudio = async (uri: string): Promise<string> => {
     try {
-      const formData = new FormData();
-      formData.append('audio', {
-        uri,
-        name: 'voice.m4a',
-        type: 'audio/m4a',
-      } as any);
-      formData.append('userId', user?.id || '');
-      formData.append('projectId', '00000000-0000-0000-0000-000000000000'); // dummy project, not used
       const response = await api.uploadFileWithData<{ transcript: string }>(
         '/voice/process',
         uri,
@@ -128,8 +129,13 @@ export default function AIAssistantScreen() {
         'audio'
       );
       return response.transcript || '';
-    } catch (err) {
+    } catch (err: any) {
       console.error('Transcription error:', err);
+      if (err.response?.status === 500) {
+        Alert.alert('Server Error', 'Could not process voice. Please try again later.');
+      } else {
+        Alert.alert('Error', 'Failed to transcribe audio.');
+      }
       return '';
     }
   };

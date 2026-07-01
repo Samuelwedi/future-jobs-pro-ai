@@ -39,9 +39,6 @@ export default function HomeScreen() {
   // Live Pulse data
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
 
-  // ----- REMOVED: api.clearToken() on mount -----
-  // This was clearing the token right after login, causing 401 errors.
-
   // Location
   useEffect(() => {
     (async () => {
@@ -65,7 +62,7 @@ export default function HomeScreen() {
     return () => anim.stop();
   }, []);
 
-  // Timer logic (fixed)
+  // Timer logic
   useEffect(() => {
     if (isClockedIn && activeTimeEntry?.clockIn) {
       const startTime = new Date(activeTimeEntry.clockIn);
@@ -84,7 +81,6 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isClockedIn, activeTimeEntry]);
 
-  // Data loading
   const loadData = async () => {
     try {
       const res = await api.get<any>('/projects');
@@ -111,19 +107,17 @@ export default function HomeScreen() {
     loadAISuggestions();
   }, []));
 
-  // Clock in
   const handleClockIn = async () => {
-  if (!selectedProject) { Alert.alert('Select a project first'); return; }
-  try {
-    const payload: any = { userId: user?.id, projectId: selectedProject.id, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 };
-    const res = await api.post<any>('/time-entries/clock-in', payload);
-    setIsClockedIn(true);
-    setActiveTimeEntry({ ...res, clockIn: res.clockIn });
-    await api.recordAIEvent('clock_in', { projectId: selectedProject.id });
-  } catch (e: any) { Alert.alert('Error', e.message); }
-};
+    if (!selectedProject) { Alert.alert('Select a project first'); return; }
+    try {
+      const payload: any = { userId: user?.id, projectId: selectedProject.id, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 };
+      const res = await api.post<any>('/time-entries/clock-in', payload);
+      setIsClockedIn(true);
+      setActiveTimeEntry({ ...res, clockIn: res.clockIn });
+      await api.recordAIEvent('clock_in', { projectId: selectedProject.id });
+    } catch (e: any) { Alert.alert('Error', e.message); }
+  };
 
-  // Clock out
   const handleClockOut = async () => {
     if (!activeTimeEntry?.timeEntryId) {
       Alert.alert('Error', 'No active time entry');
@@ -163,8 +157,7 @@ export default function HomeScreen() {
     { icon: 'event', color: '#9C27B0', gradient: ['#9C27B0', '#7B1FA2'], label: 'Schedule', screen: 'Schedule' },
     { icon: 'chatbubbles', color: '#00BCD4', gradient: ['#00BCD4', '#0097A7'], label: 'Chat', screen: 'ChatList', IconSet: Ionicons },
     { icon: 'map', color: '#4CAF50', gradient: ['#4CAF50', '#388E3C'], label: 'Crew', screen: 'CrewTracking', IconSet: Ionicons },
-  { icon: 'folder', color: '#9C27B0', gradient: ['#9C27B0', '#7B1FA2'], label: 'Folders', screen: 'Folders', needsProject: false, IconSet: MaterialIcons },
-];
+  ];
 
   return (
     <View style={styles.wrapper}>
@@ -287,7 +280,6 @@ export default function HomeScreen() {
             { icon: 'work', color: '#FF9800', label: t('projects'), screen: 'Projects' },
             ...(user?.role === 'boss' || user?.role === 'manager' ? [{ icon: 'people', color: '#00D4FF', label: 'Team', screen: 'Team' }] : []),
             { icon: 'person', color: '#00D4FF', label: t('settings'), screen: 'Profile' },
-            // ---- New info & support items ----
             { icon: 'mail', color: '#00D4FF', label: 'Contact', screen: 'Contact' },
             { icon: 'lock', color: '#4CAF50', label: 'Privacy', screen: 'Privacy' },
             { icon: 'description', color: '#FF9800', label: 'Terms', screen: 'Terms' },
@@ -306,11 +298,19 @@ export default function HomeScreen() {
       </ScrollView>
 
       <View style={styles.floatingContainer}>
+        {/* ----- NEW: Lucy Voice Button ----- */}
+        <TouchableOpacity
+          style={[styles.fab, { backgroundColor: '#9C27B0', marginBottom: 72 }]}
+          onPress={() => navigation.navigate('AIAssistant', { autoRecord: true })}
+        >
+          <Ionicons name="mic" size={28} color="#FFF" />
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: '#00D4FF', marginBottom: 12 }]}
           onPress={() => navigation.navigate('AIAssistant')}
         >
-          <Ionicons name="mic" size={28} color="#0A0A0A" />
+          <Ionicons name="chatbubble-ellipses" size={28} color="#0A0A0A" />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: '#00D4FF' }]}
