@@ -79,26 +79,27 @@ export default function AIAssistantScreen() {
   };
 
   // ----- Voice Recording -----
-  const startRecording = async () => {
-    try {
-      const permission = await Audio.requestPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission required', 'Please grant microphone access.');
-        return;
-      }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(recording);
-      setIsRecording(true);
-    } catch (err) {
-      Alert.alert('Error', 'Could not start recording.');
+ const startRecording = async () => {
+  try {
+    const permission = await Audio.requestPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission required', 'Please grant microphone access in settings.');
+      return;
     }
-  };
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+    });
+    const { recording } = await Audio.Recording.createAsync(
+      Audio.RecordingOptionsPresets.HIGH_QUALITY
+    );
+    setRecording(recording);
+    setIsRecording(true);
+  } catch (err: any) {
+    console.error('Recording start error:', err);
+    Alert.alert('Could not start recording', err.message || 'Please try again.');
+  }
+};
 
   const stopRecording = async () => {
     if (!recording) return;

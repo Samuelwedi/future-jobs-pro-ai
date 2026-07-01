@@ -36,10 +36,8 @@ export default function HomeScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Live Pulse data
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
 
-  // Location
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -50,7 +48,6 @@ export default function HomeScreen() {
     })();
   }, []);
 
-  // Pulse animation
   useEffect(() => {
     const anim = Animated.loop(
       Animated.sequence([
@@ -62,7 +59,6 @@ export default function HomeScreen() {
     return () => anim.stop();
   }, []);
 
-  // Timer logic
   useEffect(() => {
     if (isClockedIn && activeTimeEntry?.clockIn) {
       const startTime = new Date(activeTimeEntry.clockIn);
@@ -298,7 +294,7 @@ export default function HomeScreen() {
       </ScrollView>
 
       <View style={styles.floatingContainer}>
-        {/* ----- NEW: Lucy Voice Button ----- */}
+        {/* NEW: Lucy Voice Button - Purple */}
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: '#9C27B0', marginBottom: 72 }]}
           onPress={() => navigation.navigate('AIAssistant', { autoRecord: true })}
@@ -306,12 +302,7 @@ export default function HomeScreen() {
           <Ionicons name="mic" size={28} color="#FFF" />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.fab, { backgroundColor: '#00D4FF', marginBottom: 12 }]}
-          onPress={() => navigation.navigate('AIAssistant')}
-        >
-          <Ionicons name="chatbubble-ellipses" size={28} color="#0A0A0A" />
-        </TouchableOpacity>
+        {/* Existing Chat Button - Teal */}
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: '#00D4FF' }]}
           onPress={() => navigation.navigate('AIAssistant')}
