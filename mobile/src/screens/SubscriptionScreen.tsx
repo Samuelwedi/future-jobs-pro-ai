@@ -22,7 +22,7 @@ interface ProductInfo {
 }
 
 export default function SubscriptionScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const [products, setProducts] = useState<ProductInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
@@ -62,12 +62,23 @@ export default function SubscriptionScreen() {
       }
       setPurchasing(false);
     });
+const purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
+  console.error('Purchase error:', error);
+  const code = String(error.code);
 
-    const purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
-      console.error('Purchase error:', error);
-      Alert.alert('Purchase Failed', error.message);
-      setPurchasing(false);
-    });
+  if (code === 'E_USER_CANCELLED') {
+    Alert.alert('Purchase Cancelled', 'You cancelled the purchase.');
+  } else if (code === 'E_ALREADY_OWNED') {
+    Alert.alert('Already Owned', 'You already own this subscription.');
+  } else if (code === 'E_ITEM_UNAVAILABLE') {
+    Alert.alert('Not Available', 'This product is not available in your country.');
+  } else if (code === 'E_DEVELOPER_ERROR') {
+    Alert.alert('Configuration Error', 'The product is not configured correctly in App Store Connect.');
+  } else {
+    Alert.alert('Purchase Failed', error.message || 'An error occurred during purchase.');
+  }
+  setPurchasing(false);
+});
 
     return () => {
       purchaseUpdateSubscription.remove();
@@ -190,6 +201,27 @@ export default function SubscriptionScreen() {
         <Text style={styles.restoreText}>Restore Purchases</Text>
       </TouchableOpacity>
 
+      {/* ----- LEGAL LINKS (required by Apple) ----- */}
+      <View style={styles.legalContainer}>
+        <TouchableOpacity
+          style={styles.legalLink}
+          onPress={() => navigation.navigate('WebView', { url: 'https://futurejobsproai.com/privacy', title: 'Privacy Policy' })}
+        >
+          <Text style={styles.legalText}>Privacy Policy</Text>
+        </TouchableOpacity>
+        <View style={styles.legalDivider} />
+        <TouchableOpacity
+          style={styles.legalLink}
+          onPress={() => navigation.navigate('WebView', { url: 'https://futurejobsproai.com/terms', title: 'Terms of Use' })}
+        >
+          <Text style={styles.legalText}>Terms of Use</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.footer}>
+        By subscribing, you agree to our Terms of Use and Privacy Policy.
+      </Text>
+
       {purchasing && (
         <View style={styles.purchasingOverlay}>
           <ActivityIndicator size="large" color="#00D4FF" />
@@ -242,6 +274,16 @@ const styles = StyleSheet.create({
   popularText: { color: '#0A0A0A', fontSize: 12, fontWeight: 'bold' },
   restoreBtn: { alignItems: 'center', marginTop: 10, marginBottom: 20 },
   restoreText: { color: '#888', fontSize: 14 },
+  legalContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  legalLink: { paddingHorizontal: 12 },
+  legalText: { color: '#00D4FF', fontSize: 14, fontWeight: '500' },
+  legalDivider: { width: 1, backgroundColor: '#333' },
+  footer: { color: '#666', fontSize: 12, textAlign: 'center', marginHorizontal: 20 },
   purchasingOverlay: {
     position: 'absolute',
     top: 0,

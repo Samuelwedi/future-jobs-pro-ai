@@ -12,7 +12,7 @@ import type { Lang } from '../services/i18n';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function ProfileScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>(); // ✅ use any to avoid navigation type errors
   const { user, logout } = useAuth();
   const { lang, setLang, t } = useLang();
   const [tempUnit, setTempUnit] = useState<'celsius' | 'fahrenheit'>('celsius');
@@ -23,7 +23,6 @@ export default function ProfileScreen() {
   const [profilePic, setProfilePic] = useState((user as any)?.profilePic || null);
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState(false);
-  // Password change states
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -188,13 +187,25 @@ export default function ProfileScreen() {
         <Text style={styles.actionText}>Change Password</Text>
       </TouchableOpacity>
 
-      {/* ----- SUBSCRIPTION BUTTON (only for boss/manager) ----- */}
+      {/* ----- Subscription Button (boss/manager only) ----- */}
       {(user?.role === 'boss' || user?.role === 'manager') && (
-        <TouchableOpacity style={[styles.actionBtn, { borderColor: '#00D4FF', marginTop: 8 }]} onPress={() => (navigation as any).navigate('Subscription')}>
+        <TouchableOpacity style={[styles.actionBtn, { borderColor: '#00D4FF', marginTop: 8 }]} onPress={() => navigation.navigate('Subscription')}>
           <MaterialIcons name="stars" size={20} color="#00D4FF" />
           <Text style={[styles.actionText, { color: '#00D4FF' }]}>Subscription Plans</Text>
         </TouchableOpacity>
       )}
+
+      {/* ----- Privacy Policy (required by Apple) ----- */}
+      <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('WebView', { url: 'https://futurejobsproai.com/privacy', title: 'Privacy Policy' })}>
+        <MaterialIcons name="privacy-tip" size={20} color="#00D4FF" />
+        <Text style={[styles.actionText, { color: '#00D4FF' }]}>Privacy Policy</Text>
+      </TouchableOpacity>
+
+      {/* ----- Terms of Use (required by Apple) ----- */}
+      <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('WebView', { url: 'https://futurejobsproai.com/terms', title: 'Terms of Use' })}>
+        <MaterialIcons name="description" size={20} color="#00D4FF" />
+        <Text style={[styles.actionText, { color: '#00D4FF' }]}>Terms of Use</Text>
+      </TouchableOpacity>
 
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <MaterialIcons name="logout" size={20} color="#F44336" />

@@ -6,7 +6,7 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { Audio, Video, ResizeMode } from 'expo-av';   // ✅ correct import
+import { Audio, Video, ResizeMode } from 'expo-av';
 
 export default function MonthMediaTypeScreen() {
   const navigation = useNavigation<any>();
@@ -111,9 +111,7 @@ export default function MonthMediaTypeScreen() {
           setSelectedMedia(item);
         }}
       >
-        {isPhoto && (
-          <Image source={{ uri: item.url }} style={styles.thumbnail} />
-        )}
+        {isPhoto && <Image source={{ uri: item.url }} style={styles.thumbnail} />}
         {isVideo && (
           <View style={styles.thumbnailPlaceholder}>
             <Ionicons name="videocam" size={32} color="#FFF" />
@@ -148,10 +146,7 @@ export default function MonthMediaTypeScreen() {
             <Text style={styles.hash}>🔒 {item.verification_hash}</Text>
           )}
         </View>
-        <TouchableOpacity
-          onPress={() => setSelectedMedia(item)}
-          style={styles.openBtn}
-        >
+        <TouchableOpacity onPress={() => setSelectedMedia(item)} style={styles.openBtn}>
           <MaterialIcons name="open-in-new" size={24} color="#00D4FF" />
         </TouchableOpacity>
       </TouchableOpacity>
@@ -206,6 +201,7 @@ export default function MonthMediaTypeScreen() {
         }
       />
 
+      {/* Full-screen Media Modal */}
       <Modal
         visible={!!selectedMedia}
         transparent={true}
@@ -220,18 +216,12 @@ export default function MonthMediaTypeScreen() {
           {selectedMedia && (
             <View style={styles.modalContent}>
               {selectedMedia.type === 'photo' && (
-                <Image
-                  source={{ uri: selectedMedia.url }}
-                  style={styles.fullImage}
-                  resizeMode="contain"
-                />
+                <Image source={{ uri: selectedMedia.url }} style={styles.fullImage} resizeMode="contain" />
               )}
 
               {selectedMedia.type === 'video' && (
                 <View style={styles.videoContainer}>
-                  {videoLoading && (
-                    <ActivityIndicator size="large" color="#00D4FF" style={styles.videoLoading} />
-                  )}
+                  {videoLoading && <ActivityIndicator size="large" color="#00D4FF" style={styles.videoLoading} />}
                   {videoError ? (
                     <View style={styles.videoErrorContainer}>
                       <Ionicons name="alert-circle" size={48} color="#F44336" />
@@ -275,20 +265,12 @@ export default function MonthMediaTypeScreen() {
                           }
                         }}
                       >
-                        <Ionicons
-                          name={isPlaying ? 'pause-circle' : 'play-circle'}
-                          size={64}
-                          color="#00D4FF"
-                        />
+                        <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={64} color="#00D4FF" />
                       </TouchableOpacity>
                       <Text style={styles.voiceTranscript}>
                         {selectedMedia.transcript || 'No transcript available'}
                       </Text>
-                      {selectedMedia.duration && (
-                        <Text style={styles.voiceDuration}>
-                          Duration: {selectedMedia.duration}s
-                        </Text>
-                      )}
+                      {selectedMedia.duration && <Text style={styles.voiceDuration}>Duration: {selectedMedia.duration}s</Text>}
                     </>
                   ) : (
                     <View style={styles.noAudioContainer}>
@@ -304,9 +286,7 @@ export default function MonthMediaTypeScreen() {
                   {selectedMedia.taken_at ? new Date(selectedMedia.taken_at).toLocaleString() : 'Unknown date'}
                 </Text>
                 {selectedMedia.verification_hash && (
-                  <Text style={styles.modalHash}>
-                    🔒 {selectedMedia.verification_hash}
-                  </Text>
+                  <Text style={styles.modalHash}>🔒 {selectedMedia.verification_hash}</Text>
                 )}
               </View>
             </View>
@@ -334,7 +314,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 12,
   },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
   list: { padding: 16 },
   mediaCard: {
     flexDirection: 'row',
@@ -346,12 +326,7 @@ const styles = StyleSheet.create({
     borderColor: '#333',
     alignItems: 'center',
   },
-  thumbnail: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    marginRight: 12,
-  },
+  thumbnail: { width: 80, height: 80, borderRadius: 8, marginRight: 12 },
   thumbnailPlaceholder: {
     width: 80,
     height: 80,
@@ -361,11 +336,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  thumbnailLabel: {
-    color: '#FFF',
-    fontSize: 10,
-    marginTop: 4,
-  },
+  thumbnailLabel: { color: '#FFF', fontSize: 10, marginTop: 4 },
   mediaInfo: { flex: 1 },
   mediaType: { color: '#00D4FF', fontSize: 14, fontWeight: '600' },
   mediaDate: { color: '#888', fontSize: 12, marginTop: 2 },
@@ -391,10 +362,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
   },
-  fullImage: {
-    width: '100%',
-    height: '80%',
-  },
+  fullImage: { width: '100%', height: '80%' },
   videoContainer: {
     width: '100%',
     height: '80%',
@@ -402,57 +370,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  fullVideo: {
-    width: '100%',
-    height: '100%',
-  },
-  videoLoading: {
-    position: 'absolute',
-  },
-  videoErrorContainer: {
-    alignItems: 'center',
-  },
-  videoErrorText: {
-    color: '#F44336',
-    marginTop: 8,
-  },
-  voicePlayer: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  playBtn: {
-    marginBottom: 20,
-  },
-  voiceTranscript: {
-    color: '#FFF',
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  voiceDuration: {
-    color: '#888',
-    fontSize: 14,
-  },
-  noAudioContainer: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  noAudioText: {
-    color: '#888',
-    fontSize: 18,
-    marginTop: 12,
-  },
-  modalMeta: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  modalDate: {
-    color: '#AAA',
-    fontSize: 14,
-  },
-  modalHash: {
-    color: '#4CAF50',
-    fontSize: 13,
-    marginTop: 4,
-  },
+  fullVideo: { width: '100%', height: '100%' },
+  videoLoading: { position: 'absolute' },
+  videoErrorContainer: { alignItems: 'center' },
+  videoErrorText: { color: '#F44336', marginTop: 8 },
+  voicePlayer: { alignItems: 'center', padding: 20 },
+  playBtn: { marginBottom: 20 },
+  voiceTranscript: { color: '#FFF', fontSize: 16, textAlign: 'center', marginBottom: 12 },
+  voiceDuration: { color: '#888', fontSize: 14 },
+  noAudioContainer: { alignItems: 'center', padding: 20 },
+  noAudioText: { color: '#888', fontSize: 18, marginTop: 12 },
+  modalMeta: { marginTop: 16, alignItems: 'center' },
+  modalDate: { color: '#AAA', fontSize: 14 },
+  modalHash: { color: '#4CAF50', fontSize: 13, marginTop: 4 },
 });

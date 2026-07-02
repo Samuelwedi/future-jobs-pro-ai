@@ -39,6 +39,7 @@ import ProjectMediaScreen from './src/screens/ProjectMediaScreen';
 import MonthMediaScreen from './src/screens/MonthMediaScreen';
 import { api } from './src/services/api';
 import MonthMediaTypeScreen from './src/screens/MonthMediaTypeScreen';
+import WebViewScreen from './src/screens/WebViewScreen';
 
 const Stack = createStackNavigator();
 
@@ -134,6 +135,7 @@ function AppNavigator() {
             <Stack.Screen name="ProjectMedia" component={ProjectMediaScreen} />
             <Stack.Screen name="MonthMedia" component={MonthMediaScreen} />
             <Stack.Screen name="MonthMediaType" component={MonthMediaTypeScreen} />
+            <Stack.Screen name="WebView" component={WebViewScreen} />
           </>
         )}
       </Stack.Navigator>
