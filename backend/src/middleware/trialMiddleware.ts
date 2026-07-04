@@ -2,6 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/auth';
 import { pool } from '../config/database';
 
+// Test company ID for unlimited trial
+const TEST_COMPANY_ID = 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
+
 export const trialCheck = async (req: Request, res: Response, next: NextFunction) => {
   // Skip auth, stripe, health, lucy
   if (
@@ -16,7 +19,13 @@ export const trialCheck = async (req: Request, res: Response, next: NextFunction
   try {
     const decoded = verifyToken(req);
     (req as any).user = decoded;
-    (req as any).companyId = decoded.companyId || 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
+    (req as any).companyId = decoded.companyId || TEST_COMPANY_ID;
+
+    // If user belongs to the test company, skip trial check
+    if (decoded.companyId === TEST_COMPANY_ID) {
+      console.log('🧪 Test company – unlimited trial');
+      return next();
+    }
 
     // Trial logic
     const userRes = await pool.query(

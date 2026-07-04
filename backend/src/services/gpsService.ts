@@ -1,255 +1,141 @@
 // ============================================
-// GPS TRACKING SERVICE (with Geofence Alerts)
+// GPS SERVICE
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
 import { pool } from '../config/database';
-import { recordUserEvent } from './adaptiveAIService';
-import { sendPushNotification } from './notificationService';
 
-interface GPSPoint {
+export interface GPSPoint {
   userId: string;
   timeEntryId: string;
   projectId: string;
   latitude: number;
   longitude: number;
-  accuracy: number;
+  accuracy?: number;
   altitude?: number;
   speed?: number;
   heading?: number;
   batteryLevel?: number;
-  timestamp: Date;
-  isMoving: boolean;
+}
+
+interface GeofenceStatus {
   geofenceStatus: 'inside' | 'outside' | 'unknown';
+  isMoving: boolean;
 }
 
-interface BreadcrumbTrail {
-  points: GPSPoint[];
-  totalDistance: number;
-  totalTime: number;
-  startTime: Date;
-  endTime: Date;
-  averageSpeed: number;
-}
+// ---------------------------------------------
+// Record a GPS point for a time entry
+// ---------------------------------------------
+export async function recordGPSPoint(point: GPSPoint): Promise<GeofenceStatus & { pointId: string }> {
+  const { userId, timeEntryId, projectId, latitude, longitude, accuracy, altitude, speed, heading, batteryLevel } = point;
 
-// ============================================
-// 1. Record a single GPS point
-// ============================================
-export async function recordGPSPoint(
-  point: Omit<GPSPoint, 'timestamp' | 'geofenceStatus' | 'isMoving'>
-): Promise<GPSPoint> {
+  // Check if the user is inside the project's geofence (if any)
+  const projectRes = await pool.query(
+    'SELECT geofence_lat, geofence_lng, geofence_radius FROM projects WHERE id = $1',
+    [projectId]
+  );
+  const project = projectRes.rows[0];
+  let geofenceStatus: 'inside' | 'outside' | 'unknown' = 'unknown';
+  if (project && project.geofence_lat && project.geofence_lng && project.geofence_radius) {
+    const distance = calculateDistance(
+      latitude, longitude,
+      project.geofence_lat, project.geofence_lng
+    );
+    geofenceStatus = distance <= project.geofence_radius ? 'inside' : 'outside';
+  }
 
-  console.log(`📍 [Samuel B. GPS] Recording point for user ${point.userId}`);
+  // Detect if moving (speed > 1 m/s)
+  const isMoving = speed !== undefined && speed > 1;
 
-  // Check geofence
-  const geofenceStatus = await checkGeofence(point.projectId, point.latitude, point.longitude);
-  const isMoving = point.speed ? point.speed > 2 : false;
+  const result = await pool.query(
+    `INSERT INTO gps_tracking
+     (user_id, time_entry_id, project_id, latitude, longitude, accuracy, altitude, speed, heading, battery_level, geofence_status, is_moving)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     RETURNING id`,
+    [userId, timeEntryId, projectId, latitude, longitude, accuracy || null, altitude || null, speed || null, heading || null, batteryLevel || null, geofenceStatus, isMoving]
+  );
 
-  // Get the previous geofence status for this time entry
-  const previousStatus = await getPreviousGeofenceStatus(point.userId, point.timeEntryId);
-
-  const fullPoint: GPSPoint = {
-    ...point,
-    timestamp: new Date(),
+  return {
+    pointId: result.rows[0].id,
     geofenceStatus,
     isMoving,
   };
+}
 
-  // Insert into database
-  await pool.query(
-    `INSERT INTO gps_tracking (user_id, time_entry_id, project_id, latitude, longitude, accuracy,
-      altitude, speed, heading, battery_level, is_moving, geofence_status, recorded_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-    [
-      fullPoint.userId, fullPoint.timeEntryId, fullPoint.projectId,
-      fullPoint.latitude, fullPoint.longitude, fullPoint.accuracy,
-      fullPoint.altitude || null, fullPoint.speed || null, fullPoint.heading || null,
-      fullPoint.batteryLevel || null, fullPoint.isMoving, fullPoint.geofenceStatus,
-      fullPoint.timestamp
-    ]
-  );
-
-  // Record event for AI learning
-  await recordUserEvent({
-    userId: point.userId,
-    eventType: 'location_update',
-    eventData: { speed: point.speed, geofenceStatus },
-    latitude: point.latitude,
-    longitude: point.longitude,
-  });
-
-  // 🚨 Geofence alert: status changed from previous point
-  if (previousStatus && previousStatus !== geofenceStatus && geofenceStatus !== 'unknown') {
-    console.log(`🚨 Geofence change: ${previousStatus} → ${geofenceStatus} for user ${point.userId}`);
-
-    const title = geofenceStatus === 'inside'
-      ? '📍 Arrived on Site'
-      : '🚪 Left Job Site';
-
-    const body = geofenceStatus === 'inside'
-      ? 'You have entered the job site area.'
-      : 'You have left the job site area.';
-
-    await sendPushNotification(point.userId, title, body, {
-      type: 'geofence',
-      status: geofenceStatus,
-      projectId: point.projectId,
-    });
+// ---------------------------------------------
+// Generate breadcrumb trail (GPS points for a time entry)
+// ---------------------------------------------
+export async function generateBreadcrumbTrail(timeEntryId: string, userId?: string): Promise<{ points: any[] }> {
+  let query = 'SELECT * FROM gps_tracking WHERE time_entry_id = $1';
+  const params: any[] = [timeEntryId];
+  if (userId) {
+    query += ' AND user_id = $2';
+    params.push(userId);
   }
-
-  return fullPoint;
+  query += ' ORDER BY timestamp ASC';
+  const result = await pool.query(query, params);
+  return { points: result.rows };
 }
 
-// ============================================
-// 2. Get previous geofence status for the active time entry
-// ============================================
-async function getPreviousGeofenceStatus(
-  userId: string,
-  timeEntryId: string
-): Promise<string | null> {
+// ---------------------------------------------
+// Get arrival confidence (percentage of time spent inside geofence)
+// ---------------------------------------------
+export async function getArrivalConfidence(timeEntryId: string): Promise<{ confidence: number; insideCount: number; totalCount: number }> {
   const result = await pool.query(
-    `SELECT geofence_status FROM gps_tracking
-     WHERE user_id = $1 AND time_entry_id = $2
-     ORDER BY recorded_at DESC LIMIT 1`,
-    [userId, timeEntryId]
-  );
-  if (result.rows.length === 0) return null;
-  return result.rows[0].geofence_status;
-}
-
-// ============================================
-// 3. Check if coordinates are inside the job site
-// ============================================
-async function checkGeofence(
-  projectId: string,
-  latitude: number,
-  longitude: number
-): Promise<'inside' | 'outside' | 'unknown'> {
-
-  const result = await pool.query(
-    `SELECT latitude, longitude FROM projects WHERE id = $1`,
-    [projectId]
-  );
-  if (result.rows.length === 0) return 'unknown';
-
-  const project = result.rows[0];
-  if (!project.latitude || !project.longitude) return 'unknown';
-
-  const distance = calculateDistance(latitude, longitude, project.latitude, project.longitude);
-  const distanceMeters = distance * 1609.34;
-  const GEOFENCE_RADIUS = 100; // metres
-
-  return distanceMeters <= GEOFENCE_RADIUS ? 'inside' : 'outside';
-}
-
-// ============================================
-// 4. Generate a full breadcrumb trail
-// ============================================
-export async function generateBreadcrumbTrail(timeEntryId: string): Promise<BreadcrumbTrail> {
-
-  const result = await pool.query(
-    `SELECT * FROM gps_tracking WHERE time_entry_id = $1 ORDER BY recorded_at ASC`,
+    `SELECT COUNT(*) as total,
+            SUM(CASE WHEN geofence_status = 'inside' THEN 1 ELSE 0 END) as inside
+     FROM gps_tracking
+     WHERE time_entry_id = $1`,
     [timeEntryId]
   );
-  const points: GPSPoint[] = result.rows;
-
-  if (points.length === 0) {
-    return {
-      points: [],
-      totalDistance: 0,
-      totalTime: 0,
-      startTime: new Date(),
-      endTime: new Date(),
-      averageSpeed: 0,
-    };
-  }
-
-  let totalDistanceMiles = 0;
-  for (let i = 1; i < points.length; i++) {
-    totalDistanceMiles += calculateDistance(
-      points[i-1].latitude, points[i-1].longitude,
-      points[i].latitude, points[i].longitude
-    );
-  }
-
-  const startTime = new Date(points[0].timestamp);
-  const endTime = new Date(points[points.length - 1].timestamp);
-  const totalTimeMinutes = (endTime.getTime() - startTime.getTime()) / 60000;
-  const averageSpeed = totalTimeMinutes > 0 ? (totalDistanceMiles / totalTimeMinutes) * 60 : 0;
-
-  return { points, totalDistance: totalDistanceMiles, totalTime: totalTimeMinutes, startTime, endTime, averageSpeed };
+  const total = parseInt(result.rows[0].total) || 0;
+  const inside = parseInt(result.rows[0].inside) || 0;
+  const confidence = total > 0 ? (inside / total) * 100 : 0;
+  return { confidence, insideCount: inside, totalCount: total };
 }
 
-// ============================================
-// 5. Arrival confidence (unchanged)
-// ============================================
-export async function getArrivalConfidence(timeEntryId: string): Promise<{ score: number; evidence: string[] }> {
-
-  const trail = await generateBreadcrumbTrail(timeEntryId);
-  if (trail.points.length < 5) {
-    return { score: 0, evidence: ['Insufficient GPS data'] };
-  }
-
-  let confidence = 0;
-  const evidence: string[] = [];
-
-  const insidePoints = trail.points.filter(p => p.geofenceStatus === 'inside');
-  if (insidePoints.length > 0) {
-    const insidePct = (insidePoints.length / trail.points.length) * 100;
-    confidence += Math.min(insidePct * 0.5, 50);
-    evidence.push(`✅ Inside geofence ${insidePct.toFixed(0)}% of the time`);
-  } else {
-    evidence.push('❌ Never entered geofence');
-  }
-
-  let arrivalDetected = false;
-  for (let i = 1; i < trail.points.length; i++) {
-    if (trail.points[i-1].isMoving && !trail.points[i].isMoving && trail.points[i].geofenceStatus === 'inside') {
-      arrivalDetected = true;
-      break;
-    }
-  }
-  if (arrivalDetected) { confidence += 30; evidence.push('✅ Arrival pattern detected'); }
-
-  if (insidePoints.length >= 2) {
-    const onsiteMin = (new Date(insidePoints[insidePoints.length-1].timestamp).getTime() -
-                       new Date(insidePoints[0].timestamp).getTime()) / 60000;
-    if (onsiteMin > 15) { confidence += 20; evidence.push(`✅ Spent ${onsiteMin.toFixed(0)} min on site`); }
-  }
-
-  return { score: Math.min(confidence, 100), evidence };
-}
-
-// ============================================
-// 6. Get active employee locations (unchanged)
-// ============================================
+// ---------------------------------------------
+// Get active employee locations for a company
+// ---------------------------------------------
 export async function getActiveEmployeeLocations(companyId: string): Promise<any[]> {
   const result = await pool.query(
-    `SELECT DISTINCT ON (gt.user_id)
-       gt.user_id, u.first_name, u.last_name, gt.latitude, gt.longitude,
-       gt.recorded_at as last_update, gt.geofence_status, gt.is_moving,
-       p.name as current_project, p.id as project_id
-     FROM gps_tracking gt
-     JOIN users u ON gt.user_id = u.id
-     LEFT JOIN projects p ON gt.project_id = p.id
+    `SELECT u.id, u.first_name, u.last_name,
+            g.latitude, g.longitude, g.timestamp,
+            g.geofence_status, g.is_moving,
+            p.name as project_name
+     FROM users u
+     JOIN time_entries te ON te.user_id = u.id AND te.clock_out IS NULL
+     JOIN gps_tracking g ON g.time_entry_id = te.id
+     JOIN projects p ON p.id = te.project_id
      WHERE u.company_id = $1
-       AND gt.recorded_at > NOW() - INTERVAL '10 minutes'
-       AND EXISTS (SELECT 1 FROM time_entries te WHERE te.user_id = gt.user_id AND te.clock_out IS NULL)
-     ORDER BY gt.user_id, gt.recorded_at DESC`,
+     ORDER BY g.timestamp DESC`,
     [companyId]
   );
-  return result.rows;
+  // Keep only the latest point per user
+  const latestByUser = new Map();
+  result.rows.forEach(row => {
+    if (!latestByUser.has(row.id) || new Date(row.timestamp) > new Date(latestByUser.get(row.id).timestamp)) {
+      latestByUser.set(row.id, row);
+    }
+  });
+  return Array.from(latestByUser.values());
 }
 
-// ============================================
-// Helper: Haversine distance (miles)
-// ============================================
+// ---------------------------------------------
+// Helper: calculate distance between two coordinates (Haversine)
+// ---------------------------------------------
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 3959;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const R = 6371e3; // Earth radius in meters
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
 }
 
-console.log('🗺️  GPS Tracking Service (with geofence alerts) loaded – Future Jobs Pro AI by Samuel B.');
+console.log('🗺️  GPS Service loaded – Future Jobs Pro AI by Samuel B.');

@@ -162,4 +162,55 @@ router.post('/change-password', async (req: Request, res: Response) => {
   }
 });
 
+// ----- FORGOT PASSWORD -----
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: 'Email required' });
+
+    const userRes = await pool.query('SELECT id, email FROM users WHERE email = $1', [email]);
+    if (userRes.rows.length === 0) {
+      // Don't reveal user existence
+      return res.json({ success: true, message: 'If that email exists, a reset link has been sent.' });
+    }
+
+    const user = userRes.rows[0];
+    const resetToken = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '1h' });
+    const resetLink = `${process.env.CLIENT_URL || 'https://future-jobs-pro-ai.vercel.app'}/reset-password?token=${resetToken}`;
+    
+    console.log(`🔑 Password reset link for ${email}: ${resetLink}`);
+    // In production, send email using your email service
+    
+    res.json({ success: true, message: 'If that email exists, a reset link has been sent.' });
+  } catch (error: any) {
+    console.error('Forgot password error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to send reset link' });
+  }
+});
+
+// ----- RESET PASSWORD -----
+router.post('/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Token and new password required' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hashedPassword, decoded.userId]);
+    
+    res.json({ success: true, message: 'Password reset successfully' });
+  } catch (error: any) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(400).json({ success: false, message: 'Reset link has expired. Please request a new one.' });
+    }
+    console.error('Reset password error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to reset password' });
+  }
+});
+
 export default router;

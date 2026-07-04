@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, SectionList, ActivityIndicator, RefreshControl,
-  TouchableOpacity, Modal, ScrollView,
+  TouchableOpacity, Modal, ScrollView, FlatList,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -41,23 +41,40 @@ export default function TimesheetScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<TimeEntry | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string>(user?.id || '');
+  const [showUserPicker, setShowUserPicker] = useState(false);
+
+  const isBossOrManager = user?.role === 'boss' || user?.role === 'manager';
 
   const baseDate = new Date();
   baseDate.setDate(baseDate.getDate() + weekOffset * 7);
   const weekStart = format(startOfWeek(baseDate, { weekStartsOn: 1 }), 'yyyy-MM-dd');
   const weekEnd = format(endOfWeek(baseDate, { weekStartsOn: 1 }), 'yyyy-MM-dd');
 
+  // Fetch employees if boss/manager
+  useEffect(() => {
+    if (isBossOrManager) {
+      api.get(`/users/company/${user?.companyId}`)
+        .then((res: any) => {
+          setEmployees(res.users || []);
+        })
+        .catch(console.error);
+    }
+  }, []);
+
   const fetchEntries = async () => {
     try {
+      const userId = selectedUserId || user?.id;
       const res = await api.get<{ success: boolean; entries: TimeEntry[] }>(
-        `/time-entries?userId=${user?.id}&start=${weekStart}&end=${weekEnd}`
+        `/time-entries?userId=${userId}&start=${weekStart}&end=${weekEnd}`
       );
       setEntries(res.entries || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  useEffect(() => { fetchEntries(); }, [weekOffset]);
+  useEffect(() => { fetchEntries(); }, [weekOffset, selectedUserId]);
 
   const onRefresh = () => { setRefreshing(true); fetchEntries(); };
 
@@ -76,7 +93,6 @@ export default function TimesheetScreen() {
       map.set(dayKey, existing);
     });
 
-    // Fill in every day of the week
     const sections: DaySection[] = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date(parseISO(weekStart));
@@ -159,6 +175,8 @@ export default function TimesheetScreen() {
     );
   };
 
+  const selectedUserName = employees.find(e => e.id === selectedUserId)?.first_name || 'Me';
+
   if (loading) return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
 
   return (
@@ -168,7 +186,12 @@ export default function TimesheetScreen() {
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Timesheet</Text>
-        <View style={{ width: 24 }} />
+        {isBossOrManager && (
+          <TouchableOpacity onPress={() => setShowUserPicker(true)} style={styles.userPickerBtn}>
+            <Text style={styles.userPickerText}>{selectedUserName}</Text>
+            <MaterialIcons name="arrow-drop-down" size={24} color="#00D4FF" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Week Navigator */}
@@ -266,14 +289,62 @@ export default function TimesheetScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* User Picker Modal */}
+      <Modal visible={showUserPicker} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Employee</Text>
+              <TouchableOpacity onPress={() => setShowUserPicker(false)}>
+                <MaterialIcons name="close" size={24} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={[styles.employeeRow, selectedUserId === user?.id && styles.employeeRowActive]}
+              onPress={() => {
+                setSelectedUserId(user?.id || '');
+                setShowUserPicker(false);
+              }}
+            >
+              <Text style={styles.employeeName}>Me ({user?.firstName} {user?.lastName})</Text>
+              {selectedUserId === user?.id && <MaterialIcons name="check-circle" size={22} color="#00D4FF" />}
+            </TouchableOpacity>
+            {employees.map(emp => (
+              <TouchableOpacity
+                key={emp.id}
+                style={[styles.employeeRow, selectedUserId === emp.id && styles.employeeRowActive]}
+                onPress={() => {
+                  setSelectedUserId(emp.id);
+                  setShowUserPicker(false);
+                }}
+              >
+                <Text style={styles.employeeName}>{emp.first_name} {emp.last_name}</Text>
+                {selectedUserId === emp.id && <MaterialIcons name="check-circle" size={22} color="#00D4FF" />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingTop: 60, paddingBottom: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#333' },
-  headerTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold', marginLeft: 16 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 60,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  headerTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold', flex: 1, marginLeft: 16 },
+  userPickerBtn: { flexDirection: 'row', alignItems: 'center' },
+  userPickerText: { color: '#00D4FF', fontSize: 16, fontWeight: '600' },
   weekNav: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#333' },
   weekRange: { color: '#00D4FF', fontSize: 15, fontWeight: '600' },
   weeklySummary: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#333', marginHorizontal: 20 },
@@ -308,4 +379,7 @@ const styles = StyleSheet.create({
   attachBtnText: { color: '#0A0A0A', fontWeight: '600', fontSize: 15 },
   gpsBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#00D4FF', paddingVertical: 12, borderRadius: 10, marginTop: 10, gap: 8 },
   gpsBtnText: { color: '#0A0A0A', fontWeight: '600', fontSize: 15 },
+  employeeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#222' },
+  employeeRowActive: { backgroundColor: '#1A3A4A' },
+  employeeName: { color: '#FFF', fontSize: 16 },
 });
