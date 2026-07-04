@@ -109,7 +109,7 @@ async function calculateDisputeRisk(timeEntryId: string): Promise<number> {
 
   // GPS confidence
   const gpsConfidence = await getArrivalConfidence(timeEntryId);
-  if (gpsConfidence.score < 70) riskScore += 15;
+  if (gpsConfidence.confidence < 70) riskScore += 15;
 
   return Math.min(Math.round(riskScore), 100);
 }
@@ -140,17 +140,27 @@ async function gatherTimeCardEvidence(timeEntryId: string): Promise<any> {
 async function gatherGPSEvidence(timeEntryId: string): Promise<any> {
   const trail = await generateBreadcrumbTrail(timeEntryId);
   const confidence = await getArrivalConfidence(timeEntryId);
+
+  const breadcrumb = trail.points.map((p: any) => ({
+    lat: p.latitude,
+    lng: p.longitude,
+    timestamp: p.timestamp,
+  }));
+
+  const timeAtSite = breadcrumb.length > 1
+    ? (new Date(breadcrumb[breadcrumb.length - 1].timestamp).getTime()
+       - new Date(breadcrumb[0].timestamp).getTime()) / 1000
+    : 0;
+
+  const distanceTraveled = (trail as any).totalDistance ?? 0;
+
   return {
-    totalPoints: trail.points.length,
-    arrivalConfidence: confidence.score,
-    timeAtSite: trail.totalTime,
-    distanceTraveled: trail.totalDistance,
-    geofenceViolations: trail.points.filter(p => p.geofenceStatus === 'outside').length,
-    breadcrumb: trail.points.map(p => ({
-      lat: p.latitude,
-      lng: p.longitude,
-      timestamp: p.timestamp,
-    })),
+    totalPoints: breadcrumb.length,
+    arrivalConfidence: confidence.confidence,
+    timeAtSite,
+    distanceTraveled,
+    geofenceViolations: trail.points.filter((p: any) => p.geofenceStatus === 'outside').length,
+    breadcrumb,
   };
 }
 
