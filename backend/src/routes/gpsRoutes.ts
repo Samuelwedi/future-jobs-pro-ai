@@ -105,4 +105,42 @@ router.get('/active/:companyId', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/gps/tracking/:userId?start=&end=
+router.get('/tracking/:userId', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { start, end } = req.query;
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    
+    const decoded = verifyToken(req);
+    if (decoded.id !== userId) {
+      // Check if requester is boss/manager of the same company
+      const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
+      if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
+      const requestUser = userRes.rows[0];
+      const targetRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+      if (targetRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Target user not found' });
+      if (requestUser.company_id !== targetRes.rows[0].company_id) {
+        return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+      if (!['boss', 'manager'].includes(requestUser.role)) {
+        return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+    }
+
+    let query = 'SELECT * FROM gps_tracking WHERE user_id = $1';
+    const params: any[] = [userId];
+    if (start) { query += ' AND timestamp >= $2'; params.push(start); }
+    if (end)   { query += ' AND timestamp <= $3'; params.push(end); }
+    query += ' ORDER BY timestamp ASC';
+    const result = await pool.query(query, params);
+    res.json({ success: true, tracking: result.rows });
+  } catch (error: any) {
+    console.error('GPS tracking error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to fetch GPS tracking' });
+  }
+});
+
 export default router;
