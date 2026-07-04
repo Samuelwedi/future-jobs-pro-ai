@@ -103,11 +103,13 @@ export default function ScheduleScreen() {
   }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]);
 
   const fetchEmployees = async () => {
-    try {
-      const res = await api.get<{ success: boolean; users: Employee[] }>(`/users/company/${user?.companyId}`);
-      setEmployees(res.users || []);
-    } catch (e) { console.error(e); }
-  };
+  try {
+    const res = await api.get<{ success: boolean; users: Employee[] }>(`/users/company/${user?.companyId}`);
+    // The response might have 'users' or 'members'
+    const users = (res as any).users || (res as any).members || [];
+    setEmployees(users);
+  } catch (e) { console.error(e); }
+};
 
   const fetchProjects = async () => {
     try {
