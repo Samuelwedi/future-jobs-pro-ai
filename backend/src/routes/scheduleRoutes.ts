@@ -4,6 +4,10 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 
+router.get('/version', (req, res) => {
+  res.json({ version: '2.0.1', fixed: 'date range' });
+});
+
 // ========== DEBUG ENDPOINTS (unprotected) ==========
 
 // GET /api/schedule/debug-all – all shifts in the table
@@ -234,10 +238,6 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
-});
-
-router.get('/version', (req, res) => {
-  res.json({ version: '2.0.0', message: 'with date range fix' });
 });
 
 // DELETE /api/schedule/shifts/:id
