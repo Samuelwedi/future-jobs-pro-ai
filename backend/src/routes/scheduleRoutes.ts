@@ -70,7 +70,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     if (requestUserRes.rows[0].company_id !== targetUserRes.rows[0].company_id)
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
-    // ✅ Include both direct user_id (creator) and assignments
+    // ✅ Query: include both direct user_id and assignments, and cast date to DATE for safe comparison
     const result = await pool.query(
       `SELECT s.*, 
               array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
@@ -82,12 +82,14 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
        LEFT JOIN users u ON sa.user_id = u.id
        LEFT JOIN projects p ON s.project_id = p.id
        WHERE (s.user_id = $1 OR sa.user_id = $1)
-         AND s.date >= $2::date 
-         AND s.date <= $3::date
+         AND s.date::date >= $2::date 
+         AND s.date::date <= $3::date
        GROUP BY s.id, p.name, p.address
        ORDER BY s.date`,
       [userId, start, end]
     );
+    // Optional debug log (visible in Railway logs)
+    console.log(`📊 Found ${result.rows.length} shifts for user ${userId} between ${start} and ${end}`);
     res.json({ success: true, shifts: result.rows });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -116,22 +118,20 @@ router.post('/shifts', async (req: Request, res: Response) => {
       }
     }
 
+    // Get authenticated user ID
+    let userId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const decoded = verifyToken(req);
+        userId = decoded.id;
+      } catch { /* ignore */ }
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      // Insert shift with creator as user_id (optional) – we'll set it to the first assigned employee if provided, or null
-      let creatorId = req.body.userId || null;
-      // If employeeIds is provided, we might want to set user_id to the first one? But better keep it as creator.
-      // We'll use the authenticated user's id as creator.
-      const authHeader = req.headers.authorization;
-      let userId = null;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        try {
-          const decoded = verifyToken(req);
-          userId = decoded.id;
-        } catch { /* ignore */ }
-      }
-
+      // Insert shift with user_id set to creator (so they see it even without assignment)
       const shiftResult = await client.query(
         `INSERT INTO shifts (name, date, start_time, end_time, project_id, notes, created_by, attachment_url, attachment_type, user_id)
          VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9, $10) RETURNING *`,
@@ -139,8 +139,8 @@ router.post('/shifts', async (req: Request, res: Response) => {
       );
       const shift = shiftResult.rows[0];
 
+      // Insert assignments if any
       if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
-        // Assign each employee
         for (const empId of employeeIds) {
           await client.query(
             `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -150,6 +150,7 @@ router.post('/shifts', async (req: Request, res: Response) => {
       }
 
       await client.query('COMMIT');
+      console.log(`✅ Shift created: ${shift.id} for user ${userId}`);
       res.status(201).json({ success: true, shift });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -190,15 +191,14 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Shift not found' });
 
+    // Update assignments
     if (employeeIds && Array.isArray(employeeIds)) {
       await pool.query('DELETE FROM shift_assignments WHERE shift_id = $1', [req.params.id]);
-      if (employeeIds.length > 0) {
-        for (const empId of employeeIds) {
-          await pool.query(
-            `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-            [req.params.id, empId]
-          );
-        }
+      for (const empId of employeeIds) {
+        await pool.query(
+          `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [req.params.id, empId]
+        );
       }
     }
 
@@ -231,6 +231,26 @@ router.delete('/shifts/:id', async (req: Request, res: Response) => {
     res.json({ success: true, message: 'Shift deleted' });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// --- DEBUG endpoint (optional) ---
+// GET /api/schedule/debug?userId=xxx
+router.get('/debug', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const result = await pool.query(
+      `SELECT s.*, array_agg(sa.user_id) as assigned_user_ids 
+       FROM shifts s
+       LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
+       WHERE s.user_id = $1 OR sa.user_id = $1
+       GROUP BY s.id`,
+      [userId]
+    );
+    res.json({ shifts: result.rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
