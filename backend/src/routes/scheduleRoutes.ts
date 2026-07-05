@@ -20,13 +20,11 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
 };
 
 // GET /api/schedule/shifts?start=&end=
-// Now filters by company via project join
 router.get('/shifts', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
     const { start, end } = req.query;
-    // Join with projects to get company_id
     let query = `
       SELECT s.* 
       FROM shifts s
@@ -44,7 +42,7 @@ router.get('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/schedule/my-shifts – unchanged (already uses user_id and project join)
+// GET /api/schedule/my-shifts
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
     const testUserHeader = req.headers['x-test-user'];
@@ -95,10 +93,9 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/schedule/shifts – removed company_id from insert
+// POST /api/schedule/shifts – with attachment support and casting
 router.post('/shifts', async (req: Request, res: Response) => {
   try {
-    // Still need to verify the user belongs to a company, but we don't store company_id on shift.
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
@@ -107,7 +104,7 @@ router.post('/shifts', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    // Optional: verify the project belongs to the user's company
+    // Verify project belongs to company
     if (projectId) {
       const projectCheck = await pool.query(
         'SELECT company_id FROM projects WHERE id = $1 AND company_id = $2',
@@ -121,10 +118,9 @@ router.post('/shifts', async (req: Request, res: Response) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      // Insert without company_id
       const shiftResult = await client.query(
         `INSERT INTO shifts (name, date, start_time, end_time, project_id, notes, created_by, attachment_url, attachment_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+         VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9) RETURNING *`,
         [name, date, startTime, endTime, projectId || null, notes || null, req.body.userId || null, attachmentUrl || null, attachmentType || null]
       );
       const shift = shiftResult.rows[0];
@@ -148,7 +144,7 @@ router.post('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/schedule/shifts/:id – also uses project join for company check
+// PUT /api/schedule/shifts/:id – with attachment update
 router.put('/shifts/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -156,7 +152,7 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
 
     const { name, date, startTime, endTime, notes, employeeIds, attachmentUrl, attachmentType } = req.body;
 
-    // First check that the shift belongs to a project of the company
+    // Check ownership via project
     const checkResult = await pool.query(
       `SELECT s.id 
        FROM shifts s
@@ -169,7 +165,7 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
     }
 
     const result = await pool.query(
-      `UPDATE shifts SET name=$1, date=$2, start_time=$3, end_time=$4, notes=$5, attachment_url=$6, attachment_type=$7
+      `UPDATE shifts SET name=$1, date=$2::date, start_time=$3::time, end_time=$4::time, notes=$5, attachment_url=$6, attachment_type=$7
        WHERE id=$8 RETURNING *`,
       [name, date, startTime, endTime, notes, attachmentUrl || null, attachmentType || null, req.params.id]
     );
@@ -189,7 +185,7 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/schedule/shifts/:id – also uses project join
+// DELETE /api/schedule/shifts/:id
 router.delete('/shifts/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
