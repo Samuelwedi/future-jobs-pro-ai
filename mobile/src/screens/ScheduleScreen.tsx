@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
   TouchableOpacity, Modal, Linking, ScrollView, TextInput, Alert,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -40,14 +40,9 @@ interface Project {
   address?: string;
 }
 
-// Response shape from /team/members
-interface TeamMembersResponse {
-  success: boolean;
-  members: Employee[];
-}
-
 export default function ScheduleScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { user } = useAuth();
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,15 +70,21 @@ export default function ScheduleScreen() {
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
 
-  // ---- EMPLOYEE selection for shift creation (searchable) ----
+  // ---- EMPLOYEE selection for shift creation ----
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
-  const [showEmployeePickerModal, setShowEmployeePickerModal] = useState(false);
-  const [employeeSearchText, setEmployeeSearchText] = useState('');
-  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
 
   // ---- File attachment states ----
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+
+  // ---- Listen for selected employees returned from the SelectEmployees screen ----
+  useEffect(() => {
+    if (route.params?.selectedEmployeeIds) {
+      setSelectedEmployeeIds(route.params.selectedEmployeeIds);
+      // Clear the param so we don't reapply on re-render
+      navigation.setParams({ selectedEmployeeIds: undefined });
+    }
+  }, [route.params?.selectedEmployeeIds]);
 
   // Filter projects when search text changes
   useEffect(() => {
@@ -99,18 +100,6 @@ export default function ScheduleScreen() {
     }
   }, [projectSearchText, projects]);
 
-  // Filter employees when search text changes
-  useEffect(() => {
-    if (employeeSearchText.trim().length > 0) {
-      const filtered = employees.filter(emp =>
-        `${emp.first_name} ${emp.last_name}`.toLowerCase().includes(employeeSearchText.toLowerCase())
-      );
-      setFilteredEmployees(filtered);
-    } else {
-      setFilteredEmployees(employees);
-    }
-  }, [employeeSearchText, employees]);
-
   useFocusEffect(useCallback(() => {
     console.log('Current user role:', user?.role);
     if (user?.role === 'boss' || user?.role === 'manager') {
@@ -125,54 +114,23 @@ export default function ScheduleScreen() {
     fetchShifts();
   }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]);
 
-  // ---- FETCH EMPLOYEES (TypeScript‑safe, with immediate update) ----
+  // ---- FETCH EMPLOYEES (for the view switcher) ----
   const fetchEmployees = async () => {
     try {
       const companyId = user?.companyId;
-      console.log('📡 Fetching employees for company:', companyId);
-      if (!companyId) {
-        console.warn('⚠️ No company ID available');
-        Alert.alert('Error', 'Company ID not found. Please log in again.');
-        return;
-      }
-
-      // Use the correct endpoint – it returns { success, members }
-      const res = await api.get(`/team/members/${companyId}`);
-      console.log('✅ Raw API response:', JSON.stringify(res, null, 2));
-
-      // Safely extract the data – handle both direct and Axios-wrapped responses
-      let data: any = res;
-      if (res && typeof res === 'object' && 'data' in res) {
-        data = (res as any).data;
-      }
-
-      // Look for members array
-      let users: Employee[] = [];
-      if (data && Array.isArray(data.members)) {
-        users = data.members;
-      } else if (data && Array.isArray(data.users)) {
-        users = data.users;
-      } else if (Array.isArray(data)) {
-        users = data;
-      }
-
-      console.log(`✅ Found ${users.length} employees:`, users);
-      if (users.length === 0) {
-        Alert.alert('No Employees', 'No employees found in your company.');
-      }
-      // Update both states so the modal renders immediately
-      setEmployees(users);
-      setFilteredEmployees(users);
-    } catch (e: any) {
-      console.error('❌ Failed to fetch employees:', e);
-      Alert.alert('Error', `Could not load employee list: ${e.message || 'Unknown error'}`);
+      if (!companyId) return;
+      const response = await api.get<{ members?: any[]; users?: any[] }>(`/team/members/${companyId}`);
+      const members = response.members || response.users || [];
+      setEmployees(members as Employee[]);
+    } catch (e) {
+      console.error('Failed to fetch employees', e);
     }
   };
 
   const fetchProjects = async () => {
     try {
-      const res = await api.get<{ success: boolean; projects: Project[] }>('/projects');
-      setProjects(res.projects || []);
+      const response = await api.get<{ success: boolean; projects: Project[] }>('/projects');
+      setProjects(response.projects || []);
     } catch (e) { console.error(e); }
   };
 
@@ -324,14 +282,6 @@ export default function ScheduleScreen() {
     }
   };
 
-  const toggleEmployeeSelection = (empId: string) => {
-    setSelectedEmployeeIds(prev =>
-      prev.includes(empId)
-        ? prev.filter(id => id !== empId)
-        : [...prev, empId]
-    );
-  };
-
   const openCreateModal = () => {
     setNewShiftName('');
     setNewShiftStart('09:00');
@@ -343,17 +293,12 @@ export default function ScheduleScreen() {
     setProjectSearchText('');
     setFilteredProjects([]);
     setShowProjectDropdown(false);
-    setEmployeeSearchText('');
-    setFilteredEmployees(employees);
     setCreateModalVisible(true);
   };
 
-  const openEmployeePickerModal = () => {
-    setShowEmployeePickerModal(true);
-    setEmployeeSearchText('');
-    if (employees.length === 0) {
-      fetchEmployees();
-    }
+  // ---- Navigate to employee selection screen ----
+  const openEmployeePicker = () => {
+    navigation.navigate('SelectEmployees', { selectedIds: selectedEmployeeIds });
   };
 
   if (loading) return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
@@ -532,10 +477,10 @@ export default function ScheduleScreen() {
                 )}
               </View>
 
-              {/* Employee Selection Button */}
+              {/* Employee Selection Button - Navigates to new screen */}
               <TouchableOpacity
                 style={styles.employeeSelectBtn}
-                onPress={openEmployeePickerModal}
+                onPress={openEmployeePicker}
               >
                 <MaterialIcons name="people" size={20} color="#00D4FF" />
                 <Text style={styles.employeeSelectText}>
@@ -583,77 +528,6 @@ export default function ScheduleScreen() {
                 </TouchableOpacity>
               </View>
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ===== EMPLOYEE PICKER MODAL (with search and refresh) ===== */}
-      <Modal visible={showEmployeePickerModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Employees</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <TouchableOpacity
-                  onPress={() => { fetchEmployees(); Alert.alert('Refreshed', 'Employee list refreshed.'); }}
-                  style={{ marginRight: 16 }}
-                >
-                  <MaterialIcons name="refresh" size={24} color="#00D4FF" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setShowEmployeePickerModal(false)}>
-                  <MaterialIcons name="close" size={24} color="#FFF" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Search Bar */}
-            <TextInput
-              style={styles.input}
-              placeholder="Search employees..."
-              placeholderTextColor="#888"
-              value={employeeSearchText}
-              onChangeText={setEmployeeSearchText}
-            />
-
-            <FlatList
-              key={employees.length} // 👈 force re‑render when employee count changes
-              data={filteredEmployees}
-              keyExtractor={item => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[styles.employeeRow, selectedEmployeeIds.includes(item.id) && styles.employeeRowActive]}
-                  onPress={() => toggleEmployeeSelection(item.id)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.employeeName}>{item.first_name} {item.last_name}</Text>
-                    <Text style={styles.employeeRole}>{item.role}</Text>
-                  </View>
-                  {selectedEmployeeIds.includes(item.id) && (
-                    <MaterialIcons name="check-circle" size={22} color="#00D4FF" />
-                  )}
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                employees.length === 0 ? (
-                  <Text style={{ color: '#888', marginTop: 20, textAlign: 'center' }}>
-                    No employees available. Tap refresh to reload.
-                  </Text>
-                ) : (
-                  <Text style={{ color: '#888', marginTop: 20, textAlign: 'center' }}>
-                    No employees match your search.
-                  </Text>
-                )
-              }
-              contentContainerStyle={{ paddingBottom: 16 }}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.btn, styles.cancelBtn]}
-                onPress={() => setShowEmployeePickerModal(false)}
-              >
-                <Text style={styles.btnText}>Done</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </Modal>
@@ -712,7 +586,7 @@ export default function ScheduleScreen() {
         </View>
       </Modal>
 
-      {/* ===== EMPLOYEE PICKER (view switcher) ===== */}
+      {/* ===== EMPLOYEE PICKER (view switcher – remains unchanged) ===== */}
       <Modal visible={showEmployeePicker} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
