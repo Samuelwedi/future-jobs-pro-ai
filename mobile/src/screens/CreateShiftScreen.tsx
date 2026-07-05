@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 interface Project {
   id: string;
@@ -21,8 +21,10 @@ export default function CreateShiftScreen() {
   const route = useRoute<any>();
   const { user } = useAuth();
 
+  // Parse the date from the route params (now a string)
   const date = route.params?.date ? new Date(route.params.date) : new Date();
 
+  // Form fields
   const [shiftName, setShiftName] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
@@ -35,15 +37,6 @@ export default function CreateShiftScreen() {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [uploading, setUploading] = useState(false);
-
-  // ---- Listen for selected employees returned via setParams ----
-  useEffect(() => {
-    if (route.params?.selectedEmployeeIds) {
-      setSelectedEmployeeIds(route.params.selectedEmployeeIds);
-      // Clear param to avoid re‑applying
-      navigation.setParams({ selectedEmployeeIds: undefined });
-    }
-  }, [route.params?.selectedEmployeeIds]);
 
   // ---- Fetch projects ----
   useEffect(() => {
@@ -71,8 +64,16 @@ export default function CreateShiftScreen() {
     }
   }, [projectSearchText, projects]);
 
+  // ---- Callback for employee selection ----
+  const handleEmployeeSelect = (ids: string[]) => {
+    setSelectedEmployeeIds(ids);
+  };
+
   const openEmployeePicker = () => {
-    navigation.navigate('SelectEmployees', { selectedIds: selectedEmployeeIds });
+    navigation.navigate('SelectEmployees', {
+      selectedIds: selectedEmployeeIds,
+      onSelect: handleEmployeeSelect,
+    });
   };
 
   // ---- Pick file ----
