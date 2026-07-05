@@ -8,3 +8,4 @@ uploads/
 "backend/*-stripe-*.js" 
 "backend/fix-*.js" 
 "backend/*-stripe-*.js" 
+backend/scripts/fix-db.js 
