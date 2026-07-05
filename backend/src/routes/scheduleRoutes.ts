@@ -32,8 +32,8 @@ router.get('/shifts', async (req: Request, res: Response) => {
       WHERE p.company_id = $1
     `;
     const params: any[] = [companyId];
-    if (start) { query += ' AND s.date >= $' + (params.length + 1); params.push(start); }
-    if (end)   { query += ' AND s.date <= $' + (params.length + 1); params.push(end); }
+    if (start) { query += ' AND s.date::date >= $' + (params.length + 1); params.push(start); }
+    if (end)   { query += ' AND s.date::date <= $' + (params.length + 1); params.push(end); }
     query += ' ORDER BY s.date, s.start_time';
     const result = await pool.query(query, params);
     res.json({ success: true, shifts: result.rows });
@@ -42,7 +42,7 @@ router.get('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/schedule/my-shifts – now includes assignments
+// GET /api/schedule/my-shifts – includes assignments and debug logs
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
     const testUserHeader = req.headers['x-test-user'];
@@ -59,6 +59,9 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     if (!userId || !start || !end)
       return res.status(400).json({ success: false, message: 'userId, start, and end are required' });
 
+    // Log the parameters for debugging
+    console.log(`📡 my-shifts: userId=${userId}, start=${start}, end=${end}`);
+
     const requestUserRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (requestUserRes.rows.length === 0)
       return res.status(404).json({ success: false, message: 'Requesting user not found' });
@@ -70,9 +73,9 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     if (requestUserRes.rows[0].company_id !== targetUserRes.rows[0].company_id)
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
-    // ✅ Query: include both direct user_id and assignments, and cast date to DATE for safe comparison
-    const result = await pool.query(
-      `SELECT s.*, 
+    // ✅ Improved query with explicit casting and robust date filtering
+    const query = `
+      SELECT s.*, 
               array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
               json_agg(DISTINCT jsonb_build_object('id', u.id, 'name', u.first_name || ' ' || u.last_name)) FILTER (WHERE u.id IS NOT NULL) AS assigned_users,
               p.name as project_name,
@@ -82,16 +85,15 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
        LEFT JOIN users u ON sa.user_id = u.id
        LEFT JOIN projects p ON s.project_id = p.id
        WHERE (s.user_id = $1 OR sa.user_id = $1)
-         AND s.date::date >= $2::date 
-         AND s.date::date <= $3::date
+         AND s.date::date BETWEEN $2::date AND $3::date
        GROUP BY s.id, p.name, p.address
-       ORDER BY s.date`,
-      [userId, start, end]
-    );
-    // Optional debug log (visible in Railway logs)
-    console.log(`📊 Found ${result.rows.length} shifts for user ${userId} between ${start} and ${end}`);
+       ORDER BY s.date, s.start_time
+    `;
+    const result = await pool.query(query, [userId, start, end]);
+    console.log(`📊 Found ${result.rows.length} shifts for user ${userId}`);
     res.json({ success: true, shifts: result.rows });
   } catch (error: any) {
+    console.error('Error in my-shifts:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -131,7 +133,6 @@ router.post('/shifts', async (req: Request, res: Response) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      // Insert shift with user_id set to creator (so they see it even without assignment)
       const shiftResult = await client.query(
         `INSERT INTO shifts (name, date, start_time, end_time, project_id, notes, created_by, attachment_url, attachment_type, user_id)
          VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9, $10) RETURNING *`,
@@ -234,8 +235,7 @@ router.delete('/shifts/:id', async (req: Request, res: Response) => {
   }
 });
 
-// --- DEBUG endpoint (optional) ---
-// GET /api/schedule/debug?userId=xxx
+// DEBUG endpoint – returns all shifts for a user (no date filter)
 router.get('/debug', async (req: Request, res: Response) => {
   try {
     const { userId } = req.query;
