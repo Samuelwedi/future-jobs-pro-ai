@@ -16,6 +16,7 @@ interface Employee {
 }
 
 interface TeamMembersResponse {
+  data: TeamMembersResponse;
   success: boolean;
   members: Employee[];
 }
@@ -53,7 +54,8 @@ export default function SelectEmployeesScreen() {
         return;
       }
       const res = await api.get<TeamMembersResponse>(`/team/members/${companyId}`);
-      const members = res.members || [];
+      const data = res.data || res;
+      const members = data.members || [];
       setEmployees(members);
       setFiltered(members);
     } catch (e: any) {
@@ -70,11 +72,11 @@ export default function SelectEmployeesScreen() {
   };
 
   const done = () => {
-    // Update the parent screen's params and go back
-    navigation.setParams({
-      selectedEmployeeIds: selectedIds,
-    });
-    navigation.goBack();
+    // Call the callback passed from CreateShiftScreen
+    if (route.params?.onSelect) {
+      route.params.onSelect(selectedIds);
+    }
+    navigation.goBack(); // go back to CreateShift
   };
 
   if (loading) {
