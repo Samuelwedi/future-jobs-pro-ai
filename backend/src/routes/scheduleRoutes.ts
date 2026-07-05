@@ -236,6 +236,10 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/version', (req, res) => {
+  res.json({ version: '2.0.0', message: 'with date range fix' });
+});
+
 // DELETE /api/schedule/shifts/:id
 router.delete('/shifts/:id', async (req: Request, res: Response) => {
   try {
