@@ -42,7 +42,7 @@ router.get('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/schedule/my-shifts
+// GET /api/schedule/my-shifts – now includes assignments
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
     const testUserHeader = req.headers['x-test-user'];
@@ -70,6 +70,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     if (requestUserRes.rows[0].company_id !== targetUserRes.rows[0].company_id)
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
+    // ✅ Include both direct user_id (creator) and assignments
     const result = await pool.query(
       `SELECT s.*, 
               array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
@@ -80,7 +81,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
        LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
        LEFT JOIN users u ON sa.user_id = u.id
        LEFT JOIN projects p ON s.project_id = p.id
-       WHERE s.user_id = $1 
+       WHERE (s.user_id = $1 OR sa.user_id = $1)
          AND s.date >= $2::date 
          AND s.date <= $3::date
        GROUP BY s.id, p.name, p.address
@@ -118,16 +119,34 @@ router.post('/shifts', async (req: Request, res: Response) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      // Insert shift with creator as user_id (optional) – we'll set it to the first assigned employee if provided, or null
+      let creatorId = req.body.userId || null;
+      // If employeeIds is provided, we might want to set user_id to the first one? But better keep it as creator.
+      // We'll use the authenticated user's id as creator.
+      const authHeader = req.headers.authorization;
+      let userId = null;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const decoded = verifyToken(req);
+          userId = decoded.id;
+        } catch { /* ignore */ }
+      }
+
       const shiftResult = await client.query(
-        `INSERT INTO shifts (name, date, start_time, end_time, project_id, notes, created_by, attachment_url, attachment_type)
-         VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9) RETURNING *`,
-        [name, date, startTime, endTime, projectId || null, notes || null, req.body.userId || null, attachmentUrl || null, attachmentType || null]
+        `INSERT INTO shifts (name, date, start_time, end_time, project_id, notes, created_by, attachment_url, attachment_type, user_id)
+         VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9, $10) RETURNING *`,
+        [name, date, startTime, endTime, projectId || null, notes || null, userId, attachmentUrl || null, attachmentType || null, userId]
       );
       const shift = shiftResult.rows[0];
 
       if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
-        const assignmentValues = employeeIds.map((uid: string) => `('${shift.id}', '${uid}')`).join(',');
-        await client.query(`INSERT INTO shift_assignments (shift_id, user_id) VALUES ${assignmentValues}`);
+        // Assign each employee
+        for (const empId of employeeIds) {
+          await client.query(
+            `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [shift.id, empId]
+          );
+        }
       }
 
       await client.query('COMMIT');
@@ -174,8 +193,12 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
     if (employeeIds && Array.isArray(employeeIds)) {
       await pool.query('DELETE FROM shift_assignments WHERE shift_id = $1', [req.params.id]);
       if (employeeIds.length > 0) {
-        const values = employeeIds.map((uid: string) => `('${req.params.id}', '${uid}')`).join(',');
-        await pool.query(`INSERT INTO shift_assignments (shift_id, user_id) VALUES ${values}`);
+        for (const empId of employeeIds) {
+          await pool.query(
+            `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [req.params.id, empId]
+          );
+        }
       }
     }
 
