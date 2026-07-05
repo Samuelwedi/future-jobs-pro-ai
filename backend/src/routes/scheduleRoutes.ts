@@ -42,7 +42,7 @@ router.get('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/schedule/my-shifts – includes assignments and debug logs
+// GET /api/schedule/my-shifts – includes assignments
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
     const testUserHeader = req.headers['x-test-user'];
@@ -59,7 +59,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     if (!userId || !start || !end)
       return res.status(400).json({ success: false, message: 'userId, start, and end are required' });
 
-    // Log the parameters for debugging
+    // Log parameters for debugging
     console.log(`📡 my-shifts: userId=${userId}, start=${start}, end=${end}`);
 
     const requestUserRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
@@ -73,7 +73,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     if (requestUserRes.rows[0].company_id !== targetUserRes.rows[0].company_id)
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
-    // ✅ Improved query with explicit casting and robust date filtering
+    // Build query with explicit casting and logging
     const query = `
       SELECT s.*, 
               array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
@@ -89,7 +89,9 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
        GROUP BY s.id, p.name, p.address
        ORDER BY s.date, s.start_time
     `;
-    const result = await pool.query(query, [userId, start, end]);
+    const params = [userId, start, end];
+    console.log(`📝 Executing query: ${query} with params: ${JSON.stringify(params)}`);
+    const result = await pool.query(query, params);
     console.log(`📊 Found ${result.rows.length} shifts for user ${userId}`);
     res.json({ success: true, shifts: result.rows });
   } catch (error: any) {
@@ -98,7 +100,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/schedule/shifts – with attachment support and casting
+// POST /api/schedule/shifts
 router.post('/shifts', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -120,7 +122,6 @@ router.post('/shifts', async (req: Request, res: Response) => {
       }
     }
 
-    // Get authenticated user ID
     let userId = null;
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -140,7 +141,6 @@ router.post('/shifts', async (req: Request, res: Response) => {
       );
       const shift = shiftResult.rows[0];
 
-      // Insert assignments if any
       if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
         for (const empId of employeeIds) {
           await client.query(
@@ -165,7 +165,7 @@ router.post('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/schedule/shifts/:id – with attachment update
+// PUT /api/schedule/shifts/:id
 router.put('/shifts/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -173,7 +173,6 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
 
     const { name, date, startTime, endTime, notes, employeeIds, attachmentUrl, attachmentType } = req.body;
 
-    // Check ownership via project
     const checkResult = await pool.query(
       `SELECT s.id 
        FROM shifts s
@@ -192,7 +191,6 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Shift not found' });
 
-    // Update assignments
     if (employeeIds && Array.isArray(employeeIds)) {
       await pool.query('DELETE FROM shift_assignments WHERE shift_id = $1', [req.params.id]);
       for (const empId of employeeIds) {
@@ -215,7 +213,6 @@ router.delete('/shifts/:id', async (req: Request, res: Response) => {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    // Check ownership via project
     const checkResult = await pool.query(
       `SELECT s.id 
        FROM shifts s
@@ -235,21 +232,42 @@ router.delete('/shifts/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DEBUG endpoint – returns all shifts for a user (no date filter)
-router.get('/debug', async (req: Request, res: Response) => {
+// ========== DEBUG ENDPOINTS ==========
+
+// GET /api/schedule/debug-shifts?userId=xxx
+// Returns all shifts for a given user (no date filter) with assignments.
+router.get('/debug-shifts', async (req: Request, res: Response) => {
   try {
     const { userId } = req.query;
     if (!userId) return res.status(400).json({ error: 'userId required' });
     const result = await pool.query(
-      `SELECT s.*, array_agg(sa.user_id) as assigned_user_ids 
+      `SELECT s.*, 
+              array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
+              json_agg(DISTINCT jsonb_build_object('id', u.id, 'name', u.first_name || ' ' || u.last_name)) FILTER (WHERE u.id IS NOT NULL) AS assigned_users,
+              p.name as project_name,
+              p.address as project_address
        FROM shifts s
        LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
+       LEFT JOIN users u ON sa.user_id = u.id
+       LEFT JOIN projects p ON s.project_id = p.id
        WHERE s.user_id = $1 OR sa.user_id = $1
-       GROUP BY s.id`,
+       GROUP BY s.id, p.name, p.address
+       ORDER BY s.date`,
       [userId]
     );
     res.json({ shifts: result.rows });
-  } catch (e) {
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/schedule/debug-all
+// Returns all shifts in the table (no filter). Use with caution.
+router.get('/debug-all', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query('SELECT * FROM shifts ORDER BY date');
+    res.json({ shifts: result.rows });
+  } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
 });
