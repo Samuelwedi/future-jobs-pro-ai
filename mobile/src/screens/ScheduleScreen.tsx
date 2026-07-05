@@ -69,7 +69,7 @@ export default function ScheduleScreen() {
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
 
-  // ---- EMPLOYEE selection for shift creation (now searchable) ----
+  // ---- EMPLOYEE selection for shift creation (searchable) ----
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [showEmployeePickerModal, setShowEmployeePickerModal] = useState(false);
   const [employeeSearchText, setEmployeeSearchText] = useState('');
@@ -107,9 +107,12 @@ export default function ScheduleScreen() {
   }, [employeeSearchText, employees]);
 
   useFocusEffect(useCallback(() => {
+    console.log('Current user role:', user?.role);
     if (user?.role === 'boss' || user?.role === 'manager') {
       fetchEmployees();
       fetchProjects();
+    } else {
+      console.log('Not boss/manager – employees not fetched on focus');
     }
   }, []));
 
@@ -117,21 +120,24 @@ export default function ScheduleScreen() {
     fetchShifts();
   }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]);
 
-  // ---- FETCH EMPLOYEES (with debug logs) ----
+  // ---- FETCH EMPLOYEES (with debug logs and error handling) ----
   const fetchEmployees = async () => {
     try {
       console.log('📡 Fetching employees for company:', user?.companyId);
-      const res = await api.get<{ success: boolean; users?: any[]; members?: any[] }>(`/users/company/${user?.companyId}`);
+      const res = await api.get<{ success: boolean; users?: any[]; members?: any[] }>(
+        `/users/company/${user?.companyId}`
+      );
       console.log('✅ Employee API response:', res);
       // The response might have 'users' or 'members'
       const users = res.users || res.members || [];
-      setEmployees(users);
       if (users.length === 0) {
         console.warn('⚠️ No employees found for this company.');
+        Alert.alert('No Employees', 'No employees found in your company.');
       }
-    } catch (e) {
+      setEmployees(users);
+    } catch (e: any) {
       console.error('❌ Failed to fetch employees:', e);
-      Alert.alert('Error', 'Could not load employee list.');
+      Alert.alert('Error', `Could not load employee list: ${e.message || 'Unknown error'}`);
     }
   };
 
@@ -713,7 +719,7 @@ export default function ScheduleScreen() {
   );
 }
 
-// (styles remain unchanged – keep your existing styles)
+// ---- STYLES (unchanged) ----
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 60, paddingBottom: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#333' },
