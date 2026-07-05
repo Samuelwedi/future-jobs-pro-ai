@@ -22,34 +22,19 @@ export default function CreateShiftScreen() {
   const { user } = useAuth();
   const date = route.params?.date ? new Date(route.params.date) : new Date();
 
-  // Form fields
+  // Form fields – these stay in state and are not reset on navigation
   const [shiftName, setShiftName] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
   const [notes, setNotes] = useState('');
-
-  // Projects
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [projectSearchText, setProjectSearchText] = useState('');
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
-
-  // Employees
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
-
-  // File attachment
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [uploading, setUploading] = useState(false);
-
-  // ---- Listen for selected employees returned from SelectEmployees ----
-  useEffect(() => {
-    if (route.params?.selectedEmployeeIds) {
-      setSelectedEmployeeIds(route.params.selectedEmployeeIds);
-      // Clear the param to avoid re-applying on re-render
-      navigation.setParams({ selectedEmployeeIds: undefined });
-    }
-  }, [route.params?.selectedEmployeeIds]);
 
   // ---- Fetch projects ----
   useEffect(() => {
@@ -63,7 +48,7 @@ export default function CreateShiftScreen() {
     } catch (e) { console.error(e); }
   };
 
-  // ---- Filter projects for search ----
+  // Filter projects for search
   useEffect(() => {
     if (projectSearchText.trim().length > 0) {
       const filtered = projects.filter(p =>
@@ -76,6 +61,18 @@ export default function CreateShiftScreen() {
       setShowProjectDropdown(false);
     }
   }, [projectSearchText, projects]);
+
+  // ---- Callback for employee selection ----
+  const handleEmployeeSelect = (ids: string[]) => {
+    setSelectedEmployeeIds(ids);
+  };
+
+  const openEmployeePicker = () => {
+    navigation.navigate('SelectEmployees', {
+      selectedIds: selectedEmployeeIds,
+      onSelect: handleEmployeeSelect,
+    });
+  };
 
   // ---- Pick file ----
   const pickFile = async () => {
@@ -155,14 +152,8 @@ export default function CreateShiftScreen() {
     }
   };
 
-  // ---- Navigate to employee selection ----
-  const openEmployeePicker = () => {
-    navigation.navigate('SelectEmployees', { selectedIds: selectedEmployeeIds });
-  };
-
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
@@ -283,6 +274,7 @@ export default function CreateShiftScreen() {
   );
 }
 
+// ... (styles remain the same as earlier)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {

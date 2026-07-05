@@ -72,8 +72,11 @@ export default function SelectEmployeesScreen() {
   };
 
   const done = () => {
-    // Navigate back to CreateShift and pass selected IDs
-    navigation.navigate('CreateShift', { selectedEmployeeIds: selectedIds });
+    // Call the callback passed from CreateShiftScreen
+    if (route.params?.onSelect) {
+      route.params.onSelect(selectedIds);
+    }
+    navigation.goBack(); // go back to CreateShift
   };
 
   if (loading) {
