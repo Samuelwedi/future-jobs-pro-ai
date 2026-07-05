@@ -120,16 +120,18 @@ export default function ScheduleScreen() {
     fetchShifts();
   }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]);
 
-  // ---- FETCH EMPLOYEES (with debug logs and error handling) ----
+  // ---- FETCH EMPLOYEES (using the reliable /team/members endpoint) ----
   const fetchEmployees = async () => {
     try {
-      console.log('📡 Fetching employees for company:', user?.companyId);
-      const res = await api.get<{ success: boolean; users?: any[]; members?: any[] }>(
-        `/users/company/${user?.companyId}`
-      );
-      console.log('✅ Employee API response:', res);
-      // The response might have 'users' or 'members'
-      const users = res.users || res.members || [];
+      const companyId = user?.companyId;
+      console.log('📡 Fetching employees for company:', companyId);
+      // Use the team members endpoint – it returns the same user list
+      const res = await api.get<any>(`/team/members/${companyId}`);
+      console.log('✅ Raw team response:', res);
+      // Some API wrappers put data inside res.data – handle both
+      const data: any = res.data || res;
+      const users = data.members || data.users || [];
+      console.log(`✅ Found ${users.length} employees:`, users);
       if (users.length === 0) {
         console.warn('⚠️ No employees found for this company.');
         Alert.alert('No Employees', 'No employees found in your company.');
