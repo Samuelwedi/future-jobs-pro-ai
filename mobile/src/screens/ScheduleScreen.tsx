@@ -33,8 +33,8 @@ interface Employee {
   role: string;
 }
 
-// Response shape from /team/members
 interface TeamMembersResponse {
+  data: TeamMembersResponse;
   success: boolean;
   members: Employee[];
 }
@@ -54,15 +54,14 @@ export default function ScheduleScreen() {
   const [selectedEmployeeName, setSelectedEmployeeName] = useState('My Schedule');
   const [showEmployeePicker, setShowEmployeePicker] = useState(false);
 
-  // ---- Fetch employees ----
+  // ---- Fetch employees for the view switcher ----
   const fetchEmployees = async () => {
     try {
       const companyId = user?.companyId;
       if (!companyId) return;
-      // ✅ Type the API call
       const res = await api.get<TeamMembersResponse>(`/team/members/${companyId}`);
-      // res is now typed as TeamMembersResponse
-      const members = res.members || [];
+      const data = res.data || res;
+      const members = data.members || [];
       setEmployees(members);
     } catch (e) {
       console.error('Failed to fetch employees', e);
@@ -107,6 +106,7 @@ export default function ScheduleScreen() {
       fetchEmployees();
     }
     fetchShifts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]));
 
   const onRefresh = () => { setRefreshing(true); fetchShifts(); };

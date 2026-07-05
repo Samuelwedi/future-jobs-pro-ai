@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  Alert, ActivityIndicator, Modal, FlatList
+  Alert, ActivityIndicator
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -42,12 +42,28 @@ export default function CreateShiftScreen() {
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  // Fetch projects on mount
+  // ---- Listen for selected employees returned from SelectEmployees ----
+  useEffect(() => {
+    if (route.params?.selectedEmployeeIds) {
+      setSelectedEmployeeIds(route.params.selectedEmployeeIds);
+      // Clear the param to avoid re-applying on re-render
+      navigation.setParams({ selectedEmployeeIds: undefined });
+    }
+  }, [route.params?.selectedEmployeeIds]);
+
+  // ---- Fetch projects ----
   useEffect(() => {
     fetchProjects();
   }, []);
 
-  // Filter projects when search text changes
+  const fetchProjects = async () => {
+    try {
+      const res = await api.get<{ success: boolean; projects: Project[] }>('/projects');
+      setProjects(res.projects || []);
+    } catch (e) { console.error(e); }
+  };
+
+  // ---- Filter projects for search ----
   useEffect(() => {
     if (projectSearchText.trim().length > 0) {
       const filtered = projects.filter(p =>
@@ -61,13 +77,7 @@ export default function CreateShiftScreen() {
     }
   }, [projectSearchText, projects]);
 
-  const fetchProjects = async () => {
-    try {
-      const res = await api.get<{ success: boolean; projects: Project[] }>('/projects');
-      setProjects(res.projects || []);
-    } catch (e) { console.error(e); }
-  };
-
+  // ---- Pick file ----
   const pickFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -88,6 +98,7 @@ export default function CreateShiftScreen() {
     }
   };
 
+  // ---- Create shift ----
   const handleCreate = async () => {
     if (!shiftName.trim()) {
       Alert.alert('Required', 'Please enter a shift name.');
@@ -144,23 +155,14 @@ export default function CreateShiftScreen() {
     }
   };
 
+  // ---- Navigate to employee selection ----
   const openEmployeePicker = () => {
-    navigation.navigate('SelectEmployees', {
-      selectedIds: selectedEmployeeIds,
-      onGoBack: (ids: string[]) => setSelectedEmployeeIds(ids),
-    });
+    navigation.navigate('SelectEmployees', { selectedIds: selectedEmployeeIds });
   };
-
-  // Listen for selected employees returned from SelectEmployees
-  useEffect(() => {
-    if (route.params?.selectedEmployeeIds) {
-      setSelectedEmployeeIds(route.params.selectedEmployeeIds);
-      navigation.setParams({ selectedEmployeeIds: undefined });
-    }
-  }, [route.params?.selectedEmployeeIds]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />

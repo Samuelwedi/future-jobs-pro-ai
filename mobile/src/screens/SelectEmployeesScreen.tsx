@@ -15,6 +15,12 @@ interface Employee {
   role: string;
 }
 
+interface TeamMembersResponse {
+  data: TeamMembersResponse;
+  success: boolean;
+  members: Employee[];
+}
+
 export default function SelectEmployeesScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -47,9 +53,9 @@ export default function SelectEmployeesScreen() {
         Alert.alert('Error', 'Company ID not found');
         return;
       }
-      const res: any = await api.get(`/team/members/${companyId}`);
-      const data = res?.data || res;
-      const members = (data?.members || data?.users || []) as Employee[];
+      const res = await api.get<TeamMembersResponse>(`/team/members/${companyId}`);
+      const data = res.data || res;
+      const members = data.members || [];
       setEmployees(members);
       setFiltered(members);
     } catch (e: any) {
@@ -66,8 +72,8 @@ export default function SelectEmployeesScreen() {
   };
 
   const done = () => {
-    // Pass selected IDs back to the previous screen
-    navigation.navigate('Schedule', { selectedEmployeeIds: selectedIds });
+    // Navigate back to CreateShift and pass selected IDs
+    navigation.navigate('CreateShift', { selectedEmployeeIds: selectedIds });
   };
 
   if (loading) {
