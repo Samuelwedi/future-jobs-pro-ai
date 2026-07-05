@@ -8,21 +8,20 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-const columns = [
-  { name: 'name', type: 'TEXT' },
-  { name: 'start_time', type: 'TIME' },
-  { name: 'end_time', type: 'TIME' },
-  { name: 'date', type: 'DATE' },
-  { name: 'notes', type: 'TEXT' },
-  { name: 'created_by', type: 'UUID' },
-  { name: 'attachment_url', type: 'TEXT' },
-  { name: 'attachment_type', type: 'TEXT' },
-];
-
 async function runMigration() {
   const client = await pool.connect();
   try {
-    console.log('🔄 Checking/adding missing columns to shifts table...');
+    console.log('🔄 Checking/adding missing columns and fixing types...');
+
+    // 1. Add missing columns if any
+    const columns = [
+      { name: 'name', type: 'TEXT' },
+      { name: 'date', type: 'DATE' },
+      { name: 'notes', type: 'TEXT' },
+      { name: 'created_by', type: 'UUID' },
+      { name: 'attachment_url', type: 'TEXT' },
+      { name: 'attachment_type', type: 'TEXT' },
+    ];
     for (const col of columns) {
       const sql = `ALTER TABLE shifts ADD COLUMN IF NOT EXISTS ${col.name} ${col.type};`;
       try {
@@ -36,7 +35,23 @@ async function runMigration() {
         }
       }
     }
-    console.log('✅ All columns added (if missing).');
+
+    // 2. Convert start_time and end_time to TIME if they are TIMESTAMPTZ
+    const typeCheck = await client.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name='shifts' AND column_name IN ('start_time', 'end_time')
+    `);
+    for (const row of typeCheck.rows) {
+      if (row.data_type === 'timestamp with time zone' || row.data_type === 'timestamp without time zone') {
+        const colName = row.column_name;
+        console.log(`🔄 Converting ${colName} from ${row.data_type} to TIME...`);
+        await client.query(`ALTER TABLE shifts ALTER COLUMN ${colName} TYPE TIME USING ${colName}::TIME;`);
+        console.log(`✅ ${colName} converted to TIME`);
+      }
+    }
+
+    console.log('✅ Migration completed.');
   } catch (err) {
     console.error('❌ Migration error:', err);
   } finally {
