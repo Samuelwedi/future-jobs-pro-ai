@@ -4,6 +4,48 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 
+// ========== DEBUG ENDPOINTS (unprotected, for debugging) ==========
+
+// GET /api/schedule/debug-all
+// Returns all shifts in the table (no filter).
+router.get('/debug-all', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query('SELECT * FROM shifts ORDER BY date');
+    res.json({ shifts: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/schedule/debug-shifts?userId=xxx
+// Returns all shifts for a given user (no date filter) with assignments.
+router.get('/debug-shifts', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const result = await pool.query(
+      `SELECT s.*, 
+              array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
+              json_agg(DISTINCT jsonb_build_object('id', u.id, 'name', u.first_name || ' ' || u.last_name)) FILTER (WHERE u.id IS NOT NULL) AS assigned_users,
+              p.name as project_name,
+              p.address as project_address
+       FROM shifts s
+       LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
+       LEFT JOIN users u ON sa.user_id = u.id
+       LEFT JOIN projects p ON s.project_id = p.id
+       WHERE s.user_id = $1 OR sa.user_id = $1
+       GROUP BY s.id, p.name, p.address
+       ORDER BY s.date`,
+      [userId]
+    );
+    res.json({ shifts: result.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ========== AUTH‑PROTECTED ROUTES ==========
+
 // Helper: get company_id – bypass for test user
 const getCompanyId = async (req: Request): Promise<string | null> => {
   const testUserHeader = req.headers['x-test-user'];
@@ -229,46 +271,6 @@ router.delete('/shifts/:id', async (req: Request, res: Response) => {
     res.json({ success: true, message: 'Shift deleted' });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ========== DEBUG ENDPOINTS ==========
-
-// GET /api/schedule/debug-shifts?userId=xxx
-// Returns all shifts for a given user (no date filter) with assignments.
-router.get('/debug-shifts', async (req: Request, res: Response) => {
-  try {
-    const { userId } = req.query;
-    if (!userId) return res.status(400).json({ error: 'userId required' });
-    const result = await pool.query(
-      `SELECT s.*, 
-              array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
-              json_agg(DISTINCT jsonb_build_object('id', u.id, 'name', u.first_name || ' ' || u.last_name)) FILTER (WHERE u.id IS NOT NULL) AS assigned_users,
-              p.name as project_name,
-              p.address as project_address
-       FROM shifts s
-       LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
-       LEFT JOIN users u ON sa.user_id = u.id
-       LEFT JOIN projects p ON s.project_id = p.id
-       WHERE s.user_id = $1 OR sa.user_id = $1
-       GROUP BY s.id, p.name, p.address
-       ORDER BY s.date`,
-      [userId]
-    );
-    res.json({ shifts: result.rows });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// GET /api/schedule/debug-all
-// Returns all shifts in the table (no filter). Use with caution.
-router.get('/debug-all', async (req: Request, res: Response) => {
-  try {
-    const result = await pool.query('SELECT * FROM shifts ORDER BY date');
-    res.json({ shifts: result.rows });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
   }
 });
 
