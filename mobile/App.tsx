@@ -40,6 +40,8 @@ import MonthMediaScreen from './src/screens/MonthMediaScreen';
 import { api } from './src/services/api';
 import MonthMediaTypeScreen from './src/screens/MonthMediaTypeScreen';
 import WebViewScreen from './src/screens/WebViewScreen';
+import SelectEmployeesScreen from './src/screens/SelectEmployeesScreen';
+import CreateShiftScreen from './src/screens/CreateShiftScreen';
 
 const Stack = createStackNavigator();
 
@@ -136,6 +138,8 @@ function AppNavigator() {
             <Stack.Screen name="MonthMedia" component={MonthMediaScreen} />
             <Stack.Screen name="MonthMediaType" component={MonthMediaTypeScreen} />
             <Stack.Screen name="WebView" component={WebViewScreen} />
+            <Stack.Screen name="SelectEmployees" component={SelectEmployeesScreen} />
+            <Stack.Screen name="CreateShift" component={CreateShiftScreen} />
           </>
         )}
       </Stack.Navigator>

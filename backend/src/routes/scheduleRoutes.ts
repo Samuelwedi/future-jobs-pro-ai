@@ -20,15 +20,23 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
 };
 
 // GET /api/schedule/shifts?start=&end=
+// Now filters by company via project join
 router.get('/shifts', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
     const { start, end } = req.query;
-    let query = 'SELECT * FROM shifts WHERE company_id = $1';
+    // Join with projects to get company_id
+    let query = `
+      SELECT s.* 
+      FROM shifts s
+      JOIN projects p ON s.project_id = p.id
+      WHERE p.company_id = $1
+    `;
     const params: any[] = [companyId];
-    if (start) { query += ' AND date >= $2'; params.push(start); }
-    if (end)   { query += ' AND date <= $3'; params.push(end); }
+    if (start) { query += ' AND s.date >= $' + (params.length + 1); params.push(start); }
+    if (end)   { query += ' AND s.date <= $' + (params.length + 1); params.push(end); }
+    query += ' ORDER BY s.date, s.start_time';
     const result = await pool.query(query, params);
     res.json({ success: true, shifts: result.rows });
   } catch (error: any) {
@@ -36,7 +44,7 @@ router.get('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/schedule/my-shifts
+// GET /api/schedule/my-shifts – unchanged (already uses user_id and project join)
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
     const testUserHeader = req.headers['x-test-user'];
@@ -87,9 +95,10 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/schedule/shifts – with attachment support
+// POST /api/schedule/shifts – removed company_id from insert
 router.post('/shifts', async (req: Request, res: Response) => {
   try {
+    // Still need to verify the user belongs to a company, but we don't store company_id on shift.
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
@@ -98,13 +107,25 @@ router.post('/shifts', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
+    // Optional: verify the project belongs to the user's company
+    if (projectId) {
+      const projectCheck = await pool.query(
+        'SELECT company_id FROM projects WHERE id = $1 AND company_id = $2',
+        [projectId, companyId]
+      );
+      if (projectCheck.rows.length === 0) {
+        return res.status(403).json({ success: false, message: 'Project not found or does not belong to your company' });
+      }
+    }
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      // Insert without company_id
       const shiftResult = await client.query(
-        `INSERT INTO shifts (company_id, name, date, start_time, end_time, project_id, notes, created_by, attachment_url, attachment_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-        [companyId, name, date, startTime, endTime, projectId || null, notes || null, req.body.userId || null, attachmentUrl || null, attachmentType || null]
+        `INSERT INTO shifts (name, date, start_time, end_time, project_id, notes, created_by, attachment_url, attachment_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+        [name, date, startTime, endTime, projectId || null, notes || null, req.body.userId || null, attachmentUrl || null, attachmentType || null]
       );
       const shift = shiftResult.rows[0];
 
@@ -127,17 +148,30 @@ router.post('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/schedule/shifts/:id – with attachment update
+// PUT /api/schedule/shifts/:id – also uses project join for company check
 router.put('/shifts/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const { name, date, startTime, endTime, notes, employeeIds, attachmentUrl, attachmentType } = req.body;
+
+    // First check that the shift belongs to a project of the company
+    const checkResult = await pool.query(
+      `SELECT s.id 
+       FROM shifts s
+       JOIN projects p ON s.project_id = p.id
+       WHERE s.id = $1 AND p.company_id = $2`,
+      [req.params.id, companyId]
+    );
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Shift not found or unauthorized' });
+    }
+
     const result = await pool.query(
       `UPDATE shifts SET name=$1, date=$2, start_time=$3, end_time=$4, notes=$5, attachment_url=$6, attachment_type=$7
-       WHERE id=$8 AND company_id=$9 RETURNING *`,
-      [name, date, startTime, endTime, notes, attachmentUrl || null, attachmentType || null, req.params.id, companyId]
+       WHERE id=$8 RETURNING *`,
+      [name, date, startTime, endTime, notes, attachmentUrl || null, attachmentType || null, req.params.id]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Shift not found' });
 
@@ -155,18 +189,30 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/schedule/shifts/:id
+// DELETE /api/schedule/shifts/:id – also uses project join
 router.delete('/shifts/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
+    // Check ownership via project
+    const checkResult = await pool.query(
+      `SELECT s.id 
+       FROM shifts s
+       JOIN projects p ON s.project_id = p.id
+       WHERE s.id = $1 AND p.company_id = $2`,
+      [req.params.id, companyId]
+    );
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Shift not found or unauthorized' });
+    }
+
     await pool.query('DELETE FROM shift_assignments WHERE shift_id = $1', [req.params.id]);
-    await pool.query('DELETE FROM shifts WHERE id=$1 AND company_id=$2', [req.params.id, companyId]);
+    await pool.query('DELETE FROM shifts WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Shift deleted' });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-export default router;   // ✅ this fixes the "no default export" error
+export default router;
