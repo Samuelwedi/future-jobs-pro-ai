@@ -9,3 +9,5 @@ uploads/
 "backend/fix-*.js" 
 "backend/*-stripe-*.js" 
 backend/scripts/fix-db.js 
+backend/scripts/fix-db.js 
+backend/scripts/fix-db.js 
