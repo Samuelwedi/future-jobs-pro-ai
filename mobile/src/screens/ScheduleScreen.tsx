@@ -23,7 +23,7 @@ interface Shift {
   start_time: string;
   end_time: string;
   notes?: string;
-  attachment_url?: string; // new
+  attachment_url?: string;
   attachment_type?: string;
 }
 
@@ -64,16 +64,19 @@ export default function ScheduleScreen() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
 
-  // ---- NEW: Searchable project states ----
+  // ---- SEARCHABLE project states ----
   const [projectSearchText, setProjectSearchText] = useState('');
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
 
-  // ---- NEW: Employee selection for shift creation ----
+  // ---- EMPLOYEE selection for shift creation (now searchable) ----
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [showEmployeePickerModal, setShowEmployeePickerModal] = useState(false);
+  const [employeeSearchText, setEmployeeSearchText] = useState('');
+  const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
 
-  // ---- NEW: File attachment states ----
+  // ---- File attachment states ----
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
 
@@ -91,6 +94,18 @@ export default function ScheduleScreen() {
     }
   }, [projectSearchText, projects]);
 
+  // Filter employees when search text changes
+  useEffect(() => {
+    if (employeeSearchText.trim().length > 0) {
+      const filtered = employees.filter(emp =>
+        `${emp.first_name} ${emp.last_name}`.toLowerCase().includes(employeeSearchText.toLowerCase())
+      );
+      setFilteredEmployees(filtered);
+    } else {
+      setFilteredEmployees(employees);
+    }
+  }, [employeeSearchText, employees]);
+
   useFocusEffect(useCallback(() => {
     if (user?.role === 'boss' || user?.role === 'manager') {
       fetchEmployees();
@@ -102,13 +117,22 @@ export default function ScheduleScreen() {
     fetchShifts();
   }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]);
 
+  // ---- FETCH EMPLOYEES (with debug logs) ----
   const fetchEmployees = async () => {
     try {
+      console.log('📡 Fetching employees for company:', user?.companyId);
       const res = await api.get<{ success: boolean; users?: any[]; members?: any[] }>(`/users/company/${user?.companyId}`);
+      console.log('✅ Employee API response:', res);
       // The response might have 'users' or 'members'
       const users = res.users || res.members || [];
       setEmployees(users);
-    } catch (e) { console.error(e); }
+      if (users.length === 0) {
+        console.warn('⚠️ No employees found for this company.');
+      }
+    } catch (e) {
+      console.error('❌ Failed to fetch employees:', e);
+      Alert.alert('Error', 'Could not load employee list.');
+    }
   };
 
   const fetchProjects = async () => {
@@ -223,7 +247,7 @@ export default function ScheduleScreen() {
           } as any);
           formData.append('purpose', 'shift_attachment');
           const uploadRes = await api.uploadFileWithData<{ url: string; type: string }>(
-            '/upload', // We need a dedicated upload endpoint for attachments
+            '/upload',
             selectedFile.uri,
             { purpose: 'shift_attachment' },
             'file'
@@ -286,7 +310,19 @@ export default function ScheduleScreen() {
     setProjectSearchText('');
     setFilteredProjects([]);
     setShowProjectDropdown(false);
+    setEmployeeSearchText('');
+    setFilteredEmployees(employees); // initial list
     setCreateModalVisible(true);
+  };
+
+  // Refresh employees when the employee picker modal opens
+  const openEmployeePickerModal = () => {
+    setShowEmployeePickerModal(true);
+    setEmployeeSearchText('');
+    // If employees list is empty, fetch again
+    if (employees.length === 0) {
+      fetchEmployees();
+    }
   };
 
   if (loading) return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
@@ -468,7 +504,7 @@ export default function ScheduleScreen() {
               {/* Employee Selection Button */}
               <TouchableOpacity
                 style={styles.employeeSelectBtn}
-                onPress={() => setShowEmployeePickerModal(true)}
+                onPress={openEmployeePickerModal}
               >
                 <MaterialIcons name="people" size={20} color="#00D4FF" />
                 <Text style={styles.employeeSelectText}>
@@ -520,7 +556,7 @@ export default function ScheduleScreen() {
         </View>
       </Modal>
 
-      {/* ===== EMPLOYEE PICKER MODAL ===== */}
+      {/* ===== EMPLOYEE PICKER MODAL (for shift creation) - now with search ===== */}
       <Modal visible={showEmployeePickerModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -530,21 +566,45 @@ export default function ScheduleScreen() {
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
             </View>
+
+            {/* Search Bar */}
+            <TextInput
+              style={styles.input}
+              placeholder="Search employees..."
+              placeholderTextColor="#888"
+              value={employeeSearchText}
+              onChangeText={setEmployeeSearchText}
+            />
+
             <FlatList
-              data={employees}
+              data={filteredEmployees}
               keyExtractor={item => item.id}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[styles.employeeRow, selectedEmployeeIds.includes(item.id) && styles.employeeRowActive]}
                   onPress={() => toggleEmployeeSelection(item.id)}
                 >
-                  <Text style={styles.employeeName}>{item.first_name} {item.last_name}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.employeeName}>{item.first_name} {item.last_name}</Text>
+                    <Text style={styles.employeeRole}>{item.role}</Text>
+                  </View>
                   {selectedEmployeeIds.includes(item.id) && (
                     <MaterialIcons name="check-circle" size={22} color="#00D4FF" />
                   )}
                 </TouchableOpacity>
               )}
-              ListEmptyComponent={<Text style={{ color: '#888' }}>No employees available</Text>}
+              ListEmptyComponent={
+                employees.length === 0 ? (
+                  <Text style={{ color: '#888', marginTop: 20, textAlign: 'center' }}>
+                    No employees available. Make sure you have employees in your company.
+                  </Text>
+                ) : (
+                  <Text style={{ color: '#888', marginTop: 20, textAlign: 'center' }}>
+                    No employees match your search.
+                  </Text>
+                )
+              }
+              contentContainerStyle={{ paddingBottom: 16 }}
             />
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -653,6 +713,7 @@ export default function ScheduleScreen() {
   );
 }
 
+// (styles remain unchanged – keep your existing styles)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 60, paddingBottom: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#333' },
