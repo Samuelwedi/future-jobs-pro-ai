@@ -50,7 +50,8 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.get('/ping', (req, res) => res.json({ success: true, message: 'pong' }));
 app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
-app.use(trialCheck);
+// ----- trialCheck is now moved AFTER scheduleRoutes -----
+// We'll mount trialCheck later, after we've mounted scheduleRoutes.
 
 app.get('/api/health', async (req: Request, res: Response) => {
   const dbHealthy = await checkDatabaseHealth();
@@ -75,6 +76,7 @@ import integrationRoutes from './routes/integrationRoutes'; app.use('/api/integr
 import companyRoutes from './routes/companyRoutes'; app.use('/api/companies', companyRoutes);
 import chatRoutes from './routes/chatRoutes'; app.use('/api/chat', chatRoutes);
 import userRoutes from './routes/userRoutes'; app.use('/api/users', userRoutes);
+// ----- MOVED scheduleRoutes BEFORE trialCheck -----
 import scheduleRoutes from './routes/scheduleRoutes'; app.use('/api/schedule', scheduleRoutes);
 import crewRoutes from './routes/crewRoutes'; app.use('/api/crew', crewRoutes);
 import assistantRoutes from './routes/assistantRoutes'; app.use('/api/assistant', assistantRoutes);
@@ -88,6 +90,9 @@ import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', payme
 import mediaRoutes from './routes/mediaRoutes'; app.use('/api/media', mediaRoutes);
 import uploadRoutes from './routes/uploadRoutes'; app.use('/api/upload', uploadRoutes);
 import approvalRoutes from './routes/approvalRoutes'; app.use('/api/approvals', approvalRoutes);
+
+// ----- trialCheck middleware (moved AFTER scheduleRoutes) -----
+app.use(trialCheck);
 
 // ----- Helper: get userId -----
 const getUserId = (req: Request): string | null => {
