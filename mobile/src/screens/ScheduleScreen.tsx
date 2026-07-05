@@ -74,7 +74,6 @@ export default function ScheduleScreen() {
   const [showEmployeePickerModal, setShowEmployeePickerModal] = useState(false);
   const [employeeSearchText, setEmployeeSearchText] = useState('');
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
-  const [loadingEmployees, setLoadingEmployees] = useState(false);
 
   // ---- File attachment states ----
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
@@ -120,20 +119,47 @@ export default function ScheduleScreen() {
     fetchShifts();
   }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]);
 
-  // ---- FETCH EMPLOYEES (using the reliable /team/members endpoint) ----
+  // ---- FETCH EMPLOYEES (robust debug version) ----
   const fetchEmployees = async () => {
     try {
       const companyId = user?.companyId;
       console.log('📡 Fetching employees for company:', companyId);
-      // Use the team members endpoint – it returns the same user list
-      const res = await api.get<any>(`/team/members/${companyId}`);
-      console.log('✅ Raw team response:', res);
-      // Some API wrappers put data inside res.data – handle both
-      const data: any = res.data || res;
-      const users = data.members || data.users || [];
+      if (!companyId) {
+        console.warn('⚠️ No company ID available');
+        Alert.alert('Error', 'Company ID not found. Please log in again.');
+        return;
+      }
+
+        const res = await api.get(`/team/members/${companyId}`);
+        console.log('✅ Raw API response:', JSON.stringify(res, null, 2));
+
+        // Try different possible response structures
+        // Normalize res which may be an Axios response (with .data) or raw data
+        let data: any = res && typeof res === 'object' && 'data' in res ? (res as any).data : res;
+      
+      // Look for an array in various properties
+      let users: any[] = [];
+      if (Array.isArray(data)) {
+        users = data;
+      } else if (Array.isArray(data.members)) {
+        users = data.members;
+      } else if (Array.isArray(data.users)) {
+        users = data.users;
+      } else if (Array.isArray(data.team)) {
+        users = data.team;
+      } else {
+        // Fallback: search for any array property
+        const keys = Object.keys(data);
+        for (const key of keys) {
+          if (Array.isArray(data[key])) {
+            users = data[key];
+            break;
+          }
+        }
+      }
+
       console.log(`✅ Found ${users.length} employees:`, users);
       if (users.length === 0) {
-        console.warn('⚠️ No employees found for this company.');
         Alert.alert('No Employees', 'No employees found in your company.');
       }
       setEmployees(users);
@@ -242,7 +268,6 @@ export default function ScheduleScreen() {
     }
     setUploadingFile(true);
     try {
-      // Upload file if selected
       let attachmentUrl: string | null = null;
       let attachmentType: string | null = null;
       if (selectedFile) {
@@ -319,15 +344,13 @@ export default function ScheduleScreen() {
     setFilteredProjects([]);
     setShowProjectDropdown(false);
     setEmployeeSearchText('');
-    setFilteredEmployees(employees); // initial list
+    setFilteredEmployees(employees);
     setCreateModalVisible(true);
   };
 
-  // Refresh employees when the employee picker modal opens
   const openEmployeePickerModal = () => {
     setShowEmployeePickerModal(true);
     setEmployeeSearchText('');
-    // If employees list is empty, fetch again
     if (employees.length === 0) {
       fetchEmployees();
     }
@@ -564,15 +587,23 @@ export default function ScheduleScreen() {
         </View>
       </Modal>
 
-      {/* ===== EMPLOYEE PICKER MODAL (for shift creation) - now with search ===== */}
+      {/* ===== EMPLOYEE PICKER MODAL (with search and refresh) ===== */}
       <Modal visible={showEmployeePickerModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select Employees</Text>
-              <TouchableOpacity onPress={() => setShowEmployeePickerModal(false)}>
-                <MaterialIcons name="close" size={24} color="#FFF" />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity
+                  onPress={() => { fetchEmployees(); Alert.alert('Refreshed', 'Employee list refreshed.'); }}
+                  style={{ marginRight: 16 }}
+                >
+                  <MaterialIcons name="refresh" size={24} color="#00D4FF" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowEmployeePickerModal(false)}>
+                  <MaterialIcons name="close" size={24} color="#FFF" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Search Bar */}
@@ -604,7 +635,7 @@ export default function ScheduleScreen() {
               ListEmptyComponent={
                 employees.length === 0 ? (
                   <Text style={{ color: '#888', marginTop: 20, textAlign: 'center' }}>
-                    No employees available. Make sure you have employees in your company.
+                    No employees available. Tap refresh to reload.
                   </Text>
                 ) : (
                   <Text style={{ color: '#888', marginTop: 20, textAlign: 'center' }}>
