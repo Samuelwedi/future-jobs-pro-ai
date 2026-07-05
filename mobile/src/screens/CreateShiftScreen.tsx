@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 interface Project {
   id: string;
@@ -20,9 +20,11 @@ export default function CreateShiftScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { user } = useAuth();
+
+  // Parse the date from the route params (now a string)
   const date = route.params?.date ? new Date(route.params.date) : new Date();
 
-  // Form fields – these stay in state and are not reset on navigation
+  // Form fields
   const [shiftName, setShiftName] = useState('');
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
@@ -48,7 +50,7 @@ export default function CreateShiftScreen() {
     } catch (e) { console.error(e); }
   };
 
-  // Filter projects for search
+  // ---- Filter projects for search ----
   useEffect(() => {
     if (projectSearchText.trim().length > 0) {
       const filtered = projects.filter(p =>
@@ -274,7 +276,6 @@ export default function CreateShiftScreen() {
   );
 }
 
-// ... (styles remain the same as earlier)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {

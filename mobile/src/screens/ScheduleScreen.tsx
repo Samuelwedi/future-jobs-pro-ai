@@ -34,7 +34,6 @@ interface Employee {
 }
 
 interface TeamMembersResponse {
-  data: TeamMembersResponse;
   success: boolean;
   members: Employee[];
 }
@@ -60,8 +59,8 @@ export default function ScheduleScreen() {
       const companyId = user?.companyId;
       if (!companyId) return;
       const res = await api.get<TeamMembersResponse>(`/team/members/${companyId}`);
-      const data = res.data || res;
-      const members = data.members || [];
+      // res is already the parsed response body – no .data needed
+      const members = res.members || [];
       setEmployees(members);
     } catch (e) {
       console.error('Failed to fetch employees', e);
@@ -106,7 +105,6 @@ export default function ScheduleScreen() {
       fetchEmployees();
     }
     fetchShifts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]));
 
   const onRefresh = () => { setRefreshing(true); fetchShifts(); };
@@ -137,9 +135,9 @@ export default function ScheduleScreen() {
     setCurrentMonth(prev => dir === -1 ? subMonths(prev, 1) : addMonths(prev, 1));
   };
 
-  // ---- Navigate to Create Shift screen ----
+  // ---- Navigate to Create Shift screen (pass date as string) ----
   const openCreateShift = () => {
-    navigation.navigate('CreateShift', { date: selectedDate });
+    navigation.navigate('CreateShift', { date: selectedDate.toISOString() });
   };
 
   if (loading) {
@@ -148,7 +146,6 @@ export default function ScheduleScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
@@ -163,7 +160,6 @@ export default function ScheduleScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* View Mode Toggles */}
       <View style={styles.viewModes}>
         {(['month', 'week', '3days', 'day'] as Array<typeof viewMode>).map(m => (
           <TouchableOpacity
@@ -176,7 +172,6 @@ export default function ScheduleScreen() {
         ))}
       </View>
 
-      {/* Month Navigator */}
       <View style={styles.monthNav}>
         <TouchableOpacity onPress={() => navigateMonth(-1)}>
           <MaterialIcons name="chevron-left" size={28} color="#00D4FF" />
@@ -187,14 +182,12 @@ export default function ScheduleScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Day Headers */}
       <View style={styles.dayHeaders}>
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
           <Text key={day} style={styles.dayHeaderText}>{day}</Text>
         ))}
       </View>
 
-      {/* Calendar Grid */}
       <View style={styles.calendarGrid}>
         {calendarDays.map((day, idx) => {
           const dateStr = format(day, 'yyyy-MM-dd');
@@ -227,7 +220,6 @@ export default function ScheduleScreen() {
         })}
       </View>
 
-      {/* Shift List for Selected Date */}
       <FlatList
         data={shiftsForSelectedDate}
         renderItem={({ item }) => (
