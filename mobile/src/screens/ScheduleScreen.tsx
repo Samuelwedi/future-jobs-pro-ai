@@ -40,6 +40,12 @@ interface Project {
   address?: string;
 }
 
+// Response shape from /team/members
+interface TeamMembersResponse {
+  success: boolean;
+  members: Employee[];
+}
+
 export default function ScheduleScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -119,7 +125,7 @@ export default function ScheduleScreen() {
     fetchShifts();
   }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]);
 
-  // ---- FETCH EMPLOYEES (robust debug version) ----
+  // ---- FETCH EMPLOYEES (TypeScript‑safe, with immediate update) ----
   const fetchEmployees = async () => {
     try {
       const companyId = user?.companyId;
@@ -130,39 +136,33 @@ export default function ScheduleScreen() {
         return;
       }
 
-        const res = await api.get(`/team/members/${companyId}`);
-        console.log('✅ Raw API response:', JSON.stringify(res, null, 2));
+      // Use the correct endpoint – it returns { success, members }
+      const res = await api.get(`/team/members/${companyId}`);
+      console.log('✅ Raw API response:', JSON.stringify(res, null, 2));
 
-        // Try different possible response structures
-        // Normalize res which may be an Axios response (with .data) or raw data
-        let data: any = res && typeof res === 'object' && 'data' in res ? (res as any).data : res;
-      
-      // Look for an array in various properties
-      let users: any[] = [];
-      if (Array.isArray(data)) {
-        users = data;
-      } else if (Array.isArray(data.members)) {
+      // Safely extract the data – handle both direct and Axios-wrapped responses
+      let data: any = res;
+      if (res && typeof res === 'object' && 'data' in res) {
+        data = (res as any).data;
+      }
+
+      // Look for members array
+      let users: Employee[] = [];
+      if (data && Array.isArray(data.members)) {
         users = data.members;
-      } else if (Array.isArray(data.users)) {
+      } else if (data && Array.isArray(data.users)) {
         users = data.users;
-      } else if (Array.isArray(data.team)) {
-        users = data.team;
-      } else {
-        // Fallback: search for any array property
-        const keys = Object.keys(data);
-        for (const key of keys) {
-          if (Array.isArray(data[key])) {
-            users = data[key];
-            break;
-          }
-        }
+      } else if (Array.isArray(data)) {
+        users = data;
       }
 
       console.log(`✅ Found ${users.length} employees:`, users);
       if (users.length === 0) {
         Alert.alert('No Employees', 'No employees found in your company.');
       }
+      // Update both states so the modal renders immediately
       setEmployees(users);
+      setFilteredEmployees(users);
     } catch (e: any) {
       console.error('❌ Failed to fetch employees:', e);
       Alert.alert('Error', `Could not load employee list: ${e.message || 'Unknown error'}`);
@@ -616,6 +616,7 @@ export default function ScheduleScreen() {
             />
 
             <FlatList
+              key={employees.length} // 👈 force re‑render when employee count changes
               data={filteredEmployees}
               keyExtractor={item => item.id}
               renderItem={({ item }) => (
