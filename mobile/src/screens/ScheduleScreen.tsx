@@ -16,6 +16,7 @@ interface Shift {
   id: string;
   name: string;
   project_name: string;
+  project_id?: string;       // added for clock‑in
   project_address?: string;
   date: string;
   start_time: string;
@@ -87,13 +88,11 @@ export default function ScheduleScreen() {
 
     try {
       const userId = selectedEmployeeId || user?.id;
-      const res = await api.get(`/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`);
-      
-      let fetchedShifts: Shift[] = [];
-      if (res && typeof res === 'object') {
-        const data = (res as any).data || res;
-        fetchedShifts = data.shifts || [];
-      }
+      const res = await api.get<{ success: boolean; shifts: Shift[] }>(
+        `/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`
+      );
+      // res is directly the parsed response (because api.get already returns data)
+      const fetchedShifts = res.shifts || [];
       setShifts(fetchedShifts);
       console.log(`📊 Fetched ${fetchedShifts.length} shifts`);
     } catch (e) {
@@ -127,15 +126,12 @@ export default function ScheduleScreen() {
   }
 
   // ---- UTC helpers ----
-  // Get UTC date string (YYYY-MM-DD) from a Date object
   const getUTCDateString = (date: Date) => {
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
   };
 
-  // Get UTC date string from an ISO string (works with dates like "2026-07-14T00:00:00.000Z")
   const getShiftDateString = (iso: string) => iso.split('T')[0];
 
-  // Format shift date for display (uses UTC to avoid timezone shift)
   const formatShiftDate = (dateStr: string) => {
     if (!dateStr) return '';
     const parts = dateStr.split('T')[0].split('-');
@@ -146,10 +142,8 @@ export default function ScheduleScreen() {
     return `${weekday}, ${month} ${day}`;
   };
 
-  // ---- Calendar dots: shifts for each day (UTC) ----
   const shiftDates = new Set(shifts.map(s => s.date ? getShiftDateString(s.date) : ''));
 
-  // ---- Shifts for the selected date (UTC) ----
   const selectedDateStr = getUTCDateString(selectedDate);
   const shiftsForSelectedDate = shifts.filter(s => {
     if (!s.date) return false;
@@ -160,6 +154,27 @@ export default function ScheduleScreen() {
     if (!address) return;
     const url = `https://maps.google.com/?q=${encodeURIComponent(address)}`;
     Linking.openURL(url);
+  };
+
+  // ---- Clock In function ----
+  const handleClockIn = async (shift: Shift) => {
+    try {
+      const res = await api.post<{ success: boolean; message?: string }>('/time-entries/clock-in', {
+        userId: user?.id,
+        projectId: shift.project_id,
+        shiftId: shift.id,
+        latitude: 0,
+        longitude: 0,
+      });
+      if (res.success) {
+        Alert.alert('✅ Clocked In', `You have clocked in for ${shift.name}`);
+        setSelectedShift(null);
+      } else {
+        Alert.alert('Clock In Failed', res.message || 'Could not clock in');
+      }
+    } catch (e: any) {
+      Alert.alert('Clock In Error', e.message || 'An error occurred');
+    }
   };
 
   const navigateMonth = (dir: number) => {
@@ -314,6 +329,16 @@ export default function ScheduleScreen() {
                     </TouchableOpacity>
                   </>
                 )}
+
+                {/* Clock In Button */}
+                <TouchableOpacity
+                  style={styles.clockInBtn}
+                  onPress={() => handleClockIn(selectedShift)}
+                >
+                  <MaterialIcons name="login" size={20} color="#FFFFFF" />
+                  <Text style={styles.clockInBtnText}>Clock In</Text>
+                </TouchableOpacity>
+
                 {selectedShift.project_address && (
                   <TouchableOpacity
                     style={styles.directionsBtn}
@@ -489,7 +514,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#00D4FF',
     paddingVertical: 12,
     borderRadius: 10,
-    marginTop: 20,
+    marginTop: 12,
     gap: 8,
   },
   directionsBtnText: { color: '#0A0A0A', fontWeight: '600', fontSize: 15 },
@@ -500,4 +525,15 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   downloadBtnText: { color: '#00D4FF', fontSize: 15 },
+  clockInBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4CAF50',
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginTop: 12,
+    gap: 8,
+  },
+  clockInBtnText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
 });
