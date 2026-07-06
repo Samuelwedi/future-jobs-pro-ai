@@ -88,11 +88,16 @@ export default function ScheduleScreen() {
     try {
       const userId = selectedEmployeeId || user?.id;
       const res = await api.get(`/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`);
+      
+      // 👇 DEBUG LOG – see raw response
+      console.log('🔍 RAW RESPONSE:', JSON.stringify(res, null, 2));
+
       let fetchedShifts: Shift[] = [];
       if (res && typeof res === 'object') {
         const data = (res as any).data || res;
         fetchedShifts = data.shifts || [];
       }
+
       console.log(`📊 Fetched ${fetchedShifts.length} shifts for ${userId}`);
       setShifts(fetchedShifts);
     } catch (e) {
@@ -125,13 +130,17 @@ export default function ScheduleScreen() {
     d = addDays(d, 1);
   }
 
+  // Build a Set of date strings (YYYY-MM-DD) from shifts
   const shiftDates = new Set(shifts.map(s => s.date ? s.date.split('T')[0] : ''));
+  
+  // Filter shifts for the selected date (with debug log)
   const shiftsForSelectedDate = shifts.filter(s => {
     if (!s.date) return false;
     const shiftDateStr = s.date.split('T')[0];
     const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
     return shiftDateStr === selectedDateStr;
   });
+  console.log(`📅 Shifts for selected date (${format(selectedDate, 'yyyy-MM-dd')}): ${shiftsForSelectedDate.length}`);
 
   const handleOpenDirections = (address?: string) => {
     if (!address) return;
