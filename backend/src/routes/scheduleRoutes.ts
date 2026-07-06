@@ -6,7 +6,7 @@ const router = express.Router();
 
 // ========== VERSION & DEBUG ENDPOINTS (unprotected) ==========
 router.get('/version', (req: Request, res: Response) => {
-  res.json({ version: '2.0.3', fixed: 'force logs and robust query' });
+  res.json({ version: '2.0.4', fixed: 'removed test bypass, full routes' });
 });
 
 router.get('/debug-all', async (req: Request, res: Response) => {
@@ -37,7 +37,6 @@ router.get('/debug-shifts', async (req: Request, res: Response) => {
   }
 });
 
-// Unprotected debug with date filter
 router.get('/my-shifts-debug', async (req: Request, res: Response) => {
   try {
     const { userId, start, end } = req.query;
@@ -81,20 +80,39 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   } catch { return null; }
 };
 
+// GET /api/schedule/shifts?start=&end= (company‑scoped)
 router.get('/shifts', async (req: Request, res: Response) => {
-  // ... same as before
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { start, end } = req.query;
+    let query = `
+      SELECT s.* 
+      FROM shifts s
+      JOIN projects p ON s.project_id = p.id
+      WHERE p.company_id = $1
+    `;
+    const params: any[] = [companyId];
+    if (start) { query += ' AND s.date::date >= $' + (params.length + 1); params.push(start); }
+    if (end)   { query += ' AND s.date::date <= $' + (params.length + 1); params.push(end); }
+    query += ' ORDER BY s.date, s.start_time';
+    const result = await pool.query(query, params);
+    res.json({ success: true, shifts: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 });
 
-// ===== FIXED my-shifts with forced console.error and fallback =====
+// ===== FIXED my-shifts (without test bypass) =====
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
-    console.error('🔥 my-shifts handler ENTERED'); // forced log
+    console.error('🔥 my-shifts handler ENTERED');
 
-    const testUserHeader = req.headers['x-test-user'];
-    if (testUserHeader === 'samuel@test.com') {
-      console.error('🔹 Test user, returning empty');
-      return res.json({ success: true, shifts: [] });
-    }
+    // REMOVE the test user bypass to avoid returning empty for real users
+    // const testUserHeader = req.headers['x-test-user'];
+    // if (testUserHeader === 'samuel@test.com') {
+    //   return res.json({ success: true, shifts: [] });
+    // }
 
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -150,29 +168,6 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
       [userId, start, end]
     );
     console.error(`📊 Found ${result.rows.length} shifts in main query`);
-
-    // Fallback: if no shifts, try without date filter to see if any exist
-    if (result.rows.length === 0) {
-      console.error('🔹 Main query returned 0, trying fallback without date filter');
-      const fallback = await pool.query(
-        `SELECT s.*, 
-                array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
-                p.name as project_name,
-                p.address as project_address
-         FROM shifts s
-         LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
-         LEFT JOIN projects p ON s.project_id = p.id
-         WHERE (s.user_id = $1 OR sa.user_id = $1)
-         GROUP BY s.id, p.name, p.address
-         ORDER BY s.date`,
-        [userId]
-      );
-      console.error(`🔹 Fallback found ${fallback.rows.length} shifts (no date filter)`);
-      // If fallback has data, send them (but we'll still send the main empty)
-      // For debugging, we can send the fallback data but that would mask the issue.
-      // Instead, we just log it.
-    }
-
     res.json({ success: true, shifts: result.rows });
   } catch (error: any) {
     console.error('❌ Error in my-shifts:', error);
@@ -180,7 +175,130 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
   }
 });
 
-// POST, PUT, DELETE remain unchanged
-// ... (copy from previous version)
+// ===== POST /shifts =====
+router.post('/shifts', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  console.log('📝 POST /shifts started');
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) {
+      console.log('❌ Unauthorized – no company ID');
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+
+    const { name, date, startTime: start, endTime: end, projectId, notes, employeeIds, attachmentUrl, attachmentType } = req.body;
+    if (!name || !date || !start || !end) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    if (projectId) {
+      const projectCheck = await pool.query(
+        'SELECT company_id FROM projects WHERE id = $1 AND company_id = $2',
+        [projectId, companyId]
+      );
+      if (projectCheck.rows.length === 0) {
+        return res.status(403).json({ success: false, message: 'Project not found or does not belong to your company' });
+      }
+    }
+
+    let userId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const decoded = verifyToken(req);
+        userId = decoded.id;
+      } catch { /* ignore */ }
+    }
+
+    const shiftResult = await pool.query(
+      `INSERT INTO shifts (name, date, start_time, end_time, project_id, notes, created_by, attachment_url, attachment_type, user_id)
+       VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [name, date, start, end, projectId || null, notes || null, userId, attachmentUrl || null, attachmentType || null, userId]
+    );
+    const shift = shiftResult.rows[0];
+
+    if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
+      for (const empId of employeeIds) {
+        await pool.query(
+          `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [shift.id, empId]
+        );
+      }
+    }
+
+    console.log(`✅ Shift created: ${shift.id} for user ${userId} in ${Date.now() - startTime}ms`);
+    res.status(201).json({ success: true, shift });
+  } catch (error: any) {
+    console.error('❌ Create shift error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ===== PUT /shifts/:id =====
+router.put('/shifts/:id', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { name, date, startTime, endTime, notes, employeeIds, attachmentUrl, attachmentType } = req.body;
+
+    const checkResult = await pool.query(
+      `SELECT s.id 
+       FROM shifts s
+       JOIN projects p ON s.project_id = p.id
+       WHERE s.id = $1 AND p.company_id = $2`,
+      [req.params.id, companyId]
+    );
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Shift not found or unauthorized' });
+    }
+
+    const result = await pool.query(
+      `UPDATE shifts SET name=$1, date=$2::date, start_time=$3::time, end_time=$4::time, notes=$5, attachment_url=$6, attachment_type=$7
+       WHERE id=$8 RETURNING *`,
+      [name, date, startTime, endTime, notes, attachmentUrl || null, attachmentType || null, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Shift not found' });
+
+    if (employeeIds && Array.isArray(employeeIds)) {
+      await pool.query('DELETE FROM shift_assignments WHERE shift_id = $1', [req.params.id]);
+      for (const empId of employeeIds) {
+        await pool.query(
+          `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [req.params.id, empId]
+        );
+      }
+    }
+
+    res.json({ success: true, shift: result.rows[0] });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ===== DELETE /shifts/:id =====
+router.delete('/shifts/:id', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const checkResult = await pool.query(
+      `SELECT s.id 
+       FROM shifts s
+       JOIN projects p ON s.project_id = p.id
+       WHERE s.id = $1 AND p.company_id = $2`,
+      [req.params.id, companyId]
+    );
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Shift not found or unauthorized' });
+    }
+
+    await pool.query('DELETE FROM shift_assignments WHERE shift_id = $1', [req.params.id]);
+    await pool.query('DELETE FROM shifts WHERE id = $1', [req.params.id]);
+    res.json({ success: true, message: 'Shift deleted' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 export default router;
