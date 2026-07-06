@@ -53,13 +53,10 @@ export default function TimesheetScreen() {
   const weekStart = format(startOfWeek(baseDate, { weekStartsOn: 1 }), 'yyyy-MM-dd');
   const weekEnd = format(endOfWeek(baseDate, { weekStartsOn: 1 }), 'yyyy-MM-dd');
 
-  // Fetch employees if boss/manager
   useEffect(() => {
     if (isBossOrManager) {
       api.get(`/users/company/${user?.companyId}`)
-        .then((res: any) => {
-          setEmployees(res.users || []);
-        })
+        .then((res: any) => setEmployees(res.users || []))
         .catch(console.error);
     }
   }, []);
@@ -67,21 +64,18 @@ export default function TimesheetScreen() {
   const fetchEntries = async () => {
     try {
       const userId = selectedUserId || user?.id;
-      const url = `/time-entries?userId=${userId}&start=${weekStart}&end=${weekEnd}`;
-      console.log('🔍 Fetching timesheet from:', url);
-      const res = await api.get<{ success: boolean; entries: TimeEntry[] }>(url);
-      console.log('📦 Raw response:', res);
+      const res = await api.get<{ success: boolean; entries: TimeEntry[] }>(
+        `/time-entries?userId=${userId}&start=${weekStart}&end=${weekEnd}`
+      );
       let entriesData = res.entries || [];
       if (!entriesData.length && (res as any).data?.entries) {
         entriesData = (res as any).data.entries;
       }
-      console.log(`📊 Found ${entriesData.length} entries`);
       setEntries(entriesData);
       setErrorMsg(null);
     } catch (e: any) {
-      console.error('❌ Timesheet fetch error:', e);
+      console.error('Timesheet error:', e);
       setErrorMsg(e.message || 'Failed to load entries');
-      Alert.alert('Error', 'Could not load time entries');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -191,7 +185,9 @@ export default function TimesheetScreen() {
 
   const selectedUserName = employees.find(e => e.id === selectedUserId)?.first_name || 'Me';
 
-  if (loading) return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
+  if (loading) {
+    return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
+  }
 
   return (
     <View style={styles.container}>
@@ -208,7 +204,6 @@ export default function TimesheetScreen() {
         )}
       </View>
 
-      {/* Week Navigator */}
       <View style={styles.weekNav}>
         <TouchableOpacity onPress={() => setWeekOffset(prev => prev - 1)}>
           <MaterialIcons name="chevron-left" size={28} color="#00D4FF" />
@@ -219,7 +214,6 @@ export default function TimesheetScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Weekly Summary */}
       <View style={styles.weeklySummary}>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryValue}>{weeklyTotal.toFixed(1)}h</Text>
@@ -292,14 +286,10 @@ export default function TimesheetScreen() {
                     ))}
                   </>
                 )}
-
-                {/* Attach File Button */}
                 <TouchableOpacity style={styles.attachBtn} onPress={() => handleAttachFile(selectedEntry.id)}>
                   <MaterialIcons name="attach-file" size={20} color="#0A0A0A" />
-                  <Text style={styles.attachBtnText}>Attach File (PDF, Excel, Drawing)</Text>
+                  <Text style={styles.attachBtnText}>Attach File</Text>
                 </TouchableOpacity>
-
-                {/* GPS Playback */}
                 <TouchableOpacity style={styles.gpsBtn} onPress={() => {
                   setSelectedEntry(null);
                   navigation.navigate('GPSPlayback', { timeEntryId: selectedEntry.id });
@@ -374,6 +364,11 @@ const styles = StyleSheet.create({
   summaryItem: { alignItems: 'center' },
   summaryValue: { color: '#00D4FF', fontSize: 22, fontWeight: 'bold' },
   summaryLabel: { color: '#888', fontSize: 12, marginTop: 2 },
+  errorContainer: { padding: 20, alignItems: 'center' },
+  errorText: { color: '#FF6B6B', fontSize: 16, marginBottom: 10 },
+  retryBtn: { backgroundColor: '#00D4FF', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 8 },
+  retryText: { color: '#0A0A0A', fontWeight: 'bold' },
+  list: { paddingHorizontal: 16, paddingBottom: 30 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#444', marginTop: 4 },
   sectionTitle: { color: '#00D4FF', fontSize: 16, fontWeight: '600' },
   sectionDate: { color: '#888', fontSize: 12, marginTop: 2 },
@@ -389,12 +384,7 @@ const styles = StyleSheet.create({
   hoursCol: { alignItems: 'flex-end' },
   hours: { color: '#FFF', fontSize: 15, fontWeight: '600' },
   otText: { color: '#FF9800', fontSize: 12, marginTop: 2 },
-  list: { paddingHorizontal: 16, paddingBottom: 30 },
   empty: { color: '#888', textAlign: 'center', marginTop: 40, fontSize: 16 },
-  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  errorText: { color: '#FF9800', fontSize: 16, textAlign: 'center' },
-  retryBtn: { marginTop: 12, backgroundColor: '#00D4FF', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
-  retryText: { color: '#0A0A0A', fontWeight: '600' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 24, maxHeight: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
