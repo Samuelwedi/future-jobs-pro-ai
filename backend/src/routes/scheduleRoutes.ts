@@ -33,7 +33,7 @@ router.get('/debug-shifts', async (req: Request, res: Response) => {
   }
 });
 
-// unprotected debug of my-shifts query with correct date cast
+// unprotected endpoint that uses the exact same query as the test script
 router.get('/my-shifts-debug', async (req: Request, res: Response) => {
   try {
     const { userId, start, end } = req.query;
@@ -49,7 +49,8 @@ router.get('/my-shifts-debug', async (req: Request, res: Response) => {
        LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
        LEFT JOIN projects p ON s.project_id = p.id
        WHERE (s.user_id = $1 OR sa.user_id = $1)
-         AND s.date::date BETWEEN $2::date AND $3::date
+         AND s.date >= $2::date
+         AND s.date < $3::date + interval '1 day'
        GROUP BY s.id, p.name, p.address
        ORDER BY s.date, s.start_time`,
       [userId, start, end]
@@ -97,7 +98,7 @@ router.get('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// ===== FIXED my-shifts with correct date cast =====
+// ===== FIXED my-shifts using the proven query =====
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
     const testUserHeader = req.headers['x-test-user'];
@@ -127,7 +128,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     if (requestUserRes.rows[0].company_id !== targetUserRes.rows[0].company_id)
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
-    // ✅ Correct: cast both sides to date and use BETWEEN
+    // ✅ EXACT query that the test script uses (works)
     const result = await pool.query(
       `SELECT s.*, 
               array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
@@ -137,7 +138,8 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
        LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
        LEFT JOIN projects p ON s.project_id = p.id
        WHERE (s.user_id = $1 OR sa.user_id = $1)
-         AND s.date::date BETWEEN $2::date AND $3::date
+         AND s.date >= $2::date
+         AND s.date < $3::date + interval '1 day'
        GROUP BY s.id, p.name, p.address
        ORDER BY s.date, s.start_time`,
       [userId, start, end]
@@ -150,7 +152,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
   }
 });
 
-// ===== SIMPLIFIED POST (no transaction) =====
+// ===== SIMPLIFIED POST (no transaction, fast) =====
 router.post('/shifts', async (req: Request, res: Response) => {
   const startTime = Date.now();
   console.log('📝 POST /shifts started');
@@ -209,7 +211,7 @@ router.post('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// PUT and DELETE remain the same (we'll include them for completeness)
+// PUT and DELETE (unchanged)
 router.put('/shifts/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
