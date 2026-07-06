@@ -17,7 +17,6 @@ router.get('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'userId, start, and end required' });
     }
 
-    // Verify same company
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
     const targetRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
@@ -38,7 +37,6 @@ router.get('/', async (req: Request, res: Response) => {
     );
 
     const entries = result.rows.map((row: any) => {
-      // Ensure numbers are present, avoid toFixed on null
       const regularHours = row.regular_hours ?? 0;
       const overtimeHours = row.overtime_hours ?? 0;
       return {
@@ -106,19 +104,35 @@ router.get('/active', async (req: Request, res: Response) => {
 // ─── POST /api/time-entries/clock-in ───
 router.post('/clock-in', async (req: Request, res: Response) => {
   try {
+    console.log('📥 Clock-in request body:', req.body);
+    
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     const decoded = verifyToken(req);
+    const tokenUserId = decoded.id;
+
+    // Destructure with defaults
     const { userId, projectId, latitude, longitude } = req.body;
 
-    // Enhanced validation
+    // Validate required fields
     if (!userId) {
-      return res.status(400).json({ success: false, message: 'userId is required' });
+      return res.status(400).json({ success: false, message: 'userId is required in body' });
     }
     if (!projectId) {
-      return res.status(400).json({ success: false, message: 'projectId is required' });
+      return res.status(400).json({ success: false, message: 'projectId is required in body' });
+    }
+
+    // Ensure the userId from body matches the token user (security)
+    if (userId !== tokenUserId) {
+      return res.status(403).json({ success: false, message: 'userId does not match authenticated user' });
+    }
+
+    // Check if user exists
+    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
     }
 
     // Check if project exists
@@ -182,7 +196,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
 
     const regularHours = Math.min(hoursWorked, 8);
     const overtimeHours = Math.max(hoursWorked - 8, 0);
-    const hourlyRate = 20; // placeholder – you can fetch from company settings later
+    const hourlyRate = 20; // placeholder
     const totalWage = (regularHours + overtimeHours * 1.5) * hourlyRate;
 
     const result = await pool.query(
