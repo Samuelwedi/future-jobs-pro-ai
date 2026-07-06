@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import {
-  format, parseISO, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
+  format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addDays, subMonths, addMonths, isSameMonth, isSameDay,
 } from 'date-fns';
 
@@ -89,17 +89,13 @@ export default function ScheduleScreen() {
       const userId = selectedEmployeeId || user?.id;
       const res = await api.get(`/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`);
       
-      // 👇 DEBUG LOG – see raw response
-      console.log('🔍 RAW RESPONSE:', JSON.stringify(res, null, 2));
-
       let fetchedShifts: Shift[] = [];
       if (res && typeof res === 'object') {
         const data = (res as any).data || res;
         fetchedShifts = data.shifts || [];
       }
-
-      console.log(`📊 Fetched ${fetchedShifts.length} shifts for ${userId}`);
       setShifts(fetchedShifts);
+      console.log(`📊 Fetched ${fetchedShifts.length} shifts`);
     } catch (e) {
       console.error('Error fetching shifts:', e);
       Alert.alert('Error', 'Could not load shifts');
@@ -130,17 +126,35 @@ export default function ScheduleScreen() {
     d = addDays(d, 1);
   }
 
-  // Build a Set of date strings (YYYY-MM-DD) from shifts
-  const shiftDates = new Set(shifts.map(s => s.date ? s.date.split('T')[0] : ''));
-  
-  // Filter shifts for the selected date (with debug log)
+  // ---- UTC helpers ----
+  // Get UTC date string (YYYY-MM-DD) from a Date object
+  const getUTCDateString = (date: Date) => {
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+  };
+
+  // Get UTC date string from an ISO string (works with dates like "2026-07-14T00:00:00.000Z")
+  const getShiftDateString = (iso: string) => iso.split('T')[0];
+
+  // Format shift date for display (uses UTC to avoid timezone shift)
+  const formatShiftDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('T')[0].split('-');
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = monthNames[+parts[1] - 1];
+    const day = +parts[2];
+    const weekday = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2])).getUTCDay()];
+    return `${weekday}, ${month} ${day}`;
+  };
+
+  // ---- Calendar dots: shifts for each day (UTC) ----
+  const shiftDates = new Set(shifts.map(s => s.date ? getShiftDateString(s.date) : ''));
+
+  // ---- Shifts for the selected date (UTC) ----
+  const selectedDateStr = getUTCDateString(selectedDate);
   const shiftsForSelectedDate = shifts.filter(s => {
     if (!s.date) return false;
-    const shiftDateStr = s.date.split('T')[0];
-    const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
-    return shiftDateStr === selectedDateStr;
+    return getShiftDateString(s.date) === selectedDateStr;
   });
-  console.log(`📅 Shifts for selected date (${format(selectedDate, 'yyyy-MM-dd')}): ${shiftsForSelectedDate.length}`);
 
   const handleOpenDirections = (address?: string) => {
     if (!address) return;
@@ -206,7 +220,7 @@ export default function ScheduleScreen() {
 
       <View style={styles.calendarGrid}>
         {calendarDays.map((day, idx) => {
-          const dateStr = format(day, 'yyyy-MM-dd');
+          const dateStr = getUTCDateString(day);
           const isSelected = isSameDay(day, selectedDate);
           const isToday = isSameDay(day, new Date());
           const isCurrentMonth = isSameMonth(day, currentMonth);
@@ -240,7 +254,7 @@ export default function ScheduleScreen() {
         data={shiftsForSelectedDate}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.shiftCard} onPress={() => setSelectedShift(item)}>
-            <Text style={styles.shiftDate}>{item.date ? format(parseISO(item.date), 'EEE, MMM d') : ''}</Text>
+            <Text style={styles.shiftDate}>{item.date ? formatShiftDate(item.date) : ''}</Text>
             <Text style={styles.shiftName}>{item.name}</Text>
             <Text style={styles.shiftProject}>{item.project_name}</Text>
             <Text style={styles.shiftTime}>{item.start_time} → {item.end_time}</Text>
