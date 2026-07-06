@@ -19,9 +19,13 @@ router.get('/', async (req: Request, res: Response) => {
 
     // Verify same company
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
-    if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
     const targetRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
-    if (targetRes.rows.length === 0) return res.status(404).json({ success: false, message: 'Target user not found' });
+    if (targetRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Target user not found' });
+    }
     if (userRes.rows[0].company_id !== targetRes.rows[0].company_id) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
@@ -38,7 +42,6 @@ router.get('/', async (req: Request, res: Response) => {
     );
 
     const entries = result.rows.map((row: any) => {
-      // Ensure numbers are present, avoid toFixed on null/undefined
       const regularHours = Number(row.regular_hours) || 0;
       const overtimeHours = Number(row.overtime_hours) || 0;
       const breakMinutes = Number(row.break_minutes) || 0;
@@ -78,7 +81,9 @@ router.get('/active', async (req: Request, res: Response) => {
     }
     const decoded = verifyToken(req);
     const { userId } = req.query;
-    if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'userId required' });
+    }
 
     const result = await pool.query(
       `SELECT te.*, p.name as project_name
@@ -114,13 +119,11 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     const decoded = verifyToken(req);
-    const { userId, projectId, latitude, longitude } = req.body;
+    const userId = decoded.id;
+    const { projectId, latitude, longitude } = req.body;
 
-    console.log('📥 Clock-in request body:', { userId, projectId, latitude, longitude });
+    console.log('📥 Clock-in request:', { userId, projectId, latitude, longitude });
 
-    if (!userId) {
-      return res.status(400).json({ success: false, message: 'userId is required' });
-    }
     if (!projectId) {
       return res.status(400).json({ success: false, message: 'projectId is required' });
     }
@@ -166,10 +169,11 @@ router.post('/clock-out', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     const decoded = verifyToken(req);
-    const { userId, timeEntryId, latitude, longitude } = req.body;
+    const userId = decoded.id;
+    const { timeEntryId, latitude, longitude } = req.body;
 
-    if (!userId || !timeEntryId) {
-      return res.status(400).json({ success: false, message: 'userId and timeEntryId are required' });
+    if (!timeEntryId) {
+      return res.status(400).json({ success: false, message: 'timeEntryId is required' });
     }
 
     const check = await pool.query(
