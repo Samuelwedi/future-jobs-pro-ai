@@ -11,6 +11,7 @@ import { api } from '../services/api';
 import { MaterialIcons, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -21,6 +22,15 @@ interface AISuggestion {
   priority: string;
 }
 
+interface Shift {
+  id: string;
+  name: string;
+  date: string;
+  start_time: string;
+  end_time: string;
+  project_name?: string;
+}
+
 export default function HomeScreen() {
   const { user, logout } = useAuth();
   const { t } = useLang();
@@ -28,6 +38,8 @@ export default function HomeScreen() {
   const [isClockedIn, setIsClockedIn] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<any>(null);
+  const [schedules, setSchedules] = useState<Shift[]>([]);
+  const [selectedSchedule, setSelectedSchedule] = useState<Shift | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTimeEntry, setActiveTimeEntry] = useState<any>(null);
@@ -89,6 +101,27 @@ export default function HomeScreen() {
     }
   };
 
+  const loadSchedules = async () => {
+    try {
+      const today = new Date();
+      const start = format(startOfMonth(today), 'yyyy-MM-dd');
+      const end = format(endOfMonth(today), 'yyyy-MM-dd');
+      const userId = user?.id;
+      if (!userId) return;
+      const res = await api.get(`/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`);
+      const data = (res as any).data || res;
+      const shifts = data.shifts || [];
+      // Filter to today's shifts only
+      const todayStr = format(today, 'yyyy-MM-dd');
+      const todayShifts = shifts.filter((s: Shift) => s.date && s.date.startsWith(todayStr));
+      setSchedules(todayShifts);
+      // Auto-select the first today's shift (if any)
+      if (todayShifts.length > 0) setSelectedSchedule(todayShifts[0]);
+    } catch (e) {
+      console.error('Failed to load schedules:', e);
+    }
+  };
+
   const loadAISuggestions = async () => {
     try {
       const res = await api.getAISuggestions();
@@ -100,6 +133,7 @@ export default function HomeScreen() {
 
   useFocusEffect(useCallback(() => {
     loadData();
+    loadSchedules();
     loadAISuggestions();
   }, []));
 
@@ -140,6 +174,12 @@ export default function HomeScreen() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const handleScheduleSelect = (schedule: Shift) => {
+    setSelectedSchedule(schedule);
+    const dateObj = new Date(schedule.date);
+    navigation.navigate('Schedule', { selectedDate: dateObj.toISOString() });
+  };
+
   if (isLoading) {
     return <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /></View>;
   }
@@ -147,15 +187,14 @@ export default function HomeScreen() {
   const greeting = t('greeting', { firstName: user?.firstName || '' });
 
   const quickActions = [
-  { icon: 'photo-camera', color: '#00D4FF', gradient: ['#00D4FF', '#007AFF'], label: 'Photo', screen: 'Camera', needsProject: true },
-  { icon: 'microphone', color: '#4CAF50', gradient: ['#4CAF50', '#2E7D32'], label: 'Voice', screen: 'VoiceNote', needsProject: true, IconSet: FontAwesome5 },
-  { icon: 'timer', color: '#FF9800', gradient: ['#FF9800', '#F57C00'], label: 'Timesheet', screen: 'Timesheet' },
-  { icon: 'event', color: '#9C27B0', gradient: ['#9C27B0', '#7B1FA2'], label: 'Schedule', screen: 'Schedule' },
-  { icon: 'chatbubbles', color: '#00BCD4', gradient: ['#00BCD4', '#0097A7'], label: 'Chat', screen: 'ChatList', IconSet: Ionicons },
-  { icon: 'map', color: '#4CAF50', gradient: ['#4CAF50', '#388E3C'], label: 'Crew', screen: 'CrewTracking', IconSet: Ionicons },
-  // ----- ADD THIS LINE -----
-  { icon: 'folder', color: '#9C27B0', gradient: ['#9C27B0', '#7B1FA2'], label: 'Folders', screen: 'Folders', needsProject: false, IconSet: MaterialIcons },
-];
+    { icon: 'photo-camera', color: '#00D4FF', gradient: ['#00D4FF', '#007AFF'], label: 'Photo', screen: 'Camera', needsProject: true },
+    { icon: 'microphone', color: '#4CAF50', gradient: ['#4CAF50', '#2E7D32'], label: 'Voice', screen: 'VoiceNote', needsProject: true, IconSet: FontAwesome5 },
+    { icon: 'timer', color: '#FF9800', gradient: ['#FF9800', '#F57C00'], label: 'Timesheet', screen: 'Timesheet' },
+    { icon: 'event', color: '#9C27B0', gradient: ['#9C27B0', '#7B1FA2'], label: 'Schedule', screen: 'Schedule' },
+    { icon: 'chatbubbles', color: '#00BCD4', gradient: ['#00BCD4', '#0097A7'], label: 'Chat', screen: 'ChatList', IconSet: Ionicons },
+    { icon: 'map', color: '#4CAF50', gradient: ['#4CAF50', '#388E3C'], label: 'Crew', screen: 'CrewTracking', IconSet: Ionicons },
+    { icon: 'folder', color: '#9C27B0', gradient: ['#9C27B0', '#7B1FA2'], label: 'Folders', screen: 'Folders', needsProject: false, IconSet: MaterialIcons },
+  ];
 
   return (
     <View style={styles.wrapper}>
@@ -224,6 +263,28 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
+
+              <View style={styles.scheduleSection}>
+                <Text style={styles.scheduleLabel}>Today's schedules</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scheduleScroll}>
+                  {schedules.length === 0 ? (
+                    <Text style={styles.noSchedules}>No schedules for today</Text>
+                  ) : (
+                    schedules.map((s: Shift) => (
+                      <TouchableOpacity
+                        key={s.id}
+                        style={[styles.scheduleCard, selectedSchedule?.id === s.id && styles.scheduleCardActive]}
+                        onPress={() => handleScheduleSelect(s)}
+                      >
+                        <Text style={styles.scheduleName}>{s.name || 'Untitled'}</Text>
+                        <Text style={styles.scheduleDate}>{format(new Date(s.date), 'MMM d')}</Text>
+                        <Text style={styles.scheduleProject}>{s.project_name || 'No project'}</Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+
               <TouchableOpacity style={styles.heroClockBtn} onPress={handleClockIn}>
                 <LinearGradient colors={['#4CAF50', '#2E7D32']} style={styles.heroClockBtnGradient}>
                   <MaterialIcons name="login" size={28} color="#FFF" />
@@ -296,15 +357,12 @@ export default function HomeScreen() {
       </ScrollView>
 
       <View style={styles.floatingContainer}>
-        {/* NEW: Lucy Voice Button - Purple */}
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: '#9C27B0', marginBottom: 72 }]}
           onPress={() => navigation.navigate('AIAssistant', { autoRecord: true })}
         >
           <Ionicons name="mic" size={28} color="#FFF" />
         </TouchableOpacity>
-
-        {/* Existing Chat Button - Teal */}
         <TouchableOpacity
           style={[styles.fab, { backgroundColor: '#00D4FF' }]}
           onPress={() => navigation.navigate('AIAssistant')}
@@ -339,12 +397,21 @@ const styles = StyleSheet.create({
   heroClockActive: { borderColor: '#4CAF50', borderWidth: 2, backgroundColor: '#0A1A0A' },
   heroTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 6 },
   heroSubtitle: { color: '#888', fontSize: 14, marginBottom: 20 },
-  projectScroll: { maxHeight: 80, marginBottom: 20 },
+  projectScroll: { maxHeight: 80, marginBottom: 12 },
   projectCard: { backgroundColor: '#0A0A0A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 120 },
   projectCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
   projectCardName: { color: '#CCC', fontSize: 14, fontWeight: '500' },
   projectCardNameActive: { color: '#00D4FF', fontWeight: '600' },
   projectCardClient: { color: '#888', fontSize: 11, marginTop: 2 },
+  scheduleSection: { width: '100%', marginVertical: 8 },
+  scheduleLabel: { color: '#AAA', fontSize: 13, marginBottom: 8, fontWeight: '500' },
+  scheduleScroll: { maxHeight: 70 },
+  scheduleCard: { backgroundColor: '#0A0A0A', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 100 },
+  scheduleCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
+  scheduleName: { color: '#FFF', fontSize: 13, fontWeight: '500' },
+  scheduleDate: { color: '#00D4FF', fontSize: 11, marginTop: 2 },
+  scheduleProject: { color: '#888', fontSize: 10, marginTop: 2 },
+  noSchedules: { color: '#666', fontSize: 13, paddingVertical: 6 },
   heroClockBtn: { width: '100%' },
   heroClockBtnGradient: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 16, borderRadius: 16, gap: 8 },
   heroClockBtnText: { color: '#FFF', fontSize: 17, fontWeight: '600' },
