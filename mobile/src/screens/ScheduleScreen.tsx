@@ -16,8 +16,8 @@ interface Shift {
   id: string;
   name: string;
   project_name: string;
-  project_id?: string;       // added for clock‑in
   project_address?: string;
+  project_id: string;
   date: string;
   start_time: string;
   end_time: string;
@@ -36,6 +36,12 @@ interface Employee {
 interface TeamMembersResponse {
   success: boolean;
   members: Employee[];
+}
+
+// Response type for /schedule/my-shifts
+interface ShiftsResponse {
+  success: boolean;
+  shifts: Shift[];
 }
 
 export default function ScheduleScreen() {
@@ -88,10 +94,10 @@ export default function ScheduleScreen() {
 
     try {
       const userId = selectedEmployeeId || user?.id;
-      const res = await api.get<{ success: boolean; shifts: Shift[] }>(
-        `/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`
-      );
-      // res is directly the parsed response (because api.get already returns data)
+      // ✅ Use proper type for the API call
+      const res = await api.get<ShiftsResponse>(`/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`);
+      
+      // res is now typed as ShiftsResponse
       const fetchedShifts = res.shifts || [];
       setShifts(fetchedShifts);
       console.log(`📊 Fetched ${fetchedShifts.length} shifts`);
@@ -156,7 +162,7 @@ export default function ScheduleScreen() {
     Linking.openURL(url);
   };
 
-  // ---- Clock In function ----
+  // ---- Clock In ----
   const handleClockIn = async (shift: Shift) => {
     try {
       const res = await api.post<{ success: boolean; message?: string }>('/time-entries/clock-in', {
@@ -168,6 +174,8 @@ export default function ScheduleScreen() {
       });
       if (res.success) {
         Alert.alert('✅ Clocked In', `You have clocked in for ${shift.name}`);
+        // Pass a param to notify the home screen to refresh
+        navigation.setParams({ refreshHome: true });
         setSelectedShift(null);
       } else {
         Alert.alert('Clock In Failed', res.message || 'Could not clock in');
@@ -330,12 +338,11 @@ export default function ScheduleScreen() {
                   </>
                 )}
 
-                {/* Clock In Button */}
                 <TouchableOpacity
                   style={styles.clockInBtn}
                   onPress={() => handleClockIn(selectedShift)}
                 >
-                  <MaterialIcons name="login" size={20} color="#FFFFFF" />
+                  <MaterialIcons name="login" size={20} color="#0A0A0A" />
                   <Text style={styles.clockInBtnText}>Clock In</Text>
                 </TouchableOpacity>
 
