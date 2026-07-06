@@ -17,7 +17,6 @@ router.get('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'userId, start, and end required' });
     }
 
-    // Verify same company
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (userRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
@@ -128,6 +127,12 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'projectId is required' });
     }
 
+    // Check if user exists
+    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'User not found' });
+    }
+
     // Check if project exists
     const projectCheck = await pool.query('SELECT id FROM projects WHERE id = $1', [projectId]);
     if (projectCheck.rows.length === 0) {
@@ -156,7 +161,14 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       clockIn: entry.clock_in,
     });
   } catch (error: any) {
-    console.error('Clock-in error:', error);
+    console.error('Clock-in error details:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      detail: error.detail,
+      table: error.table,
+      column: error.column,
+    });
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -190,7 +202,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
 
     const regularHours = Math.min(hoursWorked, 8);
     const overtimeHours = Math.max(hoursWorked - 8, 0);
-    const hourlyRate = 20; // placeholder – fetch from company settings later
+    const hourlyRate = 20; // placeholder
     const totalWage = (regularHours + overtimeHours * 1.5) * hourlyRate;
 
     const result = await pool.query(
