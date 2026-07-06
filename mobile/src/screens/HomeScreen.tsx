@@ -36,7 +36,6 @@ export default function HomeScreen() {
   const { user, logout } = useAuth();
   const { t } = useLang();
   const navigation = useNavigation<any>();
-  const [isClockedIn, setIsClockedIn] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [schedules, setSchedules] = useState<Shift[]>([]);
@@ -51,6 +50,9 @@ export default function HomeScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
+
+  // ─── Derived clocked‑in status ───
+  const isClockedIn = activeTimeEntry !== null;
 
   useEffect(() => {
     (async () => {
@@ -73,6 +75,7 @@ export default function HomeScreen() {
     return () => anim.stop();
   }, []);
 
+  // ─── Timer update ───
   useEffect(() => {
     if (isClockedIn && activeTimeEntry?.clockIn) {
       const startTime = new Date(activeTimeEntry.clockIn);
@@ -91,6 +94,7 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isClockedIn, activeTimeEntry]);
 
+  // ─── Load functions ───
   const loadData = async () => {
     try {
       const res = await api.get<any>('/projects');
@@ -113,9 +117,7 @@ export default function HomeScreen() {
       const res = await api.get(`/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`);
       const data = (res as any).data || res;
       const shifts = data.shifts || [];
-      // Get UTC date string for today
       const todayUTC = new Date().toISOString().split('T')[0];
-      // Filter to today's shifts (UTC date)
       const todayShifts = shifts.filter((s: Shift) => s.date && s.date.startsWith(todayUTC));
       setSchedules(todayShifts);
       if (todayShifts.length > 0) setSelectedSchedule(todayShifts[0]);
@@ -133,12 +135,28 @@ export default function HomeScreen() {
     }
   };
 
+  const loadActiveEntry = async () => {
+    try {
+      const res = await api.get(`/time-entries/active?userId=${user?.id}`);
+      const data = (res as any).data || res;
+      if (data.success && data.entry) {
+        setActiveTimeEntry(data.entry);
+      } else {
+        setActiveTimeEntry(null);
+      }
+    } catch (e) {
+      console.error('Failed to fetch active time entry', e);
+    }
+  };
+
   useFocusEffect(useCallback(() => {
     loadData();
     loadSchedules();
     loadAISuggestions();
+    loadActiveEntry(); // 👈 ensures timer starts if active
   }, []));
 
+  // ─── Clock In/Out ───
   const handleClockIn = async () => {
     let projectId = null;
     if (selectionMode === 'project') {
@@ -157,7 +175,6 @@ export default function HomeScreen() {
         longitude: currentLocation?.coords.longitude || 0
       };
       const res = await api.post<any>('/time-entries/clock-in', payload);
-      setIsClockedIn(true);
       setActiveTimeEntry({ ...res, clockIn: res.clockIn });
       await api.recordAIEvent('clock_in', { projectId });
     } catch (e: any) { Alert.alert('Error', e.message); }
@@ -175,7 +192,6 @@ export default function HomeScreen() {
         latitude: currentLocation?.coords.latitude || 0,
         longitude: currentLocation?.coords.longitude || 0
       });
-      setIsClockedIn(false);
       setActiveTimeEntry(null);
       await api.recordAIEvent('clock_out', { timeEntryId: activeTimeEntry.timeEntryId });
       Alert.alert('Clocked Out', 'Your time entry has been saved.');
@@ -272,7 +288,6 @@ export default function HomeScreen() {
               <Text style={styles.heroTitle}>Start Your Day</Text>
               <Text style={styles.heroSubtitle}>Select project or schedule</Text>
 
-              {/* Segmented Control */}
               <View style={styles.segmentedControl}>
                 <TouchableOpacity
                   style={[styles.segment, selectionMode === 'project' && styles.segmentActive]}
@@ -288,7 +303,6 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Project list */}
               {selectionMode === 'project' && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.projectScroll}>
                   {projects.map((p, idx) => (
@@ -304,7 +318,6 @@ export default function HomeScreen() {
                 </ScrollView>
               )}
 
-              {/* Schedule list (today only) */}
               {selectionMode === 'schedule' && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scheduleScroll}>
                   {schedules.length === 0 ? (
@@ -316,7 +329,6 @@ export default function HomeScreen() {
                         style={[styles.scheduleCard, selectedSchedule?.id === s.id && styles.scheduleCardActive]}
                         onPress={() => {
                           setSelectedSchedule(s);
-                          // Optionally also set selectedProject to the schedule's project for clock-in
                           if (s.project_id) {
                             const proj = projects.find(p => p.id === s.project_id);
                             if (proj) setSelectedProject(proj);
@@ -421,62 +433,172 @@ export default function HomeScreen() {
   );
 }
 
+// ─── Styles ────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0A0A0A' },
   container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
-  pulseBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, marginTop: 60, borderRadius: 16, marginHorizontal: 20, marginBottom: 16, borderWidth: 1, borderColor: '#1A1A2E' },
+  pulseBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginTop: 60,
+    borderRadius: 16,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#1A1A2E',
+  },
   pulseItem: { alignItems: 'center' },
   pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4CAF50', marginBottom: 4 },
   pulseValue: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   pulseLabel: { color: '#888', fontSize: 11, marginTop: 2 },
   pulseDivider: { width: 1, height: 30, backgroundColor: '#333' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+  },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatarGradient: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
   avatarText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   greeting: { fontSize: 18, fontWeight: 'bold', color: '#FFF' },
   role: { fontSize: 12, color: '#00D4FF', marginTop: 2 },
   logoutBtn: { padding: 8 },
-  aiWhisper: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 16, backgroundColor: '#1A1A2E', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, gap: 8, borderWidth: 1, borderColor: '#00D4FF20' },
+  aiWhisper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: '#1A1A2E',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#00D4FF20',
+  },
   aiWhisperText: { color: '#CCC', fontSize: 13, flex: 1 },
-  heroClock: { marginHorizontal: 20, marginBottom: 24, backgroundColor: '#1A1A1A', borderRadius: 24, padding: 28, alignItems: 'center', borderWidth: 1, borderColor: '#333' },
+  heroClock: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
   heroClockActive: { borderColor: '#4CAF50', borderWidth: 2, backgroundColor: '#0A1A0A' },
   heroTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 6 },
   heroSubtitle: { color: '#888', fontSize: 14, marginBottom: 20 },
-  segmentedControl: { flexDirection: 'row', backgroundColor: '#0A0A0A', borderRadius: 20, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: '#333' },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: '#0A0A0A',
+    borderRadius: 20,
+    padding: 4,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
   segment: { flex: 1, paddingVertical: 8, borderRadius: 16, alignItems: 'center' },
   segmentActive: { backgroundColor: '#00D4FF' },
   segmentText: { color: '#888', fontSize: 14, fontWeight: '500' },
   segmentTextActive: { color: '#0A0A0A', fontWeight: '600' },
   projectScroll: { maxHeight: 80, marginBottom: 12 },
-  projectCard: { backgroundColor: '#0A0A0A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 120 },
+  projectCard: {
+    backgroundColor: '#0A0A0A',
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#444',
+    minWidth: 120,
+  },
   projectCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
   projectCardName: { color: '#CCC', fontSize: 14, fontWeight: '500' },
   projectCardNameActive: { color: '#00D4FF', fontWeight: '600' },
   projectCardClient: { color: '#888', fontSize: 11, marginTop: 2 },
   scheduleScroll: { maxHeight: 70, marginBottom: 12 },
-  scheduleCard: { backgroundColor: '#0A0A0A', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 100 },
+  scheduleCard: {
+    backgroundColor: '#0A0A0A',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#444',
+    minWidth: 100,
+  },
   scheduleCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
   scheduleName: { color: '#FFF', fontSize: 13, fontWeight: '500' },
   scheduleDate: { color: '#00D4FF', fontSize: 11, marginTop: 2 },
   scheduleProject: { color: '#888', fontSize: 10, marginTop: 2 },
   noSchedules: { color: '#666', fontSize: 13, paddingVertical: 6 },
   heroClockBtn: { width: '100%' },
-  heroClockBtnGradient: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 16, borderRadius: 16, gap: 8 },
+  heroClockBtnGradient: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    gap: 8,
+  },
   heroClockBtnText: { color: '#FFF', fontSize: 17, fontWeight: '600' },
-  timerRing: { width: 160, height: 160, borderRadius: 80, borderWidth: 4, borderColor: '#4CAF50', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
+  timerRing: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    borderWidth: 4,
+    borderColor: '#4CAF50',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
   timerRingInner: { alignItems: 'center' },
   timerText: { color: '#FFF', fontSize: 28, fontWeight: 'bold', fontVariant: ['tabular-nums'] },
   timerProject: { color: '#4CAF50', fontSize: 13, marginTop: 4 },
   sectionTitle: { color: '#FFF', fontSize: 18, fontWeight: '600', paddingHorizontal: 20, marginBottom: 14 },
   actionsScroll: { paddingHorizontal: 16, marginBottom: 24 },
   actionCard: { alignItems: 'center', marginRight: 16, width: 80 },
-  actionCardGradient: { width: 64, height: 64, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  actionCardGradient: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   actionCardLabel: { color: '#AAA', fontSize: 11, textAlign: 'center' },
   moreActions: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 12 },
-  moreActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, gap: 10, borderWidth: 1, borderColor: '#333' },
+  moreActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
   moreActionLabel: { color: '#CCC', fontSize: 13 },
   floatingContainer: { position: 'absolute', bottom: 40, right: 20, zIndex: 10 },
-  fab: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#00D4FF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12 },
+  fab: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#00D4FF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+  },
 });
