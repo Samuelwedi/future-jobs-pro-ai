@@ -33,6 +33,7 @@ router.get('/debug-shifts', async (req: Request, res: Response) => {
   }
 });
 
+// unprotected debug of my-shifts query with correct date cast
 router.get('/my-shifts-debug', async (req: Request, res: Response) => {
   try {
     const { userId, start, end } = req.query;
@@ -48,8 +49,7 @@ router.get('/my-shifts-debug', async (req: Request, res: Response) => {
        LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
        LEFT JOIN projects p ON s.project_id = p.id
        WHERE (s.user_id = $1 OR sa.user_id = $1)
-         AND s.date >= $2::date
-         AND s.date < $3::date + interval '1 day'
+         AND s.date::date BETWEEN $2::date AND $3::date
        GROUP BY s.id, p.name, p.address
        ORDER BY s.date, s.start_time`,
       [userId, start, end]
@@ -97,7 +97,7 @@ router.get('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// ===== FIXED my-shifts with date range =====
+// ===== FIXED my-shifts with correct date cast =====
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
     const testUserHeader = req.headers['x-test-user'];
@@ -127,6 +127,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     if (requestUserRes.rows[0].company_id !== targetUserRes.rows[0].company_id)
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
+    // ✅ Correct: cast both sides to date and use BETWEEN
     const result = await pool.query(
       `SELECT s.*, 
               array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
@@ -136,8 +137,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
        LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
        LEFT JOIN projects p ON s.project_id = p.id
        WHERE (s.user_id = $1 OR sa.user_id = $1)
-         AND s.date >= $2::date
-         AND s.date < $3::date + interval '1 day'
+         AND s.date::date BETWEEN $2::date AND $3::date
        GROUP BY s.id, p.name, p.address
        ORDER BY s.date, s.start_time`,
       [userId, start, end]
@@ -185,7 +185,6 @@ router.post('/shifts', async (req: Request, res: Response) => {
       } catch { /* ignore */ }
     }
 
-    // Insert shift (no transaction)
     const shiftResult = await pool.query(
       `INSERT INTO shifts (name, date, start_time, end_time, project_id, notes, created_by, attachment_url, attachment_type, user_id)
        VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9, $10) RETURNING *`,
@@ -193,7 +192,6 @@ router.post('/shifts', async (req: Request, res: Response) => {
     );
     const shift = shiftResult.rows[0];
 
-    // Insert assignments if any
     if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
       for (const empId of employeeIds) {
         await pool.query(
@@ -211,7 +209,7 @@ router.post('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// ===== PUT /shifts/:id =====
+// PUT and DELETE remain the same (we'll include them for completeness)
 router.put('/shifts/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -253,7 +251,6 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
   }
 });
 
-// ===== DELETE /shifts/:id =====
 router.delete('/shifts/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
