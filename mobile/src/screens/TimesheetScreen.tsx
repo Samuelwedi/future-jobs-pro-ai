@@ -71,7 +71,6 @@ export default function TimesheetScreen() {
       console.log('🔍 Fetching timesheet from:', url);
       const res = await api.get<{ success: boolean; entries: TimeEntry[] }>(url);
       console.log('📦 Raw response:', res);
-      // Handle both direct entries and nested data
       let entriesData = res.entries || [];
       if (!entriesData.length && (res as any).data?.entries) {
         entriesData = (res as any).data.entries;
@@ -285,7 +284,7 @@ export default function TimesheetScreen() {
                     <Text style={styles.detailValue}>{selectedEntry.break_minutes}m</Text>
                   </>
                 )}
-                {selectedEntry.alerts && selectedEntry.alerts.length > 0 && (
+                {selectedEntry.alerts.length > 0 && (
                   <>
                     <Text style={styles.detailLabel}>Alerts</Text>
                     {selectedEntry.alerts.map((a, i) => (
@@ -354,7 +353,6 @@ export default function TimesheetScreen() {
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {
@@ -376,7 +374,6 @@ const styles = StyleSheet.create({
   summaryItem: { alignItems: 'center' },
   summaryValue: { color: '#00D4FF', fontSize: 22, fontWeight: 'bold' },
   summaryLabel: { color: '#888', fontSize: 12, marginTop: 2 },
-  list: { paddingHorizontal: 16, paddingBottom: 30 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#444', marginTop: 4 },
   sectionTitle: { color: '#00D4FF', fontSize: 16, fontWeight: '600' },
   sectionDate: { color: '#888', fontSize: 12, marginTop: 2 },
@@ -392,7 +389,12 @@ const styles = StyleSheet.create({
   hoursCol: { alignItems: 'flex-end' },
   hours: { color: '#FFF', fontSize: 15, fontWeight: '600' },
   otText: { color: '#FF9800', fontSize: 12, marginTop: 2 },
+  list: { paddingHorizontal: 16, paddingBottom: 30 },
   empty: { color: '#888', textAlign: 'center', marginTop: 40, fontSize: 16 },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  errorText: { color: '#FF9800', fontSize: 16, textAlign: 'center' },
+  retryBtn: { marginTop: 12, backgroundColor: '#00D4FF', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  retryText: { color: '#0A0A0A', fontWeight: '600' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', padding: 20 },
   modalContent: { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 24, maxHeight: '80%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
@@ -407,8 +409,4 @@ const styles = StyleSheet.create({
   employeeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#222' },
   employeeRowActive: { backgroundColor: '#1A3A4A' },
   employeeName: { color: '#FFF', fontSize: 16 },
-  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  errorText: { color: '#FF6B6B', fontSize: 16, textAlign: 'center' },
-  retryBtn: { marginTop: 12, backgroundColor: '#00D4FF', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
-  retryText: { color: '#0A0A0A', fontWeight: 'bold' },
 });
