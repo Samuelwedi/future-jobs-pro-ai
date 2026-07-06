@@ -37,7 +37,6 @@ router.get('/', async (req: Request, res: Response) => {
       [userId, start, end]
     );
 
-    // Map rows to the expected shape with safe conversion
     const entries = result.rows.map((row: any) => ({
       id: row.id,
       project_name: row.project_name || 'Unknown',
@@ -70,8 +69,7 @@ router.get('/active', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     const decoded = verifyToken(req);
-    const { userId } = req.query;
-    if (!userId) return res.status(400).json({ success: false, message: 'userId required' });
+    const userId = decoded.id; // Use authenticated user ID
 
     const result = await pool.query(
       `SELECT te.*, p.name as project_name
@@ -107,10 +105,13 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     const decoded = verifyToken(req);
-    const { userId, projectId, latitude, longitude } = req.body;
+    const userId = decoded.id; // Use authenticated user ID
+    const { projectId, latitude, longitude } = req.body;
 
-    if (!userId || !projectId) {
-      return res.status(400).json({ success: false, message: 'userId and projectId are required' });
+    console.log('📥 Clock-in request:', { userId, projectId, latitude, longitude });
+
+    if (!projectId) {
+      return res.status(400).json({ success: false, message: 'projectId is required' });
     }
 
     // Check if already clocked in
@@ -148,10 +149,11 @@ router.post('/clock-out', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     const decoded = verifyToken(req);
-    const { userId, timeEntryId, latitude, longitude } = req.body;
+    const userId = decoded.id; // Use authenticated user ID
+    const { timeEntryId, latitude, longitude } = req.body;
 
-    if (!userId || !timeEntryId) {
-      return res.status(400).json({ success: false, message: 'userId and timeEntryId are required' });
+    if (!timeEntryId) {
+      return res.status(400).json({ success: false, message: 'timeEntryId is required' });
     }
 
     // Verify the entry belongs to the user and is still open
@@ -170,8 +172,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
     // Compute regular and overtime (simple: 8h regular, rest overtime)
     const regularHours = Math.min(hoursWorked, 8);
     const overtimeHours = Math.max(hoursWorked - 8, 0);
-    // Placeholder wage rate – you can later fetch from user/company settings
-    const hourlyRate = 20; // $20/hr
+    const hourlyRate = 20; // Placeholder
     const totalWage = (regularHours + overtimeHours * 1.5) * hourlyRate;
 
     const result = await pool.query(

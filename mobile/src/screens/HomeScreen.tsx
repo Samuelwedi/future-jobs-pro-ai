@@ -139,55 +139,28 @@ export default function HomeScreen() {
     loadAISuggestions();
   }, []));
 
-  const handleClockIn = async () => {
-  let projectId = null;
-  if (selectionMode === 'project') {
-    if (!selectedProject) { Alert.alert('Select a project first'); return; }
-    projectId = selectedProject.id;
-  } else {
-    if (!selectedSchedule) { Alert.alert('Select a schedule first'); return; }
-    if (!selectedSchedule.project_id) { Alert.alert('This schedule has no project'); return; }
-    projectId = selectedSchedule.project_id;
+ const handleClockIn = async () => {
+  if (!selectedProject) {
+    Alert.alert('Select a project/schedule first');
+    return;
   }
-  try {
-    const payload: any = {
-      userId: user?.id,
-      projectId: projectId,
-      latitude: currentLocation?.coords.latitude || 0,
-      longitude: currentLocation?.coords.longitude || 0
-    };
-    console.log('🔍 Clock-in payload:', payload);
-    const res = await api.post<any>('/time-entries/clock-in', payload);
-    if (res.success) {
-      Alert.alert('✅ Clocked In', 'You have clocked in successfully.');
-      await loadActiveEntry(); // refresh active state
-    } else {
-      Alert.alert('Clock In Failed', res.message || 'Could not clock in');
-    }
-  } catch (e: any) {
-    console.error('Clock-in error:', e);
-    Alert.alert('Error', e.message || 'An error occurred');
-  }
+  const payload: any = {
+    projectId: selectedProject.id,
+    latitude: currentLocation?.coords.latitude || 0,
+    longitude: currentLocation?.coords.longitude || 0
+  };
+  const res = await api.post('/time-entries/clock-in', payload);
+  // ...
 };
 
-  const handleClockOut = async () => {
-    if (!activeTimeEntry?.timeEntryId) {
-      Alert.alert('Error', 'No active time entry');
-      return;
-    }
-    try {
-      await api.post('/time-entries/clock-out', {
-        userId: user?.id,
-        timeEntryId: activeTimeEntry.timeEntryId,
-        latitude: currentLocation?.coords.latitude || 0,
-        longitude: currentLocation?.coords.longitude || 0
-      });
-      setIsClockedIn(false);
-      setActiveTimeEntry(null);
-      await api.recordAIEvent('clock_out', { timeEntryId: activeTimeEntry.timeEntryId });
-      Alert.alert('Clocked Out', 'Your time entry has been saved.');
-    } catch (e: any) { Alert.alert('Error', e.message); }
+const handleClockOut = async () => {
+  const payload: any = {
+    timeEntryId: activeTimeEntry.timeEntryId,
+    latitude: currentLocation?.coords.latitude || 0,
+    longitude: currentLocation?.coords.longitude || 0
   };
+  await api.post('/time-entries/clock-out', payload);
+};
 
   const dismissSuggestion = async (id: string) => {
     await api.dismissSuggestion(id);
