@@ -44,16 +44,20 @@ router.get('/', async (req: Request, res: Response) => {
       [userId, start, end]
     );
 
-    // Map rows to the expected shape (including hours as string)
-    const entries = result.rows.map((row: any) => ({
-      ...row,
-      hours: row.regular_hours ? row.regular_hours.toFixed(2) : '0.00',
-      overtimeHours: row.overtime_hours ? row.overtime_hours.toFixed(2) : '0.00',
-      regularHours: row.regular_hours ? row.regular_hours.toFixed(2) : '0.00',
-      is_manual: row.is_manual || false,
-      alerts: row.alerts || [],
-      attachments: [], // we can join later
-    }));
+    // Map rows to the expected shape – ensure numeric fields are numbers
+    const entries = result.rows.map((row: any) => {
+      const regular = parseFloat(row.regular_hours) || 0;
+      const overtime = parseFloat(row.overtime_hours) || 0;
+      return {
+        ...row,
+        hours: regular.toFixed(2),
+        regularHours: regular.toFixed(2),
+        overtimeHours: overtime.toFixed(2),
+        is_manual: row.is_manual || false,
+        alerts: row.alerts || [],
+        attachments: [],
+      };
+    });
 
     res.json({ success: true, entries });
   } catch (error: any) {
@@ -62,15 +66,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/time-entries/clock-in
-router.post('/clock-in', async (req: Request, res: Response) => {
-  // ... (existing logic, but ensure it returns the created entry)
-});
-
-// POST /api/time-entries/clock-out
-router.post('/clock-out', async (req: Request, res: Response) => {
-  // ... (existing logic, but compute regular_hours, overtime_hours, total_wage)
-  // We'll add the calculation later if needed.
-});
+// POST /api/time-entries/clock-in – (keep your existing logic)
+// POST /api/time-entries/clock-out – (keep your existing logic)
 
 export default router;
