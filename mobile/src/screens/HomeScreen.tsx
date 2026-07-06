@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,13 +15,10 @@ import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import { formatDuration, intervalToDuration } from 'date-fns';
 
-// ---- Types ----
 interface Project {
   id: string;
   name: string;
   client_name?: string;
-  address?: string;
-  status?: string;
 }
 
 interface ActiveTimeEntry {
@@ -29,10 +26,8 @@ interface ActiveTimeEntry {
   project_id: string;
   project_name?: string;
   clock_in: string;
-  duration_seconds?: number;
 }
 
-// ---- Component ----
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -42,25 +37,21 @@ export default function HomeScreen() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeTimeEntry, setActiveTimeEntry] = useState<ActiveTimeEntry | null>(null);
   const [timer, setTimer] = useState<number>(0);
-  const [stats, setStats] = useState({
-    activeEmployees: 0,
-    projectCount: 0,
-    todayEarnings: 0,
-  });
+  const [stats, setStats] = useState({ activeEmployees: 0, projectCount: 0, todayEarnings: 0 });
+  const [statsLoaded, setStatsLoaded] = useState(false);
 
   // ---- Fetch projects ----
   const fetchProjects = async () => {
     try {
       const res: any = await api.get('/projects');
-      // Handle both direct and wrapped responses
       const data = res.data || res;
-      const projectList = data.projects || [];
-      setProjects(projectList);
-      if (projectList.length > 0 && !selectedProjectId) {
-        setSelectedProjectId(projectList[0].id);
+      const list = data.projects || [];
+      setProjects(list);
+      if (list.length > 0 && !selectedProjectId) {
+        setSelectedProjectId(list[0].id);
       }
     } catch (e) {
-      console.error('Failed to fetch projects', e);
+      console.error('Projects fetch error:', e);
     }
   };
 
@@ -72,14 +63,13 @@ export default function HomeScreen() {
       if (data.success && data.entry) {
         setActiveTimeEntry(data.entry);
         const clockInTime = new Date(data.entry.clock_in).getTime();
-        const now = Date.now();
-        setTimer(Math.floor((now - clockInTime) / 1000));
+        setTimer(Math.floor((Date.now() - clockInTime) / 1000));
       } else {
         setActiveTimeEntry(null);
         setTimer(0);
       }
     } catch (e) {
-      console.error('Failed to fetch active time entry', e);
+      console.error('Active time entry error:', e);
     }
   };
 
@@ -94,17 +84,24 @@ export default function HomeScreen() {
           projectCount: data.stats?.projectCount || 0,
           todayEarnings: data.stats?.todayEarnings || 0,
         });
+        setStatsLoaded(true);
       }
     } catch (e) {
-      console.error('Failed to fetch stats', e);
+      console.error('Stats error:', e);
     }
   };
 
-  // ---- Refresh all data ----
+  // ---- Refresh all data (parallel, but don't block UI) ----
   const refreshData = async () => {
     setRefreshing(true);
-    await Promise.all([fetchProjects(), fetchActiveTimeEntry(), fetchStats()]);
+    // Use Promise.allSettled so one failure doesn't stop others
+    await Promise.allSettled([
+      fetchProjects(),
+      fetchActiveTimeEntry(),
+      fetchStats(),
+    ]);
     setRefreshing(false);
+    setLoading(false);
   };
 
   // ---- Initial load ----
@@ -112,32 +109,33 @@ export default function HomeScreen() {
     refreshData();
   }, []);
 
-  // ---- Timer update (every second while clocked in) ----
+  // ---- Timer update ----
   useEffect(() => {
-    let interval: number | null = null; // React Native uses number
+    let interval: number | null = null;
     if (activeTimeEntry) {
       interval = setInterval(() => {
         setTimer(prev => prev + 1);
-      }, 1000) as any; // cast to any to avoid type issues
+      }, 1000) as any;
     }
     return () => {
       if (interval) clearInterval(interval);
     };
   }, [activeTimeEntry]);
 
-  // ---- Refresh on focus (e.g., after clock‑in from Schedule) ----
+  // ---- Refresh on focus (quick, only active entry and stats) ----
   useFocusEffect(
     useCallback(() => {
+      // Don't block UI – fetch in background
       fetchActiveTimeEntry();
       fetchStats();
       return () => {};
     }, [])
   );
 
-  // ---- Clock In ----
+  // ---- Clock In/Out ----
   const handleClockIn = async () => {
     if (!selectedProjectId) {
-      Alert.alert('Select Project', 'Please select a project before clocking in.');
+      Alert.alert('Select Project', 'Please select a project first.');
       return;
     }
     try {
@@ -159,7 +157,6 @@ export default function HomeScreen() {
     }
   };
 
-  // ---- Clock Out ----
   const handleClockOut = async () => {
     if (!activeTimeEntry) return;
     try {
@@ -182,13 +179,11 @@ export default function HomeScreen() {
     }
   };
 
-  // ---- Format timer ----
   const formatTimer = (seconds: number) => {
     const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
     return formatDuration(duration, { format: ['hours', 'minutes', 'seconds'] }) || '0s';
   };
 
-  // ---- Navigation helpers ----
   const goToSchedule = () => navigation.navigate('Schedule');
   const goToProjects = () => navigation.navigate('Projects');
   const goToTimesheet = () => navigation.navigate('Timesheet');
@@ -203,6 +198,7 @@ export default function HomeScreen() {
   const goToAbout = () => navigation.navigate('About');
   const goToSecurity = () => navigation.navigate('Security');
 
+  // Show loading only on first mount
   if (loading) {
     return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
   }
@@ -212,7 +208,6 @@ export default function HomeScreen() {
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshData} tintColor="#00D4FF" />}
     >
-      {/* Stats Cards */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
           <Text style={styles.statNumber}>{stats.activeEmployees}</Text>
@@ -228,17 +223,14 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Greeting */}
       <Text style={styles.greeting}>
         Hello, {user?.firstName || 'User'}! 👋 {user?.role === 'boss' ? 'Boss' : ''}
       </Text>
 
-      {/* Start Your Day */}
       <View style={styles.startCard}>
         <Text style={styles.startTitle}>Start Your Day</Text>
         <Text style={styles.startSubtitle}>Select a project and clock in</Text>
 
-        {/* Project Picker */}
         <View style={styles.projectPicker}>
           {projects.map((project) => (
             <TouchableOpacity
@@ -249,10 +241,12 @@ export default function HomeScreen() {
               ]}
               onPress={() => setSelectedProjectId(project.id)}
             >
-              <Text style={[
-                styles.projectOptionText,
-                selectedProjectId === project.id && styles.projectOptionTextActive,
-              ]}>
+              <Text
+                style={[
+                  styles.projectOptionText,
+                  selectedProjectId === project.id && styles.projectOptionTextActive,
+                ]}
+              >
                 {project.name}
               </Text>
               {project.client_name && (
@@ -262,7 +256,6 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Clock In / Out Button */}
         {activeTimeEntry ? (
           <View>
             <TouchableOpacity style={styles.clockOutBtn} onPress={handleClockOut}>
@@ -285,7 +278,6 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* Quick Actions */}
       <View style={styles.quickActions}>
         <Text style={styles.quickTitle}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
@@ -300,7 +292,6 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Bottom Links */}
       <View style={styles.bottomLinks}>
         <LinkItem label="Settings" onPress={goToSettings} />
         <LinkItem label="Contact" onPress={goToContact} />
@@ -312,7 +303,6 @@ export default function HomeScreen() {
   );
 }
 
-// ---- Reusable components ----
 const ActionItem = ({ icon, label, onPress }: any) => (
   <TouchableOpacity style={styles.actionItem} onPress={onPress}>
     <View style={styles.actionIcon}>
@@ -328,19 +318,9 @@ const LinkItem = ({ label, onPress }: any) => (
   </TouchableOpacity>
 );
 
-// ---- Styles ----
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0A0A0A',
-    paddingHorizontal: 16,
-    paddingTop: 40,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
+  container: { flex: 1, backgroundColor: '#0A0A0A', paddingHorizontal: 16, paddingTop: 40 },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 24 },
   statCard: {
     backgroundColor: '#1A1A1A',
     borderRadius: 12,
@@ -350,43 +330,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     alignItems: 'center',
   },
-  statNumber: {
-    color: '#00D4FF',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  statLabel: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  greeting: {
-    color: '#FFF',
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  startCard: {
-    backgroundColor: '#1A1A1A',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-  },
-  startTitle: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  startSubtitle: {
-    color: '#888',
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  projectPicker: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 12,
-  },
+  statNumber: { color: '#00D4FF', fontSize: 24, fontWeight: 'bold' },
+  statLabel: { color: '#888', fontSize: 12, marginTop: 4 },
+  greeting: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 16 },
+  startCard: { backgroundColor: '#1A1A1A', borderRadius: 16, padding: 16, marginBottom: 24 },
+  startTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
+  startSubtitle: { color: '#888', fontSize: 14, marginBottom: 12 },
+  projectPicker: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12 },
   projectOption: {
     backgroundColor: '#0A0A0A',
     borderRadius: 8,
@@ -397,22 +347,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
-  projectOptionActive: {
-    borderColor: '#00D4FF',
-    backgroundColor: '#003344',
-  },
-  projectOptionText: {
-    color: '#AAA',
-    fontSize: 14,
-  },
-  projectOptionTextActive: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  projectClient: {
-    color: '#666',
-    fontSize: 12,
-  },
+  projectOptionActive: { borderColor: '#00D4FF', backgroundColor: '#003344' },
+  projectOptionText: { color: '#AAA', fontSize: 14 },
+  projectOptionTextActive: { color: '#FFF', fontWeight: '600' },
+  projectClient: { color: '#666', fontSize: 12 },
   clockInBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -431,42 +369,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     gap: 8,
   },
-  clockBtnText: {
-    color: '#0A0A0A',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  timerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    gap: 6,
-  },
-  timerText: {
-    color: '#00D4FF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  timerProject: {
-    color: '#888',
-    fontSize: 14,
-    marginLeft: 8,
-  },
-  quickActions: {
-    marginBottom: 24,
-  },
-  quickTitle: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
+  clockBtnText: { color: '#0A0A0A', fontWeight: 'bold', fontSize: 16 },
+  timerContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, gap: 6 },
+  timerText: { color: '#00D4FF', fontSize: 18, fontWeight: 'bold' },
+  timerProject: { color: '#888', fontSize: 14, marginLeft: 8 },
+  quickActions: { marginBottom: 24 },
+  quickTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   actionItem: {
     width: '23%',
     alignItems: 'center',
@@ -475,26 +384,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginBottom: 12,
   },
-  actionIcon: {
-    marginBottom: 4,
-  },
-  actionLabel: {
-    color: '#AAA',
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  bottomLinks: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  linkItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  linkText: {
-    color: '#888',
-    fontSize: 12,
-  },
+  actionIcon: { marginBottom: 4 },
+  actionLabel: { color: '#AAA', fontSize: 11, textAlign: 'center' },
+  bottomLinks: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 20 },
+  linkItem: { paddingHorizontal: 12, paddingVertical: 6 },
+  linkText: { color: '#888', fontSize: 12 },
 });
