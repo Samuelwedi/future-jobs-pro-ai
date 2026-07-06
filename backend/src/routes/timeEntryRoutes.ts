@@ -37,7 +37,7 @@ router.get('/', async (req: Request, res: Response) => {
       [userId, start, end]
     );
 
-    // Map rows to the expected shape (including hours as string)
+    // Map rows to the expected shape with safe conversion
     const entries = result.rows.map((row: any) => ({
       id: row.id,
       project_name: row.project_name || 'Unknown',
@@ -45,12 +45,11 @@ router.get('/', async (req: Request, res: Response) => {
       clock_in: row.clock_in,
       clock_out: row.clock_out,
       break_minutes: row.break_minutes || 0,
-      // Compute hours if clock_out exists
       hours: row.clock_out
         ? ((new Date(row.clock_out).getTime() - new Date(row.clock_in).getTime()) / 3600000).toFixed(2)
         : '0.00',
-      regularHours: row.regular_hours ? row.regular_hours.toFixed(2) : '0.00',
-      overtimeHours: row.overtime_hours ? row.overtime_hours.toFixed(2) : '0.00',
+      regularHours: row.regular_hours ? Number(row.regular_hours).toFixed(2) : '0.00',
+      overtimeHours: row.overtime_hours ? Number(row.overtime_hours).toFixed(2) : '0.00',
       alerts: row.alerts || [],
       is_manual: row.is_manual || false,
       attachments: [],
