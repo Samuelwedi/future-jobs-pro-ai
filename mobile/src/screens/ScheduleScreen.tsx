@@ -12,12 +12,13 @@ import {
   addDays, subMonths, addMonths, isSameMonth, isSameDay,
 } from 'date-fns';
 
+// ---- Types ----
 interface Shift {
   id: string;
   name: string;
   project_name: string;
   project_address?: string;
-  project_id: string;
+  project_id: string;               // ✅ added
   date: string;
   start_time: string;
   end_time: string;
@@ -38,12 +39,12 @@ interface TeamMembersResponse {
   members: Employee[];
 }
 
-// Response type for /schedule/my-shifts
 interface ShiftsResponse {
   success: boolean;
   shifts: Shift[];
 }
 
+// ---- Component ----
 export default function ScheduleScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -59,11 +60,13 @@ export default function ScheduleScreen() {
   const [selectedEmployeeName, setSelectedEmployeeName] = useState('My Schedule');
   const [showEmployeePicker, setShowEmployeePicker] = useState(false);
 
+  // ---- Fetch employees (for the view switcher) ----
   const fetchEmployees = async () => {
     try {
       const companyId = user?.companyId;
       if (!companyId) return;
       const res = await api.get<TeamMembersResponse>(`/team/members/${companyId}`);
+      // The response is directly the object, not wrapped in .data
       const members = res.members || [];
       setEmployees(members);
     } catch (e) {
@@ -71,6 +74,7 @@ export default function ScheduleScreen() {
     }
   };
 
+  // ---- Fetch shifts ----
   const fetchShifts = async () => {
     let start: string, end: string;
     const d = selectedDate;
@@ -94,11 +98,15 @@ export default function ScheduleScreen() {
 
     try {
       const userId = selectedEmployeeId || user?.id;
-      // ✅ Use proper type for the API call
-      const res = await api.get<ShiftsResponse>(`/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`);
-      
-      // res is now typed as ShiftsResponse
-      const fetchedShifts = res.shifts || [];
+      // ✅ Typed API call
+      const res = await api.get<ShiftsResponse>(
+        `/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`
+      );
+      // res is now of type ShiftsResponse
+      let fetchedShifts: Shift[] = [];
+      if (res && typeof res === 'object' && 'shifts' in res) {
+        fetchedShifts = res.shifts || [];
+      }
       setShifts(fetchedShifts);
       console.log(`📊 Fetched ${fetchedShifts.length} shifts`);
     } catch (e) {
@@ -119,6 +127,7 @@ export default function ScheduleScreen() {
 
   const onRefresh = () => { setRefreshing(true); fetchShifts(); };
 
+  // ---- Calendar helpers ----
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -131,7 +140,7 @@ export default function ScheduleScreen() {
     d = addDays(d, 1);
   }
 
-  // ---- UTC helpers ----
+  // UTC helpers to avoid timezone shift
   const getUTCDateString = (date: Date) => {
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
   };
@@ -174,7 +183,7 @@ export default function ScheduleScreen() {
       });
       if (res.success) {
         Alert.alert('✅ Clocked In', `You have clocked in for ${shift.name}`);
-        // Pass a param to notify the home screen to refresh
+        // 👇 Tell the home screen to refresh when we go back
         navigation.setParams({ refreshHome: true });
         setSelectedShift(null);
       } else {
