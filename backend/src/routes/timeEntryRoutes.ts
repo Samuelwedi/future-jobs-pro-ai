@@ -5,6 +5,52 @@ import { clockIn, clockOut, getTimeEntries, manualTimeEntry, updateTimeEntry } f
 
 const router = express.Router();
 
+// GET /api/time-entries/active?userId=xxx
+router.get('/active', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'userId required' });
+    }
+
+    // Verify auth (same as other routes)
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const decoded = verifyToken(req);
+    // You can optionally check if the user has permission
+
+    // Find the active time entry for this user (no clock_out)
+    const result = await pool.query(
+      `SELECT te.id, te.project_id, te.clock_in, p.name as project_name
+       FROM time_entries te
+       LEFT JOIN projects p ON te.project_id = p.id
+       WHERE te.user_id = $1 AND te.clock_out IS NULL
+       ORDER BY te.clock_in DESC
+       LIMIT 1`,
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.json({ success: true, entry: null });
+    }
+
+    const entry = result.rows[0];
+    res.json({
+      success: true,
+      entry: {
+        id: entry.id,
+        project_id: entry.project_id,
+        project_name: entry.project_name,
+        clock_in: entry.clock_in,
+      },
+    });
+  } catch (error: any) {
+    console.error('Active time entry error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // Helper to extract company_id from JWT
 const getCompanyId = (req: Request): string | null => {
   const authHeader = req.headers.authorization;

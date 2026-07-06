@@ -16,6 +16,7 @@ import { pool, checkDatabaseHealth } from './config/database';
 import { saveMessage } from './services/chatService';
 import { trialCheck } from './middleware/trialMiddleware';
 import { verifyToken } from './utils/auth';
+import statsRoutes from './routes/statsRoutes';
 
 dotenv.config();
 
@@ -46,6 +47,7 @@ app.use(compression());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use('/api/stats', statsRoutes);
 
 app.get('/ping', (req, res) => res.json({ success: true, message: 'pong' }));
 app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
