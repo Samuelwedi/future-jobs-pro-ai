@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, SectionList, ActivityIndicator, RefreshControl,
-  TouchableOpacity, Modal, ScrollView, FlatList,
+  TouchableOpacity, Modal, ScrollView, Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -44,6 +44,7 @@ export default function TimesheetScreen() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>(user?.id || '');
   const [showUserPicker, setShowUserPicker] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const isBossOrManager = user?.role === 'boss' || user?.role === 'manager';
 
@@ -66,12 +67,26 @@ export default function TimesheetScreen() {
   const fetchEntries = async () => {
     try {
       const userId = selectedUserId || user?.id;
-      const res = await api.get<{ success: boolean; entries: TimeEntry[] }>(
-        `/time-entries?userId=${userId}&start=${weekStart}&end=${weekEnd}`
-      );
-      setEntries(res.entries || []);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); setRefreshing(false); }
+      const url = `/time-entries?userId=${userId}&start=${weekStart}&end=${weekEnd}`;
+      console.log('🔍 Fetching timesheet from:', url);
+      const res = await api.get<{ success: boolean; entries: TimeEntry[] }>(url);
+      console.log('📦 Raw response:', res);
+      // Handle both direct entries and nested data
+      let entriesData = res.entries || [];
+      if (!entriesData.length && (res as any).data?.entries) {
+        entriesData = (res as any).data.entries;
+      }
+      console.log(`📊 Found ${entriesData.length} entries`);
+      setEntries(entriesData);
+      setErrorMsg(null);
+    } catch (e: any) {
+      console.error('❌ Timesheet fetch error:', e);
+      setErrorMsg(e.message || 'Failed to load entries');
+      Alert.alert('Error', 'Could not load time entries');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
   useEffect(() => { fetchEntries(); }, [weekOffset, selectedUserId]);
@@ -125,10 +140,10 @@ export default function TimesheetScreen() {
           timeEntryId,
         }, 'file');
         fetchEntries();
-        alert('Attachment uploaded!');
+        Alert.alert('Success', 'Attachment uploaded!');
       }
     } catch (e: any) {
-      alert('Upload failed: ' + e.message);
+      Alert.alert('Upload failed', e.message);
     }
   };
 
@@ -148,16 +163,16 @@ export default function TimesheetScreen() {
   );
 
   const renderItem = ({ item }: { item: TimeEntry }) => {
-    const clockInTime = format(parseISO(item.clock_in), 'h:mm a');
+    const clockInTime = item.clock_in ? format(parseISO(item.clock_in), 'h:mm a') : '';
     const clockOutTime = item.clock_out ? format(parseISO(item.clock_out), 'h:mm a') : '—';
-    const hasAlerts = item.alerts.length > 0;
+    const hasAlerts = item.alerts && item.alerts.length > 0;
     const hasAttachments = item.attachments && item.attachments.length > 0;
 
     return (
       <TouchableOpacity style={styles.entryRow} onPress={() => setSelectedEntry(item)}>
         <View style={styles.entryInfo}>
           <View style={styles.entryHeader}>
-            <Text style={styles.projectName}>{item.project_name}</Text>
+            <Text style={styles.projectName}>{item.project_name || 'No project'}</Text>
             {hasAlerts && <MaterialIcons name="warning" size={18} color="#FF9800" />}
             {item.is_manual && <MaterialIcons name="edit" size={16} color="#888" style={{ marginLeft: 4 }} />}
             {hasAttachments && <MaterialIcons name="attach-file" size={16} color="#00D4FF" style={{ marginLeft: 4 }} />}
@@ -166,8 +181,8 @@ export default function TimesheetScreen() {
           {item.break_minutes > 0 && <Text style={styles.breakText}>🕐 Break: {item.break_minutes}m</Text>}
         </View>
         <View style={styles.hoursCol}>
-          <Text style={styles.hours}>{item.hours}h</Text>
-          {parseFloat(item.overtimeHours) > 0 && (
+          <Text style={styles.hours}>{item.hours || '0.00'}h</Text>
+          {parseFloat(item.overtimeHours || '0') > 0 && (
             <Text style={styles.otText}>OT {item.overtimeHours}h</Text>
           )}
         </View>
@@ -221,15 +236,24 @@ export default function TimesheetScreen() {
         </View>
       </View>
 
-      <SectionList
-        sections={sections}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        renderSectionHeader={renderSectionHeader}
-        contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={<Text style={styles.empty}>No time entries this week</Text>}
-      />
+      {errorMsg ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
+          <TouchableOpacity onPress={fetchEntries} style={styles.retryBtn}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <SectionList
+          sections={sections}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          renderSectionHeader={renderSectionHeader}
+          contentContainerStyle={styles.list}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
+          ListEmptyComponent={<Text style={styles.empty}>No time entries this week</Text>}
+        />
+      )}
 
       {/* Entry Detail Modal */}
       <Modal visible={!!selectedEntry} animationType="slide" transparent>
@@ -261,7 +285,7 @@ export default function TimesheetScreen() {
                     <Text style={styles.detailValue}>{selectedEntry.break_minutes}m</Text>
                   </>
                 )}
-                {selectedEntry.alerts.length > 0 && (
+                {selectedEntry.alerts && selectedEntry.alerts.length > 0 && (
                   <>
                     <Text style={styles.detailLabel}>Alerts</Text>
                     {selectedEntry.alerts.map((a, i) => (
@@ -330,6 +354,7 @@ export default function TimesheetScreen() {
   );
 }
 
+// ─── Styles ────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {
@@ -382,4 +407,8 @@ const styles = StyleSheet.create({
   employeeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#222' },
   employeeRowActive: { backgroundColor: '#1A3A4A' },
   employeeName: { color: '#FFF', fontSize: 16 },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  errorText: { color: '#FF6B6B', fontSize: 16, textAlign: 'center' },
+  retryBtn: { marginTop: 12, backgroundColor: '#00D4FF', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  retryText: { color: '#0A0A0A', fontWeight: 'bold' },
 });
