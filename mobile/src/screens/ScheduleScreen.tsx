@@ -12,7 +12,6 @@ import {
   addDays, subMonths, addMonths, isSameMonth, isSameDay,
 } from 'date-fns';
 
-// ---- Types ----
 interface Shift {
   id: string;
   name: string;
@@ -53,7 +52,6 @@ export default function ScheduleScreen() {
   const [selectedEmployeeName, setSelectedEmployeeName] = useState('My Schedule');
   const [showEmployeePicker, setShowEmployeePicker] = useState(false);
 
-  // ---- Fetch employees for the view switcher ----
   const fetchEmployees = async () => {
     try {
       const companyId = user?.companyId;
@@ -66,11 +64,9 @@ export default function ScheduleScreen() {
     }
   };
 
-  // ---- Fetch shifts ----
   const fetchShifts = async () => {
     let start: string, end: string;
     const d = selectedDate;
-
     switch (viewMode) {
       case 'month':
         start = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
@@ -91,13 +87,11 @@ export default function ScheduleScreen() {
 
     try {
       const userId = selectedEmployeeId || user?.id;
-      const res = await api.get<{ success: boolean; shifts: Shift[] }>(
-        `/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`
-      );
-      // ✅ Use res.shifts directly; if the API wraps it in res.data, handle that too
-      let fetchedShifts = res.shifts || [];
-      if (!fetchedShifts.length && (res as any).data?.shifts) {
-        fetchedShifts = (res as any).data.shifts;
+      const res = await api.get(`/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`);
+      let fetchedShifts: Shift[] = [];
+      if (res && typeof res === 'object') {
+        const data = (res as any).data || res;
+        fetchedShifts = data.shifts || [];
       }
       console.log(`📊 Fetched ${fetchedShifts.length} shifts for ${userId}`);
       setShifts(fetchedShifts);
@@ -119,7 +113,6 @@ export default function ScheduleScreen() {
 
   const onRefresh = () => { setRefreshing(true); fetchShifts(); };
 
-  // ---- Calendar helpers ----
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -132,8 +125,13 @@ export default function ScheduleScreen() {
     d = addDays(d, 1);
   }
 
-  const shiftDates = new Set(shifts.map(s => s.date));
-  const shiftsForSelectedDate = shifts.filter(s => s.date === format(selectedDate, 'yyyy-MM-dd'));
+  const shiftDates = new Set(shifts.map(s => s.date ? s.date.split('T')[0] : ''));
+  const shiftsForSelectedDate = shifts.filter(s => {
+    if (!s.date) return false;
+    const shiftDateStr = s.date.split('T')[0];
+    const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
+    return shiftDateStr === selectedDateStr;
+  });
 
   const handleOpenDirections = (address?: string) => {
     if (!address) return;
@@ -145,7 +143,6 @@ export default function ScheduleScreen() {
     setCurrentMonth(prev => dir === -1 ? subMonths(prev, 1) : addMonths(prev, 1));
   };
 
-  // ---- Navigate to Create Shift screen (pass date as string) ----
   const openCreateShift = () => {
     navigation.navigate('CreateShift', { date: selectedDate.toISOString() });
   };
@@ -156,7 +153,6 @@ export default function ScheduleScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
@@ -171,7 +167,6 @@ export default function ScheduleScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* View Mode Toggles */}
       <View style={styles.viewModes}>
         {(['month', 'week', '3days', 'day'] as Array<typeof viewMode>).map(m => (
           <TouchableOpacity
@@ -184,7 +179,6 @@ export default function ScheduleScreen() {
         ))}
       </View>
 
-      {/* Month Navigator */}
       <View style={styles.monthNav}>
         <TouchableOpacity onPress={() => navigateMonth(-1)}>
           <MaterialIcons name="chevron-left" size={28} color="#00D4FF" />
@@ -195,14 +189,12 @@ export default function ScheduleScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Day Headers */}
       <View style={styles.dayHeaders}>
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
           <Text key={day} style={styles.dayHeaderText}>{day}</Text>
         ))}
       </View>
 
-      {/* Calendar Grid */}
       <View style={styles.calendarGrid}>
         {calendarDays.map((day, idx) => {
           const dateStr = format(day, 'yyyy-MM-dd');
@@ -235,12 +227,11 @@ export default function ScheduleScreen() {
         })}
       </View>
 
-      {/* Shift List for Selected Date */}
       <FlatList
         data={shiftsForSelectedDate}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.shiftCard} onPress={() => setSelectedShift(item)}>
-            <Text style={styles.shiftDate}>{format(parseISO(item.date), 'EEE, MMM d')}</Text>
+            <Text style={styles.shiftDate}>{item.date ? format(parseISO(item.date), 'EEE, MMM d') : ''}</Text>
             <Text style={styles.shiftName}>{item.name}</Text>
             <Text style={styles.shiftProject}>{item.project_name}</Text>
             <Text style={styles.shiftTime}>{item.start_time} → {item.end_time}</Text>
@@ -258,7 +249,7 @@ export default function ScheduleScreen() {
         ListEmptyComponent={<Text style={styles.empty}>No shifts on this day</Text>}
       />
 
-      {/* ===== SHIFT DETAIL MODAL ===== */}
+      {/* Shift Detail Modal */}
       <Modal visible={!!selectedShift} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -315,7 +306,7 @@ export default function ScheduleScreen() {
         </View>
       </Modal>
 
-      {/* ===== EMPLOYEE PICKER (view switcher) ===== */}
+      {/* Employee Picker Modal */}
       <Modal visible={showEmployeePicker} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -356,7 +347,6 @@ export default function ScheduleScreen() {
   );
 }
 
-// ---- STYLES (unchanged) ----
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {
