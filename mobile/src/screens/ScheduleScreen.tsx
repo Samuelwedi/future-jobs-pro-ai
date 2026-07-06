@@ -59,7 +59,6 @@ export default function ScheduleScreen() {
       const companyId = user?.companyId;
       if (!companyId) return;
       const res = await api.get<TeamMembersResponse>(`/team/members/${companyId}`);
-      // res is already the parsed response body – no .data needed
       const members = res.members || [];
       setEmployees(members);
     } catch (e) {
@@ -95,9 +94,20 @@ export default function ScheduleScreen() {
       const res = await api.get<{ success: boolean; shifts: Shift[] }>(
         `/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`
       );
-      setShifts(res.shifts || []);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); setRefreshing(false); }
+      // ✅ Use res.shifts directly; if the API wraps it in res.data, handle that too
+      let fetchedShifts = res.shifts || [];
+      if (!fetchedShifts.length && (res as any).data?.shifts) {
+        fetchedShifts = (res as any).data.shifts;
+      }
+      console.log(`📊 Fetched ${fetchedShifts.length} shifts for ${userId}`);
+      setShifts(fetchedShifts);
+    } catch (e) {
+      console.error('Error fetching shifts:', e);
+      Alert.alert('Error', 'Could not load shifts');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
   useFocusEffect(useCallback(() => {
@@ -146,6 +156,7 @@ export default function ScheduleScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
@@ -160,6 +171,7 @@ export default function ScheduleScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* View Mode Toggles */}
       <View style={styles.viewModes}>
         {(['month', 'week', '3days', 'day'] as Array<typeof viewMode>).map(m => (
           <TouchableOpacity
@@ -172,6 +184,7 @@ export default function ScheduleScreen() {
         ))}
       </View>
 
+      {/* Month Navigator */}
       <View style={styles.monthNav}>
         <TouchableOpacity onPress={() => navigateMonth(-1)}>
           <MaterialIcons name="chevron-left" size={28} color="#00D4FF" />
@@ -182,12 +195,14 @@ export default function ScheduleScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Day Headers */}
       <View style={styles.dayHeaders}>
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
           <Text key={day} style={styles.dayHeaderText}>{day}</Text>
         ))}
       </View>
 
+      {/* Calendar Grid */}
       <View style={styles.calendarGrid}>
         {calendarDays.map((day, idx) => {
           const dateStr = format(day, 'yyyy-MM-dd');
@@ -220,6 +235,7 @@ export default function ScheduleScreen() {
         })}
       </View>
 
+      {/* Shift List for Selected Date */}
       <FlatList
         data={shiftsForSelectedDate}
         renderItem={({ item }) => (
@@ -340,6 +356,7 @@ export default function ScheduleScreen() {
   );
 }
 
+// ---- STYLES (unchanged) ----
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {
