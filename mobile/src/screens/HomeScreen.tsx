@@ -29,6 +29,7 @@ interface Shift {
   start_time: string;
   end_time: string;
   project_name?: string;
+  project_id?: string;
 }
 
 export default function HomeScreen() {
@@ -40,6 +41,7 @@ export default function HomeScreen() {
   const [selectedProject, setSelectedProject] = useState<any>(null);
   const [schedules, setSchedules] = useState<Shift[]>([]);
   const [selectedSchedule, setSelectedSchedule] = useState<Shift | null>(null);
+  const [selectionMode, setSelectionMode] = useState<'project' | 'schedule'>('project');
   const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTimeEntry, setActiveTimeEntry] = useState<any>(null);
@@ -111,11 +113,11 @@ export default function HomeScreen() {
       const res = await api.get(`/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`);
       const data = (res as any).data || res;
       const shifts = data.shifts || [];
-      // Filter to today's shifts only
-      const todayStr = format(today, 'yyyy-MM-dd');
-      const todayShifts = shifts.filter((s: Shift) => s.date && s.date.startsWith(todayStr));
+      // Get UTC date string for today
+      const todayUTC = new Date().toISOString().split('T')[0];
+      // Filter to today's shifts (UTC date)
+      const todayShifts = shifts.filter((s: Shift) => s.date && s.date.startsWith(todayUTC));
       setSchedules(todayShifts);
-      // Auto-select the first today's shift (if any)
       if (todayShifts.length > 0) setSelectedSchedule(todayShifts[0]);
     } catch (e) {
       console.error('Failed to load schedules:', e);
@@ -138,13 +140,26 @@ export default function HomeScreen() {
   }, []));
 
   const handleClockIn = async () => {
-    if (!selectedProject) { Alert.alert('Select a project first'); return; }
+    let projectId = null;
+    if (selectionMode === 'project') {
+      if (!selectedProject) { Alert.alert('Select a project first'); return; }
+      projectId = selectedProject.id;
+    } else {
+      if (!selectedSchedule) { Alert.alert('Select a schedule first'); return; }
+      if (!selectedSchedule.project_id) { Alert.alert('This schedule has no project'); return; }
+      projectId = selectedSchedule.project_id;
+    }
     try {
-      const payload: any = { userId: user?.id, projectId: selectedProject.id, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 };
+      const payload: any = {
+        userId: user?.id,
+        projectId,
+        latitude: currentLocation?.coords.latitude || 0,
+        longitude: currentLocation?.coords.longitude || 0
+      };
       const res = await api.post<any>('/time-entries/clock-in', payload);
       setIsClockedIn(true);
       setActiveTimeEntry({ ...res, clockIn: res.clockIn });
-      await api.recordAIEvent('clock_in', { projectId: selectedProject.id });
+      await api.recordAIEvent('clock_in', { projectId });
     } catch (e: any) { Alert.alert('Error', e.message); }
   };
 
@@ -154,7 +169,12 @@ export default function HomeScreen() {
       return;
     }
     try {
-      await api.post('/time-entries/clock-out', { userId: user?.id, timeEntryId: activeTimeEntry.timeEntryId, latitude: currentLocation?.coords.latitude || 0, longitude: currentLocation?.coords.longitude || 0 });
+      await api.post('/time-entries/clock-out', {
+        userId: user?.id,
+        timeEntryId: activeTimeEntry.timeEntryId,
+        latitude: currentLocation?.coords.latitude || 0,
+        longitude: currentLocation?.coords.longitude || 0
+      });
       setIsClockedIn(false);
       setActiveTimeEntry(null);
       await api.recordAIEvent('clock_out', { timeEntryId: activeTimeEntry.timeEntryId });
@@ -250,22 +270,42 @@ export default function HomeScreen() {
           {!isClockedIn ? (
             <>
               <Text style={styles.heroTitle}>Start Your Day</Text>
-              <Text style={styles.heroSubtitle}>Select a project and clock in</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.projectScroll}>
-                {projects.map((p, idx) => (
-                  <TouchableOpacity
-                    key={p.id || `proj-${idx}`}
-                    style={[styles.projectCard, selectedProject?.id === p.id && styles.projectCardActive]}
-                    onPress={() => setSelectedProject(p)}
-                  >
-                    <Text style={[styles.projectCardName, selectedProject?.id === p.id && styles.projectCardNameActive]}>{p.name}</Text>
-                    {p.client_name && <Text style={styles.projectCardClient}>{p.client_name}</Text>}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <Text style={styles.heroSubtitle}>Select project or schedule</Text>
 
-              <View style={styles.scheduleSection}>
-                <Text style={styles.scheduleLabel}>Today's schedules</Text>
+              {/* Segmented Control */}
+              <View style={styles.segmentedControl}>
+                <TouchableOpacity
+                  style={[styles.segment, selectionMode === 'project' && styles.segmentActive]}
+                  onPress={() => setSelectionMode('project')}
+                >
+                  <Text style={[styles.segmentText, selectionMode === 'project' && styles.segmentTextActive]}>Project</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.segment, selectionMode === 'schedule' && styles.segmentActive]}
+                  onPress={() => setSelectionMode('schedule')}
+                >
+                  <Text style={[styles.segmentText, selectionMode === 'schedule' && styles.segmentTextActive]}>Schedule</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Project list */}
+              {selectionMode === 'project' && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.projectScroll}>
+                  {projects.map((p, idx) => (
+                    <TouchableOpacity
+                      key={p.id || `proj-${idx}`}
+                      style={[styles.projectCard, selectedProject?.id === p.id && styles.projectCardActive]}
+                      onPress={() => setSelectedProject(p)}
+                    >
+                      <Text style={[styles.projectCardName, selectedProject?.id === p.id && styles.projectCardNameActive]}>{p.name}</Text>
+                      {p.client_name && <Text style={styles.projectCardClient}>{p.client_name}</Text>}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+
+              {/* Schedule list (today only) */}
+              {selectionMode === 'schedule' && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.scheduleScroll}>
                   {schedules.length === 0 ? (
                     <Text style={styles.noSchedules}>No schedules for today</Text>
@@ -274,7 +314,14 @@ export default function HomeScreen() {
                       <TouchableOpacity
                         key={s.id}
                         style={[styles.scheduleCard, selectedSchedule?.id === s.id && styles.scheduleCardActive]}
-                        onPress={() => handleScheduleSelect(s)}
+                        onPress={() => {
+                          setSelectedSchedule(s);
+                          // Optionally also set selectedProject to the schedule's project for clock-in
+                          if (s.project_id) {
+                            const proj = projects.find(p => p.id === s.project_id);
+                            if (proj) setSelectedProject(proj);
+                          }
+                        }}
                       >
                         <Text style={styles.scheduleName}>{s.name || 'Untitled'}</Text>
                         <Text style={styles.scheduleDate}>{format(new Date(s.date), 'MMM d')}</Text>
@@ -283,7 +330,7 @@ export default function HomeScreen() {
                     ))
                   )}
                 </ScrollView>
-              </View>
+              )}
 
               <TouchableOpacity style={styles.heroClockBtn} onPress={handleClockIn}>
                 <LinearGradient colors={['#4CAF50', '#2E7D32']} style={styles.heroClockBtnGradient}>
@@ -397,6 +444,11 @@ const styles = StyleSheet.create({
   heroClockActive: { borderColor: '#4CAF50', borderWidth: 2, backgroundColor: '#0A1A0A' },
   heroTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 6 },
   heroSubtitle: { color: '#888', fontSize: 14, marginBottom: 20 },
+  segmentedControl: { flexDirection: 'row', backgroundColor: '#0A0A0A', borderRadius: 20, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: '#333' },
+  segment: { flex: 1, paddingVertical: 8, borderRadius: 16, alignItems: 'center' },
+  segmentActive: { backgroundColor: '#00D4FF' },
+  segmentText: { color: '#888', fontSize: 14, fontWeight: '500' },
+  segmentTextActive: { color: '#0A0A0A', fontWeight: '600' },
   projectScroll: { maxHeight: 80, marginBottom: 12 },
   projectCard: { backgroundColor: '#0A0A0A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 120 },
   projectCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
@@ -404,8 +456,7 @@ const styles = StyleSheet.create({
   projectCardNameActive: { color: '#00D4FF', fontWeight: '600' },
   projectCardClient: { color: '#888', fontSize: 11, marginTop: 2 },
   scheduleSection: { width: '100%', marginVertical: 8 },
-  scheduleLabel: { color: '#AAA', fontSize: 13, marginBottom: 8, fontWeight: '500' },
-  scheduleScroll: { maxHeight: 70 },
+  scheduleScroll: { maxHeight: 70, marginBottom: 12 },
   scheduleCard: { backgroundColor: '#0A0A0A', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 100 },
   scheduleCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
   scheduleName: { color: '#FFF', fontSize: 13, fontWeight: '500' },
