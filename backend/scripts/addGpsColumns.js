@@ -1,3 +1,4 @@
+// backend/scripts/addGpsColumns.js
 const { Pool } = require('pg');
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:fFhIpSkiVKmHhAmQcQoSudrksWdXuGMQ@centerbeam.proxy.rlwy.net:47967/railway';
@@ -23,7 +24,7 @@ async function run() {
     `);
     console.log('✅ is_moving added to gps_tracking');
 
-    // Add geofence_status to gps_tracking (if not already)
+    // Add geofence_status to gps_tracking
     await client.query(`
       DO $$
       BEGIN
@@ -37,25 +38,19 @@ async function run() {
     `);
     console.log('✅ geofence_status added to gps_tracking');
 
-    // Add office coordinates to companies
+    // Add office_city to companies
     await client.query(`
       DO $$
       BEGIN
         IF NOT EXISTS (
           SELECT 1 FROM information_schema.columns
-          WHERE table_name='companies' AND column_name='office_latitude'
+          WHERE table_name='companies' AND column_name='office_city'
         ) THEN
-          ALTER TABLE companies ADD COLUMN office_latitude DECIMAL(10,8);
-        END IF;
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name='companies' AND column_name='office_longitude'
-        ) THEN
-          ALTER TABLE companies ADD COLUMN office_longitude DECIMAL(11,8);
+          ALTER TABLE companies ADD COLUMN office_city VARCHAR(100);
         END IF;
       END $$;
     `);
-    console.log('✅ office_latitude/longitude added to companies');
+    console.log('✅ office_city added to companies');
 
     console.log('✅ Migration complete.');
   } catch (err) {

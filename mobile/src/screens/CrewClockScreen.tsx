@@ -26,6 +26,16 @@ export default function CrewClockScreen() {
   const [activeEmployees, setActiveEmployees] = useState<ActiveEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [officeCity, setOfficeCity] = useState('');
+
+  const fetchCompanyCity = async () => {
+    try {
+      const res = await api.get<{ office_city: string }>(`/companies/${user?.companyId}`);
+      setOfficeCity(res.office_city || '');
+    } catch (e) {
+      console.error('Failed to fetch company city:', e);
+    }
+  };
 
   const fetchActiveEmployees = async () => {
     try {
@@ -43,6 +53,7 @@ export default function CrewClockScreen() {
   };
 
   useEffect(() => {
+    fetchCompanyCity();
     fetchActiveEmployees();
   }, []);
 
@@ -113,7 +124,9 @@ export default function CrewClockScreen() {
         </TouchableOpacity>
         <View>
           <Text style={styles.headerTitle}>Crew Clock</Text>
-          <Text style={styles.headerSubtitle}>{activeEmployees.length} currently clocked in</Text>
+          <Text style={styles.headerSubtitle}>
+            {officeCity ? `📍 ${officeCity} • ` : ''}{activeEmployees.length} currently clocked in
+          </Text>
         </View>
         <View style={{ width: 24 }} />
       </View>

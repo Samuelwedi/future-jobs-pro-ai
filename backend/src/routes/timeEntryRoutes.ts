@@ -1,6 +1,8 @@
+// backend/src/routes/timeEntryRoutes.ts
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
+import { setCompanyOfficeFromClockIn } from '../services/companyService';
 
 const router = express.Router();
 
@@ -156,12 +158,15 @@ router.post('/clock-in', async (req: Request, res: Response) => {
     );
     const entry = result.rows[0];
 
-    // 👇 Insert first GPS point to start tracking
+    // Insert first GPS point to start tracking
     await pool.query(
       `INSERT INTO gps_tracking (user_id, time_entry_id, project_id, latitude, longitude, timestamp)
        VALUES ($1, $2, $3, $4, $5, NOW())`,
       [userId, entry.id, projectId, latitude || 0, longitude || 0]
     );
+
+    // 👇 Set office city if not yet set
+    await setCompanyOfficeFromClockIn(userId, latitude || 0, longitude || 0);
 
     res.status(201).json({
       success: true,
