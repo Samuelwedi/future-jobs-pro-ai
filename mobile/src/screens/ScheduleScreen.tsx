@@ -12,13 +12,12 @@ import {
   addDays, subMonths, addMonths, isSameMonth, isSameDay,
 } from 'date-fns';
 
-// ---- Types ----
 interface Shift {
   id: string;
   name: string;
   project_name: string;
   project_address?: string;
-  project_id: string;               // ✅ added
+  project_id: string;
   date: string;
   start_time: string;
   end_time: string;
@@ -39,12 +38,6 @@ interface TeamMembersResponse {
   members: Employee[];
 }
 
-interface ShiftsResponse {
-  success: boolean;
-  shifts: Shift[];
-}
-
-// ---- Component ----
 export default function ScheduleScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -60,13 +53,11 @@ export default function ScheduleScreen() {
   const [selectedEmployeeName, setSelectedEmployeeName] = useState('My Schedule');
   const [showEmployeePicker, setShowEmployeePicker] = useState(false);
 
-  // ---- Fetch employees (for the view switcher) ----
   const fetchEmployees = async () => {
     try {
       const companyId = user?.companyId;
       if (!companyId) return;
       const res = await api.get<TeamMembersResponse>(`/team/members/${companyId}`);
-      // The response is directly the object, not wrapped in .data
       const members = res.members || [];
       setEmployees(members);
     } catch (e) {
@@ -74,7 +65,6 @@ export default function ScheduleScreen() {
     }
   };
 
-  // ---- Fetch shifts ----
   const fetchShifts = async () => {
     let start: string, end: string;
     const d = selectedDate;
@@ -98,14 +88,15 @@ export default function ScheduleScreen() {
 
     try {
       const userId = selectedEmployeeId || user?.id;
-      // ✅ Typed API call
-      const res = await api.get<ShiftsResponse>(
+      const res: any = await api.get(
         `/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`
       );
-      // res is now of type ShiftsResponse
       let fetchedShifts: Shift[] = [];
-      if (res && typeof res === 'object' && 'shifts' in res) {
-        fetchedShifts = res.shifts || [];
+      if (res && typeof res === 'object') {
+        const data = res.data || res;
+        if (data && typeof data === 'object' && 'shifts' in data) {
+          fetchedShifts = data.shifts || [];
+        }
       }
       setShifts(fetchedShifts);
       console.log(`📊 Fetched ${fetchedShifts.length} shifts`);
@@ -127,7 +118,7 @@ export default function ScheduleScreen() {
 
   const onRefresh = () => { setRefreshing(true); fetchShifts(); };
 
-  // ---- Calendar helpers ----
+  // Calendar helpers
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
   const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -140,7 +131,7 @@ export default function ScheduleScreen() {
     d = addDays(d, 1);
   }
 
-  // UTC helpers to avoid timezone shift
+  // UTC helpers
   const getUTCDateString = (date: Date) => {
     return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
   };
@@ -169,29 +160,6 @@ export default function ScheduleScreen() {
     if (!address) return;
     const url = `https://maps.google.com/?q=${encodeURIComponent(address)}`;
     Linking.openURL(url);
-  };
-
-  // ---- Clock In ----
-  const handleClockIn = async (shift: Shift) => {
-    try {
-      const res = await api.post<{ success: boolean; message?: string }>('/time-entries/clock-in', {
-        userId: user?.id,
-        projectId: shift.project_id,
-        shiftId: shift.id,
-        latitude: 0,
-        longitude: 0,
-      });
-      if (res.success) {
-        Alert.alert('✅ Clocked In', `You have clocked in for ${shift.name}`);
-        // 👇 Tell the home screen to refresh when we go back
-        navigation.setParams({ refreshHome: true });
-        setSelectedShift(null);
-      } else {
-        Alert.alert('Clock In Failed', res.message || 'Could not clock in');
-      }
-    } catch (e: any) {
-      Alert.alert('Clock In Error', e.message || 'An error occurred');
-    }
   };
 
   const navigateMonth = (dir: number) => {
@@ -347,12 +315,16 @@ export default function ScheduleScreen() {
                   </>
                 )}
 
+                {/* ─── CLOCK‑IN BUTTON REPLACED WITH HOME NAVIGATION ─── */}
                 <TouchableOpacity
-                  style={styles.clockInBtn}
-                  onPress={() => handleClockIn(selectedShift)}
+                  style={styles.goHomeBtn}
+                  onPress={() => {
+                    setSelectedShift(null);
+                    navigation.navigate('Home');
+                  }}
                 >
-                  <MaterialIcons name="login" size={20} color="#0A0A0A" />
-                  <Text style={styles.clockInBtnText}>Clock In</Text>
+                  <MaterialIcons name="home" size={20} color="#0A0A0A" />
+                  <Text style={styles.goHomeBtnText}>Go to Home to Clock In</Text>
                 </TouchableOpacity>
 
                 {selectedShift.project_address && (
@@ -412,6 +384,7 @@ export default function ScheduleScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ... all existing styles remain exactly the same ...
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {
     flexDirection: 'row',
@@ -541,7 +514,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   downloadBtnText: { color: '#00D4FF', fontSize: 15 },
-  clockInBtn: {
+  // New styles for the "Go to Home" button
+  goHomeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -551,5 +525,5 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 8,
   },
-  clockInBtnText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
+  goHomeBtnText: { color: '#FFFFFF', fontWeight: '600', fontSize: 15 },
 });
