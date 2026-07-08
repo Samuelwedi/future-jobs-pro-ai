@@ -56,6 +56,7 @@ router.post('/clock-in', async (req: Request, res: Response) => {
         [userId, shift.project_id, latitude || null, longitude || null]
       );
       const entry = result.rows[0];
+      // Record AI event
       await recordUserEvent({
         userId,
         eventType: 'clock_in',

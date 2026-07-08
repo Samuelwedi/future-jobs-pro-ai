@@ -47,6 +47,7 @@ export default function HomeScreen() {
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const gpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null); // 👈 added
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
@@ -92,6 +93,39 @@ export default function HomeScreen() {
       setElapsedSeconds(0);
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [isClockedIn, activeTimeEntry]);
+
+  // ─── GPS tracking (start when clocked in, stop when clocked out) ───
+  useEffect(() => {
+    if (isClockedIn && activeTimeEntry) {
+      // Start sending GPS updates every 10 seconds
+      gpsIntervalRef.current = setInterval(async () => {
+        try {
+          const location = await Location.getCurrentPositionAsync({});
+          await api.post('/gps/update', {
+            userId: user?.id,
+            timeEntryId: activeTimeEntry.id,
+            projectId: activeTimeEntry.project_id,
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            accuracy: location.coords.accuracy,
+            altitude: location.coords.altitude,
+            speed: location.coords.speed,
+            heading: location.coords.heading,
+          });
+        } catch (e) {
+          console.error('GPS update error:', e);
+        }
+      }, 10000); // 10 seconds interval
+    } else {
+      if (gpsIntervalRef.current) {
+        clearInterval(gpsIntervalRef.current);
+        gpsIntervalRef.current = null;
+      }
+    }
+    return () => {
+      if (gpsIntervalRef.current) clearInterval(gpsIntervalRef.current);
+    };
   }, [isClockedIn, activeTimeEntry]);
 
   // ─── Load functions ───

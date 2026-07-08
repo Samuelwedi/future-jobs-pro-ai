@@ -92,8 +92,6 @@ router.get('/active', async (req: Request, res: Response) => {
        ORDER BY te.clock_in DESC LIMIT 1`,
       [userId]
     );
-    console.log('🔍 Active entry query result:', result.rows);
-
     if (result.rows.length === 0) {
       return res.json({ success: true, entry: null });
     }
@@ -105,7 +103,6 @@ router.get('/active', async (req: Request, res: Response) => {
       clock_in: row.clock_in,
       duration_seconds: Math.floor((Date.now() - new Date(row.clock_in).getTime()) / 1000),
     };
-    console.log('✅ Returning active entry:', entry);
     res.json({ success: true, entry });
   } catch (error: any) {
     console.error('Error fetching active entry:', error);
@@ -130,13 +127,13 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'projectId is required' });
     }
 
-    // Check if user exists
+    // Check user exists
     const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
     if (userCheck.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'User not found' });
     }
 
-    // Check if project exists
+    // Check project exists
     const projectCheck = await pool.query('SELECT id FROM projects WHERE id = $1', [projectId]);
     if (projectCheck.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'Project not found' });
@@ -151,12 +148,21 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Already clocked in' });
     }
 
+    // Insert time entry
     const result = await pool.query(
-      `INSERT INTO time_entries (user_id, project_id, clock_in, latitude, longitude, created_at)
-       VALUES ($1, $2, NOW(), $3, $4, NOW()) RETURNING id, clock_in`,
+      `INSERT INTO time_entries (user_id, project_id, clock_in, latitude, longitude, created_at, status)
+       VALUES ($1, $2, NOW(), $3, $4, NOW(), 'active') RETURNING id, clock_in`,
       [userId, projectId, latitude || 0, longitude || 0]
     );
     const entry = result.rows[0];
+
+    // 👇 Insert first GPS point to start tracking
+    await pool.query(
+      `INSERT INTO gps_tracking (user_id, time_entry_id, project_id, latitude, longitude, timestamp)
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
+      [userId, entry.id, projectId, latitude || 0, longitude || 0]
+    );
+
     res.status(201).json({
       success: true,
       message: 'Clocked in successfully',
@@ -208,7 +214,8 @@ router.post('/clock-out', async (req: Request, res: Response) => {
            longitude_out = $2,
            regular_hours = $3,
            overtime_hours = $4,
-           total_wage = $5
+           total_wage = $5,
+           status = 'completed'
        WHERE id = $6 AND user_id = $7
        RETURNING id, clock_out`,
       [latitude || 0, longitude || 0, regularHours, overtimeHours, totalWage, timeEntryId, userId]

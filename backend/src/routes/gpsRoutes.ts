@@ -35,10 +35,11 @@ router.post('/update', async (req: Request, res: Response) => {
       batteryLevel: batteryLevel ? parseInt(batteryLevel) : undefined,
     });
 
+    // The service should return geofenceStatus and isMoving
     res.json({
       success: true,
-      geofenceStatus: point.geofenceStatus,
-      isMoving: point.isMoving,
+      geofenceStatus: point.geofenceStatus || 'unknown',
+      isMoving: point.isMoving || false,
       message: point.geofenceStatus === 'inside'
         ? '✅ You are at the job site'
         : '⚠️ You are outside the job site'
@@ -50,7 +51,6 @@ router.post('/update', async (req: Request, res: Response) => {
 });
 
 // GET /api/gps/trail/:timeEntryId
-// Optional: ?userId=xxx (for boss/manager)
 router.get('/trail/:timeEntryId', async (req: Request, res: Response) => {
   try {
     const timeEntryId = Array.isArray(req.params.timeEntryId)
@@ -60,10 +60,8 @@ router.get('/trail/:timeEntryId', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Missing timeEntryId' });
     }
 
-    // Convert userId to string safely – if it's an array, take the first element
     const userId = req.query.userId ? String(req.query.userId) : undefined;
 
-    // If userId is provided, verify the user belongs to the same company
     if (userId) {
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith('Bearer '))
@@ -101,7 +99,8 @@ router.get('/active/:companyId', async (req: Request, res: Response) => {
     res.json({ success: true, count: locations.length, employees: locations });
   } catch (error: any) {
     console.error('GPS active error:', error.message);
-    res.json({ success: true, count: 0, employees: [] });   // safe fallback
+    // Safe fallback – return empty list
+    res.json({ success: true, count: 0, employees: [] });
   }
 });
 
@@ -116,7 +115,6 @@ router.get('/tracking/:userId', async (req: Request, res: Response) => {
     
     const decoded = verifyToken(req);
     if (decoded.id !== userId) {
-      // Check if requester is boss/manager of the same company
       const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
       if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
       const requestUser = userRes.rows[0];
