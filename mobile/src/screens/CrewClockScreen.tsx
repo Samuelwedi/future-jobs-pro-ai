@@ -4,59 +4,106 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
+import { formatDistanceToNow, format } from 'date-fns';
 
-interface Shift { id: string; name: string; project_name?: string; date: string; start_time: string; end_time: string; assignments?: { user_id: string; user_name: string }[]; }
+interface ActiveEmployee {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  timeEntryId: string;
+  clockIn: string;
+  latitude: number | null;
+  longitude: number | null;
+  lastGpsTime: string | null;
+  isMoving: boolean;
+  geofenceStatus: string;
+  projectName: string;
+}
 
 export default function CrewClockScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
-  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [activeEmployees, setActiveEmployees] = useState<ActiveEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchTodayShifts = async () => {
-    const today = new Date().toISOString().split('T')[0];
+  const fetchActiveEmployees = async () => {
     try {
-      const res = await api.get<{ success: boolean; shifts: Shift[] }>(`/schedule/shifts?companyId=${user?.companyId}&start=${today}&end=${today}`);
-      setShifts(res.shifts || []);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); setRefreshing(false); }
+      const res = await api.get<{ success: boolean; count: number; employees: ActiveEmployee[] }>(
+        `/gps/active/${user?.companyId}`
+      );
+      setActiveEmployees(res.employees || []);
+    } catch (e) {
+      console.error('Failed to fetch active employees:', e);
+      Alert.alert('Error', 'Could not load active employees');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  useEffect(() => { fetchTodayShifts(); }, []);
+  useEffect(() => {
+    fetchActiveEmployees();
+  }, []);
 
-  const handleCrewClockIn = async (shift: Shift) => {
-    try { const res = await api.post<{ success: boolean; message: string }>('/crew/clock-in', { shiftId: shift.id }); Alert.alert('✅ Crew Clocked In', res.message); }
-    catch (e: any) { Alert.alert('Error', e.message || 'Clock in failed'); }
-  };
-  const handleCrewClockOut = async (shift: Shift) => {
-    try { const res = await api.post<{ success: boolean; message: string }>('/crew/clock-out', { shiftId: shift.id }); Alert.alert('✅ Crew Clocked Out', res.message); }
-    catch (e: any) { Alert.alert('Error', e.message || 'Clock out failed'); }
+  const formatClockInTime = (clockIn: string) => {
+    try {
+      const date = new Date(clockIn);
+      return format(date, 'h:mm a') + ' (' + formatDistanceToNow(date, { addSuffix: true }) + ')';
+    } catch {
+      return clockIn;
+    }
   };
 
-  const renderShift = ({ item }: { item: Shift }) => {
-    const assignedCount = item.assignments?.length || 0;
-    return (
-      <View style={styles.shiftCard}>
-        <View style={styles.shiftInfo}>
-          <Text style={styles.shiftName}>{item.name}</Text>
-          <Text style={styles.shiftProject}>{item.project_name || 'Project'}</Text>
-          <Text style={styles.shiftTime}>{item.start_time} – {item.end_time}</Text>
-          <Text style={styles.assignedCount}>{assignedCount} worker{assignedCount !== 1 ? 's' : ''} assigned</Text>
-        </View>
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.clockInBtn} onPress={() => handleCrewClockIn(item)}>
-            <MaterialIcons name="login" size={22} color="#FFF" /><Text style={styles.btnText}>Clock In</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.clockOutBtn} onPress={() => handleCrewClockOut(item)}>
-            <MaterialIcons name="logout" size={22} color="#FFF" /><Text style={styles.btnText}>Clock Out</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+  const handleForceClockOut = async (userId: string, timeEntryId: string) => {
+    Alert.alert(
+      'Force Clock Out',
+      'Are you sure you want to clock out this employee?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clock Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.post('/crew/clock-out', { userId, timeEntryId });
+              Alert.alert('✅ Clocked Out', 'Employee has been clocked out.');
+              fetchActiveEmployees();
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Failed to clock out');
+            }
+          }
+        }
+      ]
     );
   };
 
-  if (loading) return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
+  const renderItem = ({ item }: { item: ActiveEmployee }) => (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Text style={styles.name}>{item.firstName} {item.lastName}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: item.isMoving ? '#4CAF50' : '#FF9800' }]}>
+          <Text style={styles.statusText}>{item.isMoving ? 'Moving' : 'Stationary'}</Text>
+        </View>
+      </View>
+      <Text style={styles.project}>{item.projectName}</Text>
+      <Text style={styles.clockIn}>Clocked in: {formatClockInTime(item.clockIn)}</Text>
+      {item.latitude && item.longitude && (
+        <Text style={styles.location}>📍 {item.latitude.toFixed(6)}, {item.longitude.toFixed(6)}</Text>
+      )}
+      <TouchableOpacity
+        style={styles.clockOutBtn}
+        onPress={() => handleForceClockOut(item.userId, item.timeEntryId)}
+      >
+        <MaterialIcons name="logout" size={20} color="#FFF" />
+        <Text style={styles.clockOutText}>Clock Out</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  if (loading) {
+    return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
+  }
 
   return (
     <View style={styles.container}>
@@ -66,30 +113,66 @@ export default function CrewClockScreen() {
         </TouchableOpacity>
         <View>
           <Text style={styles.headerTitle}>Crew Clock</Text>
-          <Text style={styles.headerSubtitle}>Clock in/out your entire crew</Text>
+          <Text style={styles.headerSubtitle}>{activeEmployees.length} currently clocked in</Text>
         </View>
         <View style={{ width: 24 }} />
       </View>
-      <FlatList data={shifts} renderItem={renderShift} keyExtractor={item => item.id} contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchTodayShifts(); }} tintColor="#00D4FF" />} ListEmptyComponent={<Text style={styles.emptyText}>No shifts scheduled for today</Text>} />
+      <FlatList
+        data={activeEmployees}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.userId}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchActiveEmployees(); }} tintColor="#00D4FF" />}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <MaterialIcons name="people-outline" size={48} color="#444" />
+            <Text style={styles.emptyText}>No one is currently clocked in</Text>
+          </View>
+        }
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingTop: 60, paddingBottom: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#333' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingBottom: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
   headerTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold' },
   headerSubtitle: { color: '#888', fontSize: 14, marginTop: 4 },
   list: { padding: 16, paddingBottom: 40 },
-  shiftCard: { backgroundColor: '#1A1A1A', borderRadius: 14, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#333' },
-  shiftInfo: { marginBottom: 14 },
-  shiftName: { color: '#FFF', fontSize: 18, fontWeight: '600' },
-  shiftProject: { color: '#00D4FF', fontSize: 14, marginTop: 4 },
-  shiftTime: { color: '#AAA', fontSize: 14, marginTop: 4 },
-  assignedCount: { color: '#888', fontSize: 13, marginTop: 6 },
-  actions: { flexDirection: 'row', gap: 12 },
-  clockInBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#4CAF50', paddingVertical: 12, borderRadius: 10, justifyContent: 'center', alignItems: 'center', gap: 6 },
-  clockOutBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#F44336', paddingVertical: 12, borderRadius: 10, justifyContent: 'center', alignItems: 'center', gap: 6 },
-  btnText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
-  emptyText: { color: '#888', textAlign: 'center', marginTop: 40, fontSize: 16 },
+  card: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  name: { color: '#FFF', fontSize: 18, fontWeight: '600' },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  statusText: { color: '#FFF', fontSize: 12, fontWeight: '500' },
+  project: { color: '#00D4FF', fontSize: 14, marginBottom: 4 },
+  clockIn: { color: '#AAA', fontSize: 13, marginBottom: 4 },
+  location: { color: '#888', fontSize: 12, marginBottom: 12 },
+  clockOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F44336',
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 6,
+  },
+  clockOutText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
+  emptyContainer: { alignItems: 'center', marginTop: 80 },
+  emptyText: { color: '#888', fontSize: 16, marginTop: 12 },
 });

@@ -35,7 +35,6 @@ router.post('/update', async (req: Request, res: Response) => {
       batteryLevel: batteryLevel ? parseInt(batteryLevel) : undefined,
     });
 
-    // The service should return geofenceStatus and isMoving
     res.json({
       success: true,
       geofenceStatus: point.geofenceStatus || 'unknown',
@@ -95,11 +94,50 @@ router.get('/confidence/:timeEntryId', async (req: Request, res: Response) => {
 // GET /api/gps/active/:companyId – Who's working right now
 router.get('/active/:companyId', async (req: Request, res: Response) => {
   try {
-    const locations = await getActiveEmployeeLocations(req.params.companyId as string);
-    res.json({ success: true, count: locations.length, employees: locations });
+    const companyId = req.params.companyId as string;
+
+    // Fetch active employees (with clock_out IS NULL) and their latest GPS point
+    const result = await pool.query(
+      `SELECT DISTINCT ON (te.user_id)
+              u.id AS user_id,
+              u.first_name,
+              u.last_name,
+              te.id AS time_entry_id,
+              te.clock_in,
+              g.latitude,
+              g.longitude,
+              g.timestamp AS last_gps_time,
+              g.is_moving,
+              g.geofence_status,
+              p.name AS project_name
+       FROM time_entries te
+       JOIN users u ON te.user_id = u.id
+       LEFT JOIN gps_tracking g ON te.user_id = g.user_id AND te.id = g.time_entry_id
+       LEFT JOIN projects p ON te.project_id = p.id
+       WHERE te.clock_out IS NULL
+         AND u.company_id = $1
+       ORDER BY te.user_id, g.timestamp DESC`,
+      [companyId]
+    );
+
+    const employees = result.rows.map((row: any) => ({
+      userId: row.user_id,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      timeEntryId: row.time_entry_id,
+      clockIn: row.clock_in,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      lastGpsTime: row.last_gps_time,
+      isMoving: row.is_moving || false,
+      geofenceStatus: row.geofence_status || 'unknown',
+      projectName: row.project_name || 'Unknown',
+    }));
+
+    res.json({ success: true, count: employees.length, employees });
   } catch (error: any) {
     console.error('GPS active error:', error.message);
-    // Safe fallback – return empty list
+    // Fallback – return empty list
     res.json({ success: true, count: 0, employees: [] });
   }
 });
