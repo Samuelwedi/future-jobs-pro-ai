@@ -10,10 +10,13 @@ async function run() {
   try {
     console.log('🔄 Adding missing columns...');
 
-    // ─── GPS tracking columns ───
+    // ─── gps_tracking columns ───
     await client.query(`
       DO $$
       BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='gps_tracking' AND column_name='project_id') THEN
+          ALTER TABLE gps_tracking ADD COLUMN project_id UUID;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='gps_tracking' AND column_name='is_moving') THEN
           ALTER TABLE gps_tracking ADD COLUMN is_moving BOOLEAN DEFAULT false;
         END IF;
@@ -24,7 +27,7 @@ async function run() {
     `);
     console.log('✅ gps_tracking columns added');
 
-    // ─── Company office location ───
+    // ─── Company office columns ───
     await client.query(`
       DO $$
       BEGIN
