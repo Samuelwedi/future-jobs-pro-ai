@@ -1,10 +1,12 @@
 // backend/scripts/computeOfficeCity.js
 const { Pool } = require('pg');
-const fetch = require('node-fetch');
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:fFhIpSkiVKmHhAmQcQoSudrksWdXuGMQ@centerbeam.proxy.rlwy.net:47967/railway';
 
 const pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+
+// Use built‑in fetch (Node 18+) – fallback to node-fetch if needed
+const fetch = global.fetch || require('node-fetch');
 
 async function getCity(lat, lng) {
   try {
@@ -26,6 +28,7 @@ async function run() {
   try {
     console.log('🔄 Computing office city for companies...');
 
+    // Get the latest clock‑in for each company
     const result = await client.query(`
       SELECT DISTINCT ON (c.id)
         c.id AS company_id,
