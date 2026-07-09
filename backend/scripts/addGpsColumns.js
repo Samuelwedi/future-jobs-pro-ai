@@ -1,4 +1,3 @@
-// backend/scripts/addGpsColumns.js
 const { Pool } = require('pg');
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:fFhIpSkiVKmHhAmQcQoSudrksWdXuGMQ@centerbeam.proxy.rlwy.net:47967/railway';
@@ -10,7 +9,7 @@ async function run() {
   try {
     console.log('🔄 Adding missing columns...');
 
-    // ─── gps_tracking columns ───
+    // ─── gps_tracking ───
     await client.query(`
       DO $$
       BEGIN
@@ -28,9 +27,9 @@ async function run() {
         END IF;
       END $$;
     `);
-    console.log('✅ gps_tracking columns added (project_id, is_moving, geofence_status, battery_level)');
+    console.log('✅ gps_tracking columns added');
 
-    // ─── Company office columns ───
+    // ─── companies ───
     await client.query(`
       DO $$
       BEGIN
@@ -48,9 +47,9 @@ async function run() {
         END IF;
       END $$;
     `);
-    console.log('✅ Company columns added (office_city, office_lat/lng, logo_url)');
+    console.log('✅ companies columns added');
 
-    // ─── Project geofence columns ───
+    // ─── projects ───
     await client.query(`
       DO $$
       BEGIN
@@ -65,7 +64,7 @@ async function run() {
         END IF;
       END $$;
     `);
-    console.log('✅ Project geofence columns added');
+    console.log('✅ projects geofence columns added');
 
     console.log('✅ Migration complete.');
   } catch (err) {

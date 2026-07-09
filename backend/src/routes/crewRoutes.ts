@@ -5,20 +5,17 @@ import { recordUserEvent } from '../services/adaptiveAIService';
 
 const router = express.Router();
 
-// GET /api/crew – list crew members (for Lucy)
+// GET /api/crew – list crew members
 router.get('/', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    
     const decoded = verifyToken(req);
-
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
     const companyId = userRes.rows[0].company_id;
     if (!companyId) return res.json({ success: true, crew: [] });
-
     const result = await pool.query(
       'SELECT id, first_name, last_name, email FROM users WHERE company_id = $1',
       [companyId]
@@ -30,7 +27,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/crew/clock-in
+// POST /api/crew/clock-in – clock in all assigned to a shift
 router.post('/clock-in', async (req: Request, res: Response) => {
   try {
     const { shiftId, latitude, longitude } = req.body;
@@ -44,10 +41,8 @@ router.post('/clock-in', async (req: Request, res: Response) => {
     if (userIds.length === 0) {
       return res.status(400).json({ success: false, message: 'No employees assigned to this shift' });
     }
-
     const shiftResult = await pool.query('SELECT * FROM shifts WHERE id = $1', [shiftId]);
     const shift = shiftResult.rows[0];
-
     const clockedIn: any[] = [];
     for (const userId of userIds) {
       const result = await pool.query(
@@ -56,7 +51,6 @@ router.post('/clock-in', async (req: Request, res: Response) => {
         [userId, shift.project_id, latitude || null, longitude || null]
       );
       const entry = result.rows[0];
-      // Record AI event
       await recordUserEvent({
         userId,
         eventType: 'clock_in',
@@ -65,7 +59,6 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       });
       clockedIn.push({ userId, timeEntryId: entry.id });
     }
-
     res.json({ success: true, message: `${clockedIn.length} crew members clocked in`, clockedIn });
   } catch (error: any) {
     console.error('Crew clock-in error:', error);
@@ -73,43 +66,68 @@ router.post('/clock-in', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/crew/clock-out
+// POST /api/crew/clock-out – clock out a specific user (or all assigned)
 router.post('/clock-out', async (req: Request, res: Response) => {
   try {
-    const { shiftId, latitude, longitude } = req.body;
-    if (!shiftId) return res.status(400).json({ success: false, message: 'shiftId is required' });
+    const { shiftId, userId, timeEntryId, latitude, longitude } = req.body;
 
-    const assignResult = await pool.query(
-      `SELECT user_id FROM shift_assignments WHERE shift_id = $1`,
-      [shiftId]
-    );
-    const userIds: string[] = assignResult.rows.map((r: any) => r.user_id);
-    if (userIds.length === 0) {
-      return res.status(400).json({ success: false, message: 'No employees assigned to this shift' });
-    }
-
-    const clockedOut: any[] = [];
-    for (const userId of userIds) {
-      const result = await pool.query(
-        `UPDATE time_entries
-         SET clock_out = NOW(), clock_out_latitude = $1, clock_out_longitude = $2, status = 'completed'
-         WHERE user_id = $3 AND clock_out IS NULL
-         RETURNING *`,
-        [latitude || null, longitude || null, userId]
+    // If shiftId is provided, clock out all assigned
+    if (shiftId) {
+      const assignResult = await pool.query(
+        `SELECT user_id FROM shift_assignments WHERE shift_id = $1`,
+        [shiftId]
       );
-      if (result.rows.length > 0) {
-        const entry = result.rows[0];
-        await recordUserEvent({
-          userId,
-          eventType: 'clock_out',
-          eventData: { projectId: entry.project_id, timeEntryId: entry.id, crew: true, shiftId },
-          latitude, longitude,
-        });
-        clockedOut.push({ userId, timeEntryId: entry.id });
+      const userIds: string[] = assignResult.rows.map((r: any) => r.user_id);
+      if (userIds.length === 0) {
+        return res.status(400).json({ success: false, message: 'No employees assigned to this shift' });
       }
+      const clockedOut: any[] = [];
+      for (const uid of userIds) {
+        const result = await pool.query(
+          `UPDATE time_entries
+           SET clock_out = NOW(), clock_out_latitude = $1, clock_out_longitude = $2, status = 'completed'
+           WHERE user_id = $3 AND clock_out IS NULL
+           RETURNING *`,
+          [latitude || null, longitude || null, uid]
+        );
+        if (result.rows.length > 0) {
+          const entry = result.rows[0];
+          await recordUserEvent({
+            userId: uid,
+            eventType: 'clock_out',
+            eventData: { projectId: entry.project_id, timeEntryId: entry.id, crew: true, shiftId },
+            latitude, longitude,
+          });
+          clockedOut.push({ userId: uid, timeEntryId: entry.id });
+        }
+      }
+      res.json({ success: true, message: `${clockedOut.length} crew members clocked out`, clockedOut });
+      return;
     }
 
-    res.json({ success: true, message: `${clockedOut.length} crew members clocked out`, clockedOut });
+    // Otherwise, clock out a specific user by userId + timeEntryId
+    if (!userId || !timeEntryId) {
+      return res.status(400).json({ success: false, message: 'userId and timeEntryId are required when shiftId is not provided' });
+    }
+
+    const result = await pool.query(
+      `UPDATE time_entries
+       SET clock_out = NOW(), clock_out_latitude = $1, clock_out_longitude = $2, status = 'completed'
+       WHERE id = $3 AND user_id = $4 AND clock_out IS NULL
+       RETURNING *`,
+      [latitude || null, longitude || null, timeEntryId, userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Active time entry not found' });
+    }
+    const entry = result.rows[0];
+    await recordUserEvent({
+      userId,
+      eventType: 'clock_out',
+      eventData: { projectId: entry.project_id, timeEntryId: entry.id, crew: false },
+      latitude, longitude,
+    });
+    res.json({ success: true, message: 'Clocked out successfully', timeEntryId: entry.id });
   } catch (error: any) {
     console.error('Crew clock-out error:', error);
     res.status(500).json({ success: false, message: error.message });
