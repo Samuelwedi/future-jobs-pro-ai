@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, RefreshControl,
-  TouchableOpacity, Alert, ScrollView, Linking
+  TouchableOpacity, Alert, ScrollView, Platform
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, PROVIDER_DEFAULT } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
-import { format, formatDistanceToNow, differenceInSeconds } from 'date-fns';
+import { format, differenceInSeconds, formatDistanceToNow } from 'date-fns';
 
 interface ActiveEmployee {
   userId: string;
@@ -16,7 +16,7 @@ interface ActiveEmployee {
   lastName: string;
   latitude: number | null;
   longitude: number | null;
-  timestamp: string;        // last GPS update
+  timestamp: string | null;      // last GPS update
   geofenceStatus: 'inside' | 'outside' | 'unknown';
   isMoving: boolean;
   projectName: string;
@@ -33,21 +33,24 @@ export default function CrewTrackingScreen() {
   const fetchActiveEmployees = async () => {
     try {
       const res = await api.get(`/gps/active/${user?.companyId}`);
-      const data = ((res as any)?.data ?? res) as { employees?: ActiveEmployee[] };
-      const employeesList = data.employees || [];
+      const data = (res as any).data || res;
+      const employeesList: ActiveEmployee[] = (data.employees || []) as ActiveEmployee[];
       setEmployees(employeesList);
 
+      // Set initial map region to center of all points
       if (employeesList.length > 0) {
-        const valid = employeesList.filter(e => e.latitude && e.longitude);
+        const valid = employeesList.filter((e: ActiveEmployee) => e.latitude !== null && e.longitude !== null);
         if (valid.length > 0) {
-          const avgLat = valid.reduce((s: number, e: any) => s + e.latitude!, 0) / valid.length;
-          const avgLng = valid.reduce((s: number, e: any) => s + e.longitude!, 0) / valid.length;
-          setRegion({
-            latitude: avgLat,
-            longitude: avgLng,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          });
+          const avgLat = valid.reduce((s: number, e: any) => s + (e.latitude || 0), 0) / valid.length;
+          const avgLng = valid.reduce((s: number, e: any) => s + (e.longitude || 0), 0) / valid.length;
+          if (avgLat && avgLng) {
+            setRegion({
+              latitude: avgLat,
+              longitude: avgLng,
+              latitudeDelta: 0.05,
+              longitudeDelta: 0.05,
+            });
+          }
         }
       }
     } catch (e) {
@@ -62,6 +65,8 @@ export default function CrewTrackingScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchActiveEmployees();
+      const interval = setInterval(fetchActiveEmployees, 30000); // refresh every 30s
+      return () => clearInterval(interval);
     }, [])
   );
 
@@ -70,41 +75,50 @@ export default function CrewTrackingScreen() {
     fetchActiveEmployees();
   };
 
-  // ─── Helpers ───
-  const getDurationAtLocation = (employee: ActiveEmployee): string => {
-    if (!employee.timestamp) return 'No GPS data';
-    const lastUpdate = new Date(employee.timestamp);
-    if (isNaN(lastUpdate.getTime())) return 'Invalid date';
-    const now = new Date();
-    const diffSeconds = differenceInSeconds(now, lastUpdate);
-    if (diffSeconds < 0) return 'Just now';
-
-    if (employee.isMoving) {
-      return 'Moving';
+  // ─── Helper: format status ───
+  const getStatusText = (employee: ActiveEmployee): { status: string; duration: string } => {
+    if (!employee.timestamp) {
+      return { status: 'Unknown', duration: '' };
     }
 
-    const diffMinutes = Math.floor(diffSeconds / 60);
-    if (diffMinutes < 1) return 'Just arrived';
-    if (diffMinutes < 60) return `${diffMinutes}m ago`;
-    const hours = Math.floor(diffMinutes / 60);
-    const mins = diffMinutes % 60;
-    return `${hours}h ${mins}m ago`;
+    try {
+      const lastUpdate = new Date(employee.timestamp);
+      const now = new Date();
+      const diffSeconds = differenceInSeconds(now, lastUpdate);
+
+      // If it's been more than 5 minutes without an update, assume they're offline
+      if (diffSeconds > 300) {
+        return { status: 'Offline', duration: formatDistanceToNow(lastUpdate, { addSuffix: true }) };
+      }
+
+      if (employee.isMoving) {
+        return { status: 'Moving', duration: '🚶' };
+      }
+
+      // Stationary – show how long at location
+      if (diffSeconds < 60) {
+        return { status: 'Just arrived', duration: '📍' };
+      } else if (diffSeconds < 3600) {
+        const mins = Math.floor(diffSeconds / 60);
+        return { status: `At location`, duration: `${mins}m ago` };
+      } else {
+        const hours = Math.floor(diffSeconds / 3600);
+        const mins = Math.floor((diffSeconds % 3600) / 60);
+        return { status: `At location`, duration: `${hours}h ${mins}m ago` };
+      }
+    } catch (e) {
+      return { status: 'Unknown', duration: '' };
+    }
   };
 
-  const formatLastUpdate = (timestamp: string) => {
-    if (!timestamp) return 'No GPS data';
+  const formatLastUpdate = (timestamp: string | null): string => {
+    if (!timestamp) return 'Never';
     try {
       const date = new Date(timestamp);
-      if (isNaN(date.getTime())) return 'Invalid date';
-      return formatDistanceToNow(date, { addSuffix: true });
+      return format(date, 'h:mm a');
     } catch {
       return 'Invalid date';
     }
-  };
-
-  const openMaps = (lat: number, lng: number) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-    Linking.openURL(url);
   };
 
   if (loading) {
@@ -112,6 +126,9 @@ export default function CrewTrackingScreen() {
   }
 
   const activeCount = employees.filter(e => e.latitude && e.longitude).length;
+
+  // Choose map provider: Google for Android, default (Apple) for iOS
+  const mapProvider = Platform.OS === 'ios' ? PROVIDER_DEFAULT : PROVIDER_GOOGLE;
 
   return (
     <View style={styles.container}>
@@ -130,7 +147,7 @@ export default function CrewTrackingScreen() {
 
       {region ? (
         <MapView
-          provider={PROVIDER_GOOGLE}
+          provider={mapProvider}
           style={styles.map}
           region={region}
           showsUserLocation
@@ -162,12 +179,17 @@ export default function CrewTrackingScreen() {
         <ScrollView showsVerticalScrollIndicator={false}>
           {employees.map((emp) => {
             const name = `${emp.firstName} ${emp.lastName}`;
-            const duration = getDurationAtLocation(emp);
+            const { status, duration } = getStatusText(emp);
             const lastUpdate = formatLastUpdate(emp.timestamp);
-            const hasLocation = emp.latitude && emp.longitude;
-            const locationStr = hasLocation
-              ? `${emp.latitude!.toFixed(5)}, ${emp.longitude!.toFixed(5)}`
-              : 'No location';
+            const location = emp.latitude && emp.longitude
+              ? `${emp.latitude.toFixed(5)}, ${emp.longitude.toFixed(5)}`
+              : 'Unknown';
+
+            // Determine status color
+            let statusColor = '#888';
+            if (status === 'Moving') statusColor = '#4CAF50';
+            else if (status === 'Offline') statusColor = '#F44336';
+            else if (status === 'Just arrived' || status === 'At location') statusColor = '#FF9800';
 
             return (
               <View key={emp.userId} style={styles.employeeItem}>
@@ -178,20 +200,13 @@ export default function CrewTrackingScreen() {
                   <Text style={styles.employeeName}>{name}</Text>
                   <Text style={styles.employeeProject}>{emp.projectName || 'No project'}</Text>
                   <View style={styles.detailsRow}>
-                    <Text style={styles.detailText}>
-                      {emp.isMoving ? '🚶 Moving' : `📍 ${duration}`}
+                    <Text style={[styles.detailText, { color: statusColor }]}>
+                      {status}{duration ? ` • ${duration}` : ''}
                     </Text>
+                    <Text style={styles.detailText}>• Updated: {lastUpdate}</Text>
                   </View>
-                  <View style={styles.detailsRow}>
-                    <Text style={styles.detailText}>Updated: {lastUpdate}</Text>
-                  </View>
-                  {hasLocation && (
-                    <TouchableOpacity onPress={() => openMaps(emp.latitude!, emp.longitude!)}>
-                      <Text style={styles.addressLink}>📍 {locationStr}</Text>
-                    </TouchableOpacity>
-                  )}
                 </View>
-                <View style={[styles.statusDot, { backgroundColor: emp.isMoving ? '#4CAF50' : '#FF9800' }]} />
+                <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
               </View>
             );
           })}
@@ -253,6 +268,5 @@ const styles = StyleSheet.create({
   employeeProject: { color: '#00D4FF', fontSize: 12 },
   detailsRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 2 },
   detailText: { color: '#AAA', fontSize: 11, marginRight: 8 },
-  addressLink: { color: '#00D4FF', fontSize: 11, marginTop: 2, textDecorationLine: 'underline' },
   statusDot: { width: 10, height: 10, borderRadius: 5, marginLeft: 8 },
 });
