@@ -1,4 +1,3 @@
-// backend/scripts/addGpsColumns.js
 const { Pool } = require('pg');
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:fFhIpSkiVKmHhAmQcQoSudrksWdXuGMQ@centerbeam.proxy.rlwy.net:47967/railway';
@@ -10,7 +9,7 @@ async function run() {
   try {
     console.log('🔄 Adding missing columns...');
 
-    // ─── gps_tracking columns ───
+    // ─── gps_tracking ───
     await client.query(`
       DO $$
       BEGIN
@@ -30,7 +29,7 @@ async function run() {
     `);
     console.log('✅ gps_tracking columns added');
 
-    // ─── companies columns ───
+    // ─── companies ───
     await client.query(`
       DO $$
       BEGIN
@@ -50,7 +49,7 @@ async function run() {
     `);
     console.log('✅ companies columns added');
 
-    // ─── projects geofence columns ───
+    // ─── projects ───
     await client.query(`
       DO $$
       BEGIN
