@@ -47,7 +47,7 @@ export default function HomeScreen() {
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const gpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null); // 👈 added
+  const gpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
@@ -95,10 +95,9 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isClockedIn, activeTimeEntry]);
 
-  // ─── GPS tracking (start when clocked in, stop when clocked out) ───
+  // ─── GPS tracking ───
   useEffect(() => {
     if (isClockedIn && activeTimeEntry) {
-      // Start sending GPS updates every 10 seconds
       gpsIntervalRef.current = setInterval(async () => {
         try {
           const location = await Location.getCurrentPositionAsync({});
@@ -116,7 +115,7 @@ export default function HomeScreen() {
         } catch (e) {
           console.error('GPS update error:', e);
         }
-      }, 10000); // 10 seconds interval
+      }, 10000);
     } else {
       if (gpsIntervalRef.current) {
         clearInterval(gpsIntervalRef.current);
@@ -191,7 +190,7 @@ export default function HomeScreen() {
     loadData();
     loadSchedules();
     loadAISuggestions();
-    loadActiveEntry(); // 👈 ensures timer starts if active
+    loadActiveEntry();
   }, []));
 
   // ─── Clock In/Out ───
@@ -213,7 +212,7 @@ export default function HomeScreen() {
       };
       const res = await api.post<any>('/time-entries/clock-in', payload);
       setActiveTimeEntry({ ...res, clock_in: res.clockIn });
-      await loadActiveEntry(); // refresh after clock-in
+      await loadActiveEntry();
       Alert.alert('✅ Clocked In', 'You have clocked in successfully.');
     } catch (e: any) {
       if (e.response?.status === 400 && e.response?.data?.message?.includes('Already clocked in')) {
@@ -261,6 +260,31 @@ export default function HomeScreen() {
     setSelectedSchedule(schedule);
     const dateObj = new Date(schedule.date);
     navigation.navigate('Schedule', { selectedDate: dateObj.toISOString() });
+  };
+
+  // ─── Quick Action handler (smart project selection) ───
+  const handleQuickAction = (action: any) => {
+    let projectId = null;
+    let timeEntryId = null;
+
+    if (action.needsProject) {
+      // If clocked in, use the active project/time entry
+      if (isClockedIn && activeTimeEntry) {
+        projectId = activeTimeEntry.project_id;
+        timeEntryId = activeTimeEntry.id;
+      } else if (selectedProject) {
+        projectId = selectedProject.id;
+      } else {
+        Alert.alert('Select a project first');
+        return;
+      }
+    }
+
+    navigation.navigate(action.screen, {
+      projectId,
+      timeEntryId,
+      // Pass any extra params if needed
+    });
   };
 
   if (isLoading) {
@@ -420,10 +444,7 @@ export default function HomeScreen() {
               <TouchableOpacity
                 key={index}
                 style={styles.actionCard}
-                onPress={() => {
-                  if (action.needsProject && !selectedProject) { Alert.alert('Select a project first'); return; }
-                  navigation.navigate(action.screen, { projectId: selectedProject?.id });
-                }}
+                onPress={() => handleQuickAction(action)}
               >
                 <LinearGradient colors={action.gradient as [string, string]} style={styles.actionCardGradient}>
                   <IconComponent name={action.icon as any} size={32} color="#FFF" />
@@ -480,178 +501,58 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, backgroundColor: '#0A0A0A' },
   container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
-  pulseBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    marginTop: 60,
-    borderRadius: 16,
-    marginHorizontal: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#1A1A2E',
-  },
+  pulseBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, marginTop: 60, borderRadius: 16, marginHorizontal: 20, marginBottom: 16, borderWidth: 1, borderColor: '#1A1A2E' },
   pulseItem: { alignItems: 'center' },
   pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4CAF50', marginBottom: 4 },
   pulseValue: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   pulseLabel: { color: '#888', fontSize: 11, marginTop: 2 },
   pulseDivider: { width: 1, height: 30, backgroundColor: '#333' },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatarGradient: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
   avatarText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   greeting: { fontSize: 18, fontWeight: 'bold', color: '#FFF' },
   role: { fontSize: 12, color: '#00D4FF', marginTop: 2 },
   logoutBtn: { padding: 8 },
-  aiWhisper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    backgroundColor: '#1A1A2E',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#00D4FF20',
-  },
+  aiWhisper: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 16, backgroundColor: '#1A1A2E', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, gap: 8, borderWidth: 1, borderColor: '#00D4FF20' },
   aiWhisperText: { color: '#CCC', fontSize: 13, flex: 1 },
-  heroClock: {
-    marginHorizontal: 20,
-    marginBottom: 24,
-    backgroundColor: '#1A1A1A',
-    borderRadius: 24,
-    padding: 28,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#333',
-  },
+  heroClock: { marginHorizontal: 20, marginBottom: 24, backgroundColor: '#1A1A1A', borderRadius: 24, padding: 28, alignItems: 'center', borderWidth: 1, borderColor: '#333' },
   heroClockActive: { borderColor: '#4CAF50', borderWidth: 2, backgroundColor: '#0A1A0A' },
   heroTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 6 },
   heroSubtitle: { color: '#888', fontSize: 14, marginBottom: 20 },
-  segmentedControl: {
-    flexDirection: 'row',
-    backgroundColor: '#0A0A0A',
-    borderRadius: 20,
-    padding: 4,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
+  segmentedControl: { flexDirection: 'row', backgroundColor: '#0A0A0A', borderRadius: 20, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: '#333' },
   segment: { flex: 1, paddingVertical: 8, borderRadius: 16, alignItems: 'center' },
   segmentActive: { backgroundColor: '#00D4FF' },
   segmentText: { color: '#888', fontSize: 14, fontWeight: '500' },
   segmentTextActive: { color: '#0A0A0A', fontWeight: '600' },
   projectScroll: { maxHeight: 80, marginBottom: 12 },
-  projectCard: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: '#444',
-    minWidth: 120,
-  },
+  projectCard: { backgroundColor: '#0A0A0A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 120 },
   projectCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
   projectCardName: { color: '#CCC', fontSize: 14, fontWeight: '500' },
   projectCardNameActive: { color: '#00D4FF', fontWeight: '600' },
   projectCardClient: { color: '#888', fontSize: 11, marginTop: 2 },
   scheduleScroll: { maxHeight: 70, marginBottom: 12 },
-  scheduleCard: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: '#444',
-    minWidth: 100,
-  },
+  scheduleCard: { backgroundColor: '#0A0A0A', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 100 },
   scheduleCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
   scheduleName: { color: '#FFF', fontSize: 13, fontWeight: '500' },
   scheduleDate: { color: '#00D4FF', fontSize: 11, marginTop: 2 },
   scheduleProject: { color: '#888', fontSize: 10, marginTop: 2 },
   noSchedules: { color: '#666', fontSize: 13, paddingVertical: 6 },
-  clockInBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#00D4FF',
-    paddingVertical: 12,
-    borderRadius: 10,
-    gap: 8,
-    width: '100%',
-  },
-  clockOutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FF5722',
-    paddingVertical: 12,
-    borderRadius: 10,
-    gap: 8,
-    width: '100%',
-  },
+  clockInBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#00D4FF', paddingVertical: 12, borderRadius: 10, gap: 8, width: '100%' },
+  clockOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF5722', paddingVertical: 12, borderRadius: 10, gap: 8, width: '100%' },
   clockBtnText: { color: '#0A0A0A', fontWeight: 'bold', fontSize: 16 },
-  timerRing: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    borderWidth: 4,
-    borderColor: '#4CAF50',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
+  timerRing: { width: 160, height: 160, borderRadius: 80, borderWidth: 4, borderColor: '#4CAF50', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
   timerRingInner: { alignItems: 'center' },
   timerText: { color: '#FFF', fontSize: 28, fontWeight: 'bold', fontVariant: ['tabular-nums'] },
   timerProject: { color: '#4CAF50', fontSize: 13, marginTop: 4 },
   sectionTitle: { color: '#FFF', fontSize: 18, fontWeight: '600', paddingHorizontal: 20, marginBottom: 14 },
   actionsScroll: { paddingHorizontal: 16, marginBottom: 24 },
   actionCard: { alignItems: 'center', marginRight: 16, width: 80 },
-  actionCardGradient: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
+  actionCardGradient: { width: 64, height: 64, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
   actionCardLabel: { color: '#AAA', fontSize: 11, textAlign: 'center' },
   moreActions: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 12 },
-  moreActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1A1A1A',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
+  moreActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, gap: 10, borderWidth: 1, borderColor: '#333' },
   moreActionLabel: { color: '#CCC', fontSize: 13 },
   floatingContainer: { position: 'absolute', bottom: 40, right: 20, zIndex: 10 },
-  fab: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#00D4FF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-  },
+  fab: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#00D4FF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12 },
 });
