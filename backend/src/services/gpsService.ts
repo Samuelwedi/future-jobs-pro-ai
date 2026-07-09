@@ -29,23 +29,40 @@ interface GeofenceStatus {
 export async function recordGPSPoint(point: GPSPoint): Promise<GeofenceStatus & { pointId: string }> {
   const { userId, timeEntryId, projectId, latitude, longitude, accuracy, altitude, speed, heading, batteryLevel } = point;
 
-  // Check if the user is inside the project's geofence (if any)
-  const projectRes = await pool.query(
-    'SELECT geofence_lat, geofence_lng, geofence_radius FROM projects WHERE id = $1',
-    [projectId]
-  );
-  const project = projectRes.rows[0];
   let geofenceStatus: 'inside' | 'outside' | 'unknown' = 'unknown';
-  if (project && project.geofence_lat && project.geofence_lng && project.geofence_radius) {
-    const distance = calculateDistance(
-      latitude, longitude,
-      project.geofence_lat, project.geofence_lng
-    );
-    geofenceStatus = distance <= project.geofence_radius ? 'inside' : 'outside';
-  }
-
-  // Detect if moving (speed > 1 m/s)
   const isMoving = speed !== undefined && speed > 1;
+
+  // 1. Try company office geofence first
+  const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+  if (userRes.rows.length > 0) {
+    const companyId = userRes.rows[0].company_id;
+    const compRes = await pool.query(
+      'SELECT office_latitude, office_longitude FROM companies WHERE id = $1',
+      [companyId]
+    );
+    if (compRes.rows.length > 0 && compRes.rows[0].office_latitude !== null && compRes.rows[0].office_longitude !== null) {
+      const distance = calculateDistance(
+        latitude, longitude,
+        compRes.rows[0].office_latitude,
+        compRes.rows[0].office_longitude
+      );
+      geofenceStatus = distance <= 500 ? 'inside' : 'outside'; // 500m radius
+    } else {
+      // 2. Fallback to project geofence if company office not set
+      const projectRes = await pool.query(
+        'SELECT geofence_lat, geofence_lng, geofence_radius FROM projects WHERE id = $1',
+        [projectId]
+      );
+      const project = projectRes.rows[0];
+      if (project && project.geofence_lat !== null && project.geofence_lng !== null && project.geofence_radius !== null) {
+        const distance = calculateDistance(
+          latitude, longitude,
+          project.geofence_lat, project.geofence_lng
+        );
+        geofenceStatus = distance <= project.geofence_radius ? 'inside' : 'outside';
+      }
+    }
+  }
 
   const result = await pool.query(
     `INSERT INTO gps_tracking

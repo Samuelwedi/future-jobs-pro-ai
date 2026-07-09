@@ -10,47 +10,53 @@ async function run() {
   try {
     console.log('🔄 Adding missing columns...');
 
-    // Add is_moving to gps_tracking
+    // ─── GPS tracking columns ───
     await client.query(`
       DO $$
       BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name='gps_tracking' AND column_name='is_moving'
-        ) THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='gps_tracking' AND column_name='is_moving') THEN
           ALTER TABLE gps_tracking ADD COLUMN is_moving BOOLEAN DEFAULT false;
         END IF;
-      END $$;
-    `);
-    console.log('✅ is_moving added to gps_tracking');
-
-    // Add geofence_status to gps_tracking
-    await client.query(`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name='gps_tracking' AND column_name='geofence_status'
-        ) THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='gps_tracking' AND column_name='geofence_status') THEN
           ALTER TABLE gps_tracking ADD COLUMN geofence_status VARCHAR(20) DEFAULT 'unknown';
         END IF;
       END $$;
     `);
-    console.log('✅ geofence_status added to gps_tracking');
+    console.log('✅ gps_tracking columns added');
 
-    // Add office_city to companies
+    // ─── Company office location ───
     await client.query(`
       DO $$
       BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name='companies' AND column_name='office_city'
-        ) THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='companies' AND column_name='office_city') THEN
           ALTER TABLE companies ADD COLUMN office_city VARCHAR(100);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='companies' AND column_name='office_latitude') THEN
+          ALTER TABLE companies ADD COLUMN office_latitude DECIMAL(10,8);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='companies' AND column_name='office_longitude') THEN
+          ALTER TABLE companies ADD COLUMN office_longitude DECIMAL(11,8);
         END IF;
       END $$;
     `);
-    console.log('✅ office_city added to companies');
+    console.log('✅ Company office columns added');
+
+    // ─── Project geofence columns ───
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='projects' AND column_name='geofence_lat') THEN
+          ALTER TABLE projects ADD COLUMN geofence_lat DECIMAL(10,8);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='projects' AND column_name='geofence_lng') THEN
+          ALTER TABLE projects ADD COLUMN geofence_lng DECIMAL(11,8);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='projects' AND column_name='geofence_radius') THEN
+          ALTER TABLE projects ADD COLUMN geofence_radius DECIMAL(10,2);
+        END IF;
+      END $$;
+    `);
+    console.log('✅ Project geofence columns added');
 
     console.log('✅ Migration complete.');
   } catch (err) {

@@ -30,7 +30,7 @@ export default function CrewClockScreen() {
 
   const fetchCompanyCity = async () => {
     try {
-      const res = await api.get<{ office_city: string }>(`/companies/${user?.companyId}`);
+      const res = await api.get<{ office_city?: string }>(`/companies/${user?.companyId}`);
       setOfficeCity(res.office_city || '');
     } catch (e) {
       console.error('Failed to fetch company city:', e);

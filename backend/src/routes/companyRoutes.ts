@@ -28,6 +28,24 @@ const upload = multer({
   }
 });
 
+// GET /api/companies/:companyId
+router.get('/:companyId', async (req: Request, res: Response) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, logo_url, temperature_unit, office_city, office_latitude, office_longitude
+       FROM companies WHERE id = $1`,
+      [req.params.companyId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Company not found' });
+    }
+    res.json({ success: true, ...result.rows[0] });
+  } catch (error: any) {
+    console.error('Get company error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // POST /api/companies/:companyId/logo
 router.post('/:companyId/logo', upload.single('logo'), async (req: Request, res: Response) => {
   try {
