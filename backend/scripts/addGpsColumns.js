@@ -23,9 +23,12 @@ async function run() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='gps_tracking' AND column_name='geofence_status') THEN
           ALTER TABLE gps_tracking ADD COLUMN geofence_status VARCHAR(20) DEFAULT 'unknown';
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='gps_tracking' AND column_name='battery_level') THEN
+          ALTER TABLE gps_tracking ADD COLUMN battery_level INTEGER;
+        END IF;
       END $$;
     `);
-    console.log('✅ gps_tracking columns added');
+    console.log('✅ gps_tracking columns added (project_id, is_moving, geofence_status, battery_level)');
 
     // ─── Company office columns ───
     await client.query(`
@@ -40,9 +43,12 @@ async function run() {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='companies' AND column_name='office_longitude') THEN
           ALTER TABLE companies ADD COLUMN office_longitude DECIMAL(11,8);
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='companies' AND column_name='logo_url') THEN
+          ALTER TABLE companies ADD COLUMN logo_url TEXT;
+        END IF;
       END $$;
     `);
-    console.log('✅ Company office columns added');
+    console.log('✅ Company columns added (office_city, office_lat/lng, logo_url)');
 
     // ─── Project geofence columns ───
     await client.query(`
