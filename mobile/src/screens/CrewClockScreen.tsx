@@ -1,113 +1,120 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, ActivityIndicator, RefreshControl,
-  TouchableOpacity, Alert, ScrollView
-} from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { MaterialIcons } from '@expo/vector-icons';
-import { format, formatDistanceToNow, differenceInSeconds } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 
 interface ActiveEmployee {
   userId: string;
   firstName: string;
   lastName: string;
+  timeEntryId: string;
+  clockIn: string;
   latitude: number | null;
   longitude: number | null;
-  timestamp: string;        // last GPS update
-  geofenceStatus: 'inside' | 'outside' | 'unknown';
+  lastGpsTime: string | null;
   isMoving: boolean;
+  geofenceStatus: string;
   projectName: string;
 }
 
-export default function CrewTrackingScreen() {
+export default function CrewClockScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
-  const [employees, setEmployees] = useState<ActiveEmployee[]>([]);
+  const [activeEmployees, setActiveEmployees] = useState<ActiveEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [region, setRegion] = useState<any>(null);
+  const [officeCity, setOfficeCity] = useState('');
+
+  const fetchCompanyCity = async () => {
+    try {
+      const res = await api.get<{ office_city?: string }>(`/companies/${user?.companyId}`);
+      setOfficeCity(res.office_city || '');
+    } catch (e) {
+      console.error('Failed to fetch company city:', e);
+    }
+  };
 
   const fetchActiveEmployees = async () => {
     try {
-      const res = await api.get<{
-        data: { employees: ActiveEmployee[]; }; employees: ActiveEmployee[] 
-}>(`/gps/active/${user?.companyId}`);
-      const employeesList = (res && res.data && res.data.employees) || [];
-      setEmployees(employeesList);
-
-      // Set initial map region to center of all points
-      if (employeesList.length > 0) {
-        const avgLat = employeesList.reduce((s: number, e: any) => s + (e.latitude || 0), 0) / employeesList.length;
-        const avgLng = employeesList.reduce((s: number, e: any) => s + (e.longitude || 0), 0) / employeesList.length;
-        if (avgLat && avgLng) {
-          setRegion({
-            latitude: avgLat,
-            longitude: avgLng,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          });
-        }
-      }
+      const res = await api.get<{ success: boolean; count: number; employees: ActiveEmployee[] }>(
+        `/gps/active/${user?.companyId}`
+      );
+      setActiveEmployees(res.employees || []);
     } catch (e) {
       console.error('Failed to fetch active employees:', e);
-      Alert.alert('Error', 'Could not load employee locations');
+      Alert.alert('Error', 'Could not load active employees');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchActiveEmployees();
-    }, [])
-  );
-
-  const onRefresh = () => {
-    setRefreshing(true);
+  useEffect(() => {
+    fetchCompanyCity();
     fetchActiveEmployees();
-  };
+  }, []);
 
-  // ─── Helper: format duration at location ───
-  const getDurationAtLocation = (employee: ActiveEmployee): string => {
-    if (!employee.timestamp) return 'Unknown';
-    const lastUpdate = new Date(employee.timestamp);
-    const now = new Date();
-    const diffSeconds = differenceInSeconds(now, lastUpdate);
-    if (diffSeconds < 0) return 'Just now';
-
-    if (employee.isMoving) {
-      return 'Moving';
-    }
-
-    // If stationary, show how long they've been there (since last GPS update)
-    // We could also use the first GPS point of the current location cluster, but we keep it simple.
-    const diffMinutes = Math.floor(diffSeconds / 60);
-    if (diffMinutes < 1) return 'Just arrived';
-    if (diffMinutes < 60) return `${diffMinutes}m ago`;
-    const hours = Math.floor(diffMinutes / 60);
-    const mins = diffMinutes % 60;
-    return `${hours}h ${mins}m ago`;
-  };
-
-  const formatLastUpdate = (timestamp: string) => {
-    if (!timestamp) return 'Never';
+  const formatClockInTime = (clockIn: string) => {
     try {
-      const date = new Date(timestamp);
-      return format(date, 'h:mm a');
+      const date = new Date(clockIn);
+      return format(date, 'h:mm a') + ' (' + formatDistanceToNow(date, { addSuffix: true }) + ')';
     } catch {
-      return 'Invalid date';
+      return clockIn;
     }
   };
+
+  const handleForceClockOut = async (userId: string, timeEntryId: string) => {
+    Alert.alert(
+      'Force Clock Out',
+      'Are you sure you want to clock out this employee?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clock Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.post('/crew/clock-out', { userId, timeEntryId });
+              Alert.alert('✅ Clocked Out', 'Employee has been clocked out.');
+              fetchActiveEmployees();
+            } catch (e: any) {
+              Alert.alert('Error', e.message || 'Failed to clock out');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const renderItem = ({ item }: { item: ActiveEmployee }) => (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Text style={styles.name}>{item.firstName} {item.lastName}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: item.isMoving ? '#4CAF50' : '#FF9800' }]}>
+          <Text style={styles.statusText}>{item.isMoving ? 'Moving' : 'Stationary'}</Text>
+        </View>
+      </View>
+      <Text style={styles.project}>{item.projectName}</Text>
+      <Text style={styles.clockIn}>Clocked in: {formatClockInTime(item.clockIn)}</Text>
+      {item.latitude && item.longitude && (
+        <Text style={styles.location}>📍 {item.latitude.toFixed(6)}, {item.longitude.toFixed(6)}</Text>
+      )}
+      <TouchableOpacity
+        style={styles.clockOutBtn}
+        onPress={() => handleForceClockOut(item.userId, item.timeEntryId)}
+      >
+        <MaterialIcons name="logout" size={20} color="#FFF" />
+        <Text style={styles.clockOutText}>Clock Out</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   if (loading) {
     return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
   }
-
-  const activeCount = employees.filter(e => e.latitude && e.longitude).length;
 
   return (
     <View style={styles.container}>
@@ -116,75 +123,26 @@ export default function CrewTrackingScreen() {
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View>
-          <Text style={styles.headerTitle}>Crew Tracker</Text>
-          <Text style={styles.headerSubtitle}>{activeCount} worker{activeCount !== 1 ? 's' : ''} active</Text>
+          <Text style={styles.headerTitle}>Crew Clock</Text>
+          <Text style={styles.headerSubtitle}>
+            {officeCity ? `📍 ${officeCity} • ` : ''}{activeEmployees.length} currently clocked in
+          </Text>
         </View>
-        <TouchableOpacity onPress={onRefresh}>
-          <MaterialIcons name="refresh" size={24} color="#00D4FF" />
-        </TouchableOpacity>
+        <View style={{ width: 24 }} />
       </View>
-
-      {region ? (
-        <MapView
-          provider={PROVIDER_GOOGLE}
-          style={styles.map}
-          region={region}
-          showsUserLocation
-          showsMyLocationButton
-        >
-          {employees
-            .filter(e => e.latitude && e.longitude)
-            .map((employee) => (
-              <Marker
-                key={employee.userId}
-                coordinate={{
-                  latitude: employee.latitude!,
-                  longitude: employee.longitude!,
-                }}
-                title={`${employee.firstName} ${employee.lastName}`}
-                description={employee.projectName || 'Working'}
-                pinColor={employee.geofenceStatus === 'inside' ? '#4CAF50' : '#FF9800'}
-              />
-            ))}
-        </MapView>
-      ) : (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No active employees to track</Text>
-        </View>
-      )}
-
-      {/* Employee list overlay */}
-      <View style={styles.employeeList}>
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {employees.map((emp) => {
-            const name = `${emp.firstName} ${emp.lastName}`;
-            const duration = getDurationAtLocation(emp);
-            const lastUpdate = formatLastUpdate(emp.timestamp);
-            const location = emp.latitude && emp.longitude
-              ? `${emp.latitude.toFixed(5)}, ${emp.longitude.toFixed(5)}`
-              : 'Unknown';
-
-            return (
-              <View key={emp.userId} style={styles.employeeItem}>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{emp.firstName[0]}{emp.lastName?.[0] || ''}</Text>
-                </View>
-                <View style={styles.employeeInfo}>
-                  <Text style={styles.employeeName}>{name}</Text>
-                  <Text style={styles.employeeProject}>{emp.projectName || 'No project'}</Text>
-                  <View style={styles.detailsRow}>
-                    <Text style={styles.detailText}>
-                      {emp.isMoving ? '🚶 Moving' : `📍 At location for ${duration}`}
-                    </Text>
-                    <Text style={styles.detailText}>• Updated: {lastUpdate}</Text>
-                  </View>
-                </View>
-                <View style={[styles.statusDot, { backgroundColor: emp.isMoving ? '#4CAF50' : '#FF9800' }]} />
-              </View>
-            );
-          })}
-        </ScrollView>
-      </View>
+      <FlatList
+        data={activeEmployees}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.userId}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchActiveEmployees(); }} tintColor="#00D4FF" />}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <MaterialIcons name="people-outline" size={48} color="#444" />
+            <Text style={styles.emptyText}>No one is currently clocked in</Text>
+          </View>
+        }
+      />
     </View>
   );
 }
@@ -194,52 +152,40 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingTop: 60,
     paddingBottom: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  headerTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold' },
   headerSubtitle: { color: '#888', fontSize: 14, marginTop: 4 },
-  map: { flex: 1 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText: { color: '#888', fontSize: 16 },
-  employeeList: {
-    position: 'absolute',
-    bottom: 20,
-    left: 16,
-    right: 16,
-    maxHeight: 200,
-    backgroundColor: 'rgba(26,26,26,0.95)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  list: { padding: 16, paddingBottom: 40 },
+  card: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#333',
   },
-  employeeItem: {
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  name: { color: '#FFF', fontSize: 18, fontWeight: '600' },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  statusText: { color: '#FFF', fontSize: 12, fontWeight: '500' },
+  project: { color: '#00D4FF', fontSize: 14, marginBottom: 4 },
+  clockIn: { color: '#AAA', fontSize: 13, marginBottom: 4 },
+  location: { color: '#888', fontSize: 12, marginBottom: 12 },
+  clockOutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  badge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#00D4FF',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
+    backgroundColor: '#F44336',
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 6,
   },
-  badgeText: { color: '#0A0A0A', fontSize: 14, fontWeight: 'bold' },
-  employeeInfo: { flex: 1 },
-  employeeName: { color: '#FFF', fontSize: 14, fontWeight: '500' },
-  employeeProject: { color: '#00D4FF', fontSize: 12 },
-  detailsRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 2 },
-  detailText: { color: '#AAA', fontSize: 11, marginRight: 8 },
-  statusDot: { width: 10, height: 10, borderRadius: 5, marginLeft: 8 },
+  clockOutText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
+  emptyContainer: { alignItems: 'center', marginTop: 80 },
+  emptyText: { color: '#888', fontSize: 16, marginTop: 12 },
 });
