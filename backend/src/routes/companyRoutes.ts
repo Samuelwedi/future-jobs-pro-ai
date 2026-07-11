@@ -28,11 +28,12 @@ const upload = multer({
   }
 });
 
-// GET /api/companies/:companyId
+// ─── GET /api/companies/:companyId ───
 router.get('/:companyId', async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, logo_url, temperature_unit, office_city, office_latitude, office_longitude
+      `SELECT id, name, logo_url, temperature_unit, office_city, office_latitude, office_longitude,
+              address, phone, email, primary_color, accent_color, default_hourly_rate
        FROM companies WHERE id = $1`,
       [req.params.companyId]
     );
@@ -46,7 +47,50 @@ router.get('/:companyId', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/companies/:companyId/logo
+// ─── PUT /api/companies/:companyId ─── (update general info)
+router.put('/:companyId', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+    const decoded = verifyToken(req);
+    const { companyId } = req.params;
+    const { name, address, phone, email, primary_color, accent_color, default_hourly_rate } = req.body;
+
+    // Verify user belongs to this company
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    if (userRes.rows.length === 0 || userRes.rows[0].company_id !== companyId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    // Build dynamic update
+    const updates: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+    if (name !== undefined) { updates.push(`name = $${idx++}`); values.push(name); }
+    if (address !== undefined) { updates.push(`address = $${idx++}`); values.push(address); }
+    if (phone !== undefined) { updates.push(`phone = $${idx++}`); values.push(phone); }
+    if (email !== undefined) { updates.push(`email = $${idx++}`); values.push(email); }
+    if (primary_color !== undefined) { updates.push(`primary_color = $${idx++}`); values.push(primary_color); }
+    if (accent_color !== undefined) { updates.push(`accent_color = $${idx++}`); values.push(accent_color); }
+    if (default_hourly_rate !== undefined) { updates.push(`default_hourly_rate = $${idx++}`); values.push(default_hourly_rate); }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, message: 'No fields to update' });
+    }
+
+    values.push(companyId);
+    const query = `UPDATE companies SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`;
+    const result = await pool.query(query, values);
+    res.json({ success: true, company: result.rows[0] });
+  } catch (error: any) {
+    console.error('Update company error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── POST /api/companies/:companyId/logo ───
 router.post('/:companyId/logo', upload.single('logo'), async (req: Request, res: Response) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No logo file provided' });
@@ -59,7 +103,7 @@ router.post('/:companyId/logo', upload.single('logo'), async (req: Request, res:
   }
 });
 
-// PUT /api/companies/:companyId/temperature-unit
+// ─── PUT /api/companies/:companyId/temperature-unit ───
 router.put('/:companyId/temperature-unit', async (req: Request, res: Response) => {
   try {
     const { unit } = req.body;
@@ -74,7 +118,7 @@ router.put('/:companyId/temperature-unit', async (req: Request, res: Response) =
   }
 });
 
-// GET /api/companies/:companyId/unit
+// ─── GET /api/companies/:companyId/unit ───
 router.get('/:companyId/unit', async (req: Request, res: Response) => {
   try {
     const result = await pool.query('SELECT temperature_unit FROM companies WHERE id = $1', [req.params.companyId]);
