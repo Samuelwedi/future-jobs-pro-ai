@@ -180,7 +180,7 @@ router.post('/clock-in', async (req: Request, res: Response) => {
   }
 });
 
-// ─── POST /api/time-entries/clock-out ───
+// ─── POST /api/time-entries/clock-out ─── (UPDATED with overtime settings)
 router.post('/clock-out', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -195,22 +195,38 @@ router.post('/clock-out', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'timeEntryId is required' });
     }
 
+    // Get the time entry and user's company
     const check = await pool.query(
-      'SELECT clock_in FROM time_entries WHERE id = $1 AND user_id = $2 AND clock_out IS NULL',
+      `SELECT te.*, u.company_id FROM time_entries te JOIN users u ON te.user_id = u.id WHERE te.id = $1 AND te.user_id = $2 AND te.clock_out IS NULL`,
       [timeEntryId, userId]
     );
     if (check.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Active time entry not found' });
     }
-    const clockIn = new Date(check.rows[0].clock_in);
+    const row = check.rows[0];
+    const clockIn = new Date(row.clock_in);
     const now = new Date();
     const diffMs = now.getTime() - clockIn.getTime();
     const hoursWorked = diffMs / 3600000;
 
-    const regularHours = Math.min(hoursWorked, 8);
-    const overtimeHours = Math.max(hoursWorked - 8, 0);
-    const hourlyRate = 20; // placeholder – fetch from company settings later
-    const totalWage = (regularHours + overtimeHours * 1.5) * hourlyRate;
+    // ─── Fetch company overtime settings ───
+    const companyId = row.company_id;
+    const settingsRes = await pool.query(
+      `SELECT overtime_enabled, overtime_threshold_hours, overtime_multiplier FROM companies WHERE id = $1`,
+      [companyId]
+    );
+    const settings = settingsRes.rows[0] || { overtime_enabled: true, overtime_threshold_hours: 40, overtime_multiplier: 1.5 };
+    const threshold = settings.overtime_enabled ? settings.overtime_threshold_hours : Infinity;
+    const multiplier = settings.overtime_multiplier || 1.5;
+
+    // Calculate regular and overtime hours
+    const regularHours = Math.min(hoursWorked, threshold);
+    const overtimeHours = Math.max(hoursWorked - threshold, 0);
+
+    // Hourly rate (can later be per‑company or per‑user; default $20)
+    const hourlyRate = 20;
+
+    const totalWage = (regularHours + overtimeHours * multiplier) * hourlyRate;
 
     const result = await pool.query(
       `UPDATE time_entries
@@ -225,6 +241,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
        RETURNING id, clock_out`,
       [latitude || 0, longitude || 0, regularHours, overtimeHours, totalWage, timeEntryId, userId]
     );
+
     res.json({
       success: true,
       message: 'Clocked out successfully',
@@ -236,6 +253,96 @@ router.post('/clock-out', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Clock-out error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── GET /api/companies/:companyId/settings ─── (fetch overtime settings)
+router.get('/companies/:companyId/settings', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+    const decoded = verifyToken(req);
+    const { companyId } = req.params;
+
+    // Verify user belongs to this company
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    if (userRes.rows.length === 0 || userRes.rows[0].company_id !== companyId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const result = await pool.query(
+      `SELECT overtime_enabled, overtime_threshold_hours, overtime_multiplier FROM companies WHERE id = $1`,
+      [companyId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Company not found' });
+    }
+    res.json({ success: true, settings: result.rows[0] });
+  } catch (error: any) {
+    console.error('Error fetching company settings:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── PUT /api/companies/:companyId/settings ─── (update overtime settings)
+router.put('/companies/:companyId/settings', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+    const decoded = verifyToken(req);
+    const { companyId } = req.params;
+    const { overtime_enabled, overtime_threshold_hours, overtime_multiplier } = req.body;
+
+    // Only boss/manager can update settings
+    const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
+    if (userRes.rows.length === 0 || userRes.rows[0].company_id !== companyId) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    if (!['boss', 'manager'].includes(userRes.rows[0].role)) {
+      return res.status(403).json({ success: false, message: 'Only boss/manager can update settings' });
+    }
+
+    // Validate
+    if (overtime_enabled !== undefined && typeof overtime_enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'overtime_enabled must be boolean' });
+    }
+    if (overtime_threshold_hours !== undefined && (isNaN(overtime_threshold_hours) || overtime_threshold_hours < 0)) {
+      return res.status(400).json({ success: false, message: 'overtime_threshold_hours must be a positive number' });
+    }
+    if (overtime_multiplier !== undefined && (isNaN(overtime_multiplier) || overtime_multiplier < 1)) {
+      return res.status(400).json({ success: false, message: 'overtime_multiplier must be at least 1' });
+    }
+
+    // Build dynamic update query
+    const updates: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+    if (overtime_enabled !== undefined) {
+      updates.push(`overtime_enabled = $${idx++}`);
+      values.push(overtime_enabled);
+    }
+    if (overtime_threshold_hours !== undefined) {
+      updates.push(`overtime_threshold_hours = $${idx++}`);
+      values.push(overtime_threshold_hours);
+    }
+    if (overtime_multiplier !== undefined) {
+      updates.push(`overtime_multiplier = $${idx++}`);
+      values.push(overtime_multiplier);
+    }
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, message: 'No fields to update' });
+    }
+    values.push(companyId);
+    const query = `UPDATE companies SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`;
+    const result = await pool.query(query, values);
+    res.json({ success: true, settings: result.rows[0] });
+  } catch (error: any) {
+    console.error('Error updating company settings:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
