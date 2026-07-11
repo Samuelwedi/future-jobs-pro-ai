@@ -1,8 +1,5 @@
-// backend/scripts/addCompanySettings.js
 const { Pool } = require('pg');
-
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:fFhIpSkiVKmHhAmQcQoSudrksWdXuGMQ@centerbeam.proxy.rlwy.net:47967/railway';
-
 const pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
 async function run() {
@@ -23,7 +20,7 @@ async function run() {
         END IF;
       END $$;
     `);
-    console.log('✅ Company settings columns added successfully.');
+    console.log('✅ Company settings columns added.');
   } catch (err) {
     console.error('❌ Migration error:', err);
   } finally {
@@ -31,5 +28,4 @@ async function run() {
     await pool.end();
   }
 }
-
 run();
