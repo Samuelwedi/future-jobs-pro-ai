@@ -115,7 +115,6 @@ router.get('/:companyId/settings', async (req: Request, res: Response) => {
     const decoded = verifyToken(req);
     const { companyId } = req.params;
 
-    // Verify user belongs to this company
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (userRes.rows.length === 0 || userRes.rows[0].company_id !== companyId) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
@@ -144,7 +143,7 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
     }
     const decoded = verifyToken(req);
     const { companyId } = req.params;
-    const { overtime_enabled, overtime_threshold_hours, overtime_multiplier } = req.body;
+    let { overtime_enabled, overtime_threshold_hours, overtime_multiplier } = req.body;
 
     // Only boss/manager can update settings
     const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
@@ -155,18 +154,24 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Only boss/manager can update settings' });
     }
 
-    // Validate
+    // ─── Explicitly parse numeric values ───
+    if (overtime_threshold_hours !== undefined) {
+      overtime_threshold_hours = parseFloat(overtime_threshold_hours);
+      if (isNaN(overtime_threshold_hours) || overtime_threshold_hours < 0) {
+        return res.status(400).json({ success: false, message: 'overtime_threshold_hours must be a positive number' });
+      }
+    }
+    if (overtime_multiplier !== undefined) {
+      overtime_multiplier = parseFloat(overtime_multiplier);
+      if (isNaN(overtime_multiplier) || overtime_multiplier < 1) {
+        return res.status(400).json({ success: false, message: 'overtime_multiplier must be at least 1' });
+      }
+    }
     if (overtime_enabled !== undefined && typeof overtime_enabled !== 'boolean') {
       return res.status(400).json({ success: false, message: 'overtime_enabled must be boolean' });
     }
-    if (overtime_threshold_hours !== undefined && (isNaN(overtime_threshold_hours) || overtime_threshold_hours < 0)) {
-      return res.status(400).json({ success: false, message: 'overtime_threshold_hours must be a positive number' });
-    }
-    if (overtime_multiplier !== undefined && (isNaN(overtime_multiplier) || overtime_multiplier < 1)) {
-      return res.status(400).json({ success: false, message: 'overtime_multiplier must be at least 1' });
-    }
 
-    // Build dynamic update query
+    // ─── Build dynamic update query ───
     const updates: string[] = [];
     const values: any[] = [];
     let idx = 1;
