@@ -461,6 +461,8 @@ export default function HomeScreen() {
             { icon: 'beach-access', color: '#00D4FF', label: 'PTO', screen: 'PTO' },
             { icon: 'work', color: '#FF9800', label: 'Projects', screen: 'Projects' },
             ...(user?.role === 'boss' || user?.role === 'manager' ? [{ icon: 'people', color: '#00D4FF', label: 'Team', screen: 'Team' }] : []),
+            // 👇 Added Company Settings – only for boss/manager
+            ...(user?.role === 'boss' || user?.role === 'manager' ? [{ icon: 'settings', color: '#00D4FF', label: 'Company Settings', screen: 'CompanySettings' }] : []),
             { icon: 'person', color: '#00D4FF', label: 'Settings', screen: 'Profile' },
             { icon: 'mail', color: '#00D4FF', label: 'Contact', screen: 'Contact' },
             { icon: 'lock', color: '#4CAF50', label: 'Privacy', screen: 'Privacy' },
