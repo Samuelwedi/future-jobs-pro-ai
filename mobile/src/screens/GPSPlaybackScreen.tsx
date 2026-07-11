@@ -13,7 +13,7 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import MapView, { Marker, PROVIDER_GOOGLE, Polyline, Circle } from 'react-native-maps';
+import MapView, { Marker, Polyline, Circle } from 'react-native-maps';
 import Slider from '@react-native-community/slider';
 import { MaterialIcons } from '@expo/vector-icons';
 import { format, intervalToDuration, formatDuration } from 'date-fns';
@@ -67,12 +67,12 @@ export default function GPSPlaybackScreen() {
 
   const fetchGPSTrail = async () => {
     try {
-      const res = (await api.get(`/gps/trail/${timeEntryId}`)) as any;
-      const data = res?.data ?? res;
-      const trailPoints = data.trail?.points || [];
+      const res = await api.get<{ trail?: { points: GPSPoint[] } }>(`/gps/trail/${timeEntryId}`);
+      const trailPoints = res?.trail?.points || [];
       if (trailPoints.length === 0) {
         Alert.alert('No Data', 'No GPS points found for this shift.');
-        navigation.goBack();
+        setPoints([]);
+        setLoading(false);
         return;
       }
       setPoints(trailPoints);
@@ -227,6 +227,18 @@ export default function GPSPlaybackScreen() {
     );
   }
 
+  if (points.length === 0) {
+    return (
+      <View style={styles.centered}>
+        <MaterialIcons name="gps-off" size={48} color="#666" />
+        <Text style={styles.emptyText}>No GPS data available for this shift</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   const currentPoint = points[currentIndex] || points[0];
 
   return (
@@ -267,7 +279,6 @@ export default function GPSPlaybackScreen() {
         <MapView
           ref={mapRef}
           style={styles.map}
-          provider={PROVIDER_GOOGLE}
           region={mapRegion}
           showsUserLocation={false}
           showsMyLocationButton={false}
@@ -389,8 +400,11 @@ export default function GPSPlaybackScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A', paddingHorizontal: 20 },
   loadingText: { color: '#888', marginTop: 16, fontSize: 14 },
+  emptyText: { color: '#AAA', marginTop: 12, fontSize: 16, textAlign: 'center' },
+  backButton: { marginTop: 20, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#00D4FF', borderRadius: 10 },
+  backButtonText: { color: '#0A0A0A', fontWeight: 'bold', fontSize: 16 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
