@@ -42,6 +42,7 @@ import MonthMediaTypeScreen from './src/screens/MonthMediaTypeScreen';
 import WebViewScreen from './src/screens/WebViewScreen';
 import SelectEmployeesScreen from './src/screens/SelectEmployeesScreen';
 import CreateShiftScreen from './src/screens/CreateShiftScreen';
+import CompanySettingsScreen from './src/screens/CompanySettingsScreen';
 
 const Stack = createStackNavigator();
 
@@ -140,6 +141,7 @@ function AppNavigator() {
             <Stack.Screen name="WebView" component={WebViewScreen} />
             <Stack.Screen name="SelectEmployees" component={SelectEmployeesScreen} />
             <Stack.Screen name="CreateShift" component={CreateShiftScreen} />
+            <Stack.Screen name="CompanySettings" component={CompanySettingsScreen} />
           </>
         )}
       </Stack.Navigator>
