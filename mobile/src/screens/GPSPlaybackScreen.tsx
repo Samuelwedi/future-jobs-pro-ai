@@ -13,10 +13,10 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import MapView, { Marker, PROVIDER_GOOGLE, Polygon, Circle, Polyline } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, Polyline, Circle } from 'react-native-maps';
 import Slider from '@react-native-community/slider';
 import { MaterialIcons } from '@expo/vector-icons';
-import { format, formatDistanceToNow, intervalToDuration, formatDuration } from 'date-fns';
+import { format, intervalToDuration, formatDuration } from 'date-fns';
 import * as Haptics from 'expo-haptics';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -56,11 +56,8 @@ export default function GPSPlaybackScreen() {
   const mapRef = useRef<MapView>(null);
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  // ─── Speed options ───
   const speedOptions = [0.5, 1, 2, 4];
-  const speedLabels = ['0.5x', '1x', '2x', '4x'];
 
-  // ─── Fetch GPS data ───
   useEffect(() => {
     fetchGPSTrail();
     return () => {
@@ -70,10 +67,8 @@ export default function GPSPlaybackScreen() {
 
   const fetchGPSTrail = async () => {
     try {
-      const res = await api.get(`/gps/trail/${timeEntryId}`);
-      // res may be unknown; coerce to any to access `.data` safely
-      const anyRes = res as any;
-      const data = anyRes?.data ?? anyRes;
+      const res = (await api.get(`/gps/trail/${timeEntryId}`)) as any;
+      const data = res?.data ?? res;
       const trailPoints = data.trail?.points || [];
       if (trailPoints.length === 0) {
         Alert.alert('No Data', 'No GPS points found for this shift.');
@@ -82,7 +77,6 @@ export default function GPSPlaybackScreen() {
       }
       setPoints(trailPoints);
       setCurrentIndex(0);
-      // Center map on first point with some padding
       const first = trailPoints[0];
       setMapRegion({
         latitude: first.latitude,
@@ -98,7 +92,6 @@ export default function GPSPlaybackScreen() {
     }
   };
 
-  // ─── Animate map to current point ───
   const animateToPoint = (index: number) => {
     if (!points[index]) return;
     const point = points[index];
@@ -108,25 +101,16 @@ export default function GPSPlaybackScreen() {
       latitudeDelta: 0.005,
       longitudeDelta: 0.005,
     }, 500);
-    // Haptic feedback on significant moves
-    if (index % 5 === 0) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
+    if (index % 5 === 0) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  // ─── Playback controls ───
   const togglePlay = () => {
-    if (isPlaying) {
-      pausePlayback();
-    } else {
-      startPlayback();
-    }
+    if (isPlaying) pausePlayback();
+    else startPlayback();
   };
 
   const startPlayback = () => {
-    if (currentIndex >= points.length - 1) {
-      setCurrentIndex(0);
-    }
+    if (currentIndex >= points.length - 1) setCurrentIndex(0);
     setIsPlaying(true);
     playbackInterval.current = setInterval(() => {
       setCurrentIndex((prev) => {
@@ -178,19 +162,15 @@ export default function GPSPlaybackScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  // ─── Slider navigation ───
   const handleSliderChange = (value: number) => {
     const index = Math.round(value);
     if (index !== currentIndex) {
       setCurrentIndex(index);
       animateToPoint(index);
-      if (isPlaying) {
-        pausePlayback();
-      }
+      if (isPlaying) pausePlayback();
     }
   };
 
-  // ─── Toggle details panel ───
   const toggleDetails = () => {
     setShowDetails(!showDetails);
     Animated.spring(slideAnim, {
@@ -200,21 +180,15 @@ export default function GPSPlaybackScreen() {
     }).start();
   };
 
-  // ─── Format helpers ───
   const formatTimestamp = (ts: string) => {
-    try {
-      const date = new Date(ts);
-      return format(date, 'EEE, MMM d, h:mm:ss a');
-    } catch {
-      return ts;
-    }
+    try { return format(new Date(ts), 'EEE, MMM d, h:mm:ss a'); } catch { return ts; }
   };
 
   const getAccuracyColor = (accuracy: number | null) => {
     if (accuracy === null) return '#888';
-    if (accuracy <= 33) return '#4CAF50';      // High
-    if (accuracy <= 81) return '#FF9800';      // Medium
-    return '#F44336';                          // Low
+    if (accuracy <= 33) return '#4CAF50';
+    if (accuracy <= 81) return '#FF9800';
+    return '#F44336';
   };
 
   const getAccuracyLabel = (accuracy: number | null) => {
@@ -227,29 +201,23 @@ export default function GPSPlaybackScreen() {
   const calculateTotalDistance = (pts: GPSPoint[]) => {
     let total = 0;
     for (let i = 1; i < pts.length; i++) {
-      total += getDistanceFromLatLonInKm(
-        pts[i-1].latitude, pts[i-1].longitude,
-        pts[i].latitude, pts[i].longitude
-      );
+      const R = 6371;
+      const lat1 = pts[i-1].latitude, lon1 = pts[i-1].longitude;
+      const lat2 = pts[i].latitude, lon2 = pts[i].longitude;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a =
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      total += R * c;
     }
     return total;
   };
 
-  const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
-
   const totalDistance = points.length > 0 ? calculateTotalDistance(points) : 0;
 
-  // ─── Render ───
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -263,7 +231,6 @@ export default function GPSPlaybackScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
@@ -272,7 +239,6 @@ export default function GPSPlaybackScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {/* Stats Bar */}
       <View style={styles.statsBar}>
         <View style={styles.statItem}>
           <Text style={styles.statValue}>{totalDistance.toFixed(2)} km</Text>
@@ -297,7 +263,6 @@ export default function GPSPlaybackScreen() {
         </View>
       </View>
 
-      {/* Map */}
       <View style={styles.mapContainer}>
         <MapView
           ref={mapRef}
@@ -308,7 +273,6 @@ export default function GPSPlaybackScreen() {
           showsMyLocationButton={false}
           showsCompass={true}
         >
-          {/* Polyline for the entire trail */}
           {points.length > 1 && (
             <Polyline
               coordinates={points.map(p => ({
@@ -320,27 +284,20 @@ export default function GPSPlaybackScreen() {
               lineDashPattern={[5, 3]}
             />
           )}
-
           {points.map((point, index) => {
             const isCurrent = index === currentIndex;
             const accuracyColor = getAccuracyColor(point.accuracy);
             return (
               <React.Fragment key={point.id || index}>
                 <Marker
-                  coordinate={{
-                    latitude: point.latitude,
-                    longitude: point.longitude,
-                  }}
+                  coordinate={{ latitude: point.latitude, longitude: point.longitude }}
                   title={`Point ${index + 1}`}
                   description={formatTimestamp(point.timestamp)}
                   pinColor={isCurrent ? '#00D4FF' : '#4A4A4A'}
                 />
                 {point.accuracy && isCurrent && (
                   <Circle
-                    center={{
-                      latitude: point.latitude,
-                      longitude: point.longitude,
-                    }}
+                    center={{ latitude: point.latitude, longitude: point.longitude }}
                     radius={point.accuracy}
                     strokeColor={`${accuracyColor}80`}
                     fillColor={`${accuracyColor}20`}
@@ -350,16 +307,11 @@ export default function GPSPlaybackScreen() {
             );
           })}
         </MapView>
-
-        {/* Current point indicator */}
         <View style={styles.currentPointBadge}>
-          <Text style={styles.currentPointText}>
-            {currentIndex + 1} / {points.length}
-          </Text>
+          <Text style={styles.currentPointText}>{currentIndex + 1} / {points.length}</Text>
         </View>
       </View>
 
-      {/* Slider */}
       <View style={styles.sliderContainer}>
         <View style={styles.sliderTimeRow}>
           <Text style={styles.sliderTime}>
@@ -387,44 +339,26 @@ export default function GPSPlaybackScreen() {
         </View>
       </View>
 
-      {/* Playback Controls */}
       <View style={styles.controlsRow}>
         <TouchableOpacity style={styles.controlBtn} onPress={stepBackward}>
           <MaterialIcons name="skip-previous" size={28} color="#FFF" />
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.playBtn} onPress={togglePlay}>
-          <MaterialIcons
-            name={isPlaying ? 'pause' : 'play-arrow'}
-            size={40}
-            color="#0A0A0A"
-          />
+          <MaterialIcons name={isPlaying ? 'pause' : 'play-arrow'} size={40} color="#0A0A0A" />
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.controlBtn} onPress={stepForward}>
           <MaterialIcons name="skip-next" size={28} color="#FFF" />
         </TouchableOpacity>
-
         <TouchableOpacity style={styles.speedBtn} onPress={changeSpeed}>
-          <Text style={styles.speedBtnText}>
-            {playbackSpeed}x
-          </Text>
+          <Text style={styles.speedBtnText}>{playbackSpeed}x</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Toggle Details Button */}
       <TouchableOpacity style={styles.detailsToggle} onPress={toggleDetails}>
-        <MaterialIcons
-          name={showDetails ? 'expand-less' : 'expand-more'}
-          size={24}
-          color="#00D4FF"
-        />
-        <Text style={styles.detailsToggleText}>
-          {showDetails ? 'Hide Details' : 'Show Details'}
-        </Text>
+        <MaterialIcons name={showDetails ? 'expand-less' : 'expand-more'} size={24} color="#00D4FF" />
+        <Text style={styles.detailsToggleText}>{showDetails ? 'Hide Details' : 'Show Details'}</Text>
       </TouchableOpacity>
 
-      {/* Details Panel (slide-up) */}
       <Animated.View style={[
         styles.detailsPanel,
         {
@@ -439,43 +373,13 @@ export default function GPSPlaybackScreen() {
       ]}>
         {currentPoint && (
           <ScrollView style={styles.detailsScroll}>
-            <Text style={styles.detailsTitle}>
-              📍 Location Details
-            </Text>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Time</Text>
-              <Text style={styles.detailValue}>{formatTimestamp(currentPoint.timestamp)}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Coordinates</Text>
-              <Text style={styles.detailValue}>
-                {currentPoint.latitude.toFixed(6)}, {currentPoint.longitude.toFixed(6)}
-              </Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Accuracy</Text>
-              <Text style={[styles.detailValue, { color: getAccuracyColor(currentPoint.accuracy) }]}>
-                {getAccuracyLabel(currentPoint.accuracy)}
-              </Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Speed</Text>
-              <Text style={styles.detailValue}>
-                {currentPoint.speed ? (currentPoint.speed * 3.6).toFixed(1) : 'N/A'} km/h
-              </Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Geofence</Text>
-              <Text style={styles.detailValue}>
-                {currentPoint.geofence_status || 'unknown'}
-              </Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Moving</Text>
-              <Text style={styles.detailValue}>
-                {currentPoint.is_moving ? '🚶 Yes' : '🛑 No'}
-              </Text>
-            </View>
+            <Text style={styles.detailsTitle}>📍 Location Details</Text>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Time</Text><Text style={styles.detailValue}>{formatTimestamp(currentPoint.timestamp)}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Coordinates</Text><Text style={styles.detailValue}>{currentPoint.latitude.toFixed(6)}, {currentPoint.longitude.toFixed(6)}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Accuracy</Text><Text style={[styles.detailValue, { color: getAccuracyColor(currentPoint.accuracy) }]}>{getAccuracyLabel(currentPoint.accuracy)}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Speed</Text><Text style={styles.detailValue}>{currentPoint.speed ? (currentPoint.speed * 3.6).toFixed(1) : 'N/A'} km/h</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Geofence</Text><Text style={styles.detailValue}>{currentPoint.geofence_status || 'unknown'}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}>Moving</Text><Text style={styles.detailValue}>{currentPoint.is_moving ? '🚶 Yes' : '🛑 No'}</Text></View>
           </ScrollView>
         )}
       </Animated.View>
@@ -484,21 +388,9 @@ export default function GPSPlaybackScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0A0A0A',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#0A0A0A',
-  },
-  loadingText: {
-    color: '#888',
-    marginTop: 16,
-    fontSize: 14,
-  },
+  container: { flex: 1, backgroundColor: '#0A0A0A' },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
+  loadingText: { color: '#888', marginTop: 16, fontSize: 14 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -509,14 +401,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  backBtn: {
-    padding: 4,
-  },
-  headerTitle: {
-    color: '#FFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
+  backBtn: { padding: 4 },
+  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   statsBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -526,31 +412,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  statItem: {
-    alignItems: 'center',
-  },
-  statValue: {
-    color: '#00D4FF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  statLabel: {
-    color: '#888',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: '#333',
-  },
-  mapContainer: {
-    flex: 1,
-    position: 'relative',
-  },
-  map: {
-    flex: 1,
-  },
+  statItem: { alignItems: 'center' },
+  statValue: { color: '#00D4FF', fontSize: 18, fontWeight: 'bold' },
+  statLabel: { color: '#888', fontSize: 11, marginTop: 2 },
+  statDivider: { width: 1, height: 30, backgroundColor: '#333' },
+  mapContainer: { flex: 1, position: 'relative' },
+  map: { flex: 1 },
   currentPointBadge: {
     position: 'absolute',
     top: 12,
@@ -562,11 +429,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
-  currentPointText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  currentPointText: { color: '#FFF', fontSize: 13, fontWeight: '500' },
   sliderContainer: {
     paddingHorizontal: 20,
     paddingVertical: 8,
@@ -574,28 +437,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#333',
   },
-  sliderTimeRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  sliderTime: {
-    color: '#AAA',
-    fontSize: 12,
-  },
-  slider: {
-    width: '100%',
-    height: 40,
-  },
-  sliderLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: -8,
-  },
-  sliderLabel: {
-    color: '#666',
-    fontSize: 11,
-  },
+  sliderTimeRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 4 },
+  sliderTime: { color: '#AAA', fontSize: 12 },
+  slider: { width: '100%', height: 40 },
+  sliderLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -8 },
+  sliderLabel: { color: '#666', fontSize: 11 },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -606,9 +452,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#333',
   },
-  controlBtn: {
-    padding: 8,
-  },
+  controlBtn: { padding: 8 },
   playBtn: {
     backgroundColor: '#00D4FF',
     width: 56,
@@ -624,11 +468,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#00D4FF',
   },
-  speedBtnText: {
-    color: '#00D4FF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  speedBtnText: { color: '#00D4FF', fontSize: 14, fontWeight: '600' },
   detailsToggle: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -639,11 +479,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#333',
     gap: 6,
   },
-  detailsToggleText: {
-    color: '#00D4FF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
+  detailsToggleText: { color: '#00D4FF', fontSize: 14, fontWeight: '500' },
   detailsPanel: {
     backgroundColor: '#1A1A1A',
     borderTopWidth: 1,
@@ -652,15 +488,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  detailsScroll: {
-    flex: 1,
-  },
-  detailsTitle: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
+  detailsScroll: { flex: 1 },
+  detailsTitle: { color: '#FFF', fontSize: 16, fontWeight: '600', marginBottom: 8 },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -668,16 +497,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#2A2A2A',
   },
-  detailLabel: {
-    color: '#888',
-    fontSize: 13,
-  },
-  detailValue: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '500',
-    textAlign: 'right',
-    flex: 1,
-    marginLeft: 12,
-  },
+  detailLabel: { color: '#888', fontSize: 13 },
+  detailValue: { color: '#FFF', fontSize: 13, fontWeight: '500', textAlign: 'right', flex: 1, marginLeft: 12 },
 });
