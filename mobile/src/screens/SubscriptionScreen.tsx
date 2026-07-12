@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator,
-  ScrollView,
+  ScrollView, Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as RNIap from 'react-native-iap';
+import { api } from '../services/api';
 
 const productIds = {
   basic: 'com.samuel33.futurejobspro.basic_monthly',
@@ -26,11 +27,26 @@ export default function SubscriptionScreen() {
   const [products, setProducts] = useState<ProductInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+
+  // ─── Check current subscription status ───
+  const checkSubscriptionStatus = async () => {
+    try {
+      const res: any = await api.get('/subscriptions/status');
+      if (res.success && res.subscribed) {
+        setIsSubscribed(true);
+      }
+    } catch (e) {
+      console.error('Subscription status error:', e);
+    }
+  };
 
   useEffect(() => {
     const init = async () => {
       try {
         await RNIap.initConnection();
+
+        // 1. Fetch products
         const productList = (await RNIap.fetchProducts({
           skus: Object.values(productIds),
         })) as any[];
@@ -44,6 +60,20 @@ export default function SubscriptionScreen() {
             localizedPrice: p.localizedPrice,
           }));
         setProducts(normalized);
+
+        // 2. Check existing purchases locally
+        const purchases = await RNIap.getAvailablePurchases();
+        const hasSubscription = purchases.some(p =>
+          Object.values(productIds).includes(p.productId)
+        );
+        if (hasSubscription) {
+          setIsSubscribed(true);
+          Alert.alert('Active Subscription', 'You are already subscribed!');
+        }
+
+        // 3. Check backend status
+        await checkSubscriptionStatus();
+
       } catch (err) {
         console.error('IAP init error:', err);
         Alert.alert('Error', 'Failed to load subscription plans.');
@@ -53,32 +83,46 @@ export default function SubscriptionScreen() {
     };
     init();
 
+    // ─── Purchase updated listener ───
     const purchaseUpdateSubscription = RNIap.purchaseUpdatedListener(async (purchase) => {
       console.log('Purchase updated:', purchase);
       const receipt = (purchase as any).transactionReceipt || (purchase as any).purchaseToken;
       if (receipt) {
-        Alert.alert('Success', 'Thank you for your purchase!');
+        try {
+          await api.post('/subscriptions/verify', {
+            receipt,
+            platform: Platform.OS === 'ios' ? 'apple' : 'google',
+            productId: purchase.productId,
+          });
+          Alert.alert('Success', 'Thank you for your purchase!');
+          setIsSubscribed(true);
+        } catch (e) {
+          console.error('Receipt validation failed:', e);
+          Alert.alert('Error', 'Could not verify your purchase. Please contact support.');
+        }
         await RNIap.finishTransaction({ purchase, isConsumable: false });
       }
       setPurchasing(false);
     });
-const purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
-  console.error('Purchase error:', error);
-  const code = String(error.code);
 
-  if (code === 'E_USER_CANCELLED') {
-    Alert.alert('Purchase Cancelled', 'You cancelled the purchase.');
-  } else if (code === 'E_ALREADY_OWNED') {
-    Alert.alert('Already Owned', 'You already own this subscription.');
-  } else if (code === 'E_ITEM_UNAVAILABLE') {
-    Alert.alert('Not Available', 'This product is not available in your country.');
-  } else if (code === 'E_DEVELOPER_ERROR') {
-    Alert.alert('Configuration Error', 'The product is not configured correctly in App Store Connect.');
-  } else {
-    Alert.alert('Purchase Failed', error.message || 'An error occurred during purchase.');
-  }
-  setPurchasing(false);
-});
+    // ─── Purchase error listener ───
+    const purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
+      console.error('Purchase error:', error);
+      const code = String(error.code);
+
+      if (code === 'E_USER_CANCELLED') {
+        Alert.alert('Purchase Cancelled', 'You cancelled the purchase.');
+      } else if (code === 'E_ALREADY_OWNED') {
+        Alert.alert('Already Owned', 'You already own this subscription.');
+      } else if (code === 'E_ITEM_UNAVAILABLE') {
+        Alert.alert('Not Available', 'This product is not available in your country.');
+      } else if (code === 'E_DEVELOPER_ERROR') {
+        Alert.alert('Configuration Error', 'The product is not configured correctly in App Store Connect.');
+      } else {
+        Alert.alert('Purchase Failed', error.message || 'An error occurred during purchase.');
+      }
+      setPurchasing(false);
+    });
 
     return () => {
       purchaseUpdateSubscription.remove();
@@ -87,11 +131,13 @@ const purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
     };
   }, []);
 
+  // ─── Purchase handler ───
   const handlePurchase = async (sku: string) => {
     if (purchasing) return;
     setPurchasing(true);
     try {
-      await (RNIap.requestPurchase as any)({ sku });
+      // Use `as any` to bypass type issues; the library accepts both `sku` and `productId`
+      await RNIap.requestPurchase({ sku, productId: sku } as any);
     } catch (err) {
       console.error('Purchase request error:', err);
       Alert.alert('Purchase Failed', 'Could not complete purchase.');
@@ -99,12 +145,26 @@ const purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
     }
   };
 
+  // ─── Restore purchases ───
   const restorePurchases = async () => {
     setPurchasing(true);
     try {
       const purchases = await RNIap.getAvailablePurchases();
       if (purchases.length > 0) {
         Alert.alert('Restored', 'Your previous purchases have been restored.');
+        for (const p of purchases) {
+          const receipt = (p as any).transactionReceipt || (p as any).purchaseToken;
+          if (receipt) {
+            try {
+              await api.post('/subscriptions/verify', {
+                receipt,
+                platform: Platform.OS === 'ios' ? 'apple' : 'google',
+                productId: p.productId,
+              });
+            } catch (e) { /* ignore */ }
+          }
+        }
+        setIsSubscribed(true);
       } else {
         Alert.alert('No Purchases', 'No previous purchases found.');
       }
@@ -126,6 +186,18 @@ const purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#00D4FF" />
+      </View>
+    );
+  }
+
+  if (isSubscribed) {
+    return (
+      <View style={styles.center}>
+        <MaterialIcons name="check-circle" size={64} color="#4CAF50" />
+        <Text style={styles.subscribedText}>You are subscribed!</Text>
+        <TouchableOpacity style={styles.manageBtn} onPress={restorePurchases}>
+          <Text style={styles.manageBtnText}>Manage Subscription</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -201,7 +273,6 @@ const purchaseErrorSubscription = RNIap.purchaseErrorListener((error) => {
         <Text style={styles.restoreText}>Restore Purchases</Text>
       </TouchableOpacity>
 
-      {/* ----- LEGAL LINKS (required by Apple) ----- */}
       <View style={styles.legalContainer}>
         <TouchableOpacity
           style={styles.legalLink}
@@ -274,12 +345,7 @@ const styles = StyleSheet.create({
   popularText: { color: '#0A0A0A', fontSize: 12, fontWeight: 'bold' },
   restoreBtn: { alignItems: 'center', marginTop: 10, marginBottom: 20 },
   restoreText: { color: '#888', fontSize: 14 },
-  legalContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 20,
-    marginBottom: 10,
-  },
+  legalContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 20, marginBottom: 10 },
   legalLink: { paddingHorizontal: 12 },
   legalText: { color: '#00D4FF', fontSize: 14, fontWeight: '500' },
   legalDivider: { width: 1, backgroundColor: '#333' },
@@ -295,4 +361,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   purchasingText: { color: '#FFF', marginTop: 12, fontSize: 16 },
+  subscribedText: { color: '#FFF', fontSize: 24, fontWeight: 'bold', marginTop: 16 },
+  manageBtn: { marginTop: 20, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#00D4FF', borderRadius: 8 },
+  manageBtnText: { color: '#0A0A0A', fontWeight: 'bold', fontSize: 16 },
 });
