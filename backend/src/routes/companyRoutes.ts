@@ -134,7 +134,7 @@ router.get('/:companyId/settings', async (req: Request, res: Response) => {
   }
 });
 
-// ─── PUT /api/companies/:companyId/settings ───
+// ─── PUT /api/companies/:companyId/settings ─── (update overtime)
 router.put('/:companyId/settings', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -154,8 +154,7 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Only boss/manager can update settings' });
     }
 
-    // ─── SAFE PARSING ───
-    // Convert to number, then check for NaN
+    // ─── Safe parsing ───
     const parsedThreshold = parseFloat(overtime_threshold_hours);
     const parsedMultiplier = parseFloat(overtime_multiplier);
     const enabled = overtime_enabled === true || overtime_enabled === 'true';

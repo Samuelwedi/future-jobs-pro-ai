@@ -46,6 +46,14 @@ interface SettingsResponse {
     overtime_threshold_hours: number;
     overtime_multiplier: number;
   };
+  data?: {
+    success: boolean;
+    settings: {
+      overtime_enabled: boolean;
+      overtime_threshold_hours: number;
+      overtime_multiplier: number;
+    };
+  };
 }
 
 export default function CompanySettingsScreen() {
@@ -75,7 +83,9 @@ export default function CompanySettingsScreen() {
   const fetchSettings = async () => {
     try {
       const companyData = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
-      const settingsData = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
+
+      const settingsRes = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
+      const settingsData = settingsRes.data || settingsRes;
 
       const merged: CompanySettings = {
         id: companyData.id,
