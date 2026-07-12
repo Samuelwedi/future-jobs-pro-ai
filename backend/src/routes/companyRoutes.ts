@@ -127,7 +127,6 @@ router.get('/:companyId/settings', async (req: Request, res: Response) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Company not found' });
     }
-    // Ensure we return numbers (not strings) for decimals
     const settings = {
       overtime_enabled: result.rows[0].overtime_enabled,
       overtime_threshold_hours: parseFloat(result.rows[0].overtime_threshold_hours),
@@ -140,7 +139,7 @@ router.get('/:companyId/settings', async (req: Request, res: Response) => {
   }
 });
 
-// ─── PUT /api/companies/:companyId/settings ─── (with detailed logging)
+// ─── PUT /api/companies/:companyId/settings ───
 router.put('/:companyId/settings', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -154,7 +153,6 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
     console.log('📥 Raw request body:', req.body);
     console.log('📥 Extracted values:', { overtime_enabled, overtime_threshold_hours, overtime_multiplier });
 
-    // Only boss/manager can update settings
     const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
     if (userRes.rows.length === 0 || userRes.rows[0].company_id !== companyId) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
@@ -163,7 +161,6 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Only boss/manager can update settings' });
     }
 
-    // ─── Safe parsing ───
     const parsedThreshold = parseFloat(overtime_threshold_hours);
     const parsedMultiplier = parseFloat(overtime_multiplier);
     const enabled = overtime_enabled === true || overtime_enabled === 'true';
@@ -214,7 +211,6 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('❌ Error updating company settings:', error);
-    console.error('📦 Error details:', error.detail, error.hint);
     res.status(500).json({ success: false, message: error.message });
   }
 });
