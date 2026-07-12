@@ -65,7 +65,7 @@ export default function CompanySettingsScreen() {
     phone: null,
     email: null,
     overtime_enabled: true,
-    overtime_threshold_hours: 40,
+    overtime_threshold_hours: 40.5,
     overtime_multiplier: 1.5,
     default_hourly_rate: 20,
   });

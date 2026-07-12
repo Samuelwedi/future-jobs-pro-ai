@@ -104,7 +104,7 @@ class ApiService {
     return response.data;
   }
 
-  async post<T>(url: string, data?: any): Promise<T> {
+  async post<T>(url: string, data?: any, p0?: { headers: { 'Content-Type': string; }; }): Promise<T> {
     const online = getOnlineStatus();
     if (!online) {
       console.log('📴 Offline – queuing action:', url);
