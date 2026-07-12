@@ -145,6 +145,8 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
     const { companyId } = req.params;
     let { overtime_enabled, overtime_threshold_hours, overtime_multiplier } = req.body;
 
+    console.log('📥 Overtime settings update request:', { companyId, overtime_enabled, overtime_threshold_hours, overtime_multiplier });
+
     // Only boss/manager can update settings
     const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
     if (userRes.rows.length === 0 || userRes.rows[0].company_id !== companyId) {

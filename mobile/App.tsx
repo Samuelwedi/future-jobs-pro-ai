@@ -141,7 +141,7 @@ function AppNavigator() {
             <Stack.Screen name="WebView" component={WebViewScreen} />
             <Stack.Screen name="SelectEmployees" component={SelectEmployeesScreen} />
             <Stack.Screen name="CreateShift" component={CreateShiftScreen} />
-            <Stack.Screen name="CompanySettings" component={CompanySettingsScreen} />
+            <Stack.Screen name="CompanySettings" component={CompanySettingsScreen as React.ComponentType<any>} />
           </>
         )}
       </Stack.Navigator>
