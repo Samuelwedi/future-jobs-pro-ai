@@ -31,7 +31,6 @@ interface CompanySettings {
 }
 
 interface CompanyResponse {
-  data: CompanyResponse;
   id: string;
   name: string;
   logo_url: string | null;
@@ -41,7 +40,6 @@ interface CompanyResponse {
 }
 
 interface SettingsResponse {
-  data: SettingsResponse;
   success: boolean;
   settings: {
     overtime_enabled: boolean;
@@ -76,11 +74,8 @@ export default function CompanySettingsScreen() {
 
   const fetchSettings = async () => {
     try {
-      const companyRes = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
-      const companyData = companyRes.data || companyRes;
-
-      const settingsRes = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
-      const settingsData = settingsRes.data || settingsRes;
+      const companyData = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
+      const settingsData = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
 
       const merged: CompanySettings = {
         id: companyData.id,
@@ -107,7 +102,7 @@ export default function CompanySettingsScreen() {
   const saveSettings = async () => {
     setSaving(true);
     try {
-      // ─── Send overtime settings with explicit numbers ───
+      // ─── Send overtime settings as numbers ───
       await api.put(`/companies/${user?.companyId}/settings`, {
         overtime_enabled: settings.overtime_enabled,
         overtime_threshold_hours: Number(settings.overtime_threshold_hours),

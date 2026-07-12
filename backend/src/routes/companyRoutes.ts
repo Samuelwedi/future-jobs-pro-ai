@@ -105,7 +105,7 @@ router.get('/:companyId/unit', async (req: Request, res: Response) => {
   }
 });
 
-// ─── GET /api/companies/:companyId/settings ─── (fetch overtime settings)
+// ─── GET /api/companies/:companyId/settings ───
 router.get('/:companyId/settings', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -134,7 +134,7 @@ router.get('/:companyId/settings', async (req: Request, res: Response) => {
   }
 });
 
-// ─── PUT /api/companies/:companyId/settings ─── (update overtime settings)
+// ─── PUT /api/companies/:companyId/settings ───
 router.put('/:companyId/settings', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -145,8 +145,6 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
     const { companyId } = req.params;
     let { overtime_enabled, overtime_threshold_hours, overtime_multiplier } = req.body;
 
-    console.log('📥 Raw overtime settings from client:', { overtime_enabled, overtime_threshold_hours, overtime_multiplier });
-
     // Only boss/manager can update settings
     const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
     if (userRes.rows.length === 0 || userRes.rows[0].company_id !== companyId) {
@@ -156,55 +154,45 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Only boss/manager can update settings' });
     }
 
-    // ─── Explicitly parse numeric values ───
-    if (overtime_threshold_hours !== undefined) {
-      overtime_threshold_hours = parseFloat(overtime_threshold_hours);
-      if (isNaN(overtime_threshold_hours) || overtime_threshold_hours < 0) {
-        return res.status(400).json({ success: false, message: 'overtime_threshold_hours must be a positive number' });
-      }
+    // ─── SAFE PARSING ───
+    // Convert to number, then check for NaN
+    const parsedThreshold = parseFloat(overtime_threshold_hours);
+    const parsedMultiplier = parseFloat(overtime_multiplier);
+    const enabled = overtime_enabled === true || overtime_enabled === 'true';
+
+    if (isNaN(parsedThreshold) && overtime_threshold_hours !== undefined) {
+      return res.status(400).json({ success: false, message: 'overtime_threshold_hours must be a number' });
     }
-    if (overtime_multiplier !== undefined) {
-      overtime_multiplier = parseFloat(overtime_multiplier);
-      if (isNaN(overtime_multiplier) || overtime_multiplier < 1) {
-        return res.status(400).json({ success: false, message: 'overtime_multiplier must be at least 1' });
-      }
-    }
-    if (overtime_enabled !== undefined && typeof overtime_enabled !== 'boolean') {
-      return res.status(400).json({ success: false, message: 'overtime_enabled must be boolean' });
+    if (isNaN(parsedMultiplier) && overtime_multiplier !== undefined) {
+      return res.status(400).json({ success: false, message: 'overtime_multiplier must be a number' });
     }
 
-    console.log('📤 Parsed overtime values:', { overtime_enabled, overtime_threshold_hours, overtime_multiplier });
-
-    // ─── Build dynamic update query ───
     const updates: string[] = [];
     const values: any[] = [];
     let idx = 1;
+
     if (overtime_enabled !== undefined) {
       updates.push(`overtime_enabled = $${idx++}`);
-      values.push(overtime_enabled);
+      values.push(enabled);
     }
     if (overtime_threshold_hours !== undefined) {
       updates.push(`overtime_threshold_hours = $${idx++}`);
-      values.push(overtime_threshold_hours);
+      values.push(parsedThreshold);
     }
     if (overtime_multiplier !== undefined) {
       updates.push(`overtime_multiplier = $${idx++}`);
-      values.push(overtime_multiplier);
+      values.push(parsedMultiplier);
     }
+
     if (updates.length === 0) {
       return res.status(400).json({ success: false, message: 'No fields to update' });
     }
     values.push(companyId);
     const query = `UPDATE companies SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`;
-    
-    console.log('🔍 Executing query:', query);
-    console.log('📦 With values:', values);
-
     const result = await pool.query(query, values);
     res.json({ success: true, settings: result.rows[0] });
   } catch (error: any) {
-    console.error('❌ Error updating company settings:', error);
-    console.error('📦 Error details:', error.detail, error.hint);
+    console.error('Error updating company settings:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
