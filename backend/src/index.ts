@@ -92,6 +92,7 @@ import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', payme
 import mediaRoutes from './routes/mediaRoutes'; app.use('/api/media', mediaRoutes);
 import uploadRoutes from './routes/uploadRoutes'; app.use('/api/upload', uploadRoutes);
 import approvalRoutes from './routes/approvalRoutes'; app.use('/api/approvals', approvalRoutes);
+import subscriptionRoutes from './routes/subscriptionRoutes'; app.use('/api/subscriptions', subscriptionRoutes);
 
 // ----- trialCheck middleware (moved AFTER scheduleRoutes) -----
 app.use(trialCheck);
