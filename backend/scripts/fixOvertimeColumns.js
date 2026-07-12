@@ -3,13 +3,16 @@ const { Pool } = require('pg');
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:fFhIpSkiVKmHhAmQcQoSudrksWdXuGMQ@centerbeam.proxy.rlwy.net:47967/railway';
 
-const pool = new Pool({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
 
 async function run() {
   const client = await pool.connect();
   try {
     console.log('🔧 Checking and fixing overtime column types...');
-    
+
     // Check current column types
     const typeCheck = await client.query(`
       SELECT column_name, data_type, numeric_precision, numeric_scale 
