@@ -68,14 +68,22 @@ export default function CompanySettingsScreen() {
   const [originalSettings, setOriginalSettings] = useState<CompanySettings>(settings);
   const [logoFile, setLogoFile] = useState<any>(null);
 
+  // ─── String states for decimal inputs ───
+  const [thresholdStr, setThresholdStr] = useState('40');
+  const [multiplierStr, setMultiplierStr] = useState('1.5');
+  const [hourlyRateStr, setHourlyRateStr] = useState('20');
+
   useEffect(() => {
     fetchSettings();
   }, []);
 
   const fetchSettings = async () => {
     try {
-      const companyData = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
-      const settingsData = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
+      const companyRes = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
+      const companyData = (companyRes as any).data ?? companyRes;
+
+      const settingsRes = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
+      const settingsData = (settingsRes as any).data ?? settingsRes;
 
       const merged: CompanySettings = {
         id: companyData.id,
@@ -91,6 +99,10 @@ export default function CompanySettingsScreen() {
       };
       setSettings(merged);
       setOriginalSettings(merged);
+      // Update string states
+      setThresholdStr(String(merged.overtime_threshold_hours));
+      setMultiplierStr(String(merged.overtime_multiplier));
+      setHourlyRateStr(String(merged.default_hourly_rate));
     } catch (e) {
       console.error('Error fetching settings:', e);
       Alert.alert('Error', 'Could not load company settings');
@@ -100,9 +112,10 @@ export default function CompanySettingsScreen() {
   };
 
   const saveSettings = async () => {
-    // Validate and sanitize
-    const threshold = parseFloat(String(settings.overtime_threshold_hours).replace(/[^0-9.]/g, ''));
-    const multiplier = parseFloat(String(settings.overtime_multiplier).replace(/[^0-9.]/g, ''));
+    // Convert strings to numbers
+    const threshold = parseFloat(thresholdStr);
+    const multiplier = parseFloat(multiplierStr);
+    const hourlyRate = parseFloat(hourlyRateStr);
 
     if (isNaN(threshold) || threshold < 0) {
       Alert.alert('Invalid Value', 'Please enter a valid positive number for overtime threshold.');
@@ -112,14 +125,19 @@ export default function CompanySettingsScreen() {
       Alert.alert('Invalid Value', 'Overtime multiplier must be at least 1.');
       return;
     }
+    if (isNaN(hourlyRate) || hourlyRate < 0) {
+      Alert.alert('Invalid Value', 'Hourly rate must be a positive number.');
+      return;
+    }
 
     setSaving(true);
     try {
-      console.log('📤 Sending to backend:', { threshold, multiplier });
+      console.log('📤 Sending to backend:', { threshold, multiplier, hourlyRate });
       await api.put(`/companies/${user?.companyId}/settings`, {
         overtime_enabled: settings.overtime_enabled,
         overtime_threshold_hours: threshold,
         overtime_multiplier: multiplier,
+        default_hourly_rate: hourlyRate,
       });
 
       // Update general company info if changed
@@ -185,6 +203,8 @@ export default function CompanySettingsScreen() {
 
   const applySuggestion = () => {
     const suggestion = getOvertimeSuggestion();
+    setThresholdStr(String(suggestion.threshold));
+    setMultiplierStr(String(suggestion.multiplier));
     setSettings({
       ...settings,
       overtime_threshold_hours: suggestion.threshold,
@@ -264,27 +284,15 @@ export default function CompanySettingsScreen() {
           <>
             <InputFieldDecimal
               label="Threshold (hours per week)"
-              value={String(settings.overtime_threshold_hours)}
-              onChangeText={(text: string) => {
-                const sanitized = text.replace(/[^0-9.]/g, '');
-                const val = parseFloat(sanitized);
-                if (!isNaN(val) || sanitized === '') {
-                  setSettings({ ...settings, overtime_threshold_hours: val || 0 });
-                }
-              }}
-              keyboardType="decimal-pad"
+              value={thresholdStr}
+              onChangeText={setThresholdStr}
+              placeholder="e.g. 40.5"
             />
             <InputFieldDecimal
               label="Overtime Multiplier (e.g. 1.5)"
-              value={String(settings.overtime_multiplier)}
-              onChangeText={(text: string) => {
-                const sanitized = text.replace(/[^0-9.]/g, '');
-                const val = parseFloat(sanitized);
-                if (!isNaN(val) || sanitized === '') {
-                  setSettings({ ...settings, overtime_multiplier: val || 1 });
-                }
-              }}
-              keyboardType="decimal-pad"
+              value={multiplierStr}
+              onChangeText={setMultiplierStr}
+              placeholder="e.g. 1.5"
             />
             <TouchableOpacity style={styles.aiSuggestionBtn} onPress={applySuggestion}>
               <Ionicons name="sparkles" size={20} color="#FFF" />
@@ -297,15 +305,9 @@ export default function CompanySettingsScreen() {
       <Section title="Payroll & Branding" icon="palette">
         <InputFieldDecimal
           label="Default Hourly Rate ($)"
-          value={String(settings.default_hourly_rate)}
-          onChangeText={(text: string) => {
-            const sanitized = text.replace(/[^0-9.]/g, '');
-            const val = parseFloat(sanitized);
-            if (!isNaN(val) || sanitized === '') {
-              setSettings({ ...settings, default_hourly_rate: val || 0 });
-            }
-          }}
-          keyboardType="decimal-pad"
+          value={hourlyRateStr}
+          onChangeText={setHourlyRateStr}
+          placeholder="e.g. 20.00"
         />
       </Section>
 
@@ -363,12 +365,12 @@ const InputFieldDecimal = ({
   label,
   value,
   onChangeText,
-  keyboardType = 'decimal-pad',
+  placeholder = '',
 }: {
   label: string;
   value: string;
   onChangeText: (text: string) => void;
-  keyboardType?: string;
+  placeholder?: string;
 }) => (
   <View style={styles.field}>
     <Text style={styles.label}>{label}</Text>
@@ -376,7 +378,8 @@ const InputFieldDecimal = ({
       style={styles.input}
       value={value}
       onChangeText={onChangeText}
-      keyboardType={keyboardType as any}
+      keyboardType="decimal-pad"
+      placeholder={placeholder}
       placeholderTextColor="#666"
     />
   </View>
