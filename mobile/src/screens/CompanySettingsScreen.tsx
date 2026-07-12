@@ -46,14 +46,6 @@ interface SettingsResponse {
     overtime_threshold_hours: number;
     overtime_multiplier: number;
   };
-  data?: {
-    success: boolean;
-    settings: {
-      overtime_enabled: boolean;
-      overtime_threshold_hours: number;
-      overtime_multiplier: number;
-    };
-  };
 }
 
 export default function CompanySettingsScreen() {
@@ -82,10 +74,11 @@ export default function CompanySettingsScreen() {
 
   const fetchSettings = async () => {
     try {
-      const companyData = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
+      const companyRes = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
+      const companyData = companyRes;
 
       const settingsRes = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
-      const settingsData = settingsRes.data || settingsRes;
+      const settingsData = settingsRes;
 
       const merged: CompanySettings = {
         id: companyData.id,
@@ -110,13 +103,26 @@ export default function CompanySettingsScreen() {
   };
 
   const saveSettings = async () => {
+    // ─── Validate and sanitize numbers ───
+    const threshold = parseFloat(String(settings.overtime_threshold_hours).replace(/[^0-9.]/g, ''));
+    const multiplier = parseFloat(String(settings.overtime_multiplier).replace(/[^0-9.]/g, ''));
+
+    if (isNaN(threshold) || threshold < 0) {
+      Alert.alert('Invalid Value', 'Please enter a valid positive number for overtime threshold.');
+      return;
+    }
+    if (isNaN(multiplier) || multiplier < 1) {
+      Alert.alert('Invalid Value', 'Overtime multiplier must be at least 1.');
+      return;
+    }
+
     setSaving(true);
     try {
-      // ─── Send overtime settings as numbers ───
+      // ─── Send sanitized numbers ───
       await api.put(`/companies/${user?.companyId}/settings`, {
         overtime_enabled: settings.overtime_enabled,
-        overtime_threshold_hours: Number(settings.overtime_threshold_hours),
-        overtime_multiplier: Number(settings.overtime_multiplier),
+        overtime_threshold_hours: threshold,
+        overtime_multiplier: multiplier,
       });
 
       // Update general company info if changed
