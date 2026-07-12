@@ -127,14 +127,20 @@ router.get('/:companyId/settings', async (req: Request, res: Response) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Company not found' });
     }
-    res.json({ success: true, settings: result.rows[0] });
+    // Ensure we return numbers (not strings) for decimals
+    const settings = {
+      overtime_enabled: result.rows[0].overtime_enabled,
+      overtime_threshold_hours: parseFloat(result.rows[0].overtime_threshold_hours),
+      overtime_multiplier: parseFloat(result.rows[0].overtime_multiplier),
+    };
+    res.json({ success: true, settings });
   } catch (error: any) {
     console.error('Error fetching company settings:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// ─── PUT /api/companies/:companyId/settings ─── (update overtime)
+// ─── PUT /api/companies/:companyId/settings ─── (with detailed logging)
 router.put('/:companyId/settings', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -144,6 +150,9 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
     const decoded = verifyToken(req);
     const { companyId } = req.params;
     let { overtime_enabled, overtime_threshold_hours, overtime_multiplier } = req.body;
+
+    console.log('📥 Raw request body:', req.body);
+    console.log('📥 Extracted values:', { overtime_enabled, overtime_threshold_hours, overtime_multiplier });
 
     // Only boss/manager can update settings
     const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
@@ -158,6 +167,8 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
     const parsedThreshold = parseFloat(overtime_threshold_hours);
     const parsedMultiplier = parseFloat(overtime_multiplier);
     const enabled = overtime_enabled === true || overtime_enabled === 'true';
+
+    console.log('📤 Parsed values:', { enabled, parsedThreshold, parsedMultiplier });
 
     if (isNaN(parsedThreshold) && overtime_threshold_hours !== undefined) {
       return res.status(400).json({ success: false, message: 'overtime_threshold_hours must be a number' });
@@ -188,10 +199,22 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
     }
     values.push(companyId);
     const query = `UPDATE companies SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`;
+    console.log('🔍 Executing query:', query);
+    console.log('📦 With values:', values);
+
     const result = await pool.query(query, values);
-    res.json({ success: true, settings: result.rows[0] });
+    console.log('✅ Updated row:', result.rows[0]);
+    res.json({
+      success: true,
+      settings: {
+        overtime_enabled: result.rows[0].overtime_enabled,
+        overtime_threshold_hours: parseFloat(result.rows[0].overtime_threshold_hours),
+        overtime_multiplier: parseFloat(result.rows[0].overtime_multiplier),
+      },
+    });
   } catch (error: any) {
-    console.error('Error updating company settings:', error);
+    console.error('❌ Error updating company settings:', error);
+    console.error('📦 Error details:', error.detail, error.hint);
     res.status(500).json({ success: false, message: error.message });
   }
 });

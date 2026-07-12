@@ -118,12 +118,19 @@ export default function CompanySettingsScreen() {
 
     setSaving(true);
     try {
+        console.log('📤 Sending overtime settings:', {
+  overtime_enabled: settings.overtime_enabled,
+  overtime_threshold_hours: Number(settings.overtime_threshold_hours),
+  overtime_multiplier: Number(settings.overtime_multiplier),
+});
       // ─── Send sanitized numbers ───
-      await api.put(`/companies/${user?.companyId}/settings`, {
+      const response = await api.put(`/companies/${user?.companyId}/settings`, {
         overtime_enabled: settings.overtime_enabled,
         overtime_threshold_hours: threshold,
         overtime_multiplier: multiplier,
       });
+
+      console.log('✅ Response:', response);
 
       // Update general company info if changed
       if (
