@@ -74,11 +74,8 @@ export default function CompanySettingsScreen() {
 
   const fetchSettings = async () => {
     try {
-      const companyRes = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
-      const companyData = companyRes;
-
-      const settingsRes = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
-      const settingsData = settingsRes;
+      const companyData = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
+      const settingsData = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
 
       const merged: CompanySettings = {
         id: companyData.id,
@@ -103,7 +100,7 @@ export default function CompanySettingsScreen() {
   };
 
   const saveSettings = async () => {
-    // ─── Validate and sanitize numbers ───
+    // Validate and sanitize
     const threshold = parseFloat(String(settings.overtime_threshold_hours).replace(/[^0-9.]/g, ''));
     const multiplier = parseFloat(String(settings.overtime_multiplier).replace(/[^0-9.]/g, ''));
 
@@ -118,19 +115,12 @@ export default function CompanySettingsScreen() {
 
     setSaving(true);
     try {
-        console.log('📤 Sending overtime settings:', {
-  overtime_enabled: settings.overtime_enabled,
-  overtime_threshold_hours: Number(settings.overtime_threshold_hours),
-  overtime_multiplier: Number(settings.overtime_multiplier),
-});
-      // ─── Send sanitized numbers ───
-      const response = await api.put(`/companies/${user?.companyId}/settings`, {
+      console.log('📤 Sending to backend:', { threshold, multiplier });
+      await api.put(`/companies/${user?.companyId}/settings`, {
         overtime_enabled: settings.overtime_enabled,
         overtime_threshold_hours: threshold,
         overtime_multiplier: multiplier,
       });
-
-      console.log('✅ Response:', response);
 
       // Update general company info if changed
       if (
@@ -272,20 +262,28 @@ export default function CompanySettingsScreen() {
         </View>
         {settings.overtime_enabled && (
           <>
-            <InputField
+            <InputFieldDecimal
               label="Threshold (hours per week)"
               value={String(settings.overtime_threshold_hours)}
-              onChange={(text: string) =>
-                setSettings({ ...settings, overtime_threshold_hours: parseFloat(text) || 0 })
-              }
+              onChangeText={(text: string) => {
+                const sanitized = text.replace(/[^0-9.]/g, '');
+                const val = parseFloat(sanitized);
+                if (!isNaN(val) || sanitized === '') {
+                  setSettings({ ...settings, overtime_threshold_hours: val || 0 });
+                }
+              }}
               keyboardType="decimal-pad"
             />
-            <InputField
+            <InputFieldDecimal
               label="Overtime Multiplier (e.g. 1.5)"
               value={String(settings.overtime_multiplier)}
-              onChange={(text: string) =>
-                setSettings({ ...settings, overtime_multiplier: parseFloat(text) || 1 })
-              }
+              onChangeText={(text: string) => {
+                const sanitized = text.replace(/[^0-9.]/g, '');
+                const val = parseFloat(sanitized);
+                if (!isNaN(val) || sanitized === '') {
+                  setSettings({ ...settings, overtime_multiplier: val || 1 });
+                }
+              }}
               keyboardType="decimal-pad"
             />
             <TouchableOpacity style={styles.aiSuggestionBtn} onPress={applySuggestion}>
@@ -297,12 +295,16 @@ export default function CompanySettingsScreen() {
       </Section>
 
       <Section title="Payroll & Branding" icon="palette">
-        <InputField
+        <InputFieldDecimal
           label="Default Hourly Rate ($)"
           value={String(settings.default_hourly_rate)}
-          onChange={(text: string) =>
-            setSettings({ ...settings, default_hourly_rate: parseFloat(text) || 0 })
-          }
+          onChangeText={(text: string) => {
+            const sanitized = text.replace(/[^0-9.]/g, '');
+            const val = parseFloat(sanitized);
+            if (!isNaN(val) || sanitized === '') {
+              setSettings({ ...settings, default_hourly_rate: val || 0 });
+            }
+          }}
           keyboardType="decimal-pad"
         />
       </Section>
@@ -351,6 +353,29 @@ const InputField = ({
       style={styles.input}
       value={value}
       onChangeText={onChange}
+      keyboardType={keyboardType as any}
+      placeholderTextColor="#666"
+    />
+  </View>
+);
+
+const InputFieldDecimal = ({
+  label,
+  value,
+  onChangeText,
+  keyboardType = 'decimal-pad',
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  keyboardType?: string;
+}) => (
+  <View style={styles.field}>
+    <Text style={styles.label}>{label}</Text>
+    <TextInput
+      style={styles.input}
+      value={value}
+      onChangeText={onChangeText}
       keyboardType={keyboardType as any}
       placeholderTextColor="#666"
     />
