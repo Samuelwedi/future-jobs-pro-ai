@@ -145,7 +145,7 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
     const { companyId } = req.params;
     let { overtime_enabled, overtime_threshold_hours, overtime_multiplier } = req.body;
 
-    console.log('📥 Overtime settings update request:', { companyId, overtime_enabled, overtime_threshold_hours, overtime_multiplier });
+    console.log('📥 Raw overtime settings from client:', { overtime_enabled, overtime_threshold_hours, overtime_multiplier });
 
     // Only boss/manager can update settings
     const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
@@ -173,6 +173,8 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'overtime_enabled must be boolean' });
     }
 
+    console.log('📤 Parsed overtime values:', { overtime_enabled, overtime_threshold_hours, overtime_multiplier });
+
     // ─── Build dynamic update query ───
     const updates: string[] = [];
     const values: any[] = [];
@@ -194,10 +196,15 @@ router.put('/:companyId/settings', async (req: Request, res: Response) => {
     }
     values.push(companyId);
     const query = `UPDATE companies SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`;
+    
+    console.log('🔍 Executing query:', query);
+    console.log('📦 With values:', values);
+
     const result = await pool.query(query, values);
     res.json({ success: true, settings: result.rows[0] });
   } catch (error: any) {
-    console.error('Error updating company settings:', error);
+    console.error('❌ Error updating company settings:', error);
+    console.error('📦 Error details:', error.detail, error.hint);
     res.status(500).json({ success: false, message: error.message });
   }
 });
