@@ -243,4 +243,67 @@ router.post('/clock-out', async (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /api/time-entries/export ─── (CSV export)
+router.get('/export', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+    const decoded = verifyToken(req);
+    const { userId, start, end } = req.query;
+    if (!userId || !start || !end) {
+      return res.status(400).json({ success: false, message: 'userId, start, and end required' });
+    }
+
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    if (userRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const targetRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+    if (targetRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Target user not found' });
+    }
+    if (userRes.rows[0].company_id !== targetRes.rows[0].company_id) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+
+    const result = await pool.query(
+      `SELECT te.*, p.name as project_name
+       FROM time_entries te
+       LEFT JOIN projects p ON te.project_id = p.id
+       WHERE te.user_id = $1
+         AND te.clock_in >= $2::date
+         AND te.clock_in <= $3::date
+       ORDER BY te.clock_in DESC`,
+      [userId, start, end]
+    );
+
+    const rows = result.rows;
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'No entries found for the period' });
+    }
+
+    let csv = 'Date,Clock In,Clock Out,Project,Hours,Regular,Overtime,Wage\n';
+    for (const row of rows) {
+      const date = new Date(row.clock_in).toLocaleDateString();
+      const clockIn = new Date(row.clock_in).toLocaleTimeString();
+      const clockOut = row.clock_out ? new Date(row.clock_out).toLocaleTimeString() : '';
+      const project = row.project_name || '';
+      const hours = row.clock_out ? ((new Date(row.clock_out).getTime() - new Date(row.clock_in).getTime()) / 3600000).toFixed(2) : '0.00';
+      const regular = row.regular_hours ? row.regular_hours.toFixed(2) : '0.00';
+      const overtime = row.overtime_hours ? row.overtime_hours.toFixed(2) : '0.00';
+      const wage = row.total_wage ? row.total_wage.toFixed(2) : '0.00';
+      csv += `${date},${clockIn},${clockOut},${project},${hours},${regular},${overtime},${wage}\n`;
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=timesheet_${start}_${end}.csv`);
+    res.send(csv);
+  } catch (error: any) {
+    console.error('Export error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export default router;
