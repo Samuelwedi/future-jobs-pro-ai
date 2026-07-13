@@ -320,4 +320,150 @@ router.get('/export', async (req: Request, res: Response) => {
   }
 });
 
+// ─── POST /api/time-entries/bulk-clock-in ───
+router.post('/bulk-clock-in', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+    const decoded = verifyToken(req);
+
+    // Only bosses and managers can do bulk actions
+    const userCheck = await pool.query('SELECT role FROM users WHERE id = $1', [decoded.id]);
+    if (userCheck.rows.length === 0 || !['boss', 'manager'].includes(userCheck.rows[0].role)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    const { userIds, projectId, latitude, longitude } = req.body;
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'userIds array required' });
+    }
+    if (!projectId) {
+      return res.status(400).json({ success: false, message: 'projectId required' });
+    }
+
+    // Optional: verify that all userIds belong to the same company
+    const companyCheck = await pool.query(
+      `SELECT company_id FROM users WHERE id = ANY($1::uuid[]) GROUP BY company_id`,
+      [userIds]
+    );
+    if (companyCheck.rows.length !== 1) {
+      return res.status(400).json({ success: false, message: 'All users must belong to the same company' });
+    }
+
+    const results = [];
+    for (const userId of userIds) {
+      // Check if already clocked in
+      const active = await pool.query(
+        'SELECT id FROM time_entries WHERE user_id = $1 AND clock_out IS NULL',
+        [userId]
+      );
+      if (active.rows.length > 0) {
+        results.push({ userId, success: false, message: 'Already clocked in' });
+        continue;
+      }
+
+      const result = await pool.query(
+        `INSERT INTO time_entries (user_id, project_id, clock_in, latitude, longitude, created_at, status)
+         VALUES ($1, $2, NOW(), $3, $4, NOW(), 'active') RETURNING id, clock_in`,
+        [userId, projectId, latitude || 0, longitude || 0]
+      );
+      const entry = result.rows[0];
+      await pool.query(
+        `INSERT INTO gps_tracking (user_id, time_entry_id, project_id, latitude, longitude, timestamp)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [userId, entry.id, projectId, latitude || 0, longitude || 0]
+      );
+      results.push({ userId, success: true, timeEntryId: entry.id });
+    }
+
+    res.json({ success: true, results });
+  } catch (error: any) {
+    console.error('Bulk clock-in error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── POST /api/time-entries/bulk-clock-out ───
+router.post('/bulk-clock-out', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+    const decoded = verifyToken(req);
+
+    const userCheck = await pool.query('SELECT role FROM users WHERE id = $1', [decoded.id]);
+    if (userCheck.rows.length === 0 || !['boss', 'manager'].includes(userCheck.rows[0].role)) {
+      return res.status(403).json({ success: false, message: 'Permission denied' });
+    }
+
+    const { userIds, latitude, longitude } = req.body;
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'userIds array required' });
+    }
+
+    const results = [];
+    for (const userId of userIds) {
+      // Find active entry
+      const active = await pool.query(
+        `SELECT te.*, u.company_id FROM time_entries te
+         JOIN users u ON te.user_id = u.id
+         WHERE te.user_id = $1 AND te.clock_out IS NULL`,
+        [userId]
+      );
+      if (active.rows.length === 0) {
+        results.push({ userId, success: false, message: 'No active clock-in found' });
+        continue;
+      }
+      const row = active.rows[0];
+      const clockIn = new Date(row.clock_in);
+      const now = new Date();
+      const hoursWorked = (now.getTime() - clockIn.getTime()) / 3600000;
+
+      // Get overtime settings from company
+      const settingsRes = await pool.query(
+        `SELECT overtime_enabled, overtime_threshold_hours, overtime_multiplier FROM companies WHERE id = $1`,
+        [row.company_id]
+      );
+      const settings = settingsRes.rows[0] || { overtime_enabled: true, overtime_threshold_hours: 40, overtime_multiplier: 1.5 };
+      const threshold = settings.overtime_enabled ? settings.overtime_threshold_hours : Infinity;
+      const multiplier = settings.overtime_multiplier || 1.5;
+      const regularHours = Math.min(hoursWorked, threshold);
+      const overtimeHours = Math.max(hoursWorked - threshold, 0);
+      const hourlyRate = 20; // could be fetched from settings later
+      const totalWage = (regularHours + overtimeHours * multiplier) * hourlyRate;
+
+      const result = await pool.query(
+        `UPDATE time_entries
+         SET clock_out = NOW(),
+             latitude_out = $1,
+             longitude_out = $2,
+             regular_hours = $3,
+             overtime_hours = $4,
+             total_wage = $5,
+             status = 'completed'
+         WHERE id = $6 AND user_id = $7
+         RETURNING id, clock_out`,
+        [latitude || 0, longitude || 0, regularHours, overtimeHours, totalWage, row.id, userId]
+      );
+      results.push({
+        userId,
+        success: true,
+        timeEntryId: result.rows[0].id,
+        clockOut: result.rows[0].clock_out,
+        regularHours,
+        overtimeHours,
+        totalWage,
+      });
+    }
+
+    res.json({ success: true, results });
+  } catch (error: any) {
+    console.error('Bulk clock-out error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export default router;
