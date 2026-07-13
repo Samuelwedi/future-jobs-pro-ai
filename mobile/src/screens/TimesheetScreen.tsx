@@ -9,6 +9,8 @@ import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import { format, startOfWeek, endOfWeek, parseISO } from 'date-fns';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 interface TimeEntry {
   id: string;
@@ -32,6 +34,21 @@ interface DaySection {
   totalHours: number;
   totalOT: number;
 }
+
+// ─── Helper to get the auth token ───
+const getAuthToken = async (): Promise<string | null> => {
+  try {
+    // If api has getToken method
+    if (typeof (api as any).getToken === 'function') {
+      return await (api as any).getToken();
+    }
+    // Fallback: try to read from AsyncStorage directly
+    const { default: AsyncStorage } = await import('@react-native-async-storage/async-storage');
+    return await AsyncStorage.getItem('token');
+  } catch {
+    return null;
+  }
+};
 
 export default function TimesheetScreen() {
   const navigation = useNavigation<any>();
@@ -86,6 +103,48 @@ export default function TimesheetScreen() {
 
   const onRefresh = () => { setRefreshing(true); fetchEntries(); };
 
+  // ─── Export CSV ───
+  const handleExport = async () => {
+    try {
+      const userId = selectedUserId || user?.id;
+      const baseURL = (api as any).baseURL || 'https://future-jobs-pro-ai-production.up.railway.app/api';
+      const token = await getAuthToken();
+      const url = `${baseURL}/time-entries/export?userId=${userId}&start=${weekStart}&end=${weekEnd}`;
+
+      const headers: any = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Export failed: ${response.status} ${errorText}`);
+      }
+
+      const blob = await response.blob();
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result as string;
+        const base64Data = base64.split(',')[1] || base64;
+
+        // ✅ Safe fallback for documentDirectory
+        const fileSystemAny = FileSystem as any;
+        const docDir = fileSystemAny.documentDirectory || fileSystemAny.cacheDirectory || '';
+        const fileUri = `${docDir}timesheet_${weekStart}_${weekEnd}.csv`;
+
+        // ✅ Use 'base64' string literal – avoids all type issues
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+          encoding: 'base64' as any,
+        });
+        await Sharing.shareAsync(fileUri);
+      };
+      reader.readAsDataURL(blob);
+    } catch (e) {
+      console.error('Export error:', e);
+      Alert.alert('Error', 'Could not export timesheet: ' + (e instanceof Error ? e.message : ''));
+    }
+  };
+
+  // ─── Group entries ───
   const groupByDay = (items: TimeEntry[]): DaySection[] => {
     const map = new Map<string, { entries: TimeEntry[]; totalMs: number; totalOTMs: number }>();
     items.forEach(entry => {
@@ -196,6 +255,9 @@ export default function TimesheetScreen() {
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Timesheet</Text>
+        <TouchableOpacity onPress={handleExport} style={{ padding: 8 }}>
+          <MaterialIcons name="file-download" size={24} color="#00D4FF" />
+        </TouchableOpacity>
         {isBossOrManager && (
           <TouchableOpacity onPress={() => setShowUserPicker(true)} style={styles.userPickerBtn}>
             <Text style={styles.userPickerText}>{selectedUserName}</Text>
