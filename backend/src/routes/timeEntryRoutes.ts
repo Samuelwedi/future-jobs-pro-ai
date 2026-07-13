@@ -284,16 +284,30 @@ router.get('/export', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'No entries found for the period' });
     }
 
+    // Helper to safely format numeric values (added only for this route)
+    const safeToFixed = (value: any, decimals: number = 2): string => {
+      const num = Number(value);
+      return isNaN(num) ? '0.00' : num.toFixed(decimals);
+    };
+
     let csv = 'Date,Clock In,Clock Out,Project,Hours,Regular,Overtime,Wage\n';
     for (const row of rows) {
       const date = new Date(row.clock_in).toLocaleDateString();
       const clockIn = new Date(row.clock_in).toLocaleTimeString();
       const clockOut = row.clock_out ? new Date(row.clock_out).toLocaleTimeString() : '';
       const project = row.project_name || '';
-      const hours = row.clock_out ? ((new Date(row.clock_out).getTime() - new Date(row.clock_in).getTime()) / 3600000).toFixed(2) : '0.00';
-      const regular = row.regular_hours ? row.regular_hours.toFixed(2) : '0.00';
-      const overtime = row.overtime_hours ? row.overtime_hours.toFixed(2) : '0.00';
-      const wage = row.total_wage ? row.total_wage.toFixed(2) : '0.00';
+
+      let hours = '0.00';
+      if (row.clock_out) {
+        const diffMs = new Date(row.clock_out).getTime() - new Date(row.clock_in).getTime();
+        hours = (diffMs / 3600000).toFixed(2);
+      }
+
+      // ✅ Safely convert to number before using .toFixed()
+      const regular = safeToFixed(row.regular_hours);
+      const overtime = safeToFixed(row.overtime_hours);
+      const wage = safeToFixed(row.total_wage);
+
       csv += `${date},${clockIn},${clockOut},${project},${hours},${regular},${overtime},${wage}\n`;
     }
 
