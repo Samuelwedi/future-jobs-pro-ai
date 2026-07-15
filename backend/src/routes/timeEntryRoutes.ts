@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
 import { setCompanyOfficeFromClockIn } from '../services/companyService';
+import { haversineDistance } from '../utils/geo';
 
 const router = express.Router();
 
@@ -137,6 +138,52 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Project not found' });
     }
 
+    // ─── Geofence check ───
+    const geoRes = await pool.query(
+      `SELECT latitude, longitude, geofence_radius, name FROM projects WHERE id = $1`,
+      [projectId]
+    );
+    const geo = geoRes.rows[0] || {};
+    const latNum = Number(latitude) || 0;
+    const lngNum = Number(longitude) || 0;
+
+    if (geo.latitude !== null && geo.longitude !== null) {
+      const distance = haversineDistance(geo.latitude, geo.longitude, latNum, lngNum);
+      const radius = geo.geofence_radius || 100;
+      if (distance > radius) {
+        // Outside geofence – send email to managers
+        try {
+          const managers = await pool.query(
+            `SELECT email FROM users 
+             WHERE company_id = (SELECT company_id FROM users WHERE id = $1)
+             AND role IN ('boss', 'manager')`,
+            [userId]
+          );
+          const emails = managers.rows.map(row => row.email);
+          if (emails.length > 0 && process.env.SMTP_HOST) {
+            const { sendEmail } = await import('../services/emailService');
+            const projectName = geo.name || 'Project';
+            const subject = `⚠️ Geofence Alert – ${projectName}`;
+            const html = `
+              <h2>Geofence Violation (Allow)</h2>
+              <p><strong>${decoded.email || 'User'}</strong> clocked in to <strong>${projectName}</strong> but is outside the geofence.</p>
+              <ul>
+                <li>User location: ${latNum.toFixed(6)}, ${lngNum.toFixed(6)}</li>
+                <li>Project location: ${geo.latitude.toFixed(6)}, ${geo.longitude.toFixed(6)}</li>
+                <li>Distance: ${Math.round(distance)}m</li>
+                <li>Radius: ${radius}m</li>
+              </ul>
+              <p>Clock‑in was allowed. Review project geofence settings if this was not intended.</p>
+            `;
+            await sendEmail(emails.join(','), subject, html);
+          }
+        } catch (emailErr) {
+          console.error('Failed to send geofence alert:', emailErr);
+        }
+        // Continue with clock-in (no block)
+      }
+    }
+
     const activeCheck = await pool.query(
       'SELECT id FROM time_entries WHERE user_id = $1 AND clock_out IS NULL',
       [userId]
@@ -148,17 +195,17 @@ router.post('/clock-in', async (req: Request, res: Response) => {
     const result = await pool.query(
       `INSERT INTO time_entries (user_id, project_id, clock_in, latitude, longitude, created_at, status)
        VALUES ($1, $2, NOW(), $3, $4, NOW(), 'active') RETURNING id, clock_in`,
-      [userId, projectId, latitude || 0, longitude || 0]
+      [userId, projectId, latNum, lngNum]
     );
     const entry = result.rows[0];
 
     await pool.query(
       `INSERT INTO gps_tracking (user_id, time_entry_id, project_id, latitude, longitude, timestamp)
        VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [userId, entry.id, projectId, latitude || 0, longitude || 0]
+      [userId, entry.id, projectId, latNum, lngNum]
     );
 
-    await setCompanyOfficeFromClockIn(userId, latitude || 0, longitude || 0);
+    await setCompanyOfficeFromClockIn(userId, latNum, lngNum);
 
     res.status(201).json({
       success: true,
@@ -284,7 +331,6 @@ router.get('/export', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'No entries found for the period' });
     }
 
-    // Helper to safely format numeric values (added only for this route)
     const safeToFixed = (value: any, decimals: number = 2): string => {
       const num = Number(value);
       return isNaN(num) ? '0.00' : num.toFixed(decimals);
@@ -303,7 +349,6 @@ router.get('/export', async (req: Request, res: Response) => {
         hours = (diffMs / 3600000).toFixed(2);
       }
 
-      // ✅ Safely convert to number before using .toFixed()
       const regular = safeToFixed(row.regular_hours);
       const overtime = safeToFixed(row.overtime_hours);
       const wage = safeToFixed(row.total_wage);
@@ -329,7 +374,6 @@ router.post('/bulk-clock-in', async (req: Request, res: Response) => {
     }
     const decoded = verifyToken(req);
 
-    // Only bosses and managers can do bulk actions
     const userCheck = await pool.query('SELECT role FROM users WHERE id = $1', [decoded.id]);
     if (userCheck.rows.length === 0 || !['boss', 'manager'].includes(userCheck.rows[0].role)) {
       return res.status(403).json({ success: false, message: 'Permission denied' });
@@ -343,7 +387,6 @@ router.post('/bulk-clock-in', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'projectId required' });
     }
 
-    // Optional: verify that all userIds belong to the same company
     const companyCheck = await pool.query(
       `SELECT company_id FROM users WHERE id = ANY($1::uuid[]) GROUP BY company_id`,
       [userIds]
@@ -354,7 +397,6 @@ router.post('/bulk-clock-in', async (req: Request, res: Response) => {
 
     const results = [];
     for (const userId of userIds) {
-      // Check if already clocked in
       const active = await pool.query(
         'SELECT id FROM time_entries WHERE user_id = $1 AND clock_out IS NULL',
         [userId]
@@ -406,7 +448,6 @@ router.post('/bulk-clock-out', async (req: Request, res: Response) => {
 
     const results = [];
     for (const userId of userIds) {
-      // Find active entry
       const active = await pool.query(
         `SELECT te.*, u.company_id FROM time_entries te
          JOIN users u ON te.user_id = u.id
@@ -422,7 +463,6 @@ router.post('/bulk-clock-out', async (req: Request, res: Response) => {
       const now = new Date();
       const hoursWorked = (now.getTime() - clockIn.getTime()) / 3600000;
 
-      // Get overtime settings from company
       const settingsRes = await pool.query(
         `SELECT overtime_enabled, overtime_threshold_hours, overtime_multiplier FROM companies WHERE id = $1`,
         [row.company_id]
@@ -432,7 +472,7 @@ router.post('/bulk-clock-out', async (req: Request, res: Response) => {
       const multiplier = settings.overtime_multiplier || 1.5;
       const regularHours = Math.min(hoursWorked, threshold);
       const overtimeHours = Math.max(hoursWorked - threshold, 0);
-      const hourlyRate = 20; // could be fetched from settings later
+      const hourlyRate = 20;
       const totalWage = (regularHours + overtimeHours * multiplier) * hourlyRate;
 
       const result = await pool.query(
