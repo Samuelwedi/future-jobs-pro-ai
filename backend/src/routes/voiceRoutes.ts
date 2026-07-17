@@ -3,20 +3,26 @@ import express, { Request, Response } from 'express';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import { pool } from '../config/database';
-import { processVoiceNote } from '../services/voiceService';
+import { processVoiceNote, processTranscriptOnly } from '../services/voiceService';
 import * as fs from 'fs';
 
 const router = express.Router();
 
+// ------------------------------
+// Cloudinary configuration
+// ------------------------------
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+// ------------------------------
+// Multer configuration (for audio file uploads)
+// ------------------------------
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB max
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('audio/') || file.mimetype.startsWith('video/')) {
       cb(null, true);
@@ -26,6 +32,10 @@ const upload = multer({
   }
 });
 
+// ============================================================
+// 1. ORIGINAL ENDPOINT: process an audio file (Whisper fallback)
+//    POST /voice/process
+// ============================================================
 router.post('/process', upload.single('audio'), async (req: Request, res: Response) => {
   try {
     if (!req.file) {
@@ -103,7 +113,74 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
   }
 });
 
-router.get('/project/:projectId', async (req, res) => {
+// ============================================================
+// 2. NEW ENDPOINT: process a transcript (Deepgram streaming)
+//    POST /voice/process-transcript
+// ============================================================
+router.post('/process-transcript', async (req: Request, res: Response) => {
+  try {
+    const { userId, projectId, timeEntryId, transcript } = req.body;
+
+    // Validate required fields
+    if (!userId || !projectId || !transcript) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: userId, projectId, transcript'
+      });
+    }
+
+    // Fetch company_id from the users table (needed for DB insert)
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
+    const companyId = userRes.rows[0]?.company_id;
+    if (!companyId) {
+      return res.status(401).json({ success: false, message: 'User has no company' });
+    }
+
+    // Process the transcript (extract structured data, generate summary, tags)
+    const result = await processTranscriptOnly(transcript, userId, projectId, timeEntryId);
+
+    // Insert into voice_notes with company_id (no audio_url – set to NULL)
+    const query = `
+      INSERT INTO voice_notes
+      (company_id, user_id, project_id, time_entry_id, audio_url, transcript, duration_seconds, taken_at, folder_path, metadata)
+      VALUES ($1, $2, $3, $4, NULL, $5, $6, NOW(), NULL, $7)
+      RETURNING id
+    `;
+    const values = [
+      companyId,
+      userId,
+      projectId,
+      timeEntryId || null,
+      result.transcript,
+      result.duration,
+      JSON.stringify({ structured: result.structuredData, tags: result.tags })
+    ];
+    const dbResult = await pool.query(query, values);
+
+    res.json({
+      success: true,
+      voiceNoteId: dbResult.rows[0].id,
+      transcript: result.transcript,
+      structuredData: result.structuredData,
+      clientSummary: result.clientSummary,
+      tags: result.tags,
+      duration: result.duration,
+    });
+
+  } catch (error: any) {
+    console.error('❌ Transcript processing error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to process transcript'
+    });
+  }
+});
+
+// ============================================================
+// 3. GET voice notes for a project
+//    GET /voice/project/:projectId
+// ============================================================
+router.get('/project/:projectId', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {

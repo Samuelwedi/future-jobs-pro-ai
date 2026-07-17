@@ -93,7 +93,7 @@ import mediaRoutes from './routes/mediaRoutes'; app.use('/api/media', mediaRoute
 import uploadRoutes from './routes/uploadRoutes'; app.use('/api/upload', uploadRoutes);
 import approvalRoutes from './routes/approvalRoutes'; app.use('/api/approvals', approvalRoutes);
 import subscriptionRoutes from './routes/subscriptionRoutes'; app.use('/api/subscriptions', subscriptionRoutes);
-
+import chatbotRoutes from './routes/chatbotRoutes'; app.use('/api/chatbot', chatbotRoutes);
 // ----- trialCheck middleware (moved AFTER scheduleRoutes) -----
 app.use(trialCheck);
 

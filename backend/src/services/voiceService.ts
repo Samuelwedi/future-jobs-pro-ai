@@ -35,6 +35,13 @@ interface VoiceNoteResult {
   duration: number;
 }
 
+// ============================================
+// MAIN FUNCTIONS
+// ============================================
+
+/**
+ * Process a voice note from an audio file (original – uses Whisper)
+ */
 export async function processVoiceNote(
   audioPath: string,
   userId: string,
@@ -67,6 +74,56 @@ export async function processVoiceNote(
   return { id: savedNote.id, transcript, structuredData: extractedData, clientSummary, tags, duration };
 }
 
+/**
+ * NEW: Process a voice note from a transcript (no audio file – for Deepgram streaming)
+ */
+export async function processTranscriptOnly(
+  transcript: string,
+  userId: string,
+  projectId: string,
+  timeEntryId: string
+): Promise<Omit<VoiceNoteResult, 'id'>> {
+  console.log(`\n📝 [Samuel B. AI] Processing transcript-only: "${transcript.substring(0, 100)}..."`);
+
+  const extractedData = await extractStructuredData(transcript);
+  const clientSummary = await generateClientSummary(transcript, extractedData);
+  const tags = generateTags(transcript, extractedData);
+  const duration = 0; // no duration available from transcript
+
+  // Save voice note (without audio file)
+  const savedNote = await saveVoiceNote({
+    userId,
+    projectId,
+    timeEntryId,
+    audioPath: '', // placeholder – no audio file
+    transcript,
+    structuredData: extractedData,
+    clientSummary,
+    tags,
+    duration,
+  });
+
+  await recordUserEvent({
+    userId,
+    eventType: 'voice_note',
+    eventData: { transcript, extractedData, duration: 0, source: 'deepgram_stream' }
+  });
+
+  console.log(`💾 Saved transcript-only voice note with ID: ${savedNote.id}`);
+
+  return {
+    transcript,
+    structuredData: extractedData,
+    clientSummary,
+    tags,
+    duration,
+  };
+}
+
+// ============================================
+// TRANSCRIPTION (Whisper – kept as fallback)
+// ============================================
+
 async function transcribeAudio(audioPath: string): Promise<string> {
   if (!openai) {
     return "Found corrosion on valve number three. I replaced the gasket and tested pressure at 45 PSI. Need to order a new gasket for next visit.";
@@ -84,6 +141,10 @@ async function transcribeAudio(audioPath: string): Promise<string> {
     return "Transcription failed. Please review manually.";
   }
 }
+
+// ============================================
+// STRUCTURED DATA EXTRACTION (GPT)
+// ============================================
 
 async function extractStructuredData(transcript: string): Promise<ExtractedData> {
   const defaultData: ExtractedData = {
@@ -148,6 +209,10 @@ function ruleBasedExtraction(transcript: string): ExtractedData {
   return data;
 }
 
+// ============================================
+// CLIENT SUMMARY (GPT)
+// ============================================
+
 async function generateClientSummary(transcript: string, data: ExtractedData): Promise<string> {
   if (!openai) {
     return `Technician ${data.actions.slice(0,2).join(' and ')}. System is working properly.`;
@@ -165,6 +230,10 @@ async function generateClientSummary(transcript: string, data: ExtractedData): P
   }
 }
 
+// ============================================
+// TAGS GENERATION
+// ============================================
+
 function generateTags(transcript: string, data: ExtractedData): string[] {
   const tags = new Set<string>();
   data.actions.forEach(a => a.split(' ').forEach(w => { if (w.length > 3) tags.add(w.toLowerCase()); }));
@@ -177,6 +246,10 @@ function generateTags(transcript: string, data: ExtractedData): string[] {
   return Array.from(tags).slice(0, 20);
 }
 
+// ============================================
+// AUDIO DURATION (for file‑based notes)
+// ============================================
+
 async function getAudioDuration(audioPath: string): Promise<number> {
   try {
     const stats = fs.statSync(audioPath);
@@ -186,6 +259,10 @@ async function getAudioDuration(audioPath: string): Promise<number> {
   }
 }
 
+// ============================================
+// DATABASE SAVE
+// ============================================
+
 async function saveVoiceNote(params: {
   userId: string; projectId: string; timeEntryId: string; audioPath: string;
   transcript: string; structuredData: ExtractedData; clientSummary: string;
@@ -194,6 +271,9 @@ async function saveVoiceNote(params: {
   // Convert empty timeEntryId to null
   const timeEntryId = params.timeEntryId && params.timeEntryId !== '' ? params.timeEntryId : null;
 
+  // If audioPath is empty, set audio_s3_key to NULL
+  const audioS3Key = params.audioPath && params.audioPath !== '' ? params.audioPath : null;
+
   const result = await pool.query(
     `INSERT INTO voice_notes (user_id, project_id, time_entry_id, audio_s3_key, transcript, structured_data, client_summary, duration_seconds)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
@@ -201,7 +281,7 @@ async function saveVoiceNote(params: {
       params.userId,
       params.projectId,
       timeEntryId,
-      params.audioPath,
+      audioS3Key,
       params.transcript,
       JSON.stringify(params.structuredData),
       params.clientSummary,
@@ -210,6 +290,10 @@ async function saveVoiceNote(params: {
   );
   return { id: result.rows[0].id };
 }
+
+// ============================================
+// PUBLIC HELPERS (for other routes)
+// ============================================
 
 export async function getProjectVoiceNotes(projectId: string): Promise<any[]> {
   const result = await pool.query(

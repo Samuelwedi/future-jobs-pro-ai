@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Alert,
-  ActivityIndicator, Platform, ScrollView,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { Audio } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -9,6 +15,8 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import * as Haptics from 'expo-haptics';
+// 👇 NEW: Deepgram service
+import { DeepgramService } from '../services/deepgramService';
 
 interface VoiceNoteResponse {
   success: boolean;
@@ -35,14 +43,25 @@ export default function VoiceNoteScreen() {
   const projectId: string = route?.params?.projectId || '';
   const timeEntryId: string = route?.params?.timeEntryId || '';
 
+  // --- Permission & audio setup (original) ---
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+
+  // --- Old manual recording state (kept as fallback) ---
   const [isRecording, setIsRecording] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [result, setResult] = useState<VoiceNoteResponse | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // --- Processing & result state ---
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [result, setResult] = useState<VoiceNoteResponse | null>(null);
+
+  // --- NEW Deepgram state ---
+  const [isListening, setIsListening] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const deepgramRef = useRef<DeepgramService | null>(null);
+
+  // --- Request permission & set audio mode (original) ---
   useEffect(() => {
     (async () => {
       const { status } = await Audio.requestPermissionsAsync();
@@ -61,6 +80,57 @@ export default function VoiceNoteScreen() {
     };
   }, []);
 
+  // --- Initialize Deepgram service ---
+  useEffect(() => {
+    deepgramRef.current = new DeepgramService(
+      (text, isFinal) => {
+        setTranscript(text);
+        if (isFinal && text.trim()) {
+          // Send final transcript to backend for structured extraction
+          processTranscript(text);
+        }
+      },
+      (err) => Alert.alert('Deepgram Error', err.message)
+    );
+    return () => deepgramRef.current?.stop();
+  }, []);
+
+  // --- NEW: Process transcript via backend (replaces audio upload) ---
+  const processTranscript = async (text: string) => {
+    setIsProcessing(true);
+    try {
+      const response = await api.post<VoiceNoteResponse>('/voice/process-transcript', {
+        userId: user?.id,
+        projectId,
+        timeEntryId,
+        transcript: text,
+      });
+      // Safety fallback
+      if (!response.structuredData) {
+        response.structuredData = {
+          actions: [],
+          parts: [],
+          measurements: [],
+          issues: [],
+          nextSteps: [],
+          people: []
+        };
+      }
+      setResult(response);
+      api.recordAIEvent('voice_note', {
+        transcript: response.transcript,
+        duration: response.duration,
+        projectId,
+      }).catch(() => {});
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error: any) {
+      Alert.alert('Processing Failed', error.message || 'Could not process voice note');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // --- OLD: Manual recording functions (kept as fallback) ---
   const startRecording = async () => {
     if (!hasPermission) {
       Alert.alert('Permission Required', 'Please grant microphone permission in settings.');
@@ -96,6 +166,7 @@ export default function VoiceNoteScreen() {
       const uri = recording.getURI();
       setRecording(null);
       if (uri) {
+        // Use the old upload method as fallback
         await processRecording(uri);
       } else {
         Alert.alert('Error', 'No audio file was created.');
@@ -119,7 +190,6 @@ export default function VoiceNoteScreen() {
         extraFields,
         'audio'
       );
-      // SAFETY FALLBACK: ensure structuredData exists with empty arrays
       if (!response.structuredData) {
         response.structuredData = {
           actions: [],
@@ -144,6 +214,22 @@ export default function VoiceNoteScreen() {
     }
   };
 
+  // --- NEW: Deepgram start/stop ---
+  const startListening = async () => {
+    if (!hasPermission) {
+      Alert.alert('Permission Required', 'Please grant microphone permission.');
+      return;
+    }
+    setIsListening(true);
+    await deepgramRef.current?.start();
+  };
+
+  const stopListening = async () => {
+    setIsListening(false);
+    await deepgramRef.current?.stop();
+  };
+
+  // --- Helpers ---
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -154,6 +240,8 @@ export default function VoiceNoteScreen() {
     if (navigation.canGoBack()) navigation.goBack();
     else Alert.alert('Info', 'Return to previous screen.');
   };
+
+  // --- Render logic ---
 
   if (!projectId) {
     return (
@@ -231,6 +319,7 @@ export default function VoiceNoteScreen() {
     );
   }
 
+  // --- Main UI (with Deepgram streaming) ---
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -242,24 +331,56 @@ export default function VoiceNoteScreen() {
       </View>
 
       <View style={styles.recordingArea}>
+        {/* Animated waveform */}
         <View style={styles.waveform}>
-          {[1,2,3,4,5,6,7].map(i => (
-            <View key={i} style={[styles.waveBar, { height: isRecording ? 40 + i*5 : 20, backgroundColor: isRecording ? '#00D4FF' : '#444' }]} />
+          {[1, 2, 3, 4, 5, 6, 7].map(i => (
+            <View
+              key={i}
+              style={[
+                styles.waveBar,
+                {
+                  height: isListening ? 40 + i * 5 : 20,
+                  backgroundColor: isListening ? '#00D4FF' : '#444',
+                },
+              ]}
+            />
           ))}
         </View>
+
+        {/* Timer (only for old manual recording) */}
         {isRecording && <Text style={styles.timer}>{formatDuration(recordingDuration)}</Text>}
+
+        {/* Live transcript from Deepgram */}
+        {isListening && transcript ? (
+          <Text style={styles.transcriptLive}>{transcript}</Text>
+        ) : null}
+
         <Text style={styles.aiGuide}>
-          {isRecording ? "🎤 Recording... Speak clearly about the work you did" : "Tap the mic and describe the work you performed"}
+          {isListening
+            ? '🎤 Listening... Speak clearly'
+            : 'Tap the mic to start speaking'}
         </Text>
       </View>
 
       <View style={styles.recordButtonContainer}>
-        <TouchableOpacity onPress={isRecording ? stopRecording : startRecording}>
-          <View style={[styles.recordButton, { backgroundColor: isRecording ? '#F44336' : '#00D4FF' }]}>
-            <MaterialIcons name={isRecording ? 'stop' : 'mic'} size={40} color="#FFF" />
+        {/* NEW: Deepgram button */}
+        <TouchableOpacity onPress={isListening ? stopListening : startListening}>
+          <View
+            style={[
+              styles.recordButton,
+              { backgroundColor: isListening ? '#F44336' : '#00D4FF' },
+            ]}
+          >
+            <MaterialIcons
+              name={isListening ? 'stop' : 'mic'}
+              size={40}
+              color="#FFF"
+            />
           </View>
         </TouchableOpacity>
-        <Text style={styles.recordHint}>{isRecording ? 'Tap to Stop' : 'Tap to Record'}</Text>
+        <Text style={styles.recordHint}>
+          {isListening ? 'Tap to Stop' : 'Tap to Record'}
+        </Text>
       </View>
     </View>
   );
@@ -268,15 +389,44 @@ export default function VoiceNoteScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 20, paddingBottom: 20 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 20,
+    paddingBottom: 20,
+  },
   headerTitle: { color: '#FFF', fontSize: 18, fontWeight: '600' },
   recordingArea: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
-  waveform: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', height: 100, marginBottom: 30 },
+  waveform: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    height: 100,
+    marginBottom: 30,
+  },
   waveBar: { width: 6, marginHorizontal: 4, borderRadius: 3 },
   timer: { color: '#FFF', fontSize: 48, fontWeight: 'bold', marginBottom: 20 },
+  transcriptLive: {
+    color: '#00D4FF',
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 10,
+  },
   aiGuide: { color: '#888', fontSize: 16, textAlign: 'center', marginBottom: 30 },
-  recordButtonContainer: { alignItems: 'center', paddingBottom: Platform.OS === 'ios' ? 50 : 30 },
-  recordButton: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' },
+  recordButtonContainer: {
+    alignItems: 'center',
+    paddingBottom: Platform.OS === 'ios' ? 50 : 30,
+  },
+  recordButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   recordHint: { color: '#888', fontSize: 14, marginTop: 15 },
   loadingText: { color: '#FFF', marginTop: 20, fontSize: 16 },
   errorText: { color: '#FFF', fontSize: 18, marginBottom: 30, textAlign: 'center' },
