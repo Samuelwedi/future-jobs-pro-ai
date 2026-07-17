@@ -14,9 +14,10 @@
     "web-vitals": "^2.1.4"
   },
   "scripts": {
-  "start": "npx serve -s build -l $PORT",
-  "build": "react-scripts build"
-},
+    "start": "serve build -s -n -L -p $PORT",
+    "dev": "react-scripts start",
+    "build": "react-scripts build"
+  },
   "eslintConfig": {
     "extends": [
       "react-app",
