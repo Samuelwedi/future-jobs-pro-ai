@@ -27,7 +27,7 @@ import TeamScreen from './src/screens/TeamScreen';
 import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import { StatusBar } from 'expo-status-bar';
 import { listenToNetworkChanges, processQueue } from './src/services/offlineService';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import ContactScreen from './src/screens/ContactScreen';
 import PrivacyScreen from './src/screens/PrivacyScreen';
 import TermsScreen from './src/screens/TermsScreen';
@@ -43,6 +43,9 @@ import WebViewScreen from './src/screens/WebViewScreen';
 import SelectEmployeesScreen from './src/screens/SelectEmployeesScreen';
 import CreateShiftScreen from './src/screens/CreateShiftScreen';
 import CompanySettingsScreen from './src/screens/CompanySettingsScreen';
+
+// 👇 NEW: Import the wake word service
+import { WakeWordService } from './src/services/wakeWordService';
 
 const Stack = createStackNavigator();
 
@@ -74,12 +77,15 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 }
 
 function AppNavigator() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
   const isProcessing = useRef(false);
   const navigationRef = useRef<any>(null);
 
+  // 👇 NEW: Ref for the wake word service
+  const wakeWordRef = useRef<WakeWordService | null>(null);
+
+  // Set the 401 handler to navigate to Login
   useEffect(() => {
-    // Set the 401 handler to navigate to Login
     api.setUnauthorizedHandler(() => {
       if (navigationRef.current) {
         navigationRef.current.navigate('Login');
@@ -87,6 +93,7 @@ function AppNavigator() {
     });
   }, []);
 
+  // Offline queue processing
   useEffect(() => {
     const cleanup = listenToNetworkChanges(async (online) => {
       if (online && !isProcessing.current) {
@@ -97,6 +104,48 @@ function AppNavigator() {
     });
     return cleanup;
   }, []);
+
+  // 👇 NEW: Start / stop wake word service based on authentication
+  useEffect(() => {
+    // Only start if user is authenticated and we have a navigation ref
+    if (isAuthenticated && user && navigationRef.current) {
+      // Create the service with a callback
+      const wakeWord = new WakeWordService(() => {
+        console.log('🔊 Wake word detected – opening voice assistant');
+        // Navigate to VoiceNoteScreen with a flag to auto-start listening
+        // We'll pass a parameter so the screen knows to start listening immediately
+        if (navigationRef.current) {
+          navigationRef.current.navigate('VoiceNote', { 
+            autoStart: true,
+            // Optionally, you can pass a projectId if you want to associate with a default project
+            // projectId: user.defaultProjectId, // if you have such a field
+          });
+        }
+      });
+
+      wakeWordRef.current = wakeWord;
+
+      // Start the service (it will request microphone permission internally)
+      wakeWord.start().catch((err) => {
+        console.error('Failed to start wake word service:', err);
+        Alert.alert('Wake Word Error', 'Could not start voice assistant. Please check permissions.');
+      });
+
+      // Cleanup on logout or unmount
+      return () => {
+        if (wakeWordRef.current) {
+          wakeWordRef.current.stop();
+          wakeWordRef.current = null;
+        }
+      };
+    } else {
+      // If not authenticated, stop the service
+      if (wakeWordRef.current) {
+        wakeWordRef.current.stop();
+        wakeWordRef.current = null;
+      }
+    }
+  }, [isAuthenticated, user]);
 
   if (isLoading) return null;
 
