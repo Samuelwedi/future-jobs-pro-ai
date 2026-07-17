@@ -8,6 +8,8 @@ import { api } from '../services/api';
 import * as SecureStore from 'expo-secure-store';
 
 interface User {
+  first_name: string;
+  last_name: string;
   id: string;
   email: string;
   firstName: string;

@@ -1,15 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-  ActivityIndicator,
+  View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
+  KeyboardAvoidingView, Platform, Alert, ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -36,20 +28,13 @@ export default function SupportScreen() {
   const socketRef = useRef<Socket | null>(null);
   const flatListRef = useRef<FlatList>(null);
 
-  // Agent status (human takeover)
   const [agentActive, setAgentActive] = useState(false);
-  const [loadingAgent, setLoadingAgent] = useState(false);
-  // AI typing indicator
   const [aiTyping, setAiTyping] = useState(false);
+  const [humanRequested, setHumanRequested] = useState(false);
+  const [ticketRoom, setTicketRoom] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
-
-    // Check current agent status
-    api
-      .get('/support/status/support')
-      .then((res: any) => setAgentActive(res.active))
-      .catch(() => {});
 
     api.getToken().then((token) => {
       if (!token) return;
@@ -60,230 +45,167 @@ export default function SupportScreen() {
       socketRef.current = socket;
 
       socket.on('connect', () => {
-        socket.emit('join-room', 'support');
-        console.log('Connected to support room');
+        // Start in a temporary room – we'll switch when a ticket is created
+        socket.emit('join-room', 'support-waiting');
+        console.log('Connected to support');
       });
 
       socket.on('new-message', (msg: Message) => {
         setMessages((prev) => [...prev, msg]);
-        // If message is from AI, we can mark it as read
         if (msg.sender_id === '00000000-0000-0000-0000-000000000001') {
-          // AI message – we could auto‑dismiss typing indicator
           setAiTyping(false);
+        }
+        if (msg.sender_id !== user?.id && msg.sender_id !== '00000000-0000-0000-0000-000000000001') {
+          setAgentActive(true);
         }
       });
 
-      // Listen for agent status changes
-      socket.on('agent-status', (data: { active: boolean }) => {
-        setAgentActive(data.active);
+      // Agent joined the ticket room
+      socket.on('agent-joined', (data: { ticketId: string }) => {
+        setAgentActive(true);
+        Alert.alert('Agent Joined', 'A support agent is now assisting you.');
       });
-
-      // Listen for human support request notifications (optional)
-      socket.on('human-requested', (data: { userId: string }) => {
-        // Could show a toast or update UI
-        console.log('Human support requested by user:', data.userId);
-      });
-
-      // Fetch existing support messages
-      fetch(`${API_BASE}/api/chat/room/support`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.messages) setMessages(data.messages);
-        })
-        .catch(console.error);
 
       return () => {
-        socket.emit('leave-room', 'support');
+        if (ticketRoom) socket.emit('leave-room', ticketRoom);
         socket.disconnect();
       };
     });
   }, [user]);
 
-  // Send a message (handles both human and AI routing)
   const send = () => {
     if (!input.trim() || !socketRef.current || !user) return;
-
     const messageText = input.trim();
     setInput('');
 
-    // If a human agent is active, send directly to the room (human handles it)
+    // Determine which room to send to
+    const room = ticketRoom || 'support-waiting';
+
     if (agentActive) {
+      // Send directly to the ticket room (agent is there)
       socketRef.current.emit('chat-message', {
         senderId: user.id,
         companyId: (user as any).companyId || '',
-        roomId: 'support',
+        roomId: room,
         message: messageText,
       });
     } else {
-      // No human agent – AI handles it
-      // First, add user message to the chat (optimistic update)
+      // Optimistic UI
       const tempMsg: Message = {
         id: `temp-${Date.now()}`,
         sender_id: user.id,
-        sender_name: user.firstName + ' ' + user.lastName,
+        sender_name: user.first_name + ' ' + user.last_name,
         message: messageText,
         created_at: new Date().toISOString(),
         is_ai: false,
       };
       setMessages((prev) => [...prev, tempMsg]);
 
-      // Emit user message so it appears in the room (optional, but we already added it)
-      // We'll also send it to the chatbot endpoint
+      // Check for human request
+      const humanKeywords = ['human', 'agent', 'talk to someone', 'real person', 'support agent'];
+      if (humanKeywords.some(keyword => messageText.toLowerCase().includes(keyword))) {
+        requestHumanSupport();
+        socketRef.current?.emit('chat-message', {
+          senderId: '00000000-0000-0000-0000-000000000001',
+          companyId: (user as any).companyId || '',
+          roomId: room,
+          message: "I've notified our support team. They'll join shortly.",
+        });
+        return;
+      }
+
+      // AI response
       setAiTyping(true);
-      api
-        .post('/chatbot/query', { question: messageText })
+      api.post('/chatbot/query', { question: messageText })
         .then((res: any) => {
-          // Emit the AI response to the room
           socketRef.current?.emit('chat-message', {
-            senderId: '00000000-0000-0000-0000-000000000001', // Lucy AI
+            senderId: '00000000-0000-0000-0000-000000000001',
             companyId: (user as any).companyId || '',
-            roomId: 'support',
+            roomId: room,
             message: res.answer,
           });
           setAiTyping(false);
         })
-        .catch((err) => {
-          console.error('Chatbot error:', err);
-          // Fallback: send a generic error message
+        .catch(() => {
           socketRef.current?.emit('chat-message', {
             senderId: '00000000-0000-0000-0000-000000000001',
             companyId: (user as any).companyId || '',
-            roomId: 'support',
-            message: "I'm having trouble connecting. Please try again later or request human support.",
+            roomId: room,
+            message: "I'm having trouble. Please try again or request a human.",
           });
           setAiTyping(false);
         });
     }
   };
 
-  // Toggle takeover (for managers/bosses)
-  const toggleTakeover = async () => {
-    if (loadingAgent) return;
-    setLoadingAgent(true);
-    const action = agentActive ? 'leave' : 'join';
-    try {
-      await api.post('/support/takeover', {
-        userId: user?.id,
-        roomId: 'support',
-        action,
-      });
-      setAgentActive(!agentActive);
-      Alert.alert(
-        'Success',
-        agentActive ? 'You left support mode' : 'You are now a support agent'
-      );
-    } catch (err) {
-      Alert.alert('Error', 'Could not change takeover status');
-    } finally {
-      setLoadingAgent(false);
-    }
-  };
-
-  // Request human support (user escalation)
-  const requestHuman = async () => {
-    if (agentActive) {
-      Alert.alert('Info', 'A human agent is already active.');
+  const requestHumanSupport = async () => {
+    if (humanRequested) {
+      Alert.alert('Already Requested', 'A support agent has been notified.');
       return;
     }
     try {
-      // Notify the server that this user needs human support
-      await api.post('/support/request-human', {
+      const res = await api.post<{ ticketId: string }>('/support/request-human', {
         userId: user?.id,
-        roomId: 'support',
+        companyId: user?.companyId,
+        userName: user?.first_name + ' ' + user?.last_name,
       });
-      // Also emit a socket event to notify agents
-      socketRef.current?.emit('request-human', {
-        userId: user?.id,
-        userName: user?.firstName + ' ' + user?.lastName,
-      });
-      Alert.alert(
-        'Request Sent',
-        'A human support agent has been notified. They will join shortly.'
-      );
+      const ticketId = res.ticketId;
+      const roomId = `support-ticket-${ticketId}`;
+      setTicketRoom(roomId);
+
+      // Leave waiting room and join ticket room
+      socketRef.current?.emit('leave-room', 'support-waiting');
+      socketRef.current?.emit('join-room', roomId);
+
+      setHumanRequested(true);
+      Alert.alert('Request Sent', 'Our support team has been notified. They will join shortly.');
     } catch (err) {
-      Alert.alert('Error', 'Could not request human support. Please try again.');
+      Alert.alert('Error', 'Could not reach support. Please try again.');
     }
   };
 
-  // Render each message
   const renderItem = ({ item }: { item: Message }) => {
     const isMine = item.sender_id === user?.id;
     const isAI = item.sender_id === '00000000-0000-0000-0000-000000000001';
+    const isAgent = !isMine && !isAI;
     return (
-      <View
-        style={[
-          styles.bubble,
-          isMine ? styles.bubbleMe : styles.bubbleThem,
-          isAI && styles.bubbleAI,
-        ]}
-      >
+      <View style={[styles.bubble, isMine ? styles.bubbleMe : styles.bubbleThem, isAI && styles.bubbleAI, isAgent && styles.bubbleAgent]}>
         <Text style={styles.sender}>
-          {item.sender_name ||
-            (isMine
-              ? 'You'
-              : isAI
-              ? 'Lucy (AI)'
-              : 'Support')}
+          {item.sender_name || (isMine ? 'You' : isAI ? 'Lucy (AI)' : 'Support Agent')}
         </Text>
         <Text style={styles.msgText}>{item.message}</Text>
         <Text style={styles.time}>
-          {new Date(item.created_at).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
+          {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>
       </View>
     );
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      {/* Header */}
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backButton}
-        >
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Live Support</Text>
-
-        {/* Agent takeover button (managers/bosses) */}
-        {(user?.role === 'boss' || user?.role === 'manager') && (
-          <TouchableOpacity
-            onPress={toggleTakeover}
-            style={styles.takeoverBtn}
-            disabled={loadingAgent}
-          >
-            <MaterialIcons
-              name="people"
-              size={24}
-              color={agentActive ? '#4CAF50' : '#FFF'}
-            />
-          </TouchableOpacity>
-        )}
+        <Text style={styles.headerTitle}>Support</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* Status indicator */}
       <View style={styles.statusBar}>
         <Text style={styles.statusText}>
           {agentActive
-            ? '👤 A human agent is online'
+            ? '👤 A support agent is online'
+            : humanRequested
+            ? '⏳ Agent will join shortly'
             : '🤖 Lucy (AI) is assisting you'}
         </Text>
-        {!agentActive && (
-          <TouchableOpacity style={styles.humanRequestBtn} onPress={requestHuman}>
+        {!agentActive && !humanRequested && (
+          <TouchableOpacity style={styles.humanRequestBtn} onPress={requestHumanSupport}>
             <Text style={styles.humanRequestText}>Request Human</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Messages */}
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -293,7 +215,6 @@ export default function SupportScreen() {
         onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
       />
 
-      {/* AI typing indicator */}
       {aiTyping && !agentActive && (
         <View style={styles.typingIndicator}>
           <Text style={styles.typingText}>Lucy is typing...</Text>
@@ -301,15 +222,10 @@ export default function SupportScreen() {
         </View>
       )}
 
-      {/* Input bar */}
       <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
-          placeholder={
-            agentActive
-              ? 'Type your message...'
-              : 'Ask Lucy or request human support...'
-          }
+          placeholder={agentActive ? 'Type your message...' : 'Ask Lucy or request a human'}
           placeholderTextColor="#888"
           value={input}
           onChangeText={setInput}
@@ -338,7 +254,6 @@ const styles = StyleSheet.create({
   },
   backButton: { padding: 8, marginLeft: 4 },
   headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
-  takeoverBtn: { marginRight: 12, padding: 4 },
 
   statusBar: {
     flexDirection: 'row',
@@ -371,13 +286,10 @@ const styles = StyleSheet.create({
 
   bubble: { marginBottom: 12, padding: 12, borderRadius: 12, maxWidth: '80%' },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#00D4FF' },
-  bubbleThem: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#1A1A1A',
-    borderWidth: 1,
-    borderColor: '#333',
-  },
+  bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333' },
   bubbleAI: { borderColor: '#00D4FF', borderWidth: 1 },
+  bubbleAgent: { borderColor: '#4CAF50', borderWidth: 1 },
+
   sender: { color: '#FFF', fontWeight: 'bold', fontSize: 12, marginBottom: 4 },
   msgText: { color: '#FFF', fontSize: 14 },
   time: { color: '#888', fontSize: 10, marginTop: 4, textAlign: 'right' },
