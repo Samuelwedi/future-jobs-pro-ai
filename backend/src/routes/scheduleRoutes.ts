@@ -6,7 +6,7 @@ const router = express.Router();
 
 // ========== VERSION & DEBUG ENDPOINTS (unprotected) ==========
 router.get('/version', (req: Request, res: Response) => {
-  res.json({ version: '2.0.4', fixed: 'removed test bypass, full routes' });
+  res.json({ version: '2.0.5', fixed: 'recurring shifts support added' });
 });
 
 router.get('/debug-all', async (req: Request, res: Response) => {
@@ -64,7 +64,7 @@ router.get('/my-shifts-debug', async (req: Request, res: Response) => {
   }
 });
 
-// ========== AUTH‑PROTECTED ROUTES ==========
+// ========== AUTH-PROTECTED ROUTES ==========
 
 const getCompanyId = async (req: Request): Promise<string | null> => {
   const testUserHeader = req.headers['x-test-user'];
@@ -106,52 +106,34 @@ router.get('/shifts', async (req: Request, res: Response) => {
 // ===== FIXED my-shifts (without test bypass) =====
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
-    console.error('🔥 my-shifts handler ENTERED');
-
-    // REMOVE the test user bypass to avoid returning empty for real users
-    // const testUserHeader = req.headers['x-test-user'];
-    // if (testUserHeader === 'samuel@test.com') {
-    //   return res.json({ success: true, shifts: [] });
-    // }
-
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.error('🔹 No auth header');
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     const decoded = verifyToken(req);
 
     const { userId, start, end } = req.query;
     if (!userId || !start || !end) {
-      console.error('🔹 Missing params');
       return res.status(400).json({ success: false, message: 'userId, start, and end are required' });
     }
-
-    console.error(`📡 my-shifts: userId=${userId}, start=${start}, end=${end}`);
 
     // Get company IDs
     const requestUserRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (requestUserRes.rows.length === 0) {
-      console.error('🔹 Requesting user not found');
       return res.status(404).json({ success: false, message: 'Requesting user not found' });
     }
     const requestCompanyId = requestUserRes.rows[0].company_id;
-    console.error(`👤 Requesting user company: ${requestCompanyId}`);
 
     const targetUserRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
     if (targetUserRes.rows.length === 0) {
-      console.error('🔹 Target user not found');
       return res.status(404).json({ success: false, message: 'Target user not found' });
     }
     const targetCompanyId = targetUserRes.rows[0].company_id;
-    console.error(`👥 Target user company: ${targetCompanyId}`);
 
     if (requestCompanyId !== targetCompanyId) {
-      console.error(`🔹 Company mismatch: ${requestCompanyId} vs ${targetCompanyId}`);
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 
-    // Main query with date range
     const result = await pool.query(
       `SELECT s.*, 
               array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
@@ -167,7 +149,6 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
        ORDER BY s.date, s.start_time`,
       [userId, start, end]
     );
-    console.error(`📊 Found ${result.rows.length} shifts in main query`);
     res.json({ success: true, shifts: result.rows });
   } catch (error: any) {
     console.error('❌ Error in my-shifts:', error);
@@ -175,18 +156,27 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
   }
 });
 
-// ===== POST /shifts =====
+// ===== POST /shifts (updated to support recurring_shift_id) =====
 router.post('/shifts', async (req: Request, res: Response) => {
-  const startTime = Date.now();
-  console.log('📝 POST /shifts started');
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) {
-      console.log('❌ Unauthorized – no company ID');
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
 
-    const { name, date, startTime: start, endTime: end, projectId, notes, employeeIds, attachmentUrl, attachmentType } = req.body;
+    const {
+      name,
+      date,
+      startTime: start,
+      endTime: end,
+      projectId,
+      notes,
+      employeeIds,
+      attachmentUrl,
+      attachmentType,
+      recurringShiftId, // NEW: optional UUID from recurring_shifts
+    } = req.body;
+
     if (!name || !date || !start || !end) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
@@ -210,10 +200,26 @@ router.post('/shifts', async (req: Request, res: Response) => {
       } catch { /* ignore */ }
     }
 
+    // Insert shift with optional recurring_shift_id
     const shiftResult = await pool.query(
-      `INSERT INTO shifts (name, date, start_time, end_time, project_id, notes, created_by, attachment_url, attachment_type, user_id)
-       VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9, $10) RETURNING *`,
-      [name, date, start, end, projectId || null, notes || null, userId, attachmentUrl || null, attachmentType || null, userId]
+      `INSERT INTO shifts
+       (name, date, start_time, end_time, project_id, notes, created_by,
+        attachment_url, attachment_type, user_id, recurring_shift_id)
+       VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [
+        name,
+        date,
+        start,
+        end,
+        projectId || null,
+        notes || null,
+        userId,
+        attachmentUrl || null,
+        attachmentType || null,
+        userId,
+        recurringShiftId || null,
+      ]
     );
     const shift = shiftResult.rows[0];
 
@@ -226,7 +232,6 @@ router.post('/shifts', async (req: Request, res: Response) => {
       }
     }
 
-    console.log(`✅ Shift created: ${shift.id} for user ${userId} in ${Date.now() - startTime}ms`);
     res.status(201).json({ success: true, shift });
   } catch (error: any) {
     console.error('❌ Create shift error:', error);
@@ -234,13 +239,23 @@ router.post('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// ===== PUT /shifts/:id =====
+// ===== PUT /shifts/:id (updated to support recurring_shift_id) =====
 router.put('/shifts/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { name, date, startTime, endTime, notes, employeeIds, attachmentUrl, attachmentType } = req.body;
+    const {
+      name,
+      date,
+      startTime,
+      endTime,
+      notes,
+      employeeIds,
+      attachmentUrl,
+      attachmentType,
+      recurringShiftId, // NEW: optional
+    } = req.body;
 
     const checkResult = await pool.query(
       `SELECT s.id 
@@ -254,9 +269,21 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
     }
 
     const result = await pool.query(
-      `UPDATE shifts SET name=$1, date=$2::date, start_time=$3::time, end_time=$4::time, notes=$5, attachment_url=$6, attachment_type=$7
-       WHERE id=$8 RETURNING *`,
-      [name, date, startTime, endTime, notes, attachmentUrl || null, attachmentType || null, req.params.id]
+      `UPDATE shifts
+       SET name=$1, date=$2::date, start_time=$3::time, end_time=$4::time,
+           notes=$5, attachment_url=$6, attachment_type=$7, recurring_shift_id=$8
+       WHERE id=$9 RETURNING *`,
+      [
+        name,
+        date,
+        startTime,
+        endTime,
+        notes,
+        attachmentUrl || null,
+        attachmentType || null,
+        recurringShiftId || null,
+        req.params.id,
+      ]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Shift not found' });
 
@@ -272,11 +299,12 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
 
     res.json({ success: true, shift: result.rows[0] });
   } catch (error: any) {
+    console.error('❌ Update shift error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// ===== DELETE /shifts/:id =====
+// ===== DELETE /shifts/:id (unchanged) =====
 router.delete('/shifts/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -297,6 +325,112 @@ router.delete('/shifts/:id', async (req: Request, res: Response) => {
     await pool.query('DELETE FROM shifts WHERE id = $1', [req.params.id]);
     res.json({ success: true, message: 'Shift deleted' });
   } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ===== NEW: GET /api/schedule/calendar – combined one‑off + recurring events =====
+router.get('/calendar', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { start, end } = req.query;
+    const startStr = Array.isArray(start) ? start[0] : start;
+    const endStr = Array.isArray(end) ? end[0] : end;
+    if (typeof startStr !== 'string' || typeof endStr !== 'string') {
+      return res.status(400).json({ success: false, message: 'start and end date required' });
+    }
+
+    // 1. Fetch all one‑off shifts (non‑recurring) in the date range
+    const shiftsResult = await pool.query(
+      `SELECT s.*,
+              array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
+              p.name as project_name,
+              u.first_name || ' ' || u.last_name as employee_name
+       FROM shifts s
+       LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
+       LEFT JOIN projects p ON s.project_id = p.id
+       LEFT JOIN users u ON s.user_id = u.id
+       WHERE s.company_id = $1
+         AND s.date >= $2::date AND s.date <= $3::date
+         AND s.recurring_shift_id IS NULL
+       GROUP BY s.id, p.name, u.id
+       ORDER BY s.date, s.start_time`,
+      [companyId, startStr, endStr]
+    );
+
+    // 2. Fetch all recurring rules that have any occurrence in the range
+    const recurringResult = await pool.query(
+      `SELECT rs.*,
+              u.first_name || ' ' || u.last_name as employee_name,
+              p.name as project_name
+       FROM recurring_shifts rs
+       LEFT JOIN users u ON rs.employee_id = u.id
+       LEFT JOIN projects p ON rs.project_id = p.id
+       WHERE rs.company_id = $1 AND rs.is_active = true
+         AND rs.start_date <= $3::date
+         AND (rs.end_date IS NULL OR rs.end_date >= $2::date)`,
+      [companyId, startStr, endStr]
+    );
+
+    // 3. Expand recurring rules into individual events for the date range
+    const recurringEvents = [];
+    const startDate = new Date(startStr);
+    const endDate = new Date(endStr);
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(0, 0, 0, 0);
+
+    for (const rule of recurringResult.rows) {
+      let current = new Date(startDate);
+      while (current <= endDate) {
+        if (current.getDay() === rule.day_of_week) {
+          // Check if this occurrence is within the rule's start/end dates
+          const occurrenceDate = new Date(current);
+          if (occurrenceDate < new Date(rule.start_date)) {
+            current.setDate(current.getDate() + 1);
+            continue;
+          }
+          if (rule.end_date && occurrenceDate > new Date(rule.end_date)) {
+            current.setDate(current.getDate() + 1);
+            continue;
+          }
+
+          const [sh, sm] = rule.start_time.split(':').map(Number);
+          const [eh, em] = rule.end_time.split(':').map(Number);
+          const startTime = new Date(occurrenceDate);
+          startTime.setHours(sh, sm, 0, 0);
+          const endTime = new Date(occurrenceDate);
+          endTime.setHours(eh, em, 0, 0);
+
+          recurringEvents.push({
+            id: `recurring-${rule.id}-${occurrenceDate.toISOString().split('T')[0]}`,
+            name: rule.title || 'Recurring Shift',
+            date: occurrenceDate.toISOString().split('T')[0],
+            start_time: rule.start_time,
+            end_time: rule.end_time,
+            project_id: rule.project_id,
+            user_id: rule.employee_id,
+            recurring_shift_id: rule.id,
+            is_recurring: true,
+            employee_name: rule.employee_name || 'Unassigned',
+            project_name: rule.project_name || null,
+            // Additional fields to match one‑off shifts
+            attachment_url: null,
+            attachment_type: null,
+            notes: null,
+            created_by: rule.created_by,
+            assigned_user_ids: [rule.employee_id], // assume assigned to the employee
+          });
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    }
+
+    const combined = [...shiftsResult.rows, ...recurringEvents];
+    res.json({ success: true, events: combined });
+  } catch (error) {
+    console.error('❌ Error fetching calendar:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });

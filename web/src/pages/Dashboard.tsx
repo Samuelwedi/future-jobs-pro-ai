@@ -16,6 +16,11 @@ import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
+import {
+  // ... existing imports
+  AttachMoney,
+  Receipt,
+} from '@mui/icons-material';
 
 const COLORS = ['#00D4FF', '#4CAF50', '#FF9800', '#F44336'];
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
@@ -35,6 +40,8 @@ const navItems = [
   { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
   { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
   { label: 'Support', icon: <SupportAgent />, path: '/chat' },  // <-- added
+ { label: 'Payroll', icon: <AttachMoney />, path: '/payroll' },
+  { label: 'Invoices', icon: <Receipt />, path: '/invoices' },
 ];
 
 export default function Dashboard() {

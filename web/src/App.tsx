@@ -30,6 +30,8 @@ import Demo from './pages/Demo';
 import About from './pages/About';
 import Blog from './pages/Blog';
 import Security from './pages/Security';
+import Payroll from './pages/Payroll';
+import Invoices from './pages/Invoices';
 
 export default function App() {
   return (
@@ -56,6 +58,8 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/register" element={<Register />} />
         <Route path="/payment-required" element={<PaymentRequired />} />
+        <Route path="/payroll" element={<Payroll />} />
+<Route path="/invoices" element={<Invoices />} />
         <Route path="/integrations" element={<Integrations />} />
         <Route path="/ask-lucy" element={<AskLucy />} />
         <Route path="/voice-assistant" element={<VoiceAssistant />} />

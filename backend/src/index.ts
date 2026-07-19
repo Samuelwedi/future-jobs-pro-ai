@@ -94,6 +94,10 @@ import uploadRoutes from './routes/uploadRoutes'; app.use('/api/upload', uploadR
 import approvalRoutes from './routes/approvalRoutes'; app.use('/api/approvals', approvalRoutes);
 import subscriptionRoutes from './routes/subscriptionRoutes'; app.use('/api/subscriptions', subscriptionRoutes);
 import chatbotRoutes from './routes/chatbotRoutes'; app.use('/api/chatbot', chatbotRoutes);
+import recurringShiftRouter from './routes/recurringShiftRouter'; app.use('/api/recurring-shifts', recurringShiftRouter);
+import payrollRouter from './routes/payrollRouter'; app.use('/api/payroll', payrollRouter);
+import invoiceRouter from './routes/invoiceRouter'; app.use('/api/invoices', invoiceRouter);
+
 // ----- trialCheck middleware (moved AFTER scheduleRoutes) -----
 app.use(trialCheck);
 
