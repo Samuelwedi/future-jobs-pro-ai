@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Calendar as BigCalendar, momentLocalizer, Views } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-import { DndProvider } from 'react-dnd';
+import { DndProvider } from 'react-dnd/dist/core/index.js';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
   Box, Container, Typography, Paper, Dialog, DialogTitle, DialogContent,
