@@ -11,7 +11,7 @@ import {
   Add, Delete, CheckCircle, Send, Edit, Refresh, AttachMoney,
   TrendingUp, TrendingDown, People, Schedule, Settings,
   Download, PictureAsPdf, Description, TableChart,
-  FilePresent, Visibility, FilterList,
+  FilePresent, Visibility, FilterList, Close,
 } from '@mui/icons-material';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
@@ -71,6 +71,7 @@ export default function PayrollPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
   const [employeeRateOverrides, setEmployeeRateOverrides] = useState<Record<string, number | null>>({});
@@ -125,6 +126,7 @@ export default function PayrollPage() {
       if (data.success) {
         setPayrollItems(data.items || []);
         setSelectedPayroll(data.payroll);
+        setDetailDialogOpen(true);
       }
     } catch (e) { console.error(e); }
     setDetailLoading(false);
@@ -180,7 +182,6 @@ export default function PayrollPage() {
       return;
     }
 
-    // Build employeeRates array from overrides
     const employeeRates = Object.entries(employeeRateOverrides)
       .filter(([_, rate]) => rate !== null && rate > 0)
       .map(([employeeId, hourlyRate]) => ({ employeeId, hourlyRate: hourlyRate! }));
@@ -225,7 +226,7 @@ export default function PayrollPage() {
     } catch (e) { alert('Delete failed'); }
   };
 
-  // ─── EXPORT FUNCTIONS ──────────────────────────────────────────
+  // ─── EXPORT ──────────────────────────────────────────────────
   const handleExport = async (format: 'pdf' | 'excel' | 'csv' | 'word') => {
     try {
       const employeeParam = selectedEmployeeId !== 'all' ? `&employeeId=${selectedEmployeeId}` : '';
@@ -261,7 +262,7 @@ export default function PayrollPage() {
     await fetchPayrollDetail(payroll.id);
   };
 
-  // ─── Tab Panels ──────────────────────────────────────────────────
+  // ─── Tab Panels ────────────────────────────────────────────────
   const renderOverview = () => (
     <>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
@@ -385,11 +386,9 @@ export default function PayrollPage() {
         </Table>
       </TableContainer>
 
-      {/* GENERATE DIALOG WITH RATE OVERRIDES */}
+      {/* --- GENERATE DIALOG --- */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
-          Generate Payroll
-        </DialogTitle>
+        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>Generate Payroll</DialogTitle>
         <DialogContent sx={{ bgcolor: '#1A1A1A' }}>
           <TextField
             label="Period Start"
@@ -459,9 +458,124 @@ export default function PayrollPage() {
           </Box>
         </DialogContent>
       </Dialog>
+
+      {/* --- DETAIL VIEW DIALOG --- */}
+      <Dialog
+        open={detailDialogOpen}
+        onClose={() => setDetailDialogOpen(false)}
+        maxWidth="lg"
+        fullWidth
+        scroll="paper"
+      >
+        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+              Payroll Details
+            </Typography>
+            <IconButton onClick={() => setDetailDialogOpen(false)} sx={{ color: '#FFF' }}>
+              <Close />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ bgcolor: '#0A0A0A' }}>
+          {detailLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress sx={{ color: '#00D4FF' }} />
+            </Box>
+          ) : selectedPayroll ? (
+            <>
+              {/* Summary */}
+              <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333', mb: 3 }}>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} md={3}>
+                    <Typography variant="body2" sx={{ color: '#888' }}>Period</Typography>
+                    <Typography variant="body1" sx={{ color: '#FFF', fontWeight: 'bold' }}>
+                      {selectedPayroll.period_start} → {selectedPayroll.period_end}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <Typography variant="body2" sx={{ color: '#888' }}>Employees</Typography>
+                    <Typography variant="body1" sx={{ color: '#FFF', fontWeight: 'bold' }}>
+                      {Number(selectedPayroll.employee_count) || 0}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <Typography variant="body2" sx={{ color: '#888' }}>Total Hours</Typography>
+                    <Typography variant="body1" sx={{ color: '#FFF', fontWeight: 'bold' }}>
+                      {Number(selectedPayroll.total_hours).toFixed(2)}h
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <Typography variant="body2" sx={{ color: '#888' }}>Total Pay</Typography>
+                    <Typography variant="body1" sx={{ color: '#00D4FF', fontWeight: 'bold' }}>
+                      ${Number(selectedPayroll.total_pay).toFixed(2)}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={12}>
+                    <Typography variant="body2" sx={{ color: '#888' }}>Status</Typography>
+                    {getStatusChip(selectedPayroll.status)}
+                  </Grid>
+                  {selectedPayroll.notes && (
+                    <Grid item xs={12}>
+                      <Typography variant="body2" sx={{ color: '#888' }}>Notes</Typography>
+                      <Typography variant="body2" sx={{ color: '#FFF' }}>{selectedPayroll.notes}</Typography>
+                    </Grid>
+                  )}
+                </Grid>
+              </Paper>
+
+              {/* Employee Breakdown */}
+              <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Employee Breakdown</Typography>
+              <TableContainer component={Paper} sx={{ bgcolor: '#1A1A1A', border: '1px solid #333' }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ color: '#888' }}>Employee</TableCell>
+                      <TableCell sx={{ color: '#888' }} align="right">Hours</TableCell>
+                      <TableCell sx={{ color: '#888' }} align="right">Rate</TableCell>
+                      <TableCell sx={{ color: '#888' }} align="right">Pay (Hours × Rate)</TableCell>
+                      <TableCell sx={{ color: '#888' }} align="right">Adjustments</TableCell>
+                      <TableCell sx={{ color: '#888' }} align="right">Final Pay</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {payrollItems.map((item) => {
+                      const hours = Number(item.hours) || 0;
+                      const rate = Number(item.hourly_rate) || 0;
+                      const pay = Number(item.pay) || 0;
+                      const adjustments = Number(item.adjustments) || 0;
+                      const finalPay = Number(item.final_pay) || 0;
+                      return (
+                        <TableRow key={item.id} sx={{ borderBottom: '1px solid #333' }}>
+                          <TableCell sx={{ color: '#FFF' }}>{item.employee_name || 'Unknown'}</TableCell>
+                          <TableCell sx={{ color: '#FFF' }} align="right">{hours.toFixed(2)}</TableCell>
+                          <TableCell sx={{ color: '#FFF' }} align="right">${rate.toFixed(2)}</TableCell>
+                          <TableCell sx={{ color: '#FFF' }} align="right">${pay.toFixed(2)}</TableCell>
+                          <TableCell sx={{ color: '#FFF' }} align="right">${adjustments.toFixed(2)}</TableCell>
+                          <TableCell sx={{ color: '#00D4FF' }} align="right">${finalPay.toFixed(2)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {payrollItems.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} sx={{ color: '#888', textAlign: 'center', py: 3 }}>
+                          No employees in this payroll.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
+          ) : (
+            <Alert severity="info">No payroll selected.</Alert>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 
+  // ── Compensation Tab ──────────────────────────────────────────
   const renderCompensation = () => (
     <Box>
       <Typography variant="h5" sx={{ color: '#FFF', mb: 2 }}>Employee Compensation</Typography>
@@ -571,6 +685,7 @@ export default function PayrollPage() {
     </Box>
   );
 
+  // ── Settings Tab ──────────────────────────────────────────────
   const renderSettings = () => (
     <Box>
       <Typography variant="h5" sx={{ color: '#FFF', mb: 2 }}>Payroll Settings</Typography>
@@ -658,6 +773,7 @@ export default function PayrollPage() {
     </Box>
   );
 
+  // ── What‑If Tab ──────────────────────────────────────────────
   const renderWhatIf = () => (
     <Box>
       <Typography variant="h5" sx={{ color: '#FFF', mb: 2 }}>What‑If Scenario Planner</Typography>
