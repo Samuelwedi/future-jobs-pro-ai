@@ -119,7 +119,7 @@ export default function PayrollPage() {
   const fetchPayrollDetail = async (id: string) => {
     setDetailLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/payroll/${id}`, {
+      const res = await fetch(`${API_BASE}/api/payroll/${id}?_=${Date.now()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -182,9 +182,18 @@ export default function PayrollPage() {
       return;
     }
 
-    const employeeRates = Object.entries(employeeRateOverrides)
-      .filter(([_, rate]) => rate !== null && rate > 0)
-      .map(([employeeId, hourlyRate]) => ({ employeeId, hourlyRate: hourlyRate! }));
+    // Build employeeRates array from ALL employees (using edits or current rate)
+    const employeeRates = employees
+      .map(emp => {
+        const override = employeeRateOverrides[emp.id];
+        if (override !== null && override !== undefined && override > 0) {
+          return { employeeId: emp.id, hourlyRate: override };
+        }
+        const comp = compEmployees.find(c => c.id === emp.id);
+        const currentRate = comp?.current_rate || 20;
+        return { employeeId: emp.id, hourlyRate: Number(currentRate) };
+      })
+      .filter(r => r.hourlyRate > 0);
 
     try {
       const res = await fetch(`${API_BASE}/api/payroll/generate`, {
@@ -386,9 +395,11 @@ export default function PayrollPage() {
         </Table>
       </TableContainer>
 
-      {/* --- GENERATE DIALOG --- */}
+      {/* --- GENERATE DIALOG (EDIBLE RATES) --- */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>Generate Payroll</DialogTitle>
+        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
+          Generate Payroll
+        </DialogTitle>
         <DialogContent sx={{ bgcolor: '#1A1A1A' }}>
           <TextField
             label="Period Start"
@@ -410,7 +421,7 @@ export default function PayrollPage() {
           />
 
           <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 3, mb: 2 }}>
-            Employee Rates (override if needed)
+            Employee Rates (edit any rate to override for this payroll)
           </Typography>
 
           <TableContainer component={Paper} sx={{ bgcolor: '#0A0A0A', border: '1px solid #333', maxHeight: 300 }}>
@@ -418,8 +429,7 @@ export default function PayrollPage() {
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ color: '#888' }}>Employee</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Current Rate</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Override Rate</TableCell>
+                  <TableCell sx={{ color: '#888' }}>Rate Used (edit to override)</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -429,18 +439,23 @@ export default function PayrollPage() {
                   return (
                     <TableRow key={emp.id} sx={{ borderBottom: '1px solid #333' }}>
                       <TableCell sx={{ color: '#FFF' }}>{emp.name}</TableCell>
-                      <TableCell sx={{ color: '#00D4FF' }}>${Number(currentRate).toFixed(2)}/hr</TableCell>
                       <TableCell>
                         <TextField
                           type="number"
                           size="small"
-                          placeholder="Override"
-                          value={employeeRateOverrides[emp.id] || ''}
+                          value={employeeRateOverrides[emp.id] ?? Number(currentRate)}
                           onChange={(e) => {
                             const val = e.target.value ? Number(e.target.value) : null;
                             setEmployeeRateOverrides(prev => ({ ...prev, [emp.id]: val }));
                           }}
-                          sx={{ input: { color: '#FFF' }, width: 120 }}
+                          sx={{
+                            input: { color: '#FFF' },
+                            width: 140,
+                            '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } },
+                          }}
+                          InputProps={{
+                            endAdornment: <InputAdornment position="end" sx={{ color: '#888' }}>/hr</InputAdornment>,
+                          }}
                         />
                       </TableCell>
                     </TableRow>
