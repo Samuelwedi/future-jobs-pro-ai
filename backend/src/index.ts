@@ -97,7 +97,7 @@ import chatbotRoutes from './routes/chatbotRoutes'; app.use('/api/chatbot', chat
 import recurringShiftRouter from './routes/recurringShiftRouter'; app.use('/api/recurring-shifts', recurringShiftRouter);
 import payrollRouter from './routes/payrollRouter'; app.use('/api/payroll', payrollRouter);
 import invoiceRouter from './routes/invoiceRouter'; app.use('/api/invoices', invoiceRouter);
-
+import dashboardRouter from './routes/dashboardRouter'; app.use('/api/dashboard', dashboardRouter);
 // ----- trialCheck middleware (moved AFTER scheduleRoutes) -----
 app.use(trialCheck);
 

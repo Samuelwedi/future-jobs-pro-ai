@@ -1,10 +1,11 @@
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
+import { generatePayroll } from '../services/payrollGenerator';
 
 const router = express.Router();
 
-// Helper to get company ID from token
+// ─── Helper ───────────────────────────────────────────────────────
 const getCompanyId = async (req: Request): Promise<string | null> => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -15,7 +16,8 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   } catch { return null; }
 };
 
-// GET /api/payroll – list all payrolls for the company
+// ─── EXISTING ENDPOINTS ──────────────────────────────────────────
+
 router.get('/', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -36,7 +38,6 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/payroll/:id – get payroll with items
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -71,9 +72,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/payroll/generate – generate payroll from time entries
 router.post('/generate', async (req: Request, res: Response) => {
-  const client = await pool.connect();
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
@@ -83,75 +82,20 @@ router.post('/generate', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'periodStart and periodEnd required' });
     }
 
-    // Fetch all time entries for the company in the period
-    const timeEntries = await client.query(
-      `SELECT te.user_id, te.regular_hours, te.overtime_hours, te.total_wage, te.id
-       FROM time_entries te
-       JOIN users u ON te.user_id = u.id
-       WHERE u.company_id = $1
-         AND te.clock_in >= $2::date
-         AND te.clock_in <= $3::date
-         AND te.status = 'completed'`,
-      [companyId, periodStart, periodEnd]
-    );
+    const userId = (req as any).user?.id || null;
+    const result = await generatePayroll(companyId, periodStart, periodEnd, userId);
 
-    if (timeEntries.rows.length === 0) {
-      return res.status(400).json({ success: false, message: 'No time entries found in this period' });
-    }
-
-    // Group by user
-    const userMap = new Map<string, { hours: number; pay: number; timeEntryIds: string[] }>();
-    for (const row of timeEntries.rows) {
-      if (!userMap.has(row.user_id)) {
-        userMap.set(row.user_id, { hours: 0, pay: 0, timeEntryIds: [] });
-      }
-      const data = userMap.get(row.user_id)!;
-      data.hours += Number(row.regular_hours || 0) + Number(row.overtime_hours || 0);
-      data.pay += Number(row.total_wage || 0);
-      data.timeEntryIds.push(row.id);
-    }
-
-    // Calculate total hours & pay
-    let totalHours = 0;
-    let totalPay = 0;
-    for (const [_, data] of userMap) {
-      totalHours += data.hours;
-      totalPay += data.pay;
-    }
-
-    // Create payroll record
-    const payrollResult = await client.query(
-      `INSERT INTO payrolls (company_id, period_start, period_end, total_hours, total_pay, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [companyId, periodStart, periodEnd, totalHours, totalPay, (req as any).user?.id || null]
-    );
-    const payrollId = payrollResult.rows[0].id;
-
-    // Insert payroll items
-    for (const [employeeId, data] of userMap) {
-      await client.query(
-        `INSERT INTO payroll_items (payroll_id, employee_id, hours, pay, timesheet_ids)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [payrollId, employeeId, data.hours, data.pay, data.timeEntryIds]
-      );
-    }
-
-    await client.query('COMMIT');
     res.status(201).json({
       success: true,
-      payrollId,
-      message: `Payroll generated for ${userMap.size} employees`,
+      payrollId: result.payrollId,
+      message: `Payroll generated for ${result.employeeCount} employees`,
     });
-  } catch (error) {
-    await client.query('ROLLBACK');
+  } catch (error: any) {
     console.error('Error generating payroll:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  } finally {
-    client.release();
+    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
   }
 });
 
-// PUT /api/payroll/:id – update payroll status or notes
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -175,7 +119,6 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// DELETE /api/payroll/:id – delete payroll (only if draft)
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -192,6 +135,217 @@ router.delete('/:id', async (req: Request, res: Response) => {
     res.json({ success: true, message: 'Payroll deleted' });
   } catch (error) {
     console.error('Error deleting payroll:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ─── NEW ADVANCED ENDPOINTS ─────────────────────────────────────
+
+// GET /api/payroll/settings
+router.get('/settings', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const result = await pool.query(
+      `SELECT payroll_schedule, payroll_day, payroll_time, default_hourly_rate, overtime_multiplier, tax_rate
+       FROM companies WHERE id = $1`,
+      [companyId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Company not found' });
+    }
+    res.json({ success: true, settings: result.rows[0] });
+  } catch (error) {
+    console.error('Error fetching payroll settings:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// PUT /api/payroll/settings
+router.put('/settings', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { payroll_schedule, payroll_day, payroll_time, default_hourly_rate, overtime_multiplier, tax_rate } = req.body;
+    const result = await pool.query(
+      `UPDATE companies
+       SET payroll_schedule = COALESCE($1, payroll_schedule),
+           payroll_day = COALESCE($2, payroll_day),
+           payroll_time = COALESCE($3, payroll_time),
+           default_hourly_rate = COALESCE($4, default_hourly_rate),
+           overtime_multiplier = COALESCE($5, overtime_multiplier),
+           tax_rate = COALESCE($6, tax_rate)
+       WHERE id = $7
+       RETURNING *`,
+      [
+        payroll_schedule,
+        payroll_day,
+        payroll_time,
+        default_hourly_rate,
+        overtime_multiplier,
+        tax_rate,
+        companyId,
+      ]
+    );
+    res.json({ success: true, settings: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating payroll settings:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// GET /api/payroll/employees/compensation
+router.get('/employees/compensation', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const result = await pool.query(
+      `SELECT
+         u.id, u.first_name, u.last_name,
+         (SELECT hourly_rate FROM compensation_history WHERE user_id = u.id AND effective_date <= CURRENT_DATE ORDER BY effective_date DESC LIMIT 1) as current_rate,
+         (SELECT json_agg(json_build_object('effective_date', effective_date, 'hourly_rate', hourly_rate) ORDER BY effective_date DESC)
+          FROM compensation_history WHERE user_id = u.id) as history
+       FROM users u
+       WHERE u.company_id = $1 AND u.role NOT IN ('boss', 'manager')
+       ORDER BY u.first_name`,
+      [companyId]
+    );
+    res.json({ success: true, employees: result.rows });
+  } catch (error) {
+    console.error('Error fetching employee compensation:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// POST /api/payroll/employees/compensation – one‑click raise
+router.post('/employees/compensation', async (req: Request, res: Response) => {
+  const client = await pool.connect();
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { employeeIds, raiseType, raiseValue, effectiveDate } = req.body;
+    if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'employeeIds array required' });
+    }
+    if (!raiseType || !raiseValue || raiseValue <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid raiseType and raiseValue required' });
+    }
+    const effective = effectiveDate || new Date().toISOString().split('T')[0];
+    const userId = (req as any).user?.id || null;
+
+    let updatedCount = 0;
+    for (const empId of employeeIds) {
+      // Get current rate
+      const currentRes = await client.query(
+        `SELECT hourly_rate FROM compensation_history WHERE user_id = $1 AND effective_date <= $2 ORDER BY effective_date DESC LIMIT 1`,
+        [empId, effective]
+      );
+      let currentRate = currentRes.rows[0]?.hourly_rate || 20.0;
+
+      let newRate = currentRate;
+      if (raiseType === 'percentage') {
+        newRate = currentRate * (1 + raiseValue / 100);
+      } else if (raiseType === 'fixed') {
+        newRate = currentRate + raiseValue;
+      } else {
+        continue;
+      }
+
+      await client.query(
+        `INSERT INTO compensation_history (user_id, hourly_rate, effective_date, created_by)
+         VALUES ($1, $2, $3, $4)`,
+        [empId, newRate, effective, userId]
+      );
+      updatedCount++;
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, message: `Compensation updated for ${updatedCount} employees` });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error updating compensation:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/payroll/what-if
+router.post('/what-if', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { scenarioType, scenarioValue, employeeIds } = req.body;
+    if (!scenarioType || scenarioValue === undefined || scenarioValue <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid scenarioType and scenarioValue required' });
+    }
+
+    // Get employees
+    let employeeList: any[];
+    if (employeeIds && employeeIds.length > 0) {
+      const result = await pool.query(
+        `SELECT id FROM users WHERE company_id = $1 AND id = ANY($2)`,
+        [companyId, employeeIds]
+      );
+      employeeList = result.rows;
+    } else {
+      const result = await pool.query(
+        `SELECT id FROM users WHERE company_id = $1 AND role NOT IN ('boss', 'manager')`,
+        [companyId]
+      );
+      employeeList = result.rows;
+    }
+
+    if (employeeList.length === 0) {
+      return res.status(400).json({ success: false, message: 'No employees found' });
+    }
+
+    // Get current rates
+    const currentRates: Record<string, number> = {};
+    for (const emp of employeeList) {
+      const rateRes = await pool.query(
+        `SELECT hourly_rate FROM compensation_history WHERE user_id = $1 AND effective_date <= CURRENT_DATE ORDER BY effective_date DESC LIMIT 1`,
+        [emp.id]
+      );
+      currentRates[emp.id] = rateRes.rows[0]?.hourly_rate || 20.0;
+    }
+
+    const currentTotal = Object.values(currentRates).reduce((sum, rate) => sum + rate * 40, 0);
+    let newTotal = currentTotal;
+    let explanation = '';
+
+    if (scenarioType === 'raise_percent') {
+      const factor = 1 + scenarioValue / 100;
+      newTotal = currentTotal * factor;
+      explanation = `${scenarioValue}% raise applied to ${employeeList.length} employees`;
+    } else if (scenarioType === 'raise_fixed') {
+      const additional = Object.keys(currentRates).reduce((sum, id) => sum + scenarioValue * 40, 0);
+      newTotal = currentTotal + additional;
+      explanation = `$${scenarioValue.toFixed(2)}/hr raise applied to ${employeeList.length} employees`;
+    } else if (scenarioType === 'hire_count') {
+      const avgRate = Object.values(currentRates).reduce((a, b) => a + b, 0) / Object.values(currentRates).length || 20;
+      const hireCost = avgRate * 40 * scenarioValue;
+      newTotal = currentTotal + hireCost;
+      explanation = `Hiring ${scenarioValue} new employee(s) at average rate of $${avgRate.toFixed(2)}/hr`;
+    } else {
+      return res.status(400).json({ success: false, message: 'Invalid scenarioType' });
+    }
+
+    res.json({
+      success: true,
+      scenario: { type: scenarioType, value: scenarioValue },
+      currentTotal: parseFloat(currentTotal.toFixed(2)),
+      projectedTotal: parseFloat(newTotal.toFixed(2)),
+      delta: parseFloat((newTotal - currentTotal).toFixed(2)),
+      explanation,
+    });
+  } catch (error) {
+    console.error('Error running what-if:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });

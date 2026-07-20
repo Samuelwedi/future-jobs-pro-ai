@@ -17,7 +17,7 @@ import voiceRouter from './routes/voiceRoutes';          // exists
 import assistantRouter from './routes/assistantRoutes';  // your file is named 'assistantrouter.ts'
 import aiRouter from './routes/aiRoutes';               // your file is named 'airouter.ts'
 import chatbotRoutes from './routes/chatbotRoutes';      // we created this
-
+import './services/payrollScheduler';
 // --------------------------------------------------------
 // Other routers – uncomment when files exist
 // --------------------------------------------------------
