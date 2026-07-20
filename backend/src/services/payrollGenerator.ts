@@ -21,7 +21,7 @@ export async function generatePayroll(
 ): Promise<PayrollGenerationResult> {
   const client = await pool.connect();
   try {
-    // Fetch time entries for the company in the period
+    // Fetch time entries
     const timeEntries = await client.query(
       `SELECT te.user_id, te.regular_hours, te.overtime_hours, te.total_wage, te.id
        FROM time_entries te
@@ -98,12 +98,12 @@ export async function generatePayroll(
     );
     const payrollId = payrollResult.rows[0].id;
 
-    // Insert payroll items with the rate used
+    // Insert payroll items – let the DB compute `pay` from hours and hourly_rate
     for (const [employeeId, data] of userMap) {
       await client.query(
-        `INSERT INTO payroll_items (payroll_id, employee_id, hours, hourly_rate_used, pay, timesheet_ids)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [payrollId, employeeId, data.hours, data.rate, data.pay, data.timeEntryIds]
+        `INSERT INTO payroll_items (payroll_id, employee_id, hours, hourly_rate, timesheet_ids)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [payrollId, employeeId, data.hours, data.rate, data.timeEntryIds]
       );
     }
 
