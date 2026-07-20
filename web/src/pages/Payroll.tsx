@@ -11,7 +11,7 @@ import {
   Add, Delete, CheckCircle, Send, Edit, Refresh, AttachMoney,
   TrendingUp, TrendingDown, People, Schedule, Settings,
   Download, PictureAsPdf, Description, TableChart,
-  FilePresent, Visibility, FilterList, Close,
+  FilePresent, Visibility, FilterList, Close, Save,
 } from '@mui/icons-material';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
@@ -75,6 +75,7 @@ export default function PayrollPage() {
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
   const [employeeRateOverrides, setEmployeeRateOverrides] = useState<Record<string, number | null>>({});
+  const [saving, setSaving] = useState(false);
 
   // ── Employee filter ──
   const [employees, setEmployees] = useState<{ id: string; name: string }[]>([]);
@@ -175,6 +176,53 @@ export default function PayrollPage() {
     fetchSettings();
   }, []);
 
+  // ── Save Rates ──────────────────────────────────────────────────
+  const handleSaveRates = async () => {
+    // Collect all rates (both edited and current)
+    const ratesToSave: { employeeId: string; hourlyRate: number }[] = [];
+    for (const emp of employees) {
+      const comp = compEmployees.find(c => c.id === emp.id);
+      const currentRate = comp?.current_rate ? Number(comp.current_rate) : 20;
+      const editedRate = employeeRateOverrides[emp.id];
+      const finalRate = (editedRate !== null && editedRate !== undefined && editedRate > 0) ? editedRate : currentRate;
+      ratesToSave.push({ employeeId: emp.id, hourlyRate: finalRate });
+    }
+
+    if (ratesToSave.length === 0) {
+      alert('No employees to update.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const savePromises = ratesToSave.map(({ employeeId, hourlyRate }) =>
+        fetch(`${API_BASE}/api/payroll/employees/rate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            employeeId,
+            hourlyRate,
+            effectiveDate: periodStart || new Date().toISOString().split('T')[0],
+          }),
+        })
+      );
+      const results = await Promise.all(savePromises);
+      const failed = results.filter(r => !r.ok);
+      if (failed.length > 0) {
+        alert(`Failed to save rates for ${failed.length} employee(s). Please try again.`);
+        return;
+      }
+      // Refresh compensation data and clear overrides
+      await fetchCompEmployees();
+      setEmployeeRateOverrides({});
+      alert('✅ All rates saved successfully!');
+    } catch (e) {
+      alert('Error saving rates. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // ── Handlers ──
   const handleGenerate = async () => {
     if (!periodStart || !periodEnd) {
@@ -182,16 +230,24 @@ export default function PayrollPage() {
       return;
     }
 
-    // Build employeeRates array from ALL employees (using edits or current rate)
+    // Check for unsaved rate changes
+    const hasOverrides = Object.values(employeeRateOverrides).some(rate => rate !== null && rate !== undefined && rate > 0);
+    if (hasOverrides) {
+      const shouldSave = window.confirm('You have unsaved rate changes. Do you want to save them before generating payroll?');
+      if (shouldSave) {
+        await handleSaveRates();
+      } else {
+        // Clear overrides and use current rates from compEmployees
+        setEmployeeRateOverrides({});
+      }
+    }
+
+    // Build employeeRates array from current compEmployees
     const employeeRates = employees
       .map(emp => {
-        const override = employeeRateOverrides[emp.id];
-        if (override !== null && override !== undefined && override > 0) {
-          return { employeeId: emp.id, hourlyRate: override };
-        }
         const comp = compEmployees.find(c => c.id === emp.id);
-        const currentRate = comp?.current_rate || 20;
-        return { employeeId: emp.id, hourlyRate: Number(currentRate) };
+        const rate = comp?.current_rate ? Number(comp.current_rate) : 20;
+        return { employeeId: emp.id, hourlyRate: rate };
       })
       .filter(r => r.hourlyRate > 0);
 
@@ -395,7 +451,7 @@ export default function PayrollPage() {
         </Table>
       </TableContainer>
 
-      {/* --- GENERATE DIALOG (EDIBLE RATES) --- */}
+      {/* --- GENERATE DIALOG WITH SAVE RATES BUTTON --- */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
           Generate Payroll
@@ -421,7 +477,7 @@ export default function PayrollPage() {
           />
 
           <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 3, mb: 2 }}>
-            Employee Rates (edit any rate to override for this payroll)
+            Employee Rates (edit any rate and click "Save Rates" to keep permanently)
           </Typography>
 
           <TableContainer component={Paper} sx={{ bgcolor: '#0A0A0A', border: '1px solid #333', maxHeight: 300 }}>
@@ -429,13 +485,13 @@ export default function PayrollPage() {
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ color: '#888' }}>Employee</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Rate Used (edit to override)</TableCell>
+                  <TableCell sx={{ color: '#888' }}>Rate (edit to change)</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {employees.map((emp) => {
                   const comp = compEmployees.find(c => c.id === emp.id);
-                  const currentRate = comp?.current_rate || 20;
+                  const currentRate = comp?.current_rate ? Number(comp.current_rate) : 20;
                   return (
                     <TableRow key={emp.id} sx={{ borderBottom: '1px solid #333' }}>
                       <TableCell sx={{ color: '#FFF' }}>{emp.name}</TableCell>
@@ -443,7 +499,7 @@ export default function PayrollPage() {
                         <TextField
                           type="number"
                           size="small"
-                          value={employeeRateOverrides[emp.id] ?? Number(currentRate)}
+                          value={employeeRateOverrides[emp.id] ?? currentRate}
                           onChange={(e) => {
                             const val = e.target.value ? Number(e.target.value) : null;
                             setEmployeeRateOverrides(prev => ({ ...prev, [emp.id]: val }));
@@ -467,6 +523,15 @@ export default function PayrollPage() {
 
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
             <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button
+              variant="outlined"
+              startIcon={<Save />}
+              onClick={handleSaveRates}
+              disabled={saving}
+              sx={{ color: '#4CAF50', borderColor: '#4CAF50' }}
+            >
+              {saving ? <CircularProgress size={24} /> : 'Save Rates'}
+            </Button>
             <Button variant="contained" onClick={handleGenerate} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
               Generate
             </Button>
