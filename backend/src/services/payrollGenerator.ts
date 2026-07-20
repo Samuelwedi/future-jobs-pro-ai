@@ -100,11 +100,17 @@ export async function generatePayroll(
     // Insert payroll items – omit generated columns
     for (const [employeeId, data] of userMap) {
       console.log(`📝 Inserting item for employee ${employeeId}: hours=${data.hours}, rate=${data.rate}`);
-      await client.query(
-        `INSERT INTO payroll_items (payroll_id, employee_id, hours, hourly_rate, timesheet_ids)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [payrollId, employeeId, data.hours, data.rate, data.timeEntryIds]
-      );
+      try {
+        const insertResult = await client.query(
+          `INSERT INTO payroll_items (payroll_id, employee_id, hours, hourly_rate, timesheet_ids)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [payrollId, employeeId, data.hours, data.rate, data.timeEntryIds]
+        );
+        console.log(`✅ Item inserted with ID: ${insertResult.rows[0].id}`);
+      } catch (itemError) {
+        console.error(`❌ Failed to insert item for employee ${employeeId}:`, itemError);
+        throw itemError; // Re-throw so the transaction rolls back
+      }
     }
 
     await client.query('COMMIT');
