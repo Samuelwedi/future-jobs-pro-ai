@@ -4,11 +4,14 @@ import {
   TableHead, TableRow, Button, Dialog, DialogTitle, DialogContent,
   TextField, Chip, IconButton, CircularProgress, Stack, Tabs, Tab,
   Alert, Grid, Card, CardContent, Select, MenuItem, FormControl, InputLabel,
-  Switch, FormControlLabel, Divider,
+  Switch, FormControlLabel, Divider, InputAdornment,
+  Menu, ListItemIcon, ListItemText,
 } from '@mui/material';
 import {
   Add, Delete, CheckCircle, Send, Edit, Refresh, AttachMoney,
   TrendingUp, TrendingDown, People, Schedule, Settings,
+  Download, PictureAsPdf, Description, TableChart,
+  FilePresent, Visibility, FilterList,
 } from '@mui/icons-material';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
@@ -24,6 +27,18 @@ interface Payroll {
   employee_count: number;
   notes: string;
   created_at: string;
+}
+
+interface PayrollItem {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  hours: number;
+  hourly_rate: number;
+  pay: number;
+  adjustments: number;
+  final_pay: number;
+  notes: string;
 }
 
 interface EmployeeCompensation {
@@ -50,25 +65,36 @@ export default function PayrollPage() {
 
   // ── State ──
   const [payrolls, setPayrolls] = useState<Payroll[]>([]);
+  const [selectedPayroll, setSelectedPayroll] = useState<Payroll | null>(null);
+  const [payrollItems, setPayrollItems] = useState<PayrollItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
 
-  // Compensation state
-  const [employees, setEmployees] = useState<EmployeeCompensation[]>([]);
+  // ── Employee filter ──
+  const [employees, setEmployees] = useState<{ id: string; name: string }[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('all');
+
+  // ── Export menu ──
+  const [exportAnchorEl, setExportAnchorEl] = useState<null | HTMLElement>(null);
+  const exportOpen = Boolean(exportAnchorEl);
+
+  // ── Compensation state ──
+  const [compEmployees, setCompEmployees] = useState<EmployeeCompensation[]>([]);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [raiseType, setRaiseType] = useState<'percentage' | 'fixed'>('percentage');
   const [raiseValue, setRaiseValue] = useState(5);
   const [effectiveDate, setEffectiveDate] = useState('');
   const [compLoading, setCompLoading] = useState(false);
 
-  // Settings state
+  // ── Settings state ──
   const [settings, setSettings] = useState<CompanySettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
-  // What‑if state
+  // ── What‑if state ──
   const [scenarioType, setScenarioType] = useState<'raise_percent' | 'raise_fixed' | 'hire_count'>('raise_percent');
   const [scenarioValue, setScenarioValue] = useState(5);
   const [scenarioResult, setScenarioResult] = useState<any>(null);
@@ -88,14 +114,41 @@ export default function PayrollPage() {
     setLoading(false);
   };
 
+  const fetchPayrollDetail = async (id: string) => {
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/payroll/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPayrollItems(data.items || []);
+        setSelectedPayroll(data.payroll);
+      }
+    } catch (e) { console.error(e); }
+    setDetailLoading(false);
+  };
+
   const fetchEmployees = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/users/company`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEmployees(data.users.map((u: any) => ({ id: u.id, name: `${u.first_name} ${u.last_name}` })));
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchCompEmployees = async () => {
     setCompLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/payroll/employees/compensation`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      if (data.success) setEmployees(data.employees);
+      if (data.success) setCompEmployees(data.employees);
     } catch (e) { console.error(e); }
     setCompLoading(false);
   };
@@ -115,6 +168,7 @@ export default function PayrollPage() {
   useEffect(() => {
     fetchPayrolls();
     fetchEmployees();
+    fetchCompEmployees();
     fetchSettings();
   }, []);
 
@@ -163,64 +217,27 @@ export default function PayrollPage() {
     } catch (e) { alert('Delete failed'); }
   };
 
-  const handleApplyRaise = async () => {
-    if (selectedEmployees.length === 0) {
-      alert('Select at least one employee');
-      return;
+  // ─── EXPORT FUNCTIONS ──────────────────────────────────────────
+
+  const handleExport = async (format: 'pdf' | 'excel' | 'csv' | 'word') => {
+    try {
+      const employeeParam = selectedEmployeeId !== 'all' ? `&employeeId=${selectedEmployeeId}` : '';
+      const url = `${API_BASE}/api/payroll/export?format=${format}&start=${periodStart || 'all'}&end=${periodEnd || 'all'}${employeeParam}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      const extension = format === 'pdf' ? 'pdf' : format === 'excel' ? 'xlsx' : format === 'word' ? 'docx' : 'csv';
+      link.download = `payroll_${new Date().toISOString().split('T')[0]}.${extension}`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (e) {
+      alert('Export failed. Please try again.');
     }
-    try {
-      const res = await fetch(`${API_BASE}/api/payroll/employees/compensation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          employeeIds: selectedEmployees,
-          raiseType,
-          raiseValue,
-          effectiveDate: effectiveDate || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        fetchEmployees();
-        setSelectedEmployees([]);
-      } else {
-        alert(data.message || 'Failed to apply raise');
-      }
-    } catch (e) { alert('Error applying raise'); }
-  };
-
-  const handleRunWhatIf = async () => {
-    setWhatIfLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/payroll/what-if`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          scenarioType,
-          scenarioValue,
-          employeeIds: selectedEmployees.length > 0 ? selectedEmployees : undefined,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) setScenarioResult(data);
-      else alert(data.message || 'What‑if failed');
-    } catch (e) { alert('Error running what‑if'); }
-    setWhatIfLoading(false);
-  };
-
-  const handleSaveSettings = async () => {
-    if (!settings) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/payroll/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(settings),
-      });
-      const data = await res.json();
-      if (data.success) alert('Settings saved');
-      else alert(data.message || 'Failed to save');
-    } catch (e) { alert('Error saving settings'); }
+    setExportAnchorEl(null);
   };
 
   // ── Render Helpers ──
@@ -236,12 +253,64 @@ export default function PayrollPage() {
   // ── Tab Panels ──
   const renderOverview = () => (
     <>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5" sx={{ color: '#FFF' }}>Payroll Runs</Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={() => setDialogOpen(true)} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
-          Generate Payroll
-        </Button>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Typography variant="h5" sx={{ color: '#FFF' }}>Payroll Runs</Typography>
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel sx={{ color: '#888' }}>Filter Employee</InputLabel>
+            <Select
+              value={selectedEmployeeId}
+              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+              sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+            >
+              <MenuItem value="all">All Employees</MenuItem>
+              {employees.map(e => (
+                <MenuItem key={e.id} value={e.id}>{e.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<Download />}
+            onClick={(e) => setExportAnchorEl(e.currentTarget)}
+            sx={{ color: '#00D4FF', borderColor: '#00D4FF' }}
+          >
+            Export
+          </Button>
+          <Button variant="contained" startIcon={<Add />} onClick={() => setDialogOpen(true)} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+            Generate Payroll
+          </Button>
+        </Box>
       </Box>
+
+      {/* Export Menu */}
+      <Menu
+        anchorEl={exportAnchorEl}
+        open={exportOpen}
+        onClose={() => setExportAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        PaperProps={{ sx: { bgcolor: '#1A1A1A', border: '1px solid #333' } }}
+      >
+        <MenuItem onClick={() => handleExport('pdf')} sx={{ color: '#FFF' }}>
+          <ListItemIcon><PictureAsPdf fontSize="small" sx={{ color: '#F44336' }} /></ListItemIcon>
+          <ListItemText>Export as PDF</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => handleExport('excel')} sx={{ color: '#FFF' }}>
+          <ListItemIcon><TableChart fontSize="small" sx={{ color: '#4CAF50' }} /></ListItemIcon>
+          <ListItemText>Export as Excel</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => handleExport('csv')} sx={{ color: '#FFF' }}>
+          <ListItemIcon><Description fontSize="small" sx={{ color: '#00D4FF' }} /></ListItemIcon>
+          <ListItemText>Export as CSV</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => handleExport('word')} sx={{ color: '#FFF' }}>
+          <ListItemIcon><FilePresent fontSize="small" sx={{ color: '#2196F3' }} /></ListItemIcon>
+          <ListItemText>Export as Word</ListItemText>
+        </MenuItem>
+      </Menu>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
@@ -259,13 +328,21 @@ export default function PayrollPage() {
           </TableHead>
           <TableBody>
             {payrolls.map((p) => (
-              <TableRow key={p.id} sx={{ borderBottom: '1px solid #333' }}>
+              <TableRow
+                key={p.id}
+                sx={{
+                  borderBottom: '1px solid #333',
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' },
+                }}
+                onClick={() => handleRowClick(p)}
+              >
                 <TableCell sx={{ color: '#FFF' }}>{p.period_start} → {p.period_end}</TableCell>
                 <TableCell sx={{ color: '#FFF' }}>{p.employee_count}</TableCell>
                 <TableCell sx={{ color: '#FFF' }}>{p.total_hours.toFixed(2)}h</TableCell>
                 <TableCell sx={{ color: '#FFF' }}>${p.total_pay.toFixed(2)}</TableCell>
                 <TableCell>{getStatusChip(p.status)}</TableCell>
-                <TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   <Stack direction="row" spacing={1}>
                     {p.status === 'draft' && (
                       <>
@@ -402,7 +479,7 @@ export default function PayrollPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {employees.map((emp) => (
+              {compEmployees.map((emp) => (
                 <TableRow key={emp.id} sx={{ borderBottom: '1px solid #333' }}>
                   <TableCell>
                     <Switch
@@ -424,7 +501,7 @@ export default function PayrollPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {employees.length === 0 && (
+              {compEmployees.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} sx={{ color: '#888', textAlign: 'center', py: 3 }}>
                     No employees found.
@@ -597,7 +674,70 @@ export default function PayrollPage() {
     </Box>
   );
 
-  // ─── Render ──────────────────────────────────────────────────────
+  // ─── Main Render ────────────────────────────────────────────────
+
+  const handleApplyRaise = async () => {
+    if (selectedEmployees.length === 0) {
+      alert('Select at least one employee');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/payroll/employees/compensation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          employeeIds: selectedEmployees,
+          raiseType,
+          raiseValue,
+          effectiveDate: effectiveDate || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        fetchCompEmployees();
+        setSelectedEmployees([]);
+      } else {
+        alert(data.message || 'Failed to apply raise');
+      }
+    } catch (e) { alert('Error applying raise'); }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!settings) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/payroll/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(settings),
+      });
+      const data = await res.json();
+      if (data.success) alert('Settings saved');
+      else alert(data.message || 'Failed to save');
+    } catch (e) { alert('Error saving settings'); }
+  };
+
+  const handleRunWhatIf = async () => {
+    setWhatIfLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/payroll/what-if`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          scenarioType,
+          scenarioValue,
+          employeeIds: selectedEmployees.length > 0 ? selectedEmployees : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) setScenarioResult(data);
+      else alert(data.message || 'What‑if failed');
+    } catch (e) { alert('Error running what‑if'); }
+    setWhatIfLoading(false);
+  };
+
+  // ─────────────────────────────────────────────────────────────────
+
   return (
     <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
       <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>
@@ -626,4 +766,8 @@ export default function PayrollPage() {
       {activeTab === 3 && renderWhatIf()}
     </Container>
   );
+}
+
+function handleRowClick(p: Payroll): void {
+    throw new Error('Function not implemented.');
 }
