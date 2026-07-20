@@ -21,7 +21,6 @@ export async function generatePayroll(
 ): Promise<PayrollGenerationResult> {
   const client = await pool.connect();
   try {
-    // Fetch time entries
     const timeEntries = await client.query(
       `SELECT te.user_id, te.regular_hours, te.overtime_hours, te.total_wage, te.id
        FROM time_entries te
@@ -37,13 +36,11 @@ export async function generatePayroll(
       throw new Error('No time entries found in this period');
     }
 
-    // Build a map of employee rates from the override array
     const rateOverrideMap = new Map<string, number>();
     for (const override of employeeRates) {
       rateOverrideMap.set(override.employeeId, override.hourlyRate);
     }
 
-    // Get the latest hourly rate for each employee (if no override provided)
     const employeeIds = [...new Set(timeEntries.rows.map(row => row.user_id))];
     const latestRates = new Map<string, number>();
     for (const empId of employeeIds) {
@@ -61,7 +58,6 @@ export async function generatePayroll(
       }
     }
 
-    // Group by user and calculate totals with rates
     const userMap = new Map<string, {
       hours: number;
       pay: number;
@@ -82,7 +78,6 @@ export async function generatePayroll(
       data.timeEntryIds.push(row.id);
     }
 
-    // Calculate totals
     let totalHours = 0;
     let totalPay = 0;
     for (const [_, data] of userMap) {
@@ -90,7 +85,6 @@ export async function generatePayroll(
       totalPay += data.pay;
     }
 
-    // Create payroll record
     const payrollResult = await client.query(
       `INSERT INTO payrolls (company_id, period_start, period_end, total_hours, total_pay, created_by)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
@@ -98,7 +92,7 @@ export async function generatePayroll(
     );
     const payrollId = payrollResult.rows[0].id;
 
-    // Insert payroll items – let the DB compute `pay` from hours and hourly_rate
+    // ✅ CORRECT INSERT – no 'pay' column
     for (const [employeeId, data] of userMap) {
       await client.query(
         `INSERT INTO payroll_items (payroll_id, employee_id, hours, hourly_rate, timesheet_ids)
