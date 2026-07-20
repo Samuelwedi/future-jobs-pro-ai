@@ -22,9 +22,9 @@ interface Payroll {
   period_start: string;
   period_end: string;
   status: string;
-  total_hours: number;
-  total_pay: number;
-  employee_count: number;
+  total_hours: number | string;
+  total_pay: number | string;
+  employee_count: number | string;
   notes: string;
   created_at: string;
 }
@@ -33,11 +33,11 @@ interface PayrollItem {
   id: string;
   employee_id: string;
   employee_name: string;
-  hours: number;
-  hourly_rate: number;
-  pay: number;
-  adjustments: number;
-  final_pay: number;
+  hours: number | string;
+  hourly_rate: number | string;
+  pay: number | string;
+  adjustments: number | string;
+  final_pay: number | string;
   notes: string;
 }
 
@@ -45,8 +45,8 @@ interface EmployeeCompensation {
   id: string;
   first_name: string;
   last_name: string;
-  current_rate: number;
-  history: { effective_date: string; hourly_rate: number }[];
+  current_rate: number | string;
+  history: { effective_date: string; hourly_rate: number | string }[];
 }
 
 interface CompanySettings {
@@ -338,9 +338,9 @@ export default function PayrollPage() {
                 onClick={() => handleRowClick(p)}
               >
                 <TableCell sx={{ color: '#FFF' }}>{p.period_start} → {p.period_end}</TableCell>
-                <TableCell sx={{ color: '#FFF' }}>{p.employee_count}</TableCell>
-                <TableCell sx={{ color: '#FFF' }}>{p.total_hours.toFixed(2)}h</TableCell>
-                <TableCell sx={{ color: '#FFF' }}>${p.total_pay.toFixed(2)}</TableCell>
+                <TableCell sx={{ color: '#FFF' }}>{Number(p.employee_count) || 0}</TableCell>
+                <TableCell sx={{ color: '#FFF' }}>{Number(p.total_hours).toFixed(2)}h</TableCell>
+                <TableCell sx={{ color: '#FFF' }}>${Number(p.total_pay).toFixed(2)}</TableCell>
                 <TableCell>{getStatusChip(p.status)}</TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <Stack direction="row" spacing={1}>
@@ -493,7 +493,7 @@ export default function PayrollPage() {
                     />
                   </TableCell>
                   <TableCell sx={{ color: '#FFF' }}>{emp.first_name} {emp.last_name}</TableCell>
-                  <TableCell sx={{ color: '#FFF' }}>${emp.current_rate?.toFixed(2) || '—'}/hr</TableCell>
+                  <TableCell sx={{ color: '#FFF' }}>${Number(emp.current_rate).toFixed(2) || '—'}/hr</TableCell>
                   <TableCell>
                     {emp.history?.length > 0 ? (
                       <Chip label={`${emp.history.length} changes`} size="small" />
@@ -655,16 +655,16 @@ export default function PayrollPage() {
             <Grid container spacing={2} sx={{ mt: 1 }}>
               <Grid item xs={12} md={4}>
                 <Typography variant="body2" sx={{ color: '#888' }}>Current Total (weekly)</Typography>
-                <Typography variant="h6" sx={{ color: '#FFF' }}>${scenarioResult.currentTotal.toFixed(2)}</Typography>
+                <Typography variant="h6" sx={{ color: '#FFF' }}>${Number(scenarioResult.currentTotal).toFixed(2)}</Typography>
               </Grid>
               <Grid item xs={12} md={4}>
                 <Typography variant="body2" sx={{ color: '#888' }}>Projected Total</Typography>
-                <Typography variant="h6" sx={{ color: '#FFF' }}>${scenarioResult.projectedTotal.toFixed(2)}</Typography>
+                <Typography variant="h6" sx={{ color: '#FFF' }}>${Number(scenarioResult.projectedTotal).toFixed(2)}</Typography>
               </Grid>
               <Grid item xs={12} md={4}>
                 <Typography variant="body2" sx={{ color: '#888' }}>Change</Typography>
                 <Typography variant="h6" sx={{ color: scenarioResult.delta >= 0 ? '#F44336' : '#4CAF50' }}>
-                  {scenarioResult.delta >= 0 ? '+' : ''}{scenarioResult.delta.toFixed(2)}
+                  {scenarioResult.delta >= 0 ? '+' : ''}{Number(scenarioResult.delta).toFixed(2)}
                 </Typography>
               </Grid>
             </Grid>
@@ -736,6 +736,10 @@ export default function PayrollPage() {
     setWhatIfLoading(false);
   };
 
+  const handleRowClick = async (payroll: Payroll) => {
+    await fetchPayrollDetail(payroll.id);
+  };
+
   // ─────────────────────────────────────────────────────────────────
 
   return (
@@ -766,8 +770,4 @@ export default function PayrollPage() {
       {activeTab === 3 && renderWhatIf()}
     </Container>
   );
-}
-
-function handleRowClick(p: Payroll): void {
-    throw new Error('Function not implemented.');
 }
