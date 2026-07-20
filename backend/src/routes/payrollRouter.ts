@@ -5,7 +5,6 @@ import { generatePayroll } from '../services/payrollGenerator';
 
 const router = express.Router();
 
-// ─── Helper ───────────────────────────────────────────────────────
 const getCompanyId = async (req: Request): Promise<string | null> => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -16,8 +15,9 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   } catch { return null; }
 };
 
-// ─── EXISTING ENDPOINTS ──────────────────────────────────────────
-
+// ============================================================
+// LIST
+// ============================================================
 router.get('/', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -38,40 +38,9 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { id } = req.params;
-    const payrollRes = await pool.query(
-      'SELECT * FROM payrolls WHERE id = $1 AND company_id = $2',
-      [id, companyId]
-    );
-    if (payrollRes.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Payroll not found' });
-    }
-
-    const itemsRes = await pool.query(
-      `SELECT pi.*,
-              u.first_name || ' ' || u.last_name as employee_name
-       FROM payroll_items pi
-       LEFT JOIN users u ON pi.employee_id = u.id
-       WHERE pi.payroll_id = $1`,
-      [id]
-    );
-
-    res.json({
-      success: true,
-      payroll: payrollRes.rows[0],
-      items: itemsRes.rows,
-    });
-  } catch (error) {
-    console.error('Error fetching payroll:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-});
-
+// ============================================================
+// GENERATE
+// ============================================================
 router.post('/generate', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -96,6 +65,9 @@ router.post('/generate', async (req: Request, res: Response) => {
   }
 });
 
+// ============================================================
+// UPDATE
+// ============================================================
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -119,6 +91,9 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// ============================================================
+// DELETE
+// ============================================================
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -139,9 +114,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// ─── NEW ADVANCED ENDPOINTS ─────────────────────────────────────
+// ════════════════════════════════════════════════════════════
+//  🚨 SPECIFIC ROUTES – MUST COME BEFORE /:id
+// ════════════════════════════════════════════════════════════
 
-// GET /api/payroll/settings
+// ─── SETTINGS ────────────────────────────────────────────────
 router.get('/settings', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -162,7 +139,6 @@ router.get('/settings', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/payroll/settings
 router.put('/settings', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -196,7 +172,7 @@ router.put('/settings', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/payroll/employees/compensation
+// ─── EMPLOYEE COMPENSATION ────────────────────────────────────
 router.get('/employees/compensation', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -220,7 +196,6 @@ router.get('/employees/compensation', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/payroll/employees/compensation – one‑click raise
 router.post('/employees/compensation', async (req: Request, res: Response) => {
   const client = await pool.connect();
   try {
@@ -239,7 +214,6 @@ router.post('/employees/compensation', async (req: Request, res: Response) => {
 
     let updatedCount = 0;
     for (const empId of employeeIds) {
-      // Get current rate
       const currentRes = await client.query(
         `SELECT hourly_rate FROM compensation_history WHERE user_id = $1 AND effective_date <= $2 ORDER BY effective_date DESC LIMIT 1`,
         [empId, effective]
@@ -274,7 +248,7 @@ router.post('/employees/compensation', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/payroll/what-if
+// ─── WHAT-IF SCENARIO ──────────────────────────────────────────
 router.post('/what-if', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -285,7 +259,6 @@ router.post('/what-if', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Valid scenarioType and scenarioValue required' });
     }
 
-    // Get employees
     let employeeList: any[];
     if (employeeIds && employeeIds.length > 0) {
       const result = await pool.query(
@@ -305,7 +278,6 @@ router.post('/what-if', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'No employees found' });
     }
 
-    // Get current rates
     const currentRates: Record<string, number> = {};
     for (const emp of employeeList) {
       const rateRes = await pool.query(
@@ -346,6 +318,49 @@ router.post('/what-if', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error running what-if:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ════════════════════════════════════════════════════════════
+//  🚨 PARAMETER ROUTE (MUST BE LAST)
+// ════════════════════════════════════════════════════════════
+router.get('/:id', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { id } = req.params;
+    // Validate UUID format to prevent SQL errors
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id as string)) {
+      return res.status(400).json({ success: false, message: 'Invalid payroll ID format' });
+    }
+
+    const payrollRes = await pool.query(
+      'SELECT * FROM payrolls WHERE id = $1 AND company_id = $2',
+      [id, companyId]
+    );
+    if (payrollRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Payroll not found' });
+    }
+
+    const itemsRes = await pool.query(
+      `SELECT pi.*,
+              u.first_name || ' ' || u.last_name as employee_name
+       FROM payroll_items pi
+       LEFT JOIN users u ON pi.employee_id = u.id
+       WHERE pi.payroll_id = $1`,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      payroll: payrollRes.rows[0],
+      items: itemsRes.rows,
+    });
+  } catch (error) {
+    console.error('Error fetching payroll:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
