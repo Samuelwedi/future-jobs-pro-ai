@@ -73,6 +73,7 @@ export default function PayrollPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
+  const [employeeRateOverrides, setEmployeeRateOverrides] = useState<Record<string, number | null>>({});
 
   // ── Employee filter ──
   const [employees, setEmployees] = useState<{ id: string; name: string }[]>([]);
@@ -178,16 +179,23 @@ export default function PayrollPage() {
       alert('Please select both start and end dates');
       return;
     }
+
+    // Build employeeRates array from overrides
+    const employeeRates = Object.entries(employeeRateOverrides)
+      .filter(([_, rate]) => rate !== null && rate > 0)
+      .map(([employeeId, hourlyRate]) => ({ employeeId, hourlyRate: hourlyRate! }));
+
     try {
       const res = await fetch(`${API_BASE}/api/payroll/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ periodStart, periodEnd }),
+        body: JSON.stringify({ periodStart, periodEnd, employeeRates }),
       });
       const data = await res.json();
       if (data.success) {
         alert(`✅ ${data.message}`);
         setDialogOpen(false);
+        setEmployeeRateOverrides({});
         fetchPayrolls();
       } else {
         alert(data.message || 'Generation failed');
@@ -218,7 +226,6 @@ export default function PayrollPage() {
   };
 
   // ─── EXPORT FUNCTIONS ──────────────────────────────────────────
-
   const handleExport = async (format: 'pdf' | 'excel' | 'csv' | 'word') => {
     try {
       const employeeParam = selectedEmployeeId !== 'all' ? `&employeeId=${selectedEmployeeId}` : '';
@@ -250,7 +257,11 @@ export default function PayrollPage() {
     return <Chip label={map[status]?.label || status} color={map[status]?.color || 'default'} size="small" />;
   };
 
-  // ── Tab Panels ──
+  const handleRowClick = async (payroll: Payroll) => {
+    await fetchPayrollDetail(payroll.id);
+  };
+
+  // ─── Tab Panels ──────────────────────────────────────────────────
   const renderOverview = () => (
     <>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
@@ -279,7 +290,7 @@ export default function PayrollPage() {
           >
             Export
           </Button>
-          <Button variant="contained" startIcon={<Add />} onClick={() => setDialogOpen(true)} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+          <Button variant="contained" startIcon={<Add />} onClick={() => { setDialogOpen(true); }} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
             Generate Payroll
           </Button>
         </Box>
@@ -374,8 +385,11 @@ export default function PayrollPage() {
         </Table>
       </TableContainer>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>Generate Payroll</DialogTitle>
+      {/* GENERATE DIALOG WITH RATE OVERRIDES */}
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
+          Generate Payroll
+        </DialogTitle>
         <DialogContent sx={{ bgcolor: '#1A1A1A' }}>
           <TextField
             label="Period Start"
@@ -395,6 +409,48 @@ export default function PayrollPage() {
             InputLabelProps={{ shrink: true }}
             sx={{ mt: 2, input: { color: '#FFF' }, label: { color: '#888' } }}
           />
+
+          <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 3, mb: 2 }}>
+            Employee Rates (override if needed)
+          </Typography>
+
+          <TableContainer component={Paper} sx={{ bgcolor: '#0A0A0A', border: '1px solid #333', maxHeight: 300 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ color: '#888' }}>Employee</TableCell>
+                  <TableCell sx={{ color: '#888' }}>Current Rate</TableCell>
+                  <TableCell sx={{ color: '#888' }}>Override Rate</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {employees.map((emp) => {
+                  const comp = compEmployees.find(c => c.id === emp.id);
+                  const currentRate = comp?.current_rate || 20;
+                  return (
+                    <TableRow key={emp.id} sx={{ borderBottom: '1px solid #333' }}>
+                      <TableCell sx={{ color: '#FFF' }}>{emp.name}</TableCell>
+                      <TableCell sx={{ color: '#00D4FF' }}>${Number(currentRate).toFixed(2)}/hr</TableCell>
+                      <TableCell>
+                        <TextField
+                          type="number"
+                          size="small"
+                          placeholder="Override"
+                          value={employeeRateOverrides[emp.id] || ''}
+                          onChange={(e) => {
+                            const val = e.target.value ? Number(e.target.value) : null;
+                            setEmployeeRateOverrides(prev => ({ ...prev, [emp.id]: val }));
+                          }}
+                          sx={{ input: { color: '#FFF' }, width: 120 }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
             <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button variant="contained" onClick={handleGenerate} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
@@ -735,12 +791,6 @@ export default function PayrollPage() {
     } catch (e) { alert('Error running what‑if'); }
     setWhatIfLoading(false);
   };
-
-  const handleRowClick = async (payroll: Payroll) => {
-    await fetchPayrollDetail(payroll.id);
-  };
-
-  // ─────────────────────────────────────────────────────────────────
 
   return (
     <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>

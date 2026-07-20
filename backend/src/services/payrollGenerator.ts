@@ -7,15 +7,17 @@ interface PayrollGenerationResult {
   totalPay: number;
 }
 
-/**
- * Generate a payroll for a given company and date range.
- * This is used by both the API route and the auto‑scheduler.
- */
+interface EmployeeRateOverride {
+  employeeId: string;
+  hourlyRate: number;
+}
+
 export async function generatePayroll(
   companyId: string,
   periodStart: string,
   periodEnd: string,
-  createdBy: string | null = null
+  createdBy: string | null = null,
+  employeeRates: EmployeeRateOverride[] = []
 ): Promise<PayrollGenerationResult> {
   const client = await pool.connect();
   try {
@@ -35,15 +37,48 @@ export async function generatePayroll(
       throw new Error('No time entries found in this period');
     }
 
-    // Group by user
-    const userMap = new Map<string, { hours: number; pay: number; timeEntryIds: string[] }>();
-    for (const row of timeEntries.rows) {
-      if (!userMap.has(row.user_id)) {
-        userMap.set(row.user_id, { hours: 0, pay: 0, timeEntryIds: [] });
+    // Build a map of employee rates from the override array
+    const rateOverrideMap = new Map<string, number>();
+    for (const override of employeeRates) {
+      rateOverrideMap.set(override.employeeId, override.hourlyRate);
+    }
+
+    // Get the latest hourly rate for each employee (if no override provided)
+    const employeeIds = [...new Set(timeEntries.rows.map(row => row.user_id))];
+    const latestRates = new Map<string, number>();
+    for (const empId of employeeIds) {
+      if (rateOverrideMap.has(empId)) {
+        latestRates.set(empId, rateOverrideMap.get(empId)!);
+      } else {
+        const rateRes = await client.query(
+          `SELECT hourly_rate FROM compensation_history
+           WHERE user_id = $1 AND effective_date <= CURRENT_DATE
+           ORDER BY effective_date DESC LIMIT 1`,
+          [empId]
+        );
+        const rate = rateRes.rows[0]?.hourly_rate || 20.0;
+        latestRates.set(empId, rate);
       }
-      const data = userMap.get(row.user_id)!;
-      data.hours += Number(row.regular_hours || 0) + Number(row.overtime_hours || 0);
-      data.pay += Number(row.total_wage || 0);
+    }
+
+    // Group by user and calculate totals with rates
+    const userMap = new Map<string, {
+      hours: number;
+      pay: number;
+      rate: number;
+      timeEntryIds: string[];
+    }>();
+
+    for (const row of timeEntries.rows) {
+      const userId = row.user_id;
+      if (!userMap.has(userId)) {
+        const rate = latestRates.get(userId) || 20.0;
+        userMap.set(userId, { hours: 0, pay: 0, rate, timeEntryIds: [] });
+      }
+      const data = userMap.get(userId)!;
+      const totalHours = Number(row.regular_hours || 0) + Number(row.overtime_hours || 0);
+      data.hours += totalHours;
+      data.pay += totalHours * data.rate;
       data.timeEntryIds.push(row.id);
     }
 
@@ -63,12 +98,12 @@ export async function generatePayroll(
     );
     const payrollId = payrollResult.rows[0].id;
 
-    // Insert payroll items
+    // Insert payroll items with the rate used
     for (const [employeeId, data] of userMap) {
       await client.query(
-        `INSERT INTO payroll_items (payroll_id, employee_id, hours, pay, timesheet_ids)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [payrollId, employeeId, data.hours, data.pay, data.timeEntryIds]
+        `INSERT INTO payroll_items (payroll_id, employee_id, hours, hourly_rate_used, pay, timesheet_ids)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [payrollId, employeeId, data.hours, data.rate, data.pay, data.timeEntryIds]
       );
     }
 

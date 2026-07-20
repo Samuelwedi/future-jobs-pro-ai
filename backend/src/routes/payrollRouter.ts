@@ -15,9 +15,7 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   } catch { return null; }
 };
 
-// ============================================================
-// LIST
-// ============================================================
+// ─── LIST ──────────────────────────────────────────────────────────
 router.get('/', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -38,21 +36,19 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// ============================================================
-// GENERATE
-// ============================================================
+// ─── GENERATE (with employee rate overrides) ──────────────────────
 router.post('/generate', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { periodStart, periodEnd } = req.body;
+    const { periodStart, periodEnd, employeeRates } = req.body;
     if (!periodStart || !periodEnd) {
       return res.status(400).json({ success: false, message: 'periodStart and periodEnd required' });
     }
 
     const userId = (req as any).user?.id || null;
-    const result = await generatePayroll(companyId, periodStart, periodEnd, userId);
+    const result = await generatePayroll(companyId, periodStart, periodEnd, userId, employeeRates || []);
 
     res.status(201).json({
       success: true,
@@ -65,9 +61,7 @@ router.post('/generate', async (req: Request, res: Response) => {
   }
 });
 
-// ============================================================
-// UPDATE
-// ============================================================
+// ─── UPDATE STATUS ────────────────────────────────────────────────
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -91,9 +85,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// ============================================================
-// DELETE
-// ============================================================
+// ─── DELETE ──────────────────────────────────────────────────────
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -114,11 +106,9 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// ════════════════════════════════════════════════════════════
-//  🚨 SPECIFIC ROUTES – MUST COME BEFORE /:id
-// ════════════════════════════════════════════════════════════
+// ─── SPECIFIC ROUTES (must come before /:id) ────────────────────
 
-// ─── SETTINGS ────────────────────────────────────────────────
+// GET /settings
 router.get('/settings', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -139,6 +129,7 @@ router.get('/settings', async (req: Request, res: Response) => {
   }
 });
 
+// PUT /settings
 router.put('/settings', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -172,7 +163,7 @@ router.put('/settings', async (req: Request, res: Response) => {
   }
 });
 
-// ─── EMPLOYEE COMPENSATION ────────────────────────────────────
+// GET /employees/compensation
 router.get('/employees/compensation', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -196,6 +187,7 @@ router.get('/employees/compensation', async (req: Request, res: Response) => {
   }
 });
 
+// POST /employees/compensation (one‑click raise)
 router.post('/employees/compensation', async (req: Request, res: Response) => {
   const client = await pool.connect();
   try {
@@ -248,7 +240,7 @@ router.post('/employees/compensation', async (req: Request, res: Response) => {
   }
 });
 
-// ─── WHAT-IF SCENARIO ──────────────────────────────────────────
+// POST /what-if
 router.post('/what-if', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -322,18 +314,15 @@ router.post('/what-if', async (req: Request, res: Response) => {
   }
 });
 
-// ════════════════════════════════════════════════════════════
-//  🚨 PARAMETER ROUTE (MUST BE LAST)
-// ════════════════════════════════════════════════════════════
+// ─── GET PAYROLL BY ID ──────────────────────────────────────────
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { id } = req.params;
-    // Validate UUID format to prevent SQL errors
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(id as string)) {
+    if (!uuidRegex.test(id)) {
       return res.status(400).json({ success: false, message: 'Invalid payroll ID format' });
     }
 
