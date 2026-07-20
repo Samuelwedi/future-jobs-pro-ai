@@ -21,6 +21,8 @@ export async function generatePayroll(
 ): Promise<PayrollGenerationResult> {
   const client = await pool.connect();
   try {
+    console.log('🔄 Generating payroll for company:', companyId, 'period:', periodStart, 'to', periodEnd);
+
     const timeEntries = await client.query(
       `SELECT te.user_id, te.regular_hours, te.overtime_hours, te.total_wage, te.id
        FROM time_entries te
@@ -31,6 +33,8 @@ export async function generatePayroll(
          AND te.status = 'completed'`,
       [companyId, periodStart, periodEnd]
     );
+
+    console.log(`📊 Found ${timeEntries.rows.length} time entries`);
 
     if (timeEntries.rows.length === 0) {
       throw new Error('No time entries found in this period');
@@ -91,9 +95,11 @@ export async function generatePayroll(
       [companyId, periodStart, periodEnd, totalHours, totalPay, createdBy]
     );
     const payrollId = payrollResult.rows[0].id;
+    console.log(`✅ Payroll created with ID: ${payrollId}`);
 
-    // ✅ CORRECT INSERT – no 'pay' column
+    // Insert payroll items – omit generated columns
     for (const [employeeId, data] of userMap) {
+      console.log(`📝 Inserting item for employee ${employeeId}: hours=${data.hours}, rate=${data.rate}`);
       await client.query(
         `INSERT INTO payroll_items (payroll_id, employee_id, hours, hourly_rate, timesheet_ids)
          VALUES ($1, $2, $3, $4, $5)`,
@@ -102,6 +108,8 @@ export async function generatePayroll(
     }
 
     await client.query('COMMIT');
+    console.log(`✅ Payroll generation complete: ${userMap.size} employees, ${totalHours}h, $${totalPay}`);
+
     return {
       payrollId,
       employeeCount: userMap.size,
@@ -110,6 +118,7 @@ export async function generatePayroll(
     };
   } catch (error) {
     await client.query('ROLLBACK');
+    console.error('❌ Payroll generation error:', error);
     throw error;
   } finally {
     client.release();
