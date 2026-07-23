@@ -11,36 +11,16 @@ import {
   Dashboard as DashboardIcon, CalendarMonth, Assessment,
   Groups, Folder, Timer, Chat, Assignment, BeachAccess,
   TouchApp, Settings, Logout, Link as LinkIcon,
-  SmartToy, Mic, MicOff, SupportAgent, AttachMoney, Receipt,
-  Refresh,
+  SmartToy, Mic, MicOff, SupportAgent, AttachMoney, Receipt, Description,
+  Refresh, Person,
+  FilePresent,
 } from '@mui/icons-material';
 import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-
 const COLORS = ['#00D4FF', '#4CAF50', '#FF9800', '#F44336'];
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
-
-// Navigation items – including new Payroll & Invoices
-const navItems = [
-  { label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-  { label: 'Schedule', icon: <CalendarMonth />, path: '/schedule' },
-  { label: 'Reports', icon: <Assessment />, path: '/reports' },
-  { label: 'Team', icon: <Groups />, path: '/team' },
-  { label: 'Projects', icon: <Folder />, path: '/projects' },
-  { label: 'Timesheet', icon: <Timer />, path: '/timesheet' },
-  { label: 'Chat', icon: <Chat />, path: '/chat' },
-  { label: 'Tasks', icon: <Assignment />, path: '/tasks' },
-  { label: 'PTO', icon: <BeachAccess />, path: '/pto' },
-  { label: 'Kiosk', icon: <TouchApp />, path: '/kiosk' },
-  { label: 'Settings', icon: <Settings />, path: '/settings' },
-  { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
-  { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
-  { label: 'Support', icon: <SupportAgent />, path: '/chat' },
-  { label: 'Payroll', icon: <AttachMoney />, path: '/payroll' },
-  { label: 'Invoices', icon: <Receipt />, path: '/invoices' },
-];
 
 // ------ Types ------
 interface DashboardStats {
@@ -298,6 +278,31 @@ export default function Dashboard() {
   const trialEndDate = user?.trialEndsAt ? new Date(user.trialEndsAt) : null;
   const trialActive = trialEndDate && trialEndDate > new Date();
   const daysLeft = trialActive ? Math.ceil((trialEndDate!.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+
+  const role = user?.role || '';
+  const isEmployee = role !== 'boss' && role !== 'manager';
+  const navItems = [
+    ...(isEmployee ? [{ label: 'My Portal', icon: <Person />, path: '/employee-portal' }] : []),
+    { label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+    { label: 'Schedule', icon: <CalendarMonth />, path: '/schedule' },
+    { label: 'Reports', icon: <Assessment />, path: '/reports' },
+    { label: 'Team', icon: <Groups />, path: '/team' },
+    { label: 'Projects', icon: <Folder />, path: '/projects' },
+    { label: 'Timesheet', icon: <Timer />, path: '/timesheet' },
+    { label: 'Chat', icon: <Chat />, path: '/chat' },
+    { label: 'Tasks', icon: <Assignment />, path: '/tasks' },
+    { label: 'PTO', icon: <BeachAccess />, path: '/pto' },
+    { label: 'Kiosk', icon: <TouchApp />, path: '/kiosk' },
+    { label: 'Settings', icon: <Settings />, path: '/settings' },
+    { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
+    { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
+    { label: 'Support', icon: <SupportAgent />, path: '/chat' },
+    { label: 'Payroll', icon: <AttachMoney />, path: '/payroll' },
+    { label: 'Invoices', icon: <Receipt />, path: '/invoices' },
+    { label: 'Estimates', icon: <Description />, path: '/estimates' },
+    { label: 'Tax Forms', icon: <FilePresent />, path: '/tax-forms' },
+    { label: 'Direct Deposit', icon: <AttachMoney />, path: '/direct-deposit' },
+  ];
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#0A0A0A' }}>

@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
 import { generatePayroll } from '../services/payrollGenerator';
+import { generatePayStubs } from '../services/payStubGenerator';
 
 const router = express.Router();
 
@@ -79,10 +80,38 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Payroll not found' });
     }
-    res.json({ success: true, payroll: result.rows[0] });
+    const updatedPayroll = result.rows[0];
+
+    // ─── Auto-generate pay stubs when approved or paid ────────
+    if (status === 'approved' || status === 'paid') {
+      try {
+        const payStubs = await generatePayStubs(Array.isArray(id) ? id[0] : id, true); // send emails
+        console.log(`✅ Generated ${payStubs.length} pay stubs for payroll ${id}`);
+      } catch (genErr) {
+        console.error('Error generating pay stubs:', genErr);
+        // Don't block the update
+      }
+    }
+
+    res.json({ success: true, payroll: updatedPayroll });
   } catch (error) {
     console.error('Error updating payroll:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.post('/:id/generate-paystubs', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { id } = req.params;
+    const { sendEmail } = req.body; // optional, default true
+    const payStubs = await generatePayStubs(Array.isArray(id) ? id[0] : id, sendEmail !== false);
+    res.json({ success: true, count: payStubs.length, payStubs });
+  } catch (error: any) {
+    console.error('Error generating pay stubs:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

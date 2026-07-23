@@ -9,7 +9,8 @@ import {
 import {
   Add, Delete, Send, CheckCircle, Edit, Refresh, Receipt,
   AttachMoney, People, Schedule, Visibility, Download,
-  Payment, TrendingUp, TrendingDown,
+  Payment, TrendingUp, TrendingDown, Description,
+  Flag, // Added for milestone
 } from '@mui/icons-material';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
@@ -38,6 +39,11 @@ interface Invoice {
   project_name?: string;
   client_name?: string;
   payment_count?: number;
+  // ─── Milestone fields ───
+  milestone_name?: string;
+  milestone_percentage?: number;
+  parent_invoice_id?: string | null;
+  parent_invoice_number?: string;
 }
 
 interface InvoiceItem {
@@ -62,6 +68,13 @@ interface ClientSummary {
   invoices: Invoice[];
   projects: any[];
   totals: { total_invoices: number; total_billed: number; total_paid: number; total_balance: number };
+}
+
+interface Estimate {
+  id: string;
+  estimate_number: string;
+  total: number;
+  client_name?: string;
 }
 
 // ─── Main Component ──────────────────────────────────────────────
@@ -89,11 +102,18 @@ export default function InvoicesPage() {
     isRecurring: false,
     recurringFrequency: 'monthly',
     recurringEndDate: '',
+    // ─── Milestone ───
+    isMilestone: false,
+    parentInvoiceId: '',
+    milestoneName: '',
+    milestonePercentage: 0,
   });
   const [projects, setProjects] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [unbilled, setUnbilled] = useState<any[]>([]);
   const [unbilledLoading, setUnbilledLoading] = useState(false);
+  // ─── Parent invoices for milestone ───
+  const [parentInvoices, setParentInvoices] = useState<Invoice[]>([]);
 
   // Customer Hub
   const [selectedClientId, setSelectedClientId] = useState<string>('');
@@ -107,6 +127,11 @@ export default function InvoicesPage() {
   const [paymentDate, setPaymentDate] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [paymentRef, setPaymentRef] = useState('');
+
+  // Estimate conversion
+  const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  const [availableEstimates, setAvailableEstimates] = useState<Estimate[]>([]);
+  const [selectedEstimateId, setSelectedEstimateId] = useState('');
 
   // ── Fetch Functions ──
   const fetchInvoices = useCallback(async () => {
@@ -154,6 +179,26 @@ export default function InvoicesPage() {
     setUnbilledLoading(false);
   };
 
+  const fetchParentInvoices = async (projectId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/invoices?projectId=${projectId}&status=paid`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) setParentInvoices(data.invoices);
+    } catch (e) { console.error(e); }
+  };
+
+  const fetchEstimatesForConversion = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/estimates?status=accepted`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) setAvailableEstimates(data.estimates);
+    } catch (e) { console.error(e); }
+  };
+
   useEffect(() => {
     fetchInvoices();
     fetchProjects();
@@ -175,8 +220,13 @@ export default function InvoicesPage() {
       isRecurring: false,
       recurringFrequency: 'monthly',
       recurringEndDate: '',
+      isMilestone: false,
+      parentInvoiceId: '',
+      milestoneName: '',
+      milestonePercentage: 0,
     });
     setUnbilled([]);
+    setParentInvoices([]);
   };
 
   const openCreateDialog = () => { resetForm(); setDialogOpen(true); };
@@ -195,6 +245,10 @@ export default function InvoicesPage() {
       isRecurring: false,
       recurringFrequency: 'monthly',
       recurringEndDate: '',
+      isMilestone: !!invoice.milestone_name,
+      parentInvoiceId: invoice.parent_invoice_id || '',
+      milestoneName: invoice.milestone_name || '',
+      milestonePercentage: invoice.milestone_percentage || 0,
     });
     // Fetch invoice items
     try {
@@ -240,6 +294,17 @@ export default function InvoicesPage() {
       alert('All items must have a description and a positive price.');
       return;
     }
+    // Validate milestone
+    if (form.isMilestone) {
+      if (!form.milestoneName) {
+        alert('Please enter a milestone name.');
+        return;
+      }
+      if (form.milestonePercentage <= 0 || form.milestonePercentage > 100) {
+        alert('Milestone percentage must be between 1 and 100.');
+        return;
+      }
+    }
     try {
       const payload = {
         projectId: form.projectId || null,
@@ -258,6 +323,10 @@ export default function InvoicesPage() {
         isRecurring: form.isRecurring,
         recurringFrequency: form.recurringFrequency,
         recurringEndDate: form.recurringEndDate || null,
+        // Milestone
+        milestone_name: form.isMilestone ? form.milestoneName : null,
+        milestone_percentage: form.isMilestone ? form.milestonePercentage : null,
+        parent_invoice_id: form.isMilestone && form.parentInvoiceId ? form.parentInvoiceId : null,
       };
 
       const url = editId ? `${API_BASE}/api/invoices/${editId}` : `${API_BASE}/api/invoices`;
@@ -345,6 +414,27 @@ export default function InvoicesPage() {
     setHubLoading(false);
   };
 
+  // ── Estimate conversion ──
+  const handleConvertEstimate = async () => {
+    if (!selectedEstimateId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/estimates/${selectedEstimateId}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (data.success && data.invoice) {
+        alert(`Invoice ${data.invoice.invoice_number} created!`);
+        fetchInvoices();
+        setConvertDialogOpen(false);
+        setSelectedEstimateId('');
+      } else {
+        alert(data.message || 'Conversion failed');
+      }
+    } catch (e) { alert('Error converting estimate'); }
+  };
+
   // ── Render Helpers ──
   const getStatusChip = (status: string) => {
     const map: Record<string, any> = {
@@ -358,14 +448,35 @@ export default function InvoicesPage() {
     return <Chip label={map[status]?.label || status} color={map[status]?.color || 'default'} size="small" />;
   };
 
+  const getMilestoneChip = (invoice: Invoice) => {
+    if (!invoice.milestone_name) return null;
+    return (
+      <Chip
+        label={`${invoice.milestone_name} (${invoice.milestone_percentage || 0}%)`}
+        size="small"
+        sx={{ bgcolor: '#00D4FF20', color: '#00D4FF', border: '1px solid #00D4FF40' }}
+      />
+    );
+  };
+
   // ── Tab Panels ──
   const renderOverview = () => (
     <>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h5" sx={{ color: '#FFF' }}>All Invoices</Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={openCreateDialog} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
-          Create Invoice
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<Description />}
+            onClick={() => { fetchEstimatesForConversion(); setConvertDialogOpen(true); }}
+            sx={{ color: '#00D4FF', borderColor: '#00D4FF' }}
+          >
+            Create from Estimate
+          </Button>
+          <Button variant="contained" startIcon={<Add />} onClick={openCreateDialog} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+            Create Invoice
+          </Button>
+        </Box>
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -377,6 +488,7 @@ export default function InvoicesPage() {
               <TableCell sx={{ color: '#FFF' }}>Invoice #</TableCell>
               <TableCell sx={{ color: '#FFF' }}>Client</TableCell>
               <TableCell sx={{ color: '#FFF' }}>Project</TableCell>
+              <TableCell sx={{ color: '#FFF' }}>Milestone</TableCell>
               <TableCell sx={{ color: '#FFF' }}>Issue Date</TableCell>
               <TableCell sx={{ color: '#FFF' }}>Due Date</TableCell>
               <TableCell sx={{ color: '#FFF' }}>Total</TableCell>
@@ -391,6 +503,7 @@ export default function InvoicesPage() {
                 <TableCell sx={{ color: '#FFF' }}>{inv.invoice_number}</TableCell>
                 <TableCell sx={{ color: '#FFF' }}>{inv.client_name || '—'}</TableCell>
                 <TableCell sx={{ color: '#FFF' }}>{inv.project_name || '—'}</TableCell>
+                <TableCell>{getMilestoneChip(inv) || '—'}</TableCell>
                 <TableCell sx={{ color: '#FFF' }}>{inv.issue_date}</TableCell>
                 <TableCell sx={{ color: '#FFF' }}>{inv.due_date}</TableCell>
                 <TableCell sx={{ color: '#FFF' }}>${inv.total.toFixed(2)}</TableCell>
@@ -434,7 +547,7 @@ export default function InvoicesPage() {
             ))}
             {invoices.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} sx={{ color: '#888', textAlign: 'center', py: 3 }}>
+                <TableCell colSpan={10} sx={{ color: '#888', textAlign: 'center', py: 3 }}>
                   No invoices yet.
                 </TableCell>
               </TableRow>
@@ -565,7 +678,10 @@ export default function InvoicesPage() {
                 value={form.projectId}
                 onChange={(e) => {
                   setForm({ ...form, projectId: e.target.value });
-                  if (e.target.value) fetchUnbilled(e.target.value);
+                  if (e.target.value) {
+                    fetchUnbilled(e.target.value);
+                    fetchParentInvoices(e.target.value);
+                  }
                 }}
                 sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
               >
@@ -619,6 +735,111 @@ export default function InvoicesPage() {
               sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
             />
           </Grid>
+
+          {/* ─── Recurring & Milestone Toggle ─── */}
+          <Grid item xs={12}>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={form.isRecurring}
+                  onChange={(e) => setForm({ ...form, isRecurring: e.target.checked })}
+                  sx={{ color: '#00D4FF' }}
+                />
+              }
+              label="Recurring Invoice"
+              sx={{ color: '#FFF' }}
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={form.isMilestone}
+                  onChange={(e) => {
+                    setForm({ ...form, isMilestone: e.target.checked });
+                    if (!e.target.checked) {
+                      setForm((prev: any) => ({ ...prev, parentInvoiceId: '', milestoneName: '', milestonePercentage: 0 }));
+                    }
+                  }}
+                  sx={{ color: '#00D4FF', ml: 3 }}
+                />
+              }
+              label="Milestone Invoice"
+              sx={{ color: '#FFF' }}
+            />
+          </Grid>
+
+          {form.isRecurring && (
+            <>
+              <Grid item xs={6}>
+                <FormControl fullWidth>
+                  <InputLabel sx={{ color: '#888' }}>Frequency</InputLabel>
+                  <Select
+                    value={form.recurringFrequency}
+                    onChange={(e) => setForm({ ...form, recurringFrequency: e.target.value })}
+                    sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                  >
+                    <MenuItem value="weekly">Weekly</MenuItem>
+                    <MenuItem value="monthly">Monthly</MenuItem>
+                    <MenuItem value="quarterly">Quarterly</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  label="End Date (optional)"
+                  type="date"
+                  fullWidth
+                  value={form.recurringEndDate}
+                  onChange={(e) => setForm({ ...form, recurringEndDate: e.target.value })}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                />
+              </Grid>
+            </>
+          )}
+
+          {form.isMilestone && (
+            <>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  label="Milestone Name"
+                  fullWidth
+                  value={form.milestoneName}
+                  onChange={(e) => setForm({ ...form, milestoneName: e.target.value })}
+                  sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                />
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <TextField
+                  label="Milestone %"
+                  type="number"
+                  fullWidth
+                  value={form.milestonePercentage}
+                  onChange={(e) => setForm({ ...form, milestonePercentage: Number(e.target.value) })}
+                  InputProps={{ endAdornment: <InputAdornment position="end" sx={{ color: '#888' }}>%</InputAdornment> }}
+                  sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                />
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <FormControl fullWidth>
+                  <InputLabel sx={{ color: '#888' }}>Parent Invoice (optional)</InputLabel>
+                  <Select
+                    value={form.parentInvoiceId}
+                    onChange={(e) => setForm({ ...form, parentInvoiceId: e.target.value })}
+                    sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                  >
+                    <MenuItem value="">None</MenuItem>
+                    {parentInvoices.map((inv) => (
+                      <MenuItem key={inv.id} value={inv.id}>
+                        {inv.invoice_number} – ${inv.total.toFixed(2)}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </>
+          )}
+
+          {/* ─── Line Items ─── */}
           <Grid item xs={12}>
             <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 2 }}>Line Items</Typography>
             {unbilled.length > 0 && (
@@ -666,6 +887,7 @@ export default function InvoicesPage() {
             ))}
             <Button onClick={addItem} size="small" sx={{ color: '#00D4FF' }}>+ Add Item</Button>
           </Grid>
+
           <Grid item xs={12}>
             <TextField
               label="Notes (internal)"
@@ -688,48 +910,6 @@ export default function InvoicesPage() {
               sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
             />
           </Grid>
-          <Grid item xs={12}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={form.isRecurring}
-                  onChange={(e) => setForm({ ...form, isRecurring: e.target.checked })}
-                  sx={{ color: '#00D4FF' }}
-                />
-              }
-              label="Recurring Invoice"
-              sx={{ color: '#FFF' }}
-            />
-          </Grid>
-          {form.isRecurring && (
-            <>
-              <Grid item xs={6}>
-                <FormControl fullWidth>
-                  <InputLabel sx={{ color: '#888' }}>Frequency</InputLabel>
-                  <Select
-                    value={form.recurringFrequency}
-                    onChange={(e) => setForm({ ...form, recurringFrequency: e.target.value })}
-                    sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
-                  >
-                    <MenuItem value="weekly">Weekly</MenuItem>
-                    <MenuItem value="monthly">Monthly</MenuItem>
-                    <MenuItem value="quarterly">Quarterly</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={6}>
-                <TextField
-                  label="End Date (optional)"
-                  type="date"
-                  fullWidth
-                  value={form.recurringEndDate}
-                  onChange={(e) => setForm({ ...form, recurringEndDate: e.target.value })}
-                  InputLabelProps={{ shrink: true }}
-                  sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
-                />
-              </Grid>
-            </>
-          )}
         </Grid>
 
         <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
@@ -795,6 +975,43 @@ export default function InvoicesPage() {
     </Dialog>
   );
 
+  // ── Dialog: Convert Estimate ──
+  const renderConvertDialog = () => (
+    <Dialog open={convertDialogOpen} onClose={() => setConvertDialogOpen(false)} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>Convert Estimate to Invoice</DialogTitle>
+      <DialogContent sx={{ bgcolor: '#1A1A1A' }}>
+        <FormControl fullWidth sx={{ mt: 2 }}>
+          <InputLabel sx={{ color: '#888' }}>Select Accepted Estimate</InputLabel>
+          <Select
+            value={selectedEstimateId}
+            onChange={(e) => setSelectedEstimateId(e.target.value)}
+            sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+          >
+            {availableEstimates.map((est) => (
+              <MenuItem key={est.id} value={est.id}>
+                {est.estimate_number} – {est.client_name || 'No client'} – ${est.total.toFixed(2)}
+              </MenuItem>
+            ))}
+            {availableEstimates.length === 0 && (
+              <MenuItem disabled>No accepted estimates available</MenuItem>
+            )}
+          </Select>
+        </FormControl>
+        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+          <Button onClick={() => setConvertDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleConvertEstimate}
+            disabled={!selectedEstimateId}
+            sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}
+          >
+            Convert
+          </Button>
+        </Box>
+      </DialogContent>
+    </Dialog>
+  );
+
   // ─── Main Render ──────────────────────────────────────────────────
   return (
     <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
@@ -802,7 +1019,7 @@ export default function InvoicesPage() {
         📄 Invoices
       </Typography>
       <Typography variant="body1" sx={{ color: '#888', mb: 3 }}>
-        Manage invoicing, client payments, and recurring schedules.
+        Manage invoicing, client payments, milestones, and recurring schedules.
       </Typography>
 
       <Tabs
@@ -821,6 +1038,7 @@ export default function InvoicesPage() {
 
       {renderCreateDialog()}
       {renderPaymentDialog()}
+      {renderConvertDialog()}
     </Container>
   );
 }

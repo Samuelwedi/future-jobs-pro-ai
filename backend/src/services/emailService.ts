@@ -1,7 +1,8 @@
 import nodemailer from 'nodemailer';
+import { Buffer } from 'buffer';
 
 // ─── SMTP Configuration ───
-const isSMTPConfigured = () => {
+const isSMTPConfigured = (): boolean => {
   return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 };
 
@@ -16,6 +17,7 @@ if (isSMTPConfigured()) {
       pass: process.env.SMTP_PASS,
     },
   });
+  console.log('📧 SMTP configured – email sending enabled');
 } else {
   console.log('⚠️  SMTP not configured – email sending is disabled.');
 }
@@ -40,7 +42,62 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
   }
 }
 
-// ─── Invite email ───
+// ─── Send email with attachment ─────────────────────────────────
+export async function sendEmailWithAttachment(
+  to: string,
+  subject: string,
+  html: string,
+  attachment: { filename: string; content: Buffer; contentType: string }
+): Promise<void> {
+  if (!transporter) {
+    console.log(`📧 [Samuel B.] Email would be sent to ${to} – Subject: ${subject}`);
+    console.log('   (Email sending is disabled – SMTP not configured)');
+    return;
+  }
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com',
+      to,
+      subject,
+      html,
+      attachments: [attachment],
+    });
+    console.log(`✅ Email with attachment sent to ${to}`);
+  } catch (error) {
+    console.error(`❌ Failed to send email with attachment to ${to}:`, error);
+  }
+}
+
+// ─── Pay Stub Email ─────────────────────────────────────────────
+export async function sendPayStubEmail(
+  toEmail: string,
+  employeeName: string,
+  payrollPeriod: string,
+  pdfBuffer: Buffer,
+  pdfFilename: string
+): Promise<void> {
+  const subject = `Your Pay Stub – ${payrollPeriod}`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #0A0A0A; color: #FFF;">
+      <h2 style="color: #00D4FF;">Pay Stub for ${employeeName}</h2>
+      <p>Period: <strong>${payrollPeriod}</strong></p>
+      <p>Please find your pay stub attached.</p>
+      <p>You can also view and download all your pay stubs from the <a href="https://app.futurejobspro.com/employee-portal" style="color: #00D4FF;">Employee Portal</a>.</p>
+      <br/>
+      <p>Thank you,<br/>The Future Jobs Pro AI Team</p>
+      <hr style="border-color: #333;"/>
+      <p style="font-size: 12px; color: #666;">This is an automated message. Please do not reply to this email.</p>
+    </div>
+  `;
+
+  await sendEmailWithAttachment(toEmail, subject, html, {
+    filename: pdfFilename,
+    content: pdfBuffer,
+    contentType: 'application/pdf',
+  });
+}
+
+// ─── Invite email ────────────────────────────────────────────────
 export async function sendInviteEmail(
   email: string,
   firstName: string,
@@ -62,7 +119,7 @@ export async function sendInviteEmail(
   await sendEmail(email, subject, html);
 }
 
-// ─── Clock‑in notification ───
+// ─── Clock‑in notification ──────────────────────────────────────
 export async function sendClockInNotification(
   email: string,
   name: string,
@@ -80,7 +137,7 @@ export async function sendClockInNotification(
   await sendEmail(email, subject, html);
 }
 
-// ─── Shift assignment notification ───
+// ─── Shift assignment notification ──────────────────────────────
 export async function sendShiftAssignmentEmail(
   email: string,
   name: string,
@@ -105,4 +162,18 @@ export async function sendShiftAssignmentEmail(
     </div>
   `;
   await sendEmail(email, subject, html);
+}
+
+// ─── Test email (for debugging) ─────────────────────────────────
+export async function sendTestEmail(to: string): Promise<void> {
+  const subject = 'Test Email from Future Jobs Pro AI';
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #0A0A0A; color: #FFF;">
+      <h2 style="color: #00D4FF;">Test Email</h2>
+      <p>This is a test email from Future Jobs Pro AI.</p>
+      <p>If you received this, your email configuration is working correctly.</p>
+      <p>Thanks,<br/>The Future Jobs Pro AI Team</p>
+    </div>
+  `;
+  await sendEmail(to, subject, html);
 }

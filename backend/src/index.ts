@@ -100,6 +100,8 @@ import invoiceRouter from './routes/invoiceRouter'; app.use('/api/invoices', inv
 import dashboardRouter from './routes/dashboardRouter'; app.use('/api/dashboard', dashboardRouter);
 import estimateRouter from './routes/estimateRouter'; app.use('/api/estimates', estimateRouter);
 import pdfRouter from './routes/pdfRouter'; app.use('/pdfs', pdfRouter);
+import payStubRouter from './routes/payStubRouter'; app.use('/api/pay-stubs', payStubRouter);
+import taxFormRouter from './routes/taxFormRouter'; app.use('/api/tax-forms', taxFormRouter);
 // ----- trialCheck middleware (moved AFTER scheduleRoutes) -----
 app.use(trialCheck);
 

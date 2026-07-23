@@ -13,6 +13,13 @@ if (process.env.STRIPE_SECRET_KEY) {
   stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-01-27.acacia' as any });
 }
 
+import { sendTestEmail } from '../services/emailService';
+// ...
+router.post('/test-email', async (req, res) => {
+  await sendTestEmail('your-email@example.com');
+  res.json({ success: true });
+});
+
 router.post('/register', async (req: Request, res: Response) => {
   try {
     const { firstName, lastName, email, password } = req.body;

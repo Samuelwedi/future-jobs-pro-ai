@@ -32,11 +32,19 @@ import Blog from './pages/Blog';
 import Security from './pages/Security';
 import Payroll from './pages/Payroll';
 import Invoices from './pages/Invoices';
+import Estimates from './pages/Estimates';
+import EmployeePortal from './pages/EmployeePortal';
+import TaxForms from './pages/TaxForms';
+import DirectDeposit from './pages/DirectDeposit';
 
 export default function App() {
   return (
     <Router>
       <Routes>
+        <Route path="/direct-deposit" element={<DirectDeposit />} />
+        <Route path="/tax-forms" element={<TaxForms />} />
+        <Route path="/employee-portal" element={<EmployeePortal />} />
+        <Route path="/estimates" element={<Estimates />} />
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
