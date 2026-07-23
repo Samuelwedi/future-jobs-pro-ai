@@ -102,6 +102,7 @@ import estimateRouter from './routes/estimateRouter'; app.use('/api/estimates', 
 import pdfRouter from './routes/pdfRouter'; app.use('/pdfs', pdfRouter);
 import payStubRouter from './routes/payStubRouter'; app.use('/api/pay-stubs', payStubRouter);
 import taxFormRouter from './routes/taxFormRouter'; app.use('/api/tax-forms', taxFormRouter);
+import directDepositRouter from './routes/directDepositRouter'; app.use('/api/direct-deposit', directDepositRouter);
 // ----- trialCheck middleware (moved AFTER scheduleRoutes) -----
 app.use(trialCheck);
 
