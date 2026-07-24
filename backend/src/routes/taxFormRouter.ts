@@ -51,7 +51,8 @@ router.post('/generate', async (req: Request, res: Response) => {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { year, formType } = req.body;
+    const { year, formType, employeeIds } = req.body; // employeeIds is optional array
+
     if (!year || !formType) {
       return res.status(400).json({ success: false, message: 'year and formType required' });
     }
@@ -61,13 +62,20 @@ router.post('/generate', async (req: Request, res: Response) => {
 
     const userId = (req as any).user?.id || null;
 
-    const employees = await pool.query(
-      `SELECT id, first_name, last_name, email, sin FROM users
-       WHERE company_id = $1 AND role NOT IN ('boss', 'manager')`,
-      [companyId]
-    );
+    // Build employee query – if employeeIds provided, filter; else all employees
+    let employeeQuery = `
+      SELECT id, first_name, last_name, email, sin
+      FROM users
+      WHERE company_id = $1 AND role NOT IN ('boss', 'manager')
+    `;
+    const params: any[] = [companyId];
+    if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
+      employeeQuery += ` AND id = ANY($2)`;
+      params.push(employeeIds);
+    }
+    const employees = await pool.query(employeeQuery, params);
     if (employees.rows.length === 0) {
-      return res.status(400).json({ success: false, message: 'No employees found' });
+      return res.status(400).json({ success: false, message: 'No employees selected' });
     }
 
     const generated = [];

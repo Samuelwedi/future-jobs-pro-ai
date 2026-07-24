@@ -3,10 +3,9 @@ import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, Chip, CircularProgress, Stack, Alert,
   FormControl, InputLabel, Select, MenuItem, Dialog, DialogTitle, DialogContent,
-  Grid,
-  TextField,
+  Grid, TextField, InputAdornment,
 } from '@mui/material';
-import { Download, Delete, Add, FilePresent } from '@mui/icons-material';
+import { Download, Delete, Add, FilePresent, People } from '@mui/icons-material';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
@@ -22,6 +21,13 @@ interface TaxForm {
   filed_at?: string;
 }
 
+interface Employee {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
 export default function TaxFormsPage() {
   const token = localStorage.getItem('token') || '';
   const [forms, setForms] = useState<TaxForm[]>([]);
@@ -31,6 +37,8 @@ export default function TaxFormsPage() {
   const [formType, setFormType] = useState<'T4' | 'RL1'>('T4');
   const [generating, setGenerating] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
 
   const fetchForms = async () => {
     setLoading(true);
@@ -45,20 +53,42 @@ export default function TaxFormsPage() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchForms(); }, []);
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/users/company`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) setEmployees(data.users || []);
+    } catch (e) { console.error(e); }
+  };
+
+  useEffect(() => {
+    fetchForms();
+    fetchEmployees();
+  }, []);
 
   const handleGenerate = async () => {
+    if (selectedEmployees.length === 0) {
+      alert('Please select at least one employee.');
+      return;
+    }
     setGenerating(true);
     try {
       const res = await fetch(`${API_BASE}/api/tax-forms/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ year, formType }),
+        body: JSON.stringify({
+          year,
+          formType,
+          employeeIds: selectedEmployees,
+        }),
       });
       const data = await res.json();
       if (data.success) {
         alert(`Generated ${data.count} ${formType} forms for ${year}`);
         setDialogOpen(false);
+        setSelectedEmployees([]);
         fetchForms();
       } else {
         alert(data.message || 'Generation failed');
@@ -110,7 +140,7 @@ export default function TaxFormsPage() {
         <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold' }}>
           📄 Tax Forms (T4 / RL-1)
         </Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={() => setDialogOpen(true)} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+        <Button variant="contained" startIcon={<Add />} onClick={() => { setDialogOpen(true); }} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
           Generate Forms
         </Button>
       </Box>
@@ -199,13 +229,38 @@ export default function TaxFormsPage() {
                 </Select>
               </FormControl>
             </Grid>
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel sx={{ color: '#888' }}>Select Employees</InputLabel>
+                <Select
+                  multiple
+                  value={selectedEmployees}
+                  onChange={(e) => setSelectedEmployees(e.target.value as string[])}
+                  renderValue={(selected) => (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {selected.map((id) => {
+                        const emp = employees.find(e => e.id === id);
+                        return <Chip key={id} label={emp ? `${emp.first_name} ${emp.last_name}` : id} size="small" />;
+                      })}
+                    </Box>
+                  )}
+                  sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                >
+                  {employees.map((emp) => (
+                    <MenuItem key={emp.id} value={emp.id}>
+                      {emp.first_name} {emp.last_name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
           </Grid>
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
             <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button
               variant="contained"
               onClick={handleGenerate}
-              disabled={generating}
+              disabled={generating || selectedEmployees.length === 0}
               sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}
             >
               {generating ? <CircularProgress size={24} sx={{ color: '#0A0A0A' }} /> : 'Generate'}

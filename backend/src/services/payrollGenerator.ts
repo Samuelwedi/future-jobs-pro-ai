@@ -12,6 +12,11 @@ interface EmployeeRateOverride {
   hourlyRate: number;
 }
 
+// ─── Canadian Payroll Deduction Rates (2024) ────────────────────
+const CPP_RATE = 0.0595;   // 5.95%
+const EI_RATE = 0.0163;    // 1.63%
+const FEDERAL_TAX_RATE = 0.15; // First bracket 15% (simplified)
+
 export async function generatePayroll(
   companyId: string,
   periodStart: string,
@@ -21,8 +26,6 @@ export async function generatePayroll(
 ): Promise<PayrollGenerationResult> {
   const client = await pool.connect();
   try {
-    console.log('🔄 Generating payroll for company:', companyId, 'period:', periodStart, 'to', periodEnd);
-
     const timeEntries = await client.query(
       `SELECT te.user_id, te.regular_hours, te.overtime_hours, te.total_wage, te.id
        FROM time_entries te
@@ -33,8 +36,6 @@ export async function generatePayroll(
          AND te.status = 'completed'`,
       [companyId, periodStart, periodEnd]
     );
-
-    console.log(`📊 Found ${timeEntries.rows.length} time entries`);
 
     if (timeEntries.rows.length === 0) {
       throw new Error('No time entries found in this period');
@@ -95,27 +96,37 @@ export async function generatePayroll(
       [companyId, periodStart, periodEnd, totalHours, totalPay, createdBy]
     );
     const payrollId = payrollResult.rows[0].id;
-    console.log(`✅ Payroll created with ID: ${payrollId}`);
 
-    // Insert payroll items – omit generated columns
     for (const [employeeId, data] of userMap) {
-      console.log(`📝 Inserting item for employee ${employeeId}: hours=${data.hours}, rate=${data.rate}`);
-      try {
-        const insertResult = await client.query(
-          `INSERT INTO payroll_items (payroll_id, employee_id, hours, hourly_rate, timesheet_ids)
-           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-          [payrollId, employeeId, data.hours, data.rate, data.timeEntryIds]
-        );
-        console.log(`✅ Item inserted with ID: ${insertResult.rows[0].id}`);
-      } catch (itemError) {
-        console.error(`❌ Failed to insert item for employee ${employeeId}:`, itemError);
-        throw itemError; // Re-throw so the transaction rolls back
-      }
+      // Calculate deductions
+      const grossPay = data.pay;
+      const cpp = grossPay * CPP_RATE;
+      const ei = grossPay * EI_RATE;
+      const tax = grossPay * FEDERAL_TAX_RATE;
+      const finalPay = grossPay - cpp - ei - tax;
+
+      await client.query(
+        `INSERT INTO payroll_items
+         (payroll_id, employee_id, hours, hourly_rate, pay, adjustments, final_pay,
+          cpp_deduction, ei_deduction, tax_deduction, timesheet_ids)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          payrollId,
+          employeeId,
+          data.hours,
+          data.rate,
+          data.pay,
+          0, // adjustments default 0
+          finalPay, // final pay after deductions
+          cpp,
+          ei,
+          tax,
+          data.timeEntryIds,
+        ]
+      );
     }
 
     await client.query('COMMIT');
-    console.log(`✅ Payroll generation complete: ${userMap.size} employees, ${totalHours}h, $${totalPay}`);
-
     return {
       payrollId,
       employeeCount: userMap.size,
@@ -124,7 +135,6 @@ export async function generatePayroll(
     };
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('❌ Payroll generation error:', error);
     throw error;
   } finally {
     client.release();
