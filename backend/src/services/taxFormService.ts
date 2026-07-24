@@ -10,6 +10,7 @@ if (!fs.existsSync(PDF_DIR)) {
   fs.mkdirSync(PDF_DIR, { recursive: true });
 }
 
+// ─── Styles ─────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   page: { padding: 40, fontSize: 11, fontFamily: 'Helvetica' },
   header: { fontSize: 18, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
@@ -20,13 +21,14 @@ const styles = StyleSheet.create({
   value: { flex: 2 },
 });
 
+// ─── Helper: Calculate annual totals ────────────────────────────
 export async function getEmployeeAnnualTotals(employeeId: string, year: number) {
   const result = await pool.query(
     `SELECT
        COALESCE(SUM(pi.pay), 0) as total_income,
-       COALESCE(SUM(pi.tax), 0) as tax_deductions,
-       COALESCE(SUM(pi.cpp), 0) as cpp,
-       COALESCE(SUM(pi.ei), 0) as ei
+       COALESCE(SUM(pi.tax_deduction), 0) as tax_deductions,
+       COALESCE(SUM(pi.cpp_deduction), 0) as cpp,
+       COALESCE(SUM(pi.ei_deduction), 0) as ei
      FROM payroll_items pi
      JOIN payrolls p ON pi.payroll_id = p.id
      WHERE pi.employee_id = $1
@@ -36,6 +38,7 @@ export async function getEmployeeAnnualTotals(employeeId: string, year: number) 
   return result.rows[0];
 }
 
+// ─── Generate T4 PDF ─────────────────────────────────────────────
 export async function generateT4PDF(employee: any, year: number): Promise<string> {
   const totals = await getEmployeeAnnualTotals(employee.id, year);
   const filename = `t4_${employee.id}_${year}.pdf`;
@@ -100,6 +103,7 @@ export async function generateT4PDF(employee: any, year: number): Promise<string
   return `/pdfs/${filename}`;
 }
 
+// ─── Generate RL-1 PDF ──────────────────────────────────────────
 export async function generateRL1PDF(employee: any, year: number): Promise<string> {
   const totals = await getEmployeeAnnualTotals(employee.id, year);
   const filename = `rl1_${employee.id}_${year}.pdf`;
