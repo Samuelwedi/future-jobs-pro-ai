@@ -7,7 +7,6 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 
-// Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -16,7 +15,7 @@ cloudinary.config({
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-// GET /api/users/company – list users in the same company (by token)
+// ─── GET /api/users/company ──────────────────────────────────────
 router.get('/company', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -30,7 +29,9 @@ router.get('/company', async (req: Request, res: Response) => {
     if (!companyId) return res.json({ success: true, users: [] });
 
     const result = await pool.query(
-      'SELECT id, email, role, full_name, first_name, last_name, profile_pic FROM users WHERE company_id = $1',
+      `SELECT id, email, role, full_name, first_name, last_name, profile_pic,
+              sin, date_of_birth
+       FROM users WHERE company_id = $1`,
       [companyId]
     );
     res.json({ success: true, users: result.rows });
@@ -39,7 +40,7 @@ router.get('/company', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/users/company/:companyId – list users by company ID (used by mobile team screen)
+// ─── GET /api/users/company/:companyId ──────────────────────────
 router.get('/company/:companyId', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -54,7 +55,9 @@ router.get('/company/:companyId', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
     const result = await pool.query(
-      'SELECT id, email, role, full_name, first_name, last_name, profile_pic FROM users WHERE company_id = $1',
+      `SELECT id, email, role, full_name, first_name, last_name, profile_pic,
+              sin, date_of_birth
+       FROM users WHERE company_id = $1`,
       [req.params.companyId]
     );
     res.json({ success: true, users: result.rows });
@@ -63,7 +66,7 @@ router.get('/company/:companyId', async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/users/profile – update the logged‑in user's name
+// ─── PUT /api/users/profile ──────────────────────────────────────
 router.put('/profile', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -72,22 +75,90 @@ router.put('/profile', async (req: Request, res: Response) => {
     
     const decoded = verifyToken(req);
 
-    const { firstName, lastName } = req.body;
-    if (!firstName || !lastName) {
-      return res.status(400).json({ success: false, message: 'First name and last name required' });
+    const { firstName, lastName, sin, dateOfBirth } = req.body;
+
+    // Build dynamic update
+    const updates: string[] = [];
+    const values: any[] = [];
+    let paramCounter = 1;
+
+    if (firstName) {
+      updates.push(`first_name = $${paramCounter++}`);
+      values.push(firstName);
     }
-    const fullName = `${firstName} ${lastName}`;
-    await pool.query(
-      'UPDATE users SET first_name = $1, last_name = $2, full_name = $3 WHERE id = $4',
-      [firstName, lastName, fullName, decoded.id]
-    );
-    res.json({ success: true, user: { firstName, lastName, fullName } });
+    if (lastName) {
+      updates.push(`last_name = $${paramCounter++}`);
+      values.push(lastName);
+    }
+    if (firstName && lastName) {
+      updates.push(`full_name = $${paramCounter++}`);
+      values.push(`${firstName} ${lastName}`);
+    }
+    if (sin !== undefined) {
+      updates.push(`sin = $${paramCounter++}`);
+      values.push(sin);
+    }
+    if (dateOfBirth !== undefined) {
+      updates.push(`date_of_birth = $${paramCounter++}`);
+      values.push(dateOfBirth);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, message: 'No fields to update' });
+    }
+
+    values.push(decoded.id);
+    const query = `
+      UPDATE users
+      SET ${updates.join(', ')}
+      WHERE id = $${paramCounter}
+      RETURNING first_name, last_name, full_name, sin, date_of_birth
+    `;
+
+    const result = await pool.query(query, values);
+    res.json({ success: true, user: result.rows[0] });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// POST /api/users/profile-pic – upload profile picture
+// ─── PUT /api/users/:id/tax-info ────────────────────────────────
+// Admin endpoint to update SIN/DOB for any employee in the company
+router.put('/:id/tax-info', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    
+    const decoded = verifyToken(req);
+    const { id } = req.params;
+
+    // Verify the target user belongs to the same company
+    const userRes = await pool.query(
+      'SELECT company_id FROM users WHERE id = $1',
+      [decoded.id]
+    );
+    const targetRes = await pool.query(
+      'SELECT company_id FROM users WHERE id = $1',
+      [id]
+    );
+    if (targetRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    if (userRes.rows[0].company_id !== targetRes.rows[0].company_id)
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    const { sin, dateOfBirth } = req.body;
+    await pool.query(
+      `UPDATE users SET sin = COALESCE($1, sin), date_of_birth = COALESCE($2, date_of_birth)
+       WHERE id = $3`,
+      [sin, dateOfBirth, id]
+    );
+    res.json({ success: true, message: 'Tax info updated' });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─── POST /api/users/profile-pic ──────────────────────────────────
 router.post('/profile-pic', upload.single('photo'), async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -99,7 +170,6 @@ router.post('/profile-pic', upload.single('photo'), async (req: Request, res: Re
       return res.status(400).json({ success: false, message: 'No file uploaded' });
     }
 
-    // Upload to Cloudinary
     const uploadResult: any = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         { folder: `future-jobs-pro-ai/profile/${decoded.id}` },
@@ -122,7 +192,7 @@ router.post('/profile-pic', upload.single('photo'), async (req: Request, res: Re
   }
 });
 
-// GET /api/users/me – get current user (with profile pic)
+// ─── GET /api/users/me ────────────────────────────────────────────
 router.get('/me', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -131,7 +201,9 @@ router.get('/me', async (req: Request, res: Response) => {
     
     const decoded = verifyToken(req);
     const result = await pool.query(
-      'SELECT id, email, first_name, last_name, full_name, role, company_id, profile_pic FROM users WHERE id = $1',
+      `SELECT id, email, first_name, last_name, full_name, role, company_id, profile_pic,
+              sin, date_of_birth
+       FROM users WHERE id = $1`,
       [decoded.id]
     );
     if (result.rows.length === 0) {

@@ -4,14 +4,13 @@ import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import path from 'path';
 import fs from 'fs';
 import { pool } from '../config/database';
-import { v4 as uuidv4 } from 'uuid';
 
 const PDF_DIR = path.join(__dirname, '../../pdfs');
 if (!fs.existsSync(PDF_DIR)) {
   fs.mkdirSync(PDF_DIR, { recursive: true });
 }
 
-// ─── PDF Styles ─────────────────────────────────────────────────
+// ─── Styles ─────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   page: { padding: 40, fontSize: 11, fontFamily: 'Helvetica' },
   header: { fontSize: 18, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
@@ -20,18 +19,14 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   field: { flex: 1 },
   value: { flex: 2 },
-  table: { marginTop: 16 },
-  tableHeader: { flexDirection: 'row', backgroundColor: '#EEE', padding: 4 },
-  tableRow: { flexDirection: 'row', borderBottom: '1px solid #EEE', padding: 4 },
-  cell: { flex: 1, fontSize: 10 },
 });
 
-// ─── Helper: Get annual payroll totals for an employee ────────
+// ─── Helper: Calculate annual totals ────────────────────────────
 export async function getEmployeeAnnualTotals(employeeId: string, year: number) {
   const result = await pool.query(
     `SELECT
        COALESCE(SUM(pi.pay), 0) as total_income,
-       COALESCE(SUM(pi.pay * 0.15), 0) as tax_deductions, -- placeholder (15% flat tax)
+       COALESCE(SUM(pi.pay * 0.15), 0) as tax_deductions,
        COALESCE(SUM(pi.pay * 0.0595), 0) as cpp,
        COALESCE(SUM(pi.pay * 0.0163), 0) as ei
      FROM payroll_items pi
@@ -43,18 +38,10 @@ export async function getEmployeeAnnualTotals(employeeId: string, year: number) 
   return result.rows[0];
 }
 
-// ─── T4 PDF ─────────────────────────────────────────────────────
-interface T4Data {
-  employeeId: string;
-  year: number;
-  totalIncome: number;
-  taxDeductions: number;
-  cpp: number;
-  ei: number;
-}
-
-export async function generateT4PDF(data: T4Data, employee: any): Promise<string> {
-  const filename = `t4_${employee.id}_${data.year}.pdf`;
+// ─── Generate T4 PDF ─────────────────────────────────────────────
+export async function generateT4PDF(employee: any, year: number): Promise<string> {
+  const totals = await getEmployeeAnnualTotals(employee.id, year);
+  const filename = `t4_${employee.id}_${year}.pdf`;
   const filepath = path.join(PDF_DIR, filename);
 
   const T4Document = () =>
@@ -65,15 +52,14 @@ export async function generateT4PDF(data: T4Data, employee: any): Promise<string
         Page,
         { size: 'A4', style: styles.page },
         React.createElement(Text, { style: styles.header }, 'T4 – Statement of Remuneration Paid'),
-        React.createElement(Text, { style: { marginBottom: 10 } }, `Year: ${data.year}`),
+        React.createElement(Text, { style: { marginBottom: 10 } }, `Year: ${year}`),
         React.createElement(
           View,
           { style: styles.section },
           React.createElement(Text, { style: styles.label }, 'Employee Information'),
           React.createElement(Text, null, `Name: ${employee.first_name} ${employee.last_name}`),
           React.createElement(Text, null, `Email: ${employee.email}`),
-          React.createElement(Text, null, `SIN: ${employee.sin || 'Not provided'}`),
-          React.createElement(Text, null, `Date of Birth: ${employee.date_of_birth || 'Not provided'}`)
+          React.createElement(Text, null, `SIN: ${employee.sin || 'Not provided'}`)
         ),
         React.createElement(
           View,
@@ -83,25 +69,25 @@ export async function generateT4PDF(data: T4Data, employee: any): Promise<string
             View,
             { style: styles.row },
             React.createElement(Text, { style: styles.field }, 'Total Income:'),
-            React.createElement(Text, { style: styles.value }, `$${data.totalIncome.toFixed(2)}`)
+            React.createElement(Text, { style: styles.value }, `$${Number(totals.total_income).toFixed(2)}`)
           ),
           React.createElement(
             View,
             { style: styles.row },
             React.createElement(Text, { style: styles.field }, 'Tax Deductions:'),
-            React.createElement(Text, { style: styles.value }, `$${data.taxDeductions.toFixed(2)}`)
+            React.createElement(Text, { style: styles.value }, `$${Number(totals.tax_deductions).toFixed(2)}`)
           ),
           React.createElement(
             View,
             { style: styles.row },
             React.createElement(Text, { style: styles.field }, 'CPP Contributions:'),
-            React.createElement(Text, { style: styles.value }, `$${data.cpp.toFixed(2)}`)
+            React.createElement(Text, { style: styles.value }, `$${Number(totals.cpp).toFixed(2)}`)
           ),
           React.createElement(
             View,
             { style: styles.row },
             React.createElement(Text, { style: styles.field }, 'EI Premiums:'),
-            React.createElement(Text, { style: styles.value }, `$${data.ei.toFixed(2)}`)
+            React.createElement(Text, { style: styles.value }, `$${Number(totals.ei).toFixed(2)}`)
           )
         ),
         React.createElement(
@@ -117,9 +103,10 @@ export async function generateT4PDF(data: T4Data, employee: any): Promise<string
   return `/pdfs/${filename}`;
 }
 
-// ─── RL-1 PDF ───────────────────────────────────────────────────
-export async function generateRL1PDF(data: T4Data, employee: any): Promise<string> {
-  const filename = `rl1_${employee.id}_${data.year}.pdf`;
+// ─── Generate RL-1 PDF ──────────────────────────────────────────
+export async function generateRL1PDF(employee: any, year: number): Promise<string> {
+  const totals = await getEmployeeAnnualTotals(employee.id, year);
+  const filename = `rl1_${employee.id}_${year}.pdf`;
   const filepath = path.join(PDF_DIR, filename);
 
   const RL1Document = () =>
@@ -130,15 +117,14 @@ export async function generateRL1PDF(data: T4Data, employee: any): Promise<strin
         Page,
         { size: 'A4', style: styles.page },
         React.createElement(Text, { style: styles.header }, 'RL-1 – Relevé 1 (Québec)'),
-        React.createElement(Text, { style: { marginBottom: 10 } }, `Year: ${data.year}`),
+        React.createElement(Text, { style: { marginBottom: 10 } }, `Year: ${year}`),
         React.createElement(
           View,
           { style: styles.section },
           React.createElement(Text, { style: styles.label }, 'Employee Information'),
           React.createElement(Text, null, `Name: ${employee.first_name} ${employee.last_name}`),
           React.createElement(Text, null, `Email: ${employee.email}`),
-          React.createElement(Text, null, `SIN: ${employee.sin || 'Not provided'}`),
-          React.createElement(Text, null, `Date of Birth: ${employee.date_of_birth || 'Not provided'}`)
+          React.createElement(Text, null, `SIN: ${employee.sin || 'Not provided'}`)
         ),
         React.createElement(
           View,
@@ -148,19 +134,19 @@ export async function generateRL1PDF(data: T4Data, employee: any): Promise<strin
             View,
             { style: styles.row },
             React.createElement(Text, { style: styles.field }, 'Total Income (Box A):'),
-            React.createElement(Text, { style: styles.value }, `$${data.totalIncome.toFixed(2)}`)
+            React.createElement(Text, { style: styles.value }, `$${Number(totals.total_income).toFixed(2)}`)
           ),
           React.createElement(
             View,
             { style: styles.row },
-            React.createElement(Text, { style: styles.field }, 'QPP Contributions:'),
-            React.createElement(Text, { style: styles.value }, `$${data.cpp.toFixed(2)}`)
+            React.createElement(Text, { style: styles.field }, 'Québec Pension Plan (QPP):'),
+            React.createElement(Text, { style: styles.value }, `$${Number(totals.cpp).toFixed(2)}`)
           ),
           React.createElement(
             View,
             { style: styles.row },
             React.createElement(Text, { style: styles.field }, 'EI Premiums (QE):'),
-            React.createElement(Text, { style: styles.value }, `$${data.ei.toFixed(2)}`)
+            React.createElement(Text, { style: styles.value }, `$${Number(totals.ei).toFixed(2)}`)
           )
         ),
         React.createElement(
