@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
-import { generateT4PDF, generateRL1PDF } from '../services/taxFormService';
+import { generateT4PDF, generateRL1PDF, getEmployeeAnnualTotals } from '../services/taxFormService';
 import fs from 'fs';
 import path from 'path';
 
@@ -17,6 +17,7 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   } catch { return null; }
 };
 
+// ─── GET /api/tax-forms ─────────────────────────────────────────
 router.get('/', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -27,7 +28,8 @@ router.get('/', async (req: Request, res: Response) => {
       SELECT tf.*,
              u.first_name || ' ' || u.last_name as employee_name,
              u.email,
-             u.sin
+             u.sin,
+             u.date_of_birth
       FROM tax_forms tf
       JOIN users u ON tf.employee_id = u.id
       WHERE tf.company_id = $1
@@ -46,6 +48,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// ─── POST /api/tax-forms/generate ──────────────────────────────
 router.post('/generate', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -63,7 +66,7 @@ router.post('/generate', async (req: Request, res: Response) => {
 
     // Get all employees (excluding bosses and managers)
     const employees = await pool.query(
-      `SELECT id, first_name, last_name, email, sin FROM users
+      `SELECT id, first_name, last_name, email, sin, date_of_birth FROM users
        WHERE company_id = $1 AND role NOT IN ('boss', 'manager')`,
       [companyId]
     );
@@ -80,15 +83,16 @@ router.post('/generate', async (req: Request, res: Response) => {
       );
       if (existing.rows.length > 0) continue;
 
-      // Build payroll data – we need to fetch actual payroll totals from payroll_items
-      // This is a placeholder – you should calculate from your payroll data.
+      // Fetch annual totals for this employee
+      const totals = await getEmployeeAnnualTotals(emp.id, year);
+
       const payrollData = {
         employeeId: emp.id,
         year,
-        totalIncome: 0,
-        taxDeductions: 0,
-        cpp: 0,
-        ei: 0,
+        totalIncome: Number(totals.total_income) || 0,
+        taxDeductions: Number(totals.tax_deductions) || 0,
+        cpp: Number(totals.cpp) || 0,
+        ei: Number(totals.ei) || 0,
       };
 
       let pdfUrl: string;
@@ -119,6 +123,7 @@ router.post('/generate', async (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /api/tax-forms/:id/download ────────────────────────────
 router.get('/:id/download', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -144,6 +149,7 @@ router.get('/:id/download', async (req: Request, res: Response) => {
   }
 });
 
+// ─── DELETE /api/tax-forms/:id ──────────────────────────────────
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
