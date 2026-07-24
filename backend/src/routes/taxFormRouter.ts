@@ -7,7 +7,6 @@ import path from 'path';
 
 const router = express.Router();
 
-// ─── Helper: get company ID from token ──────────────────────────
 const getCompanyId = async (req: Request): Promise<string | null> => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -18,8 +17,6 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   } catch { return null; }
 };
 
-// ─── GET /api/tax-forms ─────────────────────────────────────────
-// List all tax forms for the company (optionally filter by year)
 router.get('/', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -29,7 +26,8 @@ router.get('/', async (req: Request, res: Response) => {
     let query = `
       SELECT tf.*,
              u.first_name || ' ' || u.last_name as employee_name,
-             u.email
+             u.email,
+             u.sin
       FROM tax_forms tf
       JOIN users u ON tf.employee_id = u.id
       WHERE tf.company_id = $1
@@ -48,14 +46,12 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// ─── POST /api/tax-forms/generate ──────────────────────────────
-// Generate T4 or RL-1 forms for all employees for a given year
 router.post('/generate', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { year, formType } = req.body; // formType: 'T4' or 'RL1'
+    const { year, formType } = req.body;
     if (!year || !formType) {
       return res.status(400).json({ success: false, message: 'year and formType required' });
     }
@@ -65,7 +61,7 @@ router.post('/generate', async (req: Request, res: Response) => {
 
     const userId = (req as any).user?.id || null;
 
-    // Get all employees (non-manager, non-boss)
+    // Get all employees (excluding bosses and managers)
     const employees = await pool.query(
       `SELECT id, first_name, last_name, email, sin FROM users
        WHERE company_id = $1 AND role NOT IN ('boss', 'manager')`,
@@ -77,27 +73,22 @@ router.post('/generate', async (req: Request, res: Response) => {
 
     const generated = [];
     for (const emp of employees.rows) {
-      // Check if a tax form already exists for this employee/year/type
+      // Check if already exists
       const existing = await pool.query(
         'SELECT id FROM tax_forms WHERE employee_id = $1 AND year = $2 AND form_type = $3',
         [emp.id, year, formType]
       );
-      if (existing.rows.length > 0) {
-        // Skip if already exists
-        continue;
-      }
+      if (existing.rows.length > 0) continue;
 
-      // Fetch payroll data for this employee for the year (this is a simplified example)
-      // You can customize the data fetching based on your actual payroll tables.
-      // For now, we'll generate a dummy set of data.
+      // Build payroll data – we need to fetch actual payroll totals from payroll_items
+      // This is a placeholder – you should calculate from your payroll data.
       const payrollData = {
         employeeId: emp.id,
         year,
-        totalIncome: 0,    // should be calculated from payroll_items
+        totalIncome: 0,
         taxDeductions: 0,
         cpp: 0,
         ei: 0,
-        // ... other fields
       };
 
       let pdfUrl: string;
@@ -107,7 +98,6 @@ router.post('/generate', async (req: Request, res: Response) => {
         pdfUrl = await generateRL1PDF(payrollData, emp);
       }
 
-      // Insert into DB
       const result = await pool.query(
         `INSERT INTO tax_forms (company_id, employee_id, year, form_type, pdf_url, created_by)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -129,8 +119,6 @@ router.post('/generate', async (req: Request, res: Response) => {
   }
 });
 
-// ─── GET /api/tax-forms/:id/download ────────────────────────────
-// Download PDF for a specific tax form
 router.get('/:id/download', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -156,8 +144,6 @@ router.get('/:id/download', async (req: Request, res: Response) => {
   }
 });
 
-// ─── DELETE /api/tax-forms/:id ──────────────────────────────────
-// Delete a tax form (draft only)
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
