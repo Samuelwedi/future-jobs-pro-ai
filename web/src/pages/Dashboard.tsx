@@ -300,7 +300,7 @@ export default function Dashboard() {
     { label: 'Payroll', icon: <AttachMoney />, path: '/payroll' },
     { label: 'Invoices', icon: <Receipt />, path: '/invoices' },
     { label: 'Estimates', icon: <Description />, path: '/estimates' },
-    { label: 'Tax Forms', icon: <FilePresent />, path: '/tax-forms' },
+    { label: 'Year-End', icon: <Receipt />, path: '/year-end' },
     { label: 'Direct Deposit', icon: <AttachMoney />, path: '/direct-deposit' },
   ];
 
