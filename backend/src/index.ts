@@ -17,6 +17,8 @@ import { saveMessage } from './services/chatService';
 import { trialCheck } from './middleware/trialMiddleware';
 import { verifyToken } from './utils/auth';
 import statsRoutes from './routes/statsRoutes';
+import { processEmployeePaycheck } from './services/payrollController';
+import {previewSlip,finalizeSlip,getEmployeeForms,} from './controllers/yearEndController';
 
 dotenv.config();
 
@@ -62,6 +64,11 @@ app.get('/api/health', async (req: Request, res: Response) => {
 
 app.get('/', (req, res) => res.send('<h1>🚀 Future Jobs Pro AI</h1>'));
 
+// ─── Year-End Routes ──────────────────────────────────────────────
+app.get('/api/year-end/preview', previewSlip);
+app.post('/api/year-end/finalize', finalizeSlip);
+app.get('/api/year-end/employee/:employeeId/forms', getEmployeeForms);
+
 // ===== REST ROUTES =====
 import authRoutes from './routes/authRoutes'; app.use('/api/auth', authRoutes);
 import aiRoutes from './routes/aiRoutes'; app.use('/api/ai', aiRoutes);
@@ -101,8 +108,8 @@ import dashboardRouter from './routes/dashboardRouter'; app.use('/api/dashboard'
 import estimateRouter from './routes/estimateRouter'; app.use('/api/estimates', estimateRouter);
 import pdfRouter from './routes/pdfRouter'; app.use('/pdfs', pdfRouter);
 import payStubRouter from './routes/payStubRouter'; app.use('/api/pay-stubs', payStubRouter);
-import taxFormRouter from './routes/taxFormRouter'; app.use('/api/tax-forms', taxFormRouter);
 import directDepositRouter from './routes/directDepositRouter'; app.use('/api/direct-deposit', directDepositRouter);
+import yearEndRouter from './routes/yearEndRouter'; app.use('/api/year-end', yearEndRouter);
 // ----- trialCheck middleware (moved AFTER scheduleRoutes) -----
 app.use(trialCheck);
 
@@ -163,6 +170,20 @@ app.post('/api/payroll/run', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Payroll error:', error.message);
     res.status(500).json({ success: false, message: 'Payroll service is temporarily unavailable.' });
+  }
+});
+
+app.post('/api/payroll/process', async (req: Request, res: Response) => {
+  try {
+    const { employeeId, grossEarnings, taxYear } = req.body;
+    if (!employeeId || !grossEarnings || !taxYear) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const result = await processEmployeePaycheck(Number(employeeId), Number(grossEarnings), Number(taxYear));
+    res.json({ success: true, calculations: result });
+  } catch (error: any) {
+    console.error('Payroll processing error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -34,15 +34,16 @@ import Payroll from './pages/Payroll';
 import Invoices from './pages/Invoices';
 import Estimates from './pages/Estimates';
 import EmployeePortal from './pages/EmployeePortal';
-import TaxForms from './pages/TaxForms';
+import YearEnd from './pages/YearEnd';
 import DirectDeposit from './pages/DirectDeposit';
+
 
 export default function App() {
   return (
     <Router>
       <Routes>
         <Route path="/direct-deposit" element={<DirectDeposit />} />
-        <Route path="/tax-forms" element={<TaxForms />} />
+        <Route path="/year-end" element={<YearEnd />} />
         <Route path="/employee-portal" element={<EmployeePortal />} />
         <Route path="/estimates" element={<Estimates />} />
         <Route path="/" element={<Landing />} />
