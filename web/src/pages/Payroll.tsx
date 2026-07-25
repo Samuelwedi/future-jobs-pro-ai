@@ -12,6 +12,7 @@ import {
   TrendingUp, TrendingDown, People, Schedule, Settings,
   Download, PictureAsPdf, Description, TableChart,
   FilePresent, Visibility, FilterList, Close,
+  PlayArrow, // Added for Run Payroll tab
 } from '@mui/icons-material';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
@@ -61,12 +62,27 @@ interface CompanySettings {
   tax_rate: number;
 }
 
+// ─── Run Payroll Types ────────────────────────────────────────────
+interface EmployeeSimple {
+  id: number;
+  first_name: string;
+  last_name: string;
+}
+
+interface RunPayrollResult {
+  netPayout: string;
+  breakdown: {
+    employeeWithholdings: Record<string, string>;
+    employerContributions: Record<string, string>;
+  };
+}
+
 // ─── Main Component ──────────────────────────────────────────────
 export default function PayrollPage() {
   const token = localStorage.getItem('token') || '';
   const [activeTab, setActiveTab] = useState(0);
 
-  // ── State ──
+  // ── Existing State ──
   const [payrolls, setPayrolls] = useState<Payroll[]>([]);
   const [selectedPayroll, setSelectedPayroll] = useState<Payroll | null>(null);
   const [payrollItems, setPayrollItems] = useState<PayrollItem[]>([]);
@@ -79,15 +95,12 @@ export default function PayrollPage() {
   const [periodEnd, setPeriodEnd] = useState('');
   const [employeeRateOverrides, setEmployeeRateOverrides] = useState<Record<string, number | null>>({});
 
-  // ── Employee filter ──
   const [employees, setEmployees] = useState<{ id: string; name: string }[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('all');
 
-  // ── Export menu ──
   const [exportAnchorEl, setExportAnchorEl] = useState<null | HTMLElement>(null);
   const exportOpen = Boolean(exportAnchorEl);
 
-  // ── Compensation state ──
   const [compEmployees, setCompEmployees] = useState<EmployeeCompensation[]>([]);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [raiseType, setRaiseType] = useState<'percentage' | 'fixed'>('percentage');
@@ -95,15 +108,22 @@ export default function PayrollPage() {
   const [effectiveDate, setEffectiveDate] = useState('');
   const [compLoading, setCompLoading] = useState(false);
 
-  // ── Settings state ──
   const [settings, setSettings] = useState<CompanySettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
-  // ── What‑if state ──
   const [scenarioType, setScenarioType] = useState<'raise_percent' | 'raise_fixed' | 'hire_count'>('raise_percent');
   const [scenarioValue, setScenarioValue] = useState(5);
   const [scenarioResult, setScenarioResult] = useState<any>(null);
   const [whatIfLoading, setWhatIfLoading] = useState(false);
+
+  // ── Run Payroll State ──
+  const [runEmployees, setRunEmployees] = useState<EmployeeSimple[]>([]);
+  const [runEmployeeId, setRunEmployeeId] = useState<number>(0);
+  const [runGrossPay, setRunGrossPay] = useState<number>(3000);
+  const [runTaxYear, setRunTaxYear] = useState<number>(2026);
+  const [runLoading, setRunLoading] = useState(false);
+  const [runResult, setRunResult] = useState<RunPayrollResult | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
 
   // ── Fetch Functions ──
   const fetchPayrolls = async () => {
@@ -143,6 +163,7 @@ export default function PayrollPage() {
       const data = await res.json();
       if (data.success) {
         setEmployees(data.users.map((u: any) => ({ id: u.id, name: `${u.first_name} ${u.last_name}` })));
+        setRunEmployees(data.users.map((u: any) => ({ id: parseInt(u.id) || 0, first_name: u.first_name, last_name: u.last_name })));
       }
     } catch (e) { console.error(e); }
   };
@@ -185,7 +206,6 @@ export default function PayrollPage() {
       return;
     }
 
-    // Build employeeRates array from ALL employees (using edits or current rate)
     const employeeRates = employees
       .map(emp => {
         const override = employeeRateOverrides[emp.id];
@@ -238,7 +258,6 @@ export default function PayrollPage() {
     } catch (e) { alert('Delete failed'); }
   };
 
-  // ─── EXPORT ──────────────────────────────────────────────────
   const handleExport = async (format: 'pdf' | 'excel' | 'csv' | 'word') => {
     try {
       const employeeParam = selectedEmployeeId !== 'all' ? `&employeeId=${selectedEmployeeId}` : '';
@@ -260,7 +279,6 @@ export default function PayrollPage() {
     setExportAnchorEl(null);
   };
 
-  // ── Render Helpers ──
   const getStatusChip = (status: string) => {
     const map: Record<string, any> = {
       draft: { color: 'default', label: 'Draft' },
@@ -274,7 +292,28 @@ export default function PayrollPage() {
     await fetchPayrollDetail(payroll.id);
   };
 
-  // ─── Tab Panels ────────────────────────────────────────────────
+  // ── Run Payroll Handler ──
+  const handleRunPayroll = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRunLoading(true);
+    setRunError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/payroll/process`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ employeeId: runEmployeeId, grossEarnings: runGrossPay, taxYear: runTaxYear }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Processing failed');
+      setRunResult(data.calculations);
+    } catch (err: any) {
+      setRunError(err.message);
+    } finally {
+      setRunLoading(false);
+    }
+  };
+
+  // ── Tabs ────────────────────────────────────────────────────────
   const renderOverview = () => (
     <>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
@@ -309,13 +348,10 @@ export default function PayrollPage() {
         </Box>
       </Box>
 
-      {/* Export Menu */}
       <Menu
         anchorEl={exportAnchorEl}
         open={exportOpen}
         onClose={() => setExportAnchorEl(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         PaperProps={{ sx: { bgcolor: '#1A1A1A', border: '1px solid #333' } }}
       >
         <MenuItem onClick={() => handleExport('pdf')} sx={{ color: '#FFF' }}>
@@ -398,11 +434,8 @@ export default function PayrollPage() {
         </Table>
       </TableContainer>
 
-      {/* --- GENERATE DIALOG (EDIBLE RATES) --- */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
-          Generate Payroll
-        </DialogTitle>
+        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>Generate Payroll</DialogTitle>
         <DialogContent sx={{ bgcolor: '#1A1A1A' }}>
           <TextField
             label="Period Start"
@@ -422,17 +455,13 @@ export default function PayrollPage() {
             InputLabelProps={{ shrink: true }}
             sx={{ mt: 2, input: { color: '#FFF' }, label: { color: '#888' } }}
           />
-
-          <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 3, mb: 2 }}>
-            Employee Rates (edit any rate to override for this payroll)
-          </Typography>
-
+          <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 3, mb: 2 }}>Employee Rates (edit to override)</Typography>
           <TableContainer component={Paper} sx={{ bgcolor: '#0A0A0A', border: '1px solid #333', maxHeight: 300 }}>
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ color: '#888' }}>Employee</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Rate Used (edit to override)</TableCell>
+                  <TableCell sx={{ color: '#888' }}>Rate Used</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -451,11 +480,7 @@ export default function PayrollPage() {
                             const val = e.target.value ? Number(e.target.value) : null;
                             setEmployeeRateOverrides(prev => ({ ...prev, [emp.id]: val }));
                           }}
-                          sx={{
-                            input: { color: '#FFF' },
-                            width: 140,
-                            '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } },
-                          }}
+                          sx={{ input: { color: '#FFF' }, width: 140 }}
                           InputProps={{
                             endAdornment: <InputAdornment position="end" sx={{ color: '#888' }}>/hr</InputAdornment>,
                           }}
@@ -467,7 +492,6 @@ export default function PayrollPage() {
               </TableBody>
             </Table>
           </TableContainer>
-
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
             <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button variant="contained" onClick={handleGenerate} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
@@ -477,32 +501,18 @@ export default function PayrollPage() {
         </DialogContent>
       </Dialog>
 
-      {/* --- DETAIL VIEW DIALOG --- */}
-      <Dialog
-        open={detailDialogOpen}
-        onClose={() => setDetailDialogOpen(false)}
-        maxWidth="lg"
-        fullWidth
-        scroll="paper"
-      >
+      <Dialog open={detailDialogOpen} onClose={() => setDetailDialogOpen(false)} maxWidth="lg" fullWidth scroll="paper">
         <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-              Payroll Details
-            </Typography>
-            <IconButton onClick={() => setDetailDialogOpen(false)} sx={{ color: '#FFF' }}>
-              <Close />
-            </IconButton>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Payroll Details</Typography>
+            <IconButton onClick={() => setDetailDialogOpen(false)} sx={{ color: '#FFF' }}><Close /></IconButton>
           </Box>
         </DialogTitle>
         <DialogContent sx={{ bgcolor: '#0A0A0A' }}>
           {detailLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress sx={{ color: '#00D4FF' }} />
-            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress sx={{ color: '#00D4FF' }} /></Box>
           ) : selectedPayroll ? (
             <>
-              {/* Summary */}
               <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333', mb: 3 }}>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={3}>
@@ -541,8 +551,6 @@ export default function PayrollPage() {
                   )}
                 </Grid>
               </Paper>
-
-              {/* Employee Breakdown with Deductions */}
               <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Employee Breakdown</Typography>
               <TableContainer component={Paper} sx={{ bgcolor: '#1A1A1A', border: '1px solid #333' }}>
                 <Table size="small">
@@ -585,9 +593,7 @@ export default function PayrollPage() {
                     })}
                     {payrollItems.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={9} sx={{ color: '#888', textAlign: 'center', py: 3 }}>
-                          No employees in this payroll.
-                        </TableCell>
+                        <TableCell colSpan={9} sx={{ color: '#888', textAlign: 'center', py: 3 }}>No employees in this payroll.</TableCell>
                       </TableRow>
                     )}
                   </TableBody>
@@ -602,14 +608,10 @@ export default function PayrollPage() {
     </>
   );
 
-  // ── Compensation Tab ──────────────────────────────────────────
   const renderCompensation = () => (
     <Box>
       <Typography variant="h5" sx={{ color: '#FFF', mb: 2 }}>Employee Compensation</Typography>
-      <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>
-        View and update hourly rates. Select employees to apply a raise.
-      </Typography>
-
+      <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>View and update hourly rates. Select employees to apply a raise.</Typography>
       <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333', mb: 3 }}>
         <Typography variant="subtitle1" sx={{ color: '#FFF', mb: 2 }}>Apply Raise to Selected Employees</Typography>
         <Grid container spacing={2} alignItems="center">
@@ -661,7 +663,6 @@ export default function PayrollPage() {
           </Grid>
         </Grid>
       </Paper>
-
       {compLoading ? (
         <CircularProgress sx={{ color: '#00D4FF' }} />
       ) : (
@@ -691,18 +692,12 @@ export default function PayrollPage() {
                   </TableCell>
                   <TableCell sx={{ color: '#FFF' }}>{emp.first_name} {emp.last_name}</TableCell>
                   <TableCell sx={{ color: '#FFF' }}>${Number(emp.current_rate).toFixed(2) || '—'}/hr</TableCell>
-                  <TableCell>
-                    {emp.history?.length > 0 ? (
-                      <Chip label={`${emp.history.length} changes`} size="small" />
-                    ) : '—'}
-                  </TableCell>
+                  <TableCell>{emp.history?.length > 0 ? <Chip label={`${emp.history.length} changes`} size="small" /> : '—'}</TableCell>
                 </TableRow>
               ))}
               {compEmployees.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4} sx={{ color: '#888', textAlign: 'center', py: 3 }}>
-                    No employees found.
-                  </TableCell>
+                  <TableCell colSpan={4} sx={{ color: '#888', textAlign: 'center', py: 3 }}>No employees found.</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -712,7 +707,6 @@ export default function PayrollPage() {
     </Box>
   );
 
-  // ── Settings Tab ──────────────────────────────────────────────
   const renderSettings = () => (
     <Box>
       <Typography variant="h5" sx={{ color: '#FFF', mb: 2 }}>Payroll Settings</Typography>
@@ -800,14 +794,10 @@ export default function PayrollPage() {
     </Box>
   );
 
-  // ── What‑If Tab ──────────────────────────────────────────────
   const renderWhatIf = () => (
     <Box>
       <Typography variant="h5" sx={{ color: '#FFF', mb: 2 }}>What‑If Scenario Planner</Typography>
-      <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>
-        Simulate the impact of raises or hiring on your total payroll cost.
-      </Typography>
-
+      <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>Simulate the impact of raises or hiring on your total payroll cost.</Typography>
       <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333', mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={4}>
@@ -846,7 +836,6 @@ export default function PayrollPage() {
             </Button>
           </Grid>
         </Grid>
-
         {scenarioResult && (
           <Box sx={{ mt: 3, p: 2, bgcolor: '#0A0A0A', borderRadius: 2, border: '1px solid #333' }}>
             <Typography variant="subtitle1" sx={{ color: '#00D4FF' }}>📊 Result</Typography>
@@ -870,6 +859,101 @@ export default function PayrollPage() {
           </Box>
         )}
       </Paper>
+    </Box>
+  );
+
+  // ── Run Payroll Tab ─────────────────────────────────────────────
+  const renderRunPayroll = () => (
+    <Box>
+      <Typography variant="h5" sx={{ color: '#FFF', mb: 2 }}>Run Payroll</Typography>
+      <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>
+        Calculate and commit employee payroll with statutory deductions and YTD tracking.
+      </Typography>
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
+            <form onSubmit={handleRunPayroll}>
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel sx={{ color: '#888' }}>Employee</InputLabel>
+                <Select
+                  value={runEmployeeId}
+                  onChange={(e) => setRunEmployeeId(Number(e.target.value))}
+                  sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                >
+                  {runEmployees.map((emp) => (
+                    <MenuItem key={emp.id} value={emp.id}>
+                      {emp.first_name} {emp.last_name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label="Gross Pay This Period ($)"
+                type="number"
+                fullWidth
+                value={runGrossPay}
+                onChange={(e) => setRunGrossPay(Number(e.target.value))}
+                sx={{ mb: 2, input: { color: '#FFF' }, label: { color: '#888' } }}
+              />
+              <TextField
+                label="Tax Year"
+                type="number"
+                fullWidth
+                value={runTaxYear}
+                onChange={(e) => setRunTaxYear(Number(e.target.value))}
+                sx={{ mb: 3, input: { color: '#FFF' }, label: { color: '#888' } }}
+              />
+              <Button
+                type="submit"
+                variant="contained"
+                fullWidth
+                disabled={runLoading}
+                sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}
+                startIcon={<PlayArrow />}
+              >
+                {runLoading ? <CircularProgress size={24} sx={{ color: '#0A0A0A' }} /> : 'Process Paycheck'}
+              </Button>
+            </form>
+            {runError && <Alert severity="error" sx={{ mt: 2 }}>{runError}</Alert>}
+          </Paper>
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333', minHeight: 350 }}>
+            {runResult ? (
+              <>
+                <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Payslip Summary</Typography>
+                <Typography variant="subtitle1" sx={{ color: '#00D4FF', mb: 1 }}>Employee Withholdings</Typography>
+                {Object.entries(runResult.breakdown.employeeWithholdings).map(([key, value]) => (
+                  <Box key={key} sx={{ display: 'flex', justifyContent: 'space-between', py: 1, borderBottom: '1px solid #333' }}>
+                    <Typography sx={{ color: '#FFF', textTransform: 'capitalize' }}>
+                      {key.replace(/([A-Z])/g, ' $1')}
+                    </Typography>
+                    <Typography sx={{ color: '#FFF', fontWeight: 'bold' }}>${value}</Typography>
+                  </Box>
+                ))}
+                <Divider sx={{ my: 2, borderColor: '#333' }} />
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1, bgcolor: '#0A0A0A', px: 2, borderRadius: 1, border: '1px solid #4CAF50' }}>
+                  <Typography sx={{ color: '#FFF', fontWeight: 'bold' }}>Net Take‑Home Pay</Typography>
+                  <Typography sx={{ color: '#4CAF50', fontWeight: 'bold', fontSize: '1.2rem' }}>${runResult.netPayout}</Typography>
+                </Box>
+                <Typography variant="subtitle1" sx={{ color: '#00D4FF', mt: 2, mb: 1 }}>Employer Contributions</Typography>
+                {Object.entries(runResult.breakdown.employerContributions).map(([key, value]) => (
+                  <Box key={key} sx={{ display: 'flex', justifyContent: 'space-between', py: 1, borderBottom: '1px solid #333' }}>
+                    <Typography sx={{ color: '#FFF', textTransform: 'capitalize' }}>
+                      {key.replace(/([A-Z])/g, ' $1')}
+                    </Typography>
+                    <Typography sx={{ color: '#FFF', fontWeight: 'bold' }}>${value}</Typography>
+                  </Box>
+                ))}
+              </>
+            ) : (
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: '#888' }}>
+                Enter parameters and run calculation to view results.
+              </Box>
+            )}
+          </Paper>
+        </Grid>
+      </Grid>
     </Box>
   );
 
@@ -955,12 +1039,14 @@ export default function PayrollPage() {
         <Tab label="Compensation" icon={<People />} iconPosition="start" />
         <Tab label="Schedule & Settings" icon={<Settings />} iconPosition="start" />
         <Tab label="What‑If" icon={<TrendingUp />} iconPosition="start" />
+        <Tab label="Run Payroll" icon={<PlayArrow />} iconPosition="start" />
       </Tabs>
 
       {activeTab === 0 && renderOverview()}
       {activeTab === 1 && renderCompensation()}
       {activeTab === 2 && renderSettings()}
       {activeTab === 3 && renderWhatIf()}
+      {activeTab === 4 && renderRunPayroll()}
     </Container>
   );
 }
