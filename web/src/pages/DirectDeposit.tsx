@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
+// declare minimal process.env shape so TypeScript doesn't error in the browser build
+declare const process: { env?: { REACT_APP_API_BASE?: string } };
 import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, CircularProgress, Stack, Alert, TextField,
-  Dialog, DialogTitle, DialogContent, Grid, IconButton, Chip,
+  Dialog, DialogTitle, DialogContent, Grid, IconButton, Chip, Select, MenuItem,
+  FormControl, InputLabel,
 } from '@mui/material';
 import { Download, Edit, Save, Cancel } from '@mui/icons-material';
 
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = process.env?.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
 
 interface EmployeeBank {
   id: string;
@@ -29,6 +32,17 @@ export default function DirectDepositPage() {
   const [payrolls, setPayrolls] = useState<any[]>([]);
   const [selectedPayrollId, setSelectedPayrollId] = useState('');
 
+  const darkInputStyle = {
+    input: { color: '#FFF' },
+    label: { color: '#888' },
+    '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } },
+  };
+
+  const darkSelectStyle = {
+    color: '#FFF',
+    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' },
+  };
+
   const fetchEmployees = async () => {
     setLoading(true);
     try {
@@ -36,7 +50,7 @@ export default function DirectDepositPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      if (data.success) setEmployees(data.employees);
+      if (data.success) setEmployees(data.employees || []);
       else setError(data.message || 'Failed to load employees');
     } catch (e: any) { setError(e.message); }
     setLoading(false);
@@ -130,33 +144,29 @@ export default function DirectDepositPage() {
         Manage employee bank details and generate NACHA files for payroll.
       </Typography>
 
-      {/* Generate NACHA */}
       <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333', mb: 3 }}>
         <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Generate NACHA File</Typography>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <select
-            value={selectedPayrollId}
-            onChange={(e) => setSelectedPayrollId(e.target.value)}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#0A0A0A',
-              color: '#FFF',
-              border: '1px solid #333',
-              borderRadius: '8px',
-              flex: 1,
-            }}
-          >
-            <option value="">Select a payroll</option>
-            {payrolls.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.period_start} – {p.period_end} (${p.total_pay.toFixed(2)})
-              </option>
-            ))}
-          </select>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <FormControl sx={{ minWidth: 250, flex: 1 }}>
+            <InputLabel sx={{ color: '#888' }}>Select Payroll</InputLabel>
+            <Select
+              value={selectedPayrollId}
+              onChange={(e) => setSelectedPayrollId(e.target.value)}
+              sx={darkSelectStyle}
+            >
+              <MenuItem value="">Select a payroll</MenuItem>
+              {payrolls.map((p) => (
+                <MenuItem key={p.id} value={p.id}>
+                  {p.period_start} – {p.period_end} (${Number(p.total_pay).toFixed(2)})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           <Button
             variant="contained"
             startIcon={<Download />}
             onClick={generateNacha}
+            disabled={!selectedPayrollId}
             sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}
           >
             Generate NACHA
@@ -167,19 +177,19 @@ export default function DirectDepositPage() {
         </Typography>
       </Paper>
 
-      {/* Employee Bank Details */}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
       <TableContainer component={Paper} sx={{ bgcolor: '#1A1A1A', border: '1px solid #333' }}>
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell sx={{ color: '#FFF' }}>Employee</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Routing Number</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Account Number</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Account Type</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Account Holder</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Status</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Actions</TableCell>
+              <TableCell sx={{ color: '#888' }}>Employee</TableCell>
+              <TableCell sx={{ color: '#888' }}>Routing Number</TableCell>
+              <TableCell sx={{ color: '#888' }}>Account Number</TableCell>
+              <TableCell sx={{ color: '#888' }}>Account Type</TableCell>
+              <TableCell sx={{ color: '#888' }}>Account Holder</TableCell>
+              <TableCell sx={{ color: '#888' }}>Status</TableCell>
+              <TableCell sx={{ color: '#888' }}>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -212,20 +222,15 @@ export default function DirectDepositPage() {
                         />
                       </TableCell>
                       <TableCell>
-                        <select
+                        <Select
                           value={editForm.bank_account_type || 'checking'}
                           onChange={(e) => setEditForm({ ...editForm, bank_account_type: e.target.value })}
-                          style={{
-                            padding: '6px 12px',
-                            backgroundColor: '#0A0A0A',
-                            color: '#FFF',
-                            border: '1px solid #333',
-                            borderRadius: '4px',
-                          }}
+                          sx={darkSelectStyle}
+                          size="small"
                         >
-                          <option value="checking">Checking</option>
-                          <option value="savings">Savings</option>
-                        </select>
+                          <MenuItem value="checking">Checking</MenuItem>
+                          <MenuItem value="savings">Savings</MenuItem>
+                        </Select>
                       </TableCell>
                       <TableCell>
                         <TextField

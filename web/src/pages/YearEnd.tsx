@@ -9,7 +9,7 @@ import {
   Work, AttachMoney,
 } from '@mui/icons-material';
 
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = (import.meta as any).env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
 
 interface Employee {
   id: number;
@@ -40,7 +40,17 @@ export default function YearEnd() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Fetch Employees ──
+  const darkInputStyle = {
+    input: { color: '#FFF' },
+    label: { color: '#888' },
+    '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } },
+  };
+
+  const darkSelectStyle = {
+    color: '#FFF',
+    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' },
+  };
+
   useEffect(() => {
     const fetchEmployees = async () => {
       try {
@@ -49,7 +59,6 @@ export default function YearEnd() {
         });
         const data = await res.json();
         if (data.success) {
-          // Map to employee format (assuming users have the extra fields)
           setEmployees(data.users.map((u: any) => ({
             id: parseInt(u.id) || 0,
             first_name: u.first_name,
@@ -65,7 +74,6 @@ export default function YearEnd() {
     fetchEmployees();
   }, [token]);
 
-  // ── Fetch Available Forms ──
   const fetchAvailableForms = async (employeeId: number) => {
     try {
       const res = await fetch(`${API_BASE}/api/year-end/employee/${employeeId}/forms`, {
@@ -83,7 +91,6 @@ export default function YearEnd() {
     }
   };
 
-  // ── Handle Employee Selection ──
   const handleEmployeeChange = (employeeId: number) => {
     setSelectedEmployee(employeeId);
     setPreview(null);
@@ -91,7 +98,6 @@ export default function YearEnd() {
     fetchAvailableForms(employeeId);
   };
 
-  // ── Preview ──
   const handlePreview = async () => {
     if (!selectedEmployee || !selectedForm) return;
     setLoading(true);
@@ -112,7 +118,6 @@ export default function YearEnd() {
     }
   };
 
-  // ── Save/Finalize ──
   const handleSave = async () => {
     if (!selectedEmployee || !selectedForm) return;
     setLoading(true);
@@ -137,7 +142,6 @@ export default function YearEnd() {
     }
   };
 
-  // ─── Render Manifest Boxes ──────────────────────────────────────
   const renderManifest = () => {
     if (!preview) return null;
 
@@ -182,13 +186,12 @@ export default function YearEnd() {
                 <Typography variant="caption" sx={{ color: '#888' }}>
                   {labelMap[key] || key.replace(/_/g, ' ').toUpperCase()}
                 </Typography>
-                <Typography variant="h6" sx={{ color: '#FFF' }}>{`$${String(value)}`}</Typography>
+                <Typography variant="h6" sx={{ color: '#FFF' }}>${value}</Typography>
               </Paper>
             </Grid>
           ))}
         </Grid>
 
-        {/* Employer Metrics (T4 only) */}
         {preview.employerMetrics && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle2" sx={{ color: '#888', mb: 1 }}>
@@ -201,7 +204,7 @@ export default function YearEnd() {
                     <Typography variant="caption" sx={{ color: '#888' }}>
                       {key.replace(/_/g, ' ').toUpperCase()}
                     </Typography>
-                    <Typography variant="h6" sx={{ color: '#4CAF50' }}>{`$${String(value)}`}</Typography>
+                    <Typography variant="h6" sx={{ color: '#4CAF50' }}>${String(value)}</Typography>
                   </Paper>
                 </Grid>
               ))}
@@ -218,7 +221,6 @@ export default function YearEnd() {
     );
   };
 
-  // ── Main Render ──────────────────────────────────────────────────
   return (
     <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
       <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>
@@ -229,7 +231,6 @@ export default function YearEnd() {
       </Typography>
 
       <Grid container spacing={3}>
-        {/* Left Panel – Controls */}
         <Grid item xs={12} md={4}>
           <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
             <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Select Employee</Typography>
@@ -239,7 +240,7 @@ export default function YearEnd() {
               <Select
                 value={selectedEmployee || ''}
                 onChange={(e) => handleEmployeeChange(Number(e.target.value))}
-                sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                sx={darkSelectStyle}
               >
                 {employees.map((emp) => (
                   <MenuItem key={emp.id} value={emp.id}>
@@ -263,7 +264,7 @@ export default function YearEnd() {
                 <Select
                   value={selectedForm}
                   onChange={(e) => setSelectedForm(e.target.value)}
-                  sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                  sx={darkSelectStyle}
                 >
                   {availableForms.map((form) => (
                     <MenuItem key={form} value={form}>
@@ -282,7 +283,7 @@ export default function YearEnd() {
               fullWidth
               value={taxYear}
               onChange={(e) => setTaxYear(Number(e.target.value))}
-              sx={{ mb: 2, input: { color: '#FFF' }, label: { color: '#888' } }}
+              sx={{ mb: 2, ...darkInputStyle }}
             />
 
             <Stack direction="row" spacing={2}>
@@ -311,7 +312,6 @@ export default function YearEnd() {
           </Paper>
         </Grid>
 
-        {/* Right Panel – Results */}
         <Grid item xs={12} md={8}>
           <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333', minHeight: 400 }}>
             {preview ? (

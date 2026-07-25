@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+// allow usage of process.env in the browser build without TS errors
+declare const process: any;
 import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, Dialog, DialogTitle, DialogContent,
@@ -11,11 +13,10 @@ import {
   Add, Delete, CheckCircle, Send, Edit, Refresh, AttachMoney,
   TrendingUp, TrendingDown, People, Schedule, Settings,
   Download, PictureAsPdf, Description, TableChart,
-  FilePresent, Visibility, FilterList, Close,
-  PlayArrow, // Added for Run Payroll tab
+  FilePresent, Visibility, FilterList, Close, PlayArrow,
 } from '@mui/icons-material';
 
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = process.env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
 
 // ─── Types ────────────────────────────────────────────────────────
 interface Payroll {
@@ -62,7 +63,6 @@ interface CompanySettings {
   tax_rate: number;
 }
 
-// ─── Run Payroll Types ────────────────────────────────────────────
 interface EmployeeSimple {
   id: number;
   first_name: string;
@@ -162,8 +162,9 @@ export default function PayrollPage() {
       });
       const data = await res.json();
       if (data.success) {
-        setEmployees(data.users.map((u: any) => ({ id: u.id, name: `${u.first_name} ${u.last_name}` })));
-        setRunEmployees(data.users.map((u: any) => ({ id: parseInt(u.id) || 0, first_name: u.first_name, last_name: u.last_name })));
+        const users = data.users || [];
+        setEmployees(users.map((u: any) => ({ id: u.id, name: `${u.first_name} ${u.last_name}` })));
+        setRunEmployees(users.map((u: any) => ({ id: parseInt(u.id) || 0, first_name: u.first_name, last_name: u.last_name })));
       }
     } catch (e) { console.error(e); }
   };
@@ -313,6 +314,18 @@ export default function PayrollPage() {
     }
   };
 
+  // ─── Dark theme styles ──────────────────────────────────────────
+  const darkInputStyle = {
+    input: { color: '#FFF' },
+    label: { color: '#888' },
+    '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } },
+  };
+
+  const darkSelectStyle = {
+    color: '#FFF',
+    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' },
+  };
+
   // ── Tabs ────────────────────────────────────────────────────────
   const renderOverview = () => (
     <>
@@ -324,7 +337,7 @@ export default function PayrollPage() {
             <Select
               value={selectedEmployeeId}
               onChange={(e) => setSelectedEmployeeId(e.target.value)}
-              sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+              sx={darkSelectStyle}
             >
               <MenuItem value="all">All Employees</MenuItem>
               {employees.map(e => (
@@ -378,12 +391,12 @@ export default function PayrollPage() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell sx={{ color: '#FFF' }}>Period</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Employees</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Total Hours</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Gross Pay</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Status</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Actions</TableCell>
+              <TableCell sx={{ color: '#888' }}>Period</TableCell>
+              <TableCell sx={{ color: '#888' }}>Employees</TableCell>
+              <TableCell sx={{ color: '#888' }}>Total Hours</TableCell>
+              <TableCell sx={{ color: '#888' }}>Gross Pay</TableCell>
+              <TableCell sx={{ color: '#888' }}>Status</TableCell>
+              <TableCell sx={{ color: '#888' }}>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -444,7 +457,7 @@ export default function PayrollPage() {
             value={periodStart}
             onChange={(e) => setPeriodStart(e.target.value)}
             InputLabelProps={{ shrink: true }}
-            sx={{ mt: 2, input: { color: '#FFF' }, label: { color: '#888' } }}
+            sx={{ mt: 2, ...darkInputStyle }}
           />
           <TextField
             label="Period End"
@@ -453,7 +466,7 @@ export default function PayrollPage() {
             value={periodEnd}
             onChange={(e) => setPeriodEnd(e.target.value)}
             InputLabelProps={{ shrink: true }}
-            sx={{ mt: 2, input: { color: '#FFF' }, label: { color: '#888' } }}
+            sx={{ mt: 2, ...darkInputStyle }}
           />
           <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 3, mb: 2 }}>Employee Rates (edit to override)</Typography>
           <TableContainer component={Paper} sx={{ bgcolor: '#0A0A0A', border: '1px solid #333', maxHeight: 300 }}>
@@ -517,25 +530,25 @@ export default function PayrollPage() {
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={3}>
                     <Typography variant="body2" sx={{ color: '#888' }}>Period</Typography>
-                    <Typography variant="body1" sx={{ color: '#FFF', fontWeight: 'bold' }}>
+                    <Typography variant="body1" sx={{ color: '#FFF' }}>
                       {selectedPayroll.period_start} → {selectedPayroll.period_end}
                     </Typography>
                   </Grid>
                   <Grid item xs={12} md={3}>
                     <Typography variant="body2" sx={{ color: '#888' }}>Employees</Typography>
-                    <Typography variant="body1" sx={{ color: '#FFF', fontWeight: 'bold' }}>
+                    <Typography variant="body1" sx={{ color: '#FFF' }}>
                       {Number(selectedPayroll.employee_count) || 0}
                     </Typography>
                   </Grid>
                   <Grid item xs={12} md={3}>
                     <Typography variant="body2" sx={{ color: '#888' }}>Total Hours</Typography>
-                    <Typography variant="body1" sx={{ color: '#FFF', fontWeight: 'bold' }}>
+                    <Typography variant="body1" sx={{ color: '#FFF' }}>
                       {Number(selectedPayroll.total_hours).toFixed(2)}h
                     </Typography>
                   </Grid>
                   <Grid item xs={12} md={3}>
                     <Typography variant="body2" sx={{ color: '#888' }}>Total Gross</Typography>
-                    <Typography variant="body1" sx={{ color: '#FFF', fontWeight: 'bold' }}>
+                    <Typography variant="body1" sx={{ color: '#FFF' }}>
                       ${Number(selectedPayroll.total_pay).toFixed(2)}
                     </Typography>
                   </Grid>
@@ -559,7 +572,7 @@ export default function PayrollPage() {
                       <TableCell sx={{ color: '#888' }}>Employee</TableCell>
                       <TableCell sx={{ color: '#888' }} align="right">Hours</TableCell>
                       <TableCell sx={{ color: '#888' }} align="right">Rate</TableCell>
-                      <TableCell sx={{ color: '#888' }} align="right">Gross Pay</TableCell>
+                      <TableCell sx={{ color: '#888' }} align="right">Gross</TableCell>
                       <TableCell sx={{ color: '#888' }} align="right">Adjustments</TableCell>
                       <TableCell sx={{ color: '#888' }} align="right">CPP</TableCell>
                       <TableCell sx={{ color: '#888' }} align="right">EI</TableCell>
@@ -621,7 +634,7 @@ export default function PayrollPage() {
               <Select
                 value={raiseType}
                 onChange={(e) => setRaiseType(e.target.value as 'percentage' | 'fixed')}
-                sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                sx={darkSelectStyle}
               >
                 <MenuItem value="percentage">Percentage</MenuItem>
                 <MenuItem value="fixed">Fixed ($)</MenuItem>
@@ -636,7 +649,7 @@ export default function PayrollPage() {
               onChange={(e) => setRaiseValue(Number(e.target.value))}
               size="small"
               fullWidth
-              sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+              sx={darkInputStyle}
             />
           </Grid>
           <Grid item xs={12} md={3}>
@@ -648,7 +661,7 @@ export default function PayrollPage() {
               size="small"
               fullWidth
               InputLabelProps={{ shrink: true }}
-              sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+              sx={darkInputStyle}
             />
           </Grid>
           <Grid item xs={12} md={3}>
@@ -670,10 +683,10 @@ export default function PayrollPage() {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ color: '#FFF' }}>Select</TableCell>
-                <TableCell sx={{ color: '#FFF' }}>Employee</TableCell>
-                <TableCell sx={{ color: '#FFF' }}>Current Rate</TableCell>
-                <TableCell sx={{ color: '#FFF' }}>History</TableCell>
+                <TableCell sx={{ color: '#888' }}>Select</TableCell>
+                <TableCell sx={{ color: '#888' }}>Employee</TableCell>
+                <TableCell sx={{ color: '#888' }}>Current Rate</TableCell>
+                <TableCell sx={{ color: '#888' }}>History</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -721,7 +734,7 @@ export default function PayrollPage() {
                 <Select
                   value={settings.payroll_schedule || ''}
                   onChange={(e) => setSettings({ ...settings, payroll_schedule: e.target.value as any })}
-                  sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                  sx={darkSelectStyle}
                 >
                   <MenuItem value="weekly">Weekly</MenuItem>
                   <MenuItem value="biweekly">Bi‑Weekly</MenuItem>
@@ -737,7 +750,7 @@ export default function PayrollPage() {
                 value={settings.payroll_day}
                 onChange={(e) => setSettings({ ...settings, payroll_day: Number(e.target.value) })}
                 fullWidth
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                sx={darkInputStyle}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -748,7 +761,7 @@ export default function PayrollPage() {
                 onChange={(e) => setSettings({ ...settings, payroll_time: e.target.value })}
                 fullWidth
                 InputLabelProps={{ shrink: true }}
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                sx={darkInputStyle}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -758,7 +771,7 @@ export default function PayrollPage() {
                 value={settings.default_hourly_rate}
                 onChange={(e) => setSettings({ ...settings, default_hourly_rate: Number(e.target.value) })}
                 fullWidth
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                sx={darkInputStyle}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -768,7 +781,7 @@ export default function PayrollPage() {
                 value={settings.overtime_multiplier}
                 onChange={(e) => setSettings({ ...settings, overtime_multiplier: Number(e.target.value) })}
                 fullWidth
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                sx={darkInputStyle}
               />
             </Grid>
             <Grid item xs={12} md={6}>
@@ -778,7 +791,7 @@ export default function PayrollPage() {
                 value={settings.tax_rate}
                 onChange={(e) => setSettings({ ...settings, tax_rate: Number(e.target.value) })}
                 fullWidth
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                sx={darkInputStyle}
               />
             </Grid>
           </Grid>
@@ -797,7 +810,7 @@ export default function PayrollPage() {
   const renderWhatIf = () => (
     <Box>
       <Typography variant="h5" sx={{ color: '#FFF', mb: 2 }}>What‑If Scenario Planner</Typography>
-      <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>Simulate the impact of raises or hiring on your total payroll cost.</Typography>
+      <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>Simulate the impact of raises or hiring on total payroll cost.</Typography>
       <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333', mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={4}>
@@ -806,7 +819,7 @@ export default function PayrollPage() {
               <Select
                 value={scenarioType}
                 onChange={(e) => setScenarioType(e.target.value as any)}
-                sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                sx={darkSelectStyle}
               >
                 <MenuItem value="raise_percent">Percentage Raise</MenuItem>
                 <MenuItem value="raise_fixed">Fixed Raise ($)</MenuItem>
@@ -822,7 +835,7 @@ export default function PayrollPage() {
               onChange={(e) => setScenarioValue(Number(e.target.value))}
               size="small"
               fullWidth
-              sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+              sx={darkInputStyle}
             />
           </Grid>
           <Grid item xs={12} md={5}>
@@ -878,7 +891,7 @@ export default function PayrollPage() {
                 <Select
                   value={runEmployeeId}
                   onChange={(e) => setRunEmployeeId(Number(e.target.value))}
-                  sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                  sx={darkSelectStyle}
                 >
                   {runEmployees.map((emp) => (
                     <MenuItem key={emp.id} value={emp.id}>
@@ -893,7 +906,7 @@ export default function PayrollPage() {
                 fullWidth
                 value={runGrossPay}
                 onChange={(e) => setRunGrossPay(Number(e.target.value))}
-                sx={{ mb: 2, input: { color: '#FFF' }, label: { color: '#888' } }}
+                sx={{ mb: 2, ...darkInputStyle }}
               />
               <TextField
                 label="Tax Year"
@@ -901,7 +914,7 @@ export default function PayrollPage() {
                 fullWidth
                 value={runTaxYear}
                 onChange={(e) => setRunTaxYear(Number(e.target.value))}
-                sx={{ mb: 3, input: { color: '#FFF' }, label: { color: '#888' } }}
+                sx={{ mb: 3, ...darkInputStyle }}
               />
               <Button
                 type="submit"
