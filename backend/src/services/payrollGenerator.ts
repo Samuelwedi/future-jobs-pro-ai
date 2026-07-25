@@ -13,9 +13,9 @@ interface EmployeeRateOverride {
 }
 
 // ─── Canadian Payroll Deduction Rates (2024) ────────────────────
-const CPP_RATE = 0.0595;
-const EI_RATE = 0.0163;
-const FEDERAL_TAX_RATE = 0.15;
+const CPP_RATE = 0.0595;   // 5.95%
+const EI_RATE = 0.0163;    // 1.63%
+const FEDERAL_TAX_RATE = 0.15; // 15% flat for simplicity
 
 export async function generatePayroll(
   companyId: string,
@@ -97,27 +97,26 @@ export async function generatePayroll(
     );
     const payrollId = payrollResult.rows[0].id;
 
-    // Insert each employee's payroll item – omit generated columns
+    // ─── Insert payroll items – omit generated columns ───
     for (const [employeeId, data] of userMap) {
-      // Calculate deductions
       const grossPay = data.pay;
       const cpp = grossPay * CPP_RATE;
       const ei = grossPay * EI_RATE;
       const tax = grossPay * FEDERAL_TAX_RATE;
-      const netPay = grossPay - cpp - ei - tax;
+      const totalDeductions = cpp + ei + tax;
+      const adjustments = -totalDeductions; // negative, so final_pay = pay + adjustments = net
 
       await client.query(
         `INSERT INTO payroll_items
-         (payroll_id, employee_id, hours, hourly_rate, adjustments, final_pay,
+         (payroll_id, employee_id, hours, hourly_rate, adjustments,
           cpp_deduction, ei_deduction, tax_deduction, timesheet_ids)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           payrollId,
           employeeId,
           data.hours,
           data.rate,
-          0, // adjustments default 0
-          netPay,
+          adjustments,
           cpp,
           ei,
           tax,
