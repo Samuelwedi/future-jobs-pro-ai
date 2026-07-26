@@ -23,20 +23,25 @@ router.get('/company', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     
     const decoded = verifyToken(req);
-
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
-    const companyId = userRes.rows[0]?.company_id;
-    if (!companyId) return res.json({ success: true, users: [] });
+    if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
+    
+    const companyId = userRes.rows[0].company_id;
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
+    // ✅ Return all employees (excluding bosses/managers if you wish)
     const result = await pool.query(
-      `SELECT id, email, role, full_name, first_name, last_name, profile_pic,
-              sin, date_of_birth
-       FROM users WHERE company_id = $1`,
+      `SELECT id, first_name, last_name, email, employment_type, province, role
+       FROM users
+       WHERE company_id = $1
+         AND role NOT IN ('boss', 'manager')   -- optional: include all roles
+       ORDER BY first_name`,
       [companyId]
     );
     res.json({ success: true, users: result.rows });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+  } catch (error) {
+    console.error('Error fetching company users:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 

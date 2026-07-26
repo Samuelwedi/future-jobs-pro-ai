@@ -2,6 +2,7 @@ const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
 
+// Load .env from the backend root
 const envPath = path.join(__dirname, '..', '.env');
 if (fs.existsSync(envPath)) require('dotenv').config({ path: envPath });
 

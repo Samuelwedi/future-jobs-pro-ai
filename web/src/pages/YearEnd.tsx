@@ -8,10 +8,7 @@ import {
   Receipt, Save, Visibility,
 } from '@mui/icons-material';
 
-// Declare process for environments where Node types are not available
-declare const process: any;
-
-const API_BASE = process.env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = ((import.meta as any).env.VITE_API_BASE as string) || 'https://future-jobs-pro-ai-production.up.railway.app';
 
 interface Employee {
   id: number;
@@ -61,6 +58,7 @@ export default function YearEnd() {
         });
         const data = await res.json();
         if (data.success) {
+          // Ensure we map all users, not just Lucy
           setEmployees(data.users.map((u: any) => ({
             id: parseInt(u.id) || 0,
             first_name: u.first_name,
@@ -168,6 +166,9 @@ export default function YearEnd() {
       box22_income_tax_withheld: 'Box 22 – Income Tax',
       box24_insurable_earnings: 'Box 24 – EI Insurable Earnings',
       box26_pensionable_earnings: 'Box 26 – CPP Pensionable Earnings',
+      box44_union_dues: 'Box 44 – Union Dues',
+      box46_charitable_donations: 'Box 46 – Charitable Donations',
+      box52_pension_adjustment: 'Box 52 – Pension Adjustment',
       box020_self_employed_fees: 'Box 020 – Self‑Employed Fees',
       box022_income_tax_withheld: 'Box 022 – Income Tax Withheld',
       box_a_employment_income: 'Box A – Employment Income',
@@ -293,8 +294,14 @@ export default function YearEnd() {
                 variant="contained"
                 startIcon={<Visibility />}
                 onClick={handlePreview}
-                disabled={!selectedEmployee || loading}
-                sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', flex: 1 }}
+                disabled={!selectedEmployee || selectedEmployee <= 0 || loading}
+                sx={{
+                  backgroundColor: '#FFFFFF',
+                  color: '#000000',
+                  border: '2px solid #333333',
+                  '&:hover': { backgroundColor: '#F0F0F0' },
+                  flex: 1
+                }}
               >
                 Preview
               </Button>
@@ -303,7 +310,13 @@ export default function YearEnd() {
                 startIcon={<Save />}
                 onClick={handleSave}
                 disabled={!preview || saved || loading}
-                sx={{ bgcolor: '#4CAF50', color: '#FFF', flex: 1 }}
+                sx={{
+                  backgroundColor: '#FFFFFF',
+                  color: '#000000',
+                  border: '2px solid #333333',
+                  '&:hover': { backgroundColor: '#F0F0F0' },
+                  flex: 1
+                }}
               >
                 Finalize
               </Button>
