@@ -36,12 +36,13 @@ import Estimates from './pages/Estimates';
 import EmployeePortal from './pages/EmployeePortal';
 import YearEnd from './pages/YearEnd';
 import DirectDeposit from './pages/DirectDeposit';
-
+import MediaFolders from './pages/MediaFolders';
 
 export default function App() {
   return (
     <Router>
       <Routes>
+        <Route path="/media" element={<MediaFolders />} />
         <Route path="/direct-deposit" element={<DirectDeposit />} />
         <Route path="/year-end" element={<YearEnd />} />
         <Route path="/employee-portal" element={<EmployeePortal />} />
