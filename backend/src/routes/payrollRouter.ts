@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
 import { generatePayroll } from '../services/payrollGenerator';
-import { generatePayStubs } from '../services/payStubGenerator';
+import { generatePayStubPDFBuffer } from '../services/pdfService';
 
 const router = express.Router();
 
@@ -80,61 +80,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Payroll not found' });
     }
-    const updatedPayroll = result.rows[0];
-
-    // ─── Auto-generate pay stubs when approved or paid ────────
-    if (status === 'approved' || status === 'paid') {
-      try {
-        const payStubs = await generatePayStubs(Array.isArray(id) ? id[0] : id, true); // send emails
-        console.log(`✅ Generated ${payStubs.length} pay stubs for payroll ${id}`);
-      } catch (genErr) {
-        console.error('Error generating pay stubs:', genErr);
-        // Don't block the update
-      }
-    }
-
-    res.json({ success: true, payroll: updatedPayroll });
+    res.json({ success: true, payroll: result.rows[0] });
   } catch (error) {
     console.error('Error updating payroll:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-});
-
-router.get('/paystub/:itemId', async (req: Request, res: Response) => {
-  try {
-    const { itemId } = req.params;
-    // Fetch payroll item with employee details
-    const result = await pool.query(
-      `SELECT pi.*, u.first_name, u.last_name, u.email
-       FROM payroll_items pi
-       JOIN users u ON pi.employee_id = u.id
-       WHERE pi.id = $1`,
-      [itemId]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Payroll item not found' });
-    const item = result.rows[0];
-    // Generate PDF pay stub for this single employee
-    const pdfBuffer = await generatePayStubs(item);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=paystub_${item.id}.pdf`);
-    res.send(pdfBuffer);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/:id/generate-paystubs', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { id } = req.params;
-    const { sendEmail } = req.body; // optional, default true
-    const payStubs = await generatePayStubs(Array.isArray(id) ? id[0] : id, sendEmail !== false);
-    res.json({ success: true, count: payStubs.length, payStubs });
-  } catch (error: any) {
-    console.error('Error generating pay stubs:', error);
-    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -238,7 +187,7 @@ router.get('/employees/compensation', async (req: Request, res: Response) => {
   }
 });
 
-// ─── POST /api/payroll/employees/compensation (one‑click raise) ──
+// ─── POST /api/payroll/employees/compensation ────────────────
 router.post('/employees/compensation', async (req: Request, res: Response) => {
   const client = await pool.connect();
   try {
@@ -261,7 +210,7 @@ router.post('/employees/compensation', async (req: Request, res: Response) => {
         `SELECT hourly_rate FROM compensation_history WHERE user_id = $1 AND effective_date <= $2 ORDER BY effective_date DESC LIMIT 1`,
         [empId, effective]
       );
-      let currentRate = currentRes.rows[0]?.hourly_rate || 20.0;
+      let currentRate = currentRes.rows[0]?.hourly_rate || 0;
 
       let newRate = currentRate;
       if (raiseType === 'percentage') {
@@ -327,7 +276,7 @@ router.post('/what-if', async (req: Request, res: Response) => {
         `SELECT hourly_rate FROM compensation_history WHERE user_id = $1 AND effective_date <= CURRENT_DATE ORDER BY effective_date DESC LIMIT 1`,
         [emp.id]
       );
-      currentRates[emp.id] = rateRes.rows[0]?.hourly_rate || 20.0;
+      currentRates[emp.id] = rateRes.rows[0]?.hourly_rate || 0;
     }
 
     const currentTotal = Object.values(currentRates).reduce((sum, rate) => sum + rate * 40, 0);
@@ -343,7 +292,7 @@ router.post('/what-if', async (req: Request, res: Response) => {
       newTotal = currentTotal + additional;
       explanation = `$${scenarioValue.toFixed(2)}/hr raise applied to ${employeeList.length} employees`;
     } else if (scenarioType === 'hire_count') {
-      const avgRate = Object.values(currentRates).reduce((a, b) => a + b, 0) / Object.values(currentRates).length || 20;
+      const avgRate = Object.values(currentRates).reduce((a, b) => a + b, 0) / Object.values(currentRates).length || 0;
       const hireCost = avgRate * 40 * scenarioValue;
       newTotal = currentTotal + hireCost;
       explanation = `Hiring ${scenarioValue} new employee(s) at average rate of $${avgRate.toFixed(2)}/hr`;
@@ -396,15 +345,60 @@ router.post('/employees/rate', async (req: Request, res: Response) => {
   }
 });
 
+// ─── GET /api/payroll/paystub/:itemId ──────────────────────────
+// Export a single pay stub PDF for a payroll item
+router.get('/paystub/:itemId', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { itemId } = req.params;
+    const result = await pool.query(
+      `SELECT pi.*, u.first_name, u.last_name, u.email,
+              p.period_start, p.period_end
+       FROM payroll_items pi
+       JOIN users u ON pi.employee_id = u.id
+       JOIN payrolls p ON pi.payroll_id = p.id
+       WHERE pi.id = $1 AND u.company_id = $2`,
+      [itemId, companyId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Payroll item not found' });
+    }
+    const item = result.rows[0];
+
+    const data = {
+      employeeName: `${item.first_name} ${item.last_name}`,
+      employeeEmail: item.email || 'no-email@example.com',
+      periodStart: item.period_start || 'N/A',
+      periodEnd: item.period_end || 'N/A',
+      hours: Number(item.hours) || 0,
+      rate: Number(item.hourly_rate) || 0,
+      pay: Number(item.pay) || 0,
+      adjustments: Number(item.adjustments) || 0,
+      finalPay: Number(item.final_pay) || 0,
+      companyName: 'Future Jobs Pro AI',
+    };
+
+    const pdfBuffer = await generatePayStubPDFBuffer(data);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=paystub_${itemId}.pdf`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Pay stub export error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ─── GET /api/payroll/:id ──────────────────────────────────────
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (Array.isArray(id) || !uuidRegex.test(id)) {
+    if (!uuidRegex.test(id)) {
       return res.status(400).json({ success: false, message: 'Invalid payroll ID format' });
     }
 

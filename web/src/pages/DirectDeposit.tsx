@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from 'react';
-// declare minimal process.env shape so TypeScript doesn't error in the browser build
-declare const process: { env?: { REACT_APP_API_BASE?: string } };
 import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, CircularProgress, Stack, Alert, TextField,
@@ -9,7 +7,9 @@ import {
 } from '@mui/material';
 import { Download, Edit, Save, Cancel } from '@mui/icons-material';
 
-const API_BASE = process.env?.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
+declare const process: { env: { REACT_APP_API_BASE?: string } };
+
+const API_BASE = (typeof process !== 'undefined' ? process.env.REACT_APP_API_BASE : undefined) || 'https://future-jobs-pro-ai-production.up.railway.app';
 
 interface EmployeeBank {
   id: string;

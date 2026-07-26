@@ -13,9 +13,9 @@ interface EmployeeRateOverride {
 }
 
 // ─── Canadian Payroll Deduction Rates (2024) ────────────────────
-const CPP_RATE = 0.0595;   // 5.95%
-const EI_RATE = 0.0163;    // 1.63%
-const FEDERAL_TAX_RATE = 0.15; // 15% flat for simplicity
+const CPP_RATE = 0.0595;
+const EI_RATE = 0.0163;
+const FEDERAL_TAX_RATE = 0.15;
 
 export async function generatePayroll(
   companyId: string,
@@ -58,8 +58,8 @@ export async function generatePayroll(
            ORDER BY effective_date DESC LIMIT 1`,
           [empId]
         );
-        const rate = rateRes.rows[0]?.hourly_rate || 20.0;
-        latestRates.set(empId, rate);
+        const rate = rateRes.rows[0]?.hourly_rate || 0;
+        latestRates.set(empId, Number(rate));
       }
     }
 
@@ -73,7 +73,7 @@ export async function generatePayroll(
     for (const row of timeEntries.rows) {
       const userId = row.user_id;
       if (!userMap.has(userId)) {
-        const rate = latestRates.get(userId) || 20.0;
+        const rate = latestRates.get(userId) || 0;
         userMap.set(userId, { hours: 0, pay: 0, rate, timeEntryIds: [] });
       }
       const data = userMap.get(userId)!;
@@ -97,20 +97,20 @@ export async function generatePayroll(
     );
     const payrollId = payrollResult.rows[0].id;
 
-    // ─── Insert payroll items – omit generated columns ───
     for (const [employeeId, data] of userMap) {
       const grossPay = data.pay;
       const cpp = grossPay * CPP_RATE;
       const ei = grossPay * EI_RATE;
       const tax = grossPay * FEDERAL_TAX_RATE;
       const totalDeductions = cpp + ei + tax;
-      const adjustments = -totalDeductions; // negative, so final_pay = pay + adjustments = net
+      const adjustments = -totalDeductions;
 
       await client.query(
         `INSERT INTO payroll_items
          (payroll_id, employee_id, hours, hourly_rate, adjustments,
-          cpp_deduction, ei_deduction, tax_deduction, timesheet_ids)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          cpp_deduction, ei_deduction, tax_deduction, timesheet_ids,
+          vacation_hours, banked_hours)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [
           payrollId,
           employeeId,
@@ -121,6 +121,8 @@ export async function generatePayroll(
           ei,
           tax,
           data.timeEntryIds,
+          0, // vacation_hours placeholder
+          0, // banked_hours placeholder
         ]
       );
     }

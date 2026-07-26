@@ -13,10 +13,6 @@ interface NachaOptions {
   items: NachaItem[];
 }
 
-/**
- * Generate a NACHA file (standard ACH format) for direct deposit.
- * This is a simplified version – you may need to adjust for your bank's requirements.
- */
 export function generateNachaFile(options: NachaOptions): string {
   const { companyName, companyId, effectiveDate, items } = options;
 
@@ -35,15 +31,24 @@ export function generateNachaFile(options: NachaOptions): string {
   let totalAmount = 0;
   let entryCount = 0;
   for (const item of items) {
-    const routing = item.routingNumber.padStart(9, '0');
-    const account = item.accountNumber.padStart(17, ' ');
+    // ✅ SAFETY: If routing or account missing, skip this employee
+    if (!item.routingNumber || !item.accountNumber || item.amount <= 0) {
+      console.warn(`Skipping employee ${item.employeeName} – missing bank details or amount.`);
+      continue;
+    }
+    const routing = item.routingNumber.padStart(9, '0').slice(0, 9);
+    const account = item.accountNumber.padStart(17, ' ').slice(0, 17);
     const amount = Math.round(item.amount * 100).toString().padStart(10, '0');
     const name = item.employeeName.substring(0, 16).padEnd(22);
-    const transactionCode = item.accountType === 'savings' ? '22' : '22'; // 22 = checking credit, 32 = savings credit
+    const transactionCode = '22'; // 22 = checking credit (PPD)
     const entry = `6 ${routing} ${account} ${amount} ${name} ${' '.repeat(8)} ${' '.repeat(15)} ${' '.repeat(3)} `;
     nacha += entry + '\n';
     totalAmount += item.amount;
     entryCount++;
+  }
+
+  if (entryCount === 0) {
+    throw new Error('No valid employees with bank details found.');
   }
 
   // ─── Batch Control Record (8) ───

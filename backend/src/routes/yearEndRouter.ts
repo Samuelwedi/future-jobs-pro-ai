@@ -48,10 +48,15 @@ router.get('/employee/:employeeId/forms', async (req: Request, res: Response) =>
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const { employeeId } = req.params;
+    const employeeIdStr = Array.isArray(employeeId) ? employeeId[0] : employeeId;
+    const employeeIdNum = parseInt(employeeIdStr);
+    if (!employeeIdStr || !employeeIdNum || employeeIdNum <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid employee ID' });
+    }
     const result = await pool.query(
       `SELECT id, first_name, last_name, employment_type, province
        FROM employees WHERE id = $1 AND company_id = $2`,
-      [employeeId, companyId]
+      [employeeIdNum, companyId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Employee not found' });

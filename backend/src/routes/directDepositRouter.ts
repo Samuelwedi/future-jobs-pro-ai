@@ -128,6 +128,18 @@ router.post('/generate', async (req: Request, res: Response) => {
       })),
     });
 
+    const validItems = items.rows
+  .filter((row: any) => row.bank_routing_number && row.bank_account_number && Number(row.final_pay) > 0)
+  .map((row: any) => ({
+    employeeName: `${row.first_name} ${row.last_name}`,
+    routingNumber: row.bank_routing_number,
+    accountNumber: row.bank_account_number,
+    accountType: row.bank_account_type || 'checking',
+    amount: Number(row.final_pay) || 0,
+  }));
+    if (validItems.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid employees with bank details and positive pay found' });
+    }
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Content-Disposition', `attachment; filename=nacha_payroll_${payrollId}.txt`);
     res.send(nachaContent);

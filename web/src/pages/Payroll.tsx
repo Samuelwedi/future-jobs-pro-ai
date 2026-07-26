@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
+// declare process for environments where Node types are not available to TypeScript
+declare const process: any;
 import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, Dialog, DialogTitle, DialogContent,
   TextField, Chip, IconButton, CircularProgress, Stack, Tabs, Tab,
   Alert, Grid, Card, CardContent, Select, MenuItem, FormControl, InputLabel,
   Switch, FormControlLabel, Divider, InputAdornment,
-  Menu, ListItemIcon, ListItemText, Checkbox,
+  Menu, ListItemIcon, ListItemText, Checkbox, ListItemText as MuiListItemText,
 } from '@mui/material';
 import {
   Add, Delete, CheckCircle, Send, Edit, Refresh, AttachMoney,
@@ -14,7 +16,7 @@ import {
   FilePresent, Visibility, FilterList, Close, PlayArrow,
 } from '@mui/icons-material';
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = process.env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
 
 // ─── Types ────────────────────────────────────────────────────────
 interface Payroll {
@@ -208,7 +210,6 @@ export default function PayrollPage() {
       return;
     }
 
-    // Build employeeRates from selected employees or all
     const targetEmployees = selectedEmployeeIds.length > 0
       ? employees.filter(e => selectedEmployeeIds.includes(e.id))
       : employees;
@@ -517,7 +518,7 @@ export default function PayrollPage() {
               {employees.map((emp) => (
                 <MenuItem key={emp.id} value={emp.id}>
                   <Checkbox checked={selectedEmployeeIds.indexOf(emp.id) > -1} />
-                  <ListItemText primary={emp.name} />
+                  <MuiListItemText primary={emp.name} />
                 </MenuItem>
               ))}
             </Select>
