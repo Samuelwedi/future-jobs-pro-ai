@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
-// allow usage of process.env in the browser build without TS errors
-declare const process: any;
 import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, Dialog, DialogTitle, DialogContent,
   TextField, Chip, IconButton, CircularProgress, Stack, Tabs, Tab,
   Alert, Grid, Card, CardContent, Select, MenuItem, FormControl, InputLabel,
   Switch, FormControlLabel, Divider, InputAdornment,
-  Menu, ListItemIcon, ListItemText,
+  Menu, ListItemIcon, ListItemText, Checkbox,
 } from '@mui/material';
 import {
   Add, Delete, CheckCircle, Send, Edit, Refresh, AttachMoney,
@@ -16,7 +14,7 @@ import {
   FilePresent, Visibility, FilterList, Close, PlayArrow,
 } from '@mui/icons-material';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
 
 // ─── Types ────────────────────────────────────────────────────────
 interface Payroll {
@@ -44,6 +42,8 @@ interface PayrollItem {
   cpp_deduction: number | string;
   ei_deduction: number | string;
   tax_deduction: number | string;
+  vacation_hours: number | string;
+  banked_hours: number | string;
 }
 
 interface EmployeeCompensation {
@@ -94,6 +94,7 @@ export default function PayrollPage() {
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
   const [employeeRateOverrides, setEmployeeRateOverrides] = useState<Record<string, number | null>>({});
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
 
   const [employees, setEmployees] = useState<{ id: string; name: string }[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('all');
@@ -207,17 +208,27 @@ export default function PayrollPage() {
       return;
     }
 
-    const employeeRates = employees
+    // Build employeeRates from selected employees or all
+    const targetEmployees = selectedEmployeeIds.length > 0
+      ? employees.filter(e => selectedEmployeeIds.includes(e.id))
+      : employees;
+
+    const employeeRates = targetEmployees
       .map(emp => {
         const override = employeeRateOverrides[emp.id];
         if (override !== null && override !== undefined && override > 0) {
           return { employeeId: emp.id, hourlyRate: override };
         }
         const comp = compEmployees.find(c => c.id === emp.id);
-        const currentRate = comp?.current_rate || 20;
+        const currentRate = comp?.current_rate || 0;
         return { employeeId: emp.id, hourlyRate: Number(currentRate) };
       })
       .filter(r => r.hourlyRate > 0);
+
+    if (employeeRates.length === 0) {
+      alert('No employees selected with valid rates.');
+      return;
+    }
 
     try {
       const res = await fetch(`${API_BASE}/api/payroll/generate`, {
@@ -230,6 +241,7 @@ export default function PayrollPage() {
         alert(`✅ ${data.message}`);
         setDialogOpen(false);
         setEmployeeRateOverrides({});
+        setSelectedEmployeeIds([]);
         fetchPayrolls();
       } else {
         alert(data.message || 'Generation failed');
@@ -278,6 +290,23 @@ export default function PayrollPage() {
       alert('Export failed. Please try again.');
     }
     setExportAnchorEl(null);
+  };
+
+  const handleExportPayStub = async (itemId: string, employeeName: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/payroll/paystub/${itemId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Pay stub generation failed');
+      const blob = await res.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `paystub_${employeeName.replace(/\s/g, '_')}.pdf`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (e) {
+      alert('Could not download pay stub');
+    }
   };
 
   const getStatusChip = (status: string) => {
@@ -468,19 +497,46 @@ export default function PayrollPage() {
             InputLabelProps={{ shrink: true }}
             sx={{ mt: 2, ...darkInputStyle }}
           />
-          <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 3, mb: 2 }}>Employee Rates (edit to override)</Typography>
+          <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 3, mb: 2 }}>Select Employees</Typography>
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel sx={{ color: '#888' }}>Employees</InputLabel>
+            <Select
+              multiple
+              value={selectedEmployeeIds}
+              onChange={(e) => setSelectedEmployeeIds(e.target.value as string[])}
+              renderValue={(selected) => (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  {selected.map((id) => {
+                    const emp = employees.find(e => e.id === id);
+                    return <Chip key={id} label={emp?.name || id} size="small" />;
+                  })}
+                </Box>
+              )}
+              sx={darkSelectStyle}
+            >
+              {employees.map((emp) => (
+                <MenuItem key={emp.id} value={emp.id}>
+                  <Checkbox checked={selectedEmployeeIds.indexOf(emp.id) > -1} />
+                  <ListItemText primary={emp.name} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 2, mb: 2 }}>Employee Rates (0 = use default)</Typography>
           <TableContainer component={Paper} sx={{ bgcolor: '#0A0A0A', border: '1px solid #333', maxHeight: 300 }}>
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ color: '#888' }}>Employee</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Rate Used</TableCell>
+                  <TableCell sx={{ color: '#888' }}>Rate Override</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {employees.map((emp) => {
+                {(selectedEmployeeIds.length > 0 ? employees.filter(e => selectedEmployeeIds.includes(e.id)) : employees).map((emp) => {
                   const comp = compEmployees.find(c => c.id === emp.id);
-                  const currentRate = comp?.current_rate || 20;
+                  const currentRate = comp?.current_rate || 0;
+                  const override = employeeRateOverrides[emp.id];
                   return (
                     <TableRow key={emp.id} sx={{ borderBottom: '1px solid #333' }}>
                       <TableCell sx={{ color: '#FFF' }}>{emp.name}</TableCell>
@@ -488,11 +544,12 @@ export default function PayrollPage() {
                         <TextField
                           type="number"
                           size="small"
-                          value={employeeRateOverrides[emp.id] ?? Number(currentRate)}
+                          value={override !== undefined && override !== null ? override : ''}
                           onChange={(e) => {
                             const val = e.target.value ? Number(e.target.value) : null;
                             setEmployeeRateOverrides(prev => ({ ...prev, [emp.id]: val }));
                           }}
+                          placeholder="Override"
                           sx={{ input: { color: '#FFF' }, width: 140 }}
                           InputProps={{
                             endAdornment: <InputAdornment position="end" sx={{ color: '#888' }}>/hr</InputAdornment>,
@@ -514,6 +571,7 @@ export default function PayrollPage() {
         </DialogContent>
       </Dialog>
 
+      {/* DETAIL DIALOG with Pay Stub Export */}
       <Dialog open={detailDialogOpen} onClose={() => setDetailDialogOpen(false)} maxWidth="lg" fullWidth scroll="paper">
         <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -564,6 +622,7 @@ export default function PayrollPage() {
                   )}
                 </Grid>
               </Paper>
+
               <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Employee Breakdown</Typography>
               <TableContainer component={Paper} sx={{ bgcolor: '#1A1A1A', border: '1px solid #333' }}>
                 <Table size="small">
@@ -578,6 +637,9 @@ export default function PayrollPage() {
                       <TableCell sx={{ color: '#888' }} align="right">EI</TableCell>
                       <TableCell sx={{ color: '#888' }} align="right">Tax</TableCell>
                       <TableCell sx={{ color: '#888' }} align="right">Net Pay</TableCell>
+                      <TableCell sx={{ color: '#888' }} align="right">Vacation</TableCell>
+                      <TableCell sx={{ color: '#888' }} align="right">Banked Hours</TableCell>
+                      <TableCell sx={{ color: '#888' }} align="right">Pay Stub</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -590,6 +652,8 @@ export default function PayrollPage() {
                       const ei = Number(item.ei_deduction) || 0;
                       const tax = Number(item.tax_deduction) || 0;
                       const netPay = Number(item.final_pay) || 0;
+                      const vacation = Number(item.vacation_hours) || 0;
+                      const banked = Number(item.banked_hours) || 0;
                       return (
                         <TableRow key={item.id} sx={{ borderBottom: '1px solid #333' }}>
                           <TableCell sx={{ color: '#FFF' }}>{item.employee_name || 'Unknown'}</TableCell>
@@ -601,12 +665,24 @@ export default function PayrollPage() {
                           <TableCell sx={{ color: '#FFF' }} align="right">${ei.toFixed(2)}</TableCell>
                           <TableCell sx={{ color: '#FFF' }} align="right">${tax.toFixed(2)}</TableCell>
                           <TableCell sx={{ color: '#00D4FF' }} align="right">${netPay.toFixed(2)}</TableCell>
+                          <TableCell sx={{ color: '#FFF' }} align="right">{vacation.toFixed(2)}</TableCell>
+                          <TableCell sx={{ color: '#FFF' }} align="right">{banked.toFixed(2)}</TableCell>
+                          <TableCell>
+                            <Button
+                              size="small"
+                              startIcon={<PictureAsPdf />}
+                              onClick={() => handleExportPayStub(item.id, item.employee_name || 'Employee')}
+                              sx={{ color: '#00D4FF' }}
+                            >
+                              PDF
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       );
                     })}
                     {payrollItems.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={9} sx={{ color: '#888', textAlign: 'center', py: 3 }}>No employees in this payroll.</TableCell>
+                        <TableCell colSpan={12} sx={{ color: '#888', textAlign: 'center', py: 3 }}>No employees in this payroll.</TableCell>
                       </TableRow>
                     )}
                   </TableBody>

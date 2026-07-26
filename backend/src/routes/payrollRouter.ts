@@ -100,6 +100,29 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/paystub/:itemId', async (req: Request, res: Response) => {
+  try {
+    const { itemId } = req.params;
+    // Fetch payroll item with employee details
+    const result = await pool.query(
+      `SELECT pi.*, u.first_name, u.last_name, u.email
+       FROM payroll_items pi
+       JOIN users u ON pi.employee_id = u.id
+       WHERE pi.id = $1`,
+      [itemId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Payroll item not found' });
+    const item = result.rows[0];
+    // Generate PDF pay stub for this single employee
+    const pdfBuffer = await generatePayStubs(item);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=paystub_${item.id}.pdf`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.post('/:id/generate-paystubs', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);

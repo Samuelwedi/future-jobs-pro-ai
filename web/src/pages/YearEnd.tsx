@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Paper, Grid, Button, CircularProgress,
-  Alert, Card, CardContent, Chip, Stack, Divider, Select, MenuItem,
-  FormControl, InputLabel, IconButton, TextField,
+  Alert, Chip, Stack, Divider, Select, MenuItem,
+  FormControl, InputLabel, TextField,
 } from '@mui/material';
 import {
-  Receipt, Download, Save, Visibility, People, Description,
-  Work, AttachMoney,
+  Receipt, Save, Visibility,
 } from '@mui/icons-material';
 
-const API_BASE = (import.meta as any).env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
+// Declare process for environments where Node types are not available
+declare const process: any;
+
+const API_BASE = process.env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
 
 interface Employee {
   id: number;
@@ -238,7 +240,7 @@ export default function YearEnd() {
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel sx={{ color: '#888' }}>Employee</InputLabel>
               <Select
-                value={selectedEmployee || ''}
+                value={selectedEmployee !== null ? selectedEmployee : ''}
                 onChange={(e) => handleEmployeeChange(Number(e.target.value))}
                 sx={darkSelectStyle}
               >
