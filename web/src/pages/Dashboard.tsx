@@ -11,14 +11,17 @@ import {
   Dashboard as DashboardIcon, CalendarMonth, Assessment,
   Groups, Folder, Timer, Chat, Assignment, BeachAccess,
   TouchApp, Settings, Logout, Link as LinkIcon,
-  SmartToy, Mic, MicOff, SupportAgent, AttachMoney, Receipt, Description,
-  Refresh, Person,
-  FilePresent,
+  SmartToy, Mic, MicOff, Lock as LockIcon, SupportAgent, AttachMoney, Receipt, Description,
+  Refresh, Person, FilePresent, Info as InfoIcon, Article as ArticleIcon,
+  Help as HelpIcon, PrivacyTip as PrivacyTipIcon, ContactSupport as ContactSupportIcon,
+  Star as StarIcon, PlayArrow as PlayArrowIcon,
+  Folder as FolderIcon, // for Media Folders
 } from '@mui/icons-material';
 import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
+
 const COLORS = ['#00D4FF', '#4CAF50', '#FF9800', '#F44336'];
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
@@ -29,7 +32,7 @@ interface DashboardStats {
   hoursToday: number;
   revenueToday: number;
   marginToday: number;
-  marginChange: number; // percentage change from yesterday
+  marginChange: number;
 }
 
 interface ProfitDataPoint {
@@ -53,10 +56,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // User state
   const [user, setUser] = useState<any>(null);
-
-  // Dashboard data states
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [profitData, setProfitData] = useState<ProfitDataPoint[]>([]);
   const [jobStatusData, setJobStatusData] = useState<JobStatusItem[]>([]);
@@ -65,18 +65,16 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Voice states (unchanged)
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
   const token = localStorage.getItem('token') || '';
 
-  // ------ Fetch functions ------
+  // ------ Fetch functions (unchanged) ------
   const fetchDashboardData = useCallback(async () => {
     setRefreshing(true);
     setError(null);
     try {
-      // 1. Fetch stats (active jobs, employees, hours, revenue, margin)
       const statsRes = await fetch(`${API_BASE}/api/dashboard/stats`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -84,7 +82,6 @@ export default function Dashboard() {
       const statsData = await statsRes.json();
       setStats(statsData);
 
-      // 2. Fetch profit/margin timeline (last 8 hours or today's hours)
       const profitRes = await fetch(`${API_BASE}/api/dashboard/profit-timeline`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -92,11 +89,9 @@ export default function Dashboard() {
         const profitData = await profitRes.json();
         setProfitData(profitData);
       } else {
-        // fallback to empty or demo
         setProfitData([]);
       }
 
-      // 3. Fetch job status distribution
       const jobStatusRes = await fetch(`${API_BASE}/api/dashboard/job-status`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -107,7 +102,6 @@ export default function Dashboard() {
         setJobStatusData([]);
       }
 
-      // 4. Fetch dispute risk alerts
       const alertsRes = await fetch(`${API_BASE}/api/dashboard/dispute-alerts`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -117,27 +111,21 @@ export default function Dashboard() {
       } else {
         setDisputeAlerts([]);
       }
-
     } catch (err: any) {
       console.error('Dashboard fetch error:', err);
       setError(err.message || 'Failed to load dashboard data');
-      // Keep existing data (if any) to avoid blank screen
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [token]);
 
-  // Initial load & auto-refresh every 60 seconds
   useEffect(() => {
     fetchDashboardData();
-    const interval = setInterval(() => {
-      fetchDashboardData();
-    }, 60000);
+    const interval = setInterval(() => fetchDashboardData(), 60000);
     return () => clearInterval(interval);
   }, [fetchDashboardData]);
 
-  // Load user from localStorage
   useEffect(() => {
     try {
       const stored = localStorage.getItem('user');
@@ -231,12 +219,10 @@ export default function Dashboard() {
     else alert('Failed to start payment setup');
   };
 
-  // Helper to format numbers
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
   };
 
-  // Loading & error states
   if (loading && !stats) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', bgcolor: '#0A0A0A' }}>
@@ -245,7 +231,6 @@ export default function Dashboard() {
     );
   }
 
-  // Use defaults if data is missing (so UI doesn't break)
   const safeStats = stats || {
     activeJobs: 0,
     totalEmployees: 0,
@@ -269,7 +254,6 @@ export default function Dashboard() {
     { project: 'No alerts', risk: 0, issue: 'All projects are performing well' },
   ];
 
-  // For demo purposes, we still show the chip
   const fullName = user ? (user.fullName || `${user.firstName} ${user.lastName}`) : 'User';
   const initials = user
     ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
@@ -281,38 +265,56 @@ export default function Dashboard() {
 
   const role = user?.role || '';
   const isEmployee = role !== 'boss' && role !== 'manager';
+
+  // ─── NAVIGATION ITEMS ──────────────────────────────────────────
+  // All pages from the user's list (excluding public pages like Login, Register, Landing, etc.)
   const navItems = [
     ...(isEmployee ? [{ label: 'My Portal', icon: <Person />, path: '/employee-portal' }] : []),
     { label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-    { label: 'Schedule', icon: <CalendarMonth />, path: '/schedule' },
-    { label: 'Reports', icon: <Assessment />, path: '/reports' },
     { label: 'Team', icon: <Groups />, path: '/team' },
-    { label: 'Projects', icon: <Folder />, path: '/projects' },
+    { label: 'Employee Portal', icon: <Person />, path: '/employee-portal' },
+    { label: 'Schedule', icon: <CalendarMonth />, path: '/schedule' },
     { label: 'Timesheet', icon: <Timer />, path: '/timesheet' },
-    { label: 'Chat', icon: <Chat />, path: '/chat' },
     { label: 'Tasks', icon: <Assignment />, path: '/tasks' },
     { label: 'PTO', icon: <BeachAccess />, path: '/pto' },
-    { label: 'Kiosk', icon: <TouchApp />, path: '/kiosk' },
-    { label: 'Settings', icon: <Settings />, path: '/settings' },
-    { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
-    { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
-    { label: 'Support', icon: <SupportAgent />, path: '/chat' },
+    { label: 'Projects', icon: <Folder />, path: '/projects' },
+    { label: 'Media Folders', icon: <FolderIcon />, path: '/media' },
+    { label: 'Chat', icon: <Chat />, path: '/chat' },
+    { label: 'Support', icon: <SupportAgent />, path: '/support' },
     { label: 'Payroll', icon: <AttachMoney />, path: '/payroll' },
+    { label: 'Direct Deposit', icon: <AttachMoney />, path: '/direct-deposit' },
+    { label: 'Year‑End', icon: <Receipt />, path: '/year-end' },
     { label: 'Invoices', icon: <Receipt />, path: '/invoices' },
     { label: 'Estimates', icon: <Description />, path: '/estimates' },
-    { label: 'Year-End', icon: <Receipt />, path: '/year-end' },
-    { label: 'Direct Deposit', icon: <AttachMoney />, path: '/direct-deposit' },
+    { label: 'Reports', icon: <Assessment />, path: '/reports' },
+    { label: 'Admin Dashboard', icon: <DashboardIcon />, path: '/admin-dashboard' },
+    { label: 'Kiosk', icon: <TouchApp />, path: '/kiosk' },
+    { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
+    { label: 'Voice Assistant', icon: <Mic />, path: '/voice-assistant' },
+    { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
+    { label: 'Settings', icon: <Settings />, path: '/settings' },
+    { label: 'Security', icon: <LockIcon />, path: '/security' },
+    { label: 'About', icon: <InfoIcon />, path: '/about' },
+    { label: 'Blog', icon: <ArticleIcon />, path: '/blog' },
+    { label: 'FAQ', icon: <HelpIcon />, path: '/faq' },
+    { label: 'Privacy', icon: <PrivacyTipIcon />, path: '/privacy' },
+    { label: 'Terms', icon: <Description />, path: '/terms' },
+    { label: 'Contact', icon: <ContactSupportIcon />, path: '/contact' },
+    { label: 'Pricing', icon: <AttachMoney />, path: '/pricing' },
+    { label: 'Features', icon: <StarIcon />, path: '/features' },
+    { label: 'Demo', icon: <PlayArrowIcon />, path: '/demo' },
+    // Note: PaymentRequired is a special page, may not be in sidebar
   ];
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#0A0A0A' }}>
-      {/* SIDEBAR – same as before */}
+      {/* SIDEBAR */}
       <Box sx={{ width: 260, bgcolor: '#111', borderRight: '1px solid #222', display: 'flex', flexDirection: 'column', pt: 2, pb: 2, flexShrink: 0 }}>
         <Box sx={{ px: 2, mb: 3 }}>
           <Typography sx={{ color: '#00D4FF', fontWeight: 'bold', fontSize: 18 }}>🚀 Future Jobs Pro</Typography>
           <Typography variant="caption" sx={{ color: '#666' }}>Samuel B.</Typography>
         </Box>
-        <List sx={{ flex: 1 }}>
+        <List sx={{ flex: 1, overflowY: 'auto' }}>
           {navItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
@@ -371,7 +373,6 @@ export default function Dashboard() {
         )}
 
         <Container maxWidth="xl" sx={{ mt: 3, mb: 3, flex: 1 }}>
-          {/* Error Snackbar */}
           <Snackbar open={!!error} autoHideDuration={6000} onClose={() => setError(null)}>
             <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>
           </Snackbar>

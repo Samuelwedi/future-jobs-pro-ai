@@ -42,7 +42,6 @@ export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/media" element={<MediaFolders />} />
         <Route path="/direct-deposit" element={<DirectDeposit />} />
         <Route path="/year-end" element={<YearEnd />} />
         <Route path="/employee-portal" element={<EmployeePortal />} />
@@ -73,6 +72,7 @@ export default function App() {
         <Route path="/integrations" element={<Integrations />} />
         <Route path="/ask-lucy" element={<AskLucy />} />
         <Route path="/voice-assistant" element={<VoiceAssistant />} />
+          <Route path="/media" element={<MediaFolders />} />
         {/* New pages */}
         <Route path="/features" element={<Features />} />
         <Route path="/demo" element={<Demo />} />
