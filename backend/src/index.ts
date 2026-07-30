@@ -19,7 +19,7 @@ import { verifyToken } from './utils/auth';
 import statsRoutes from './routes/statsRoutes';
 import { processEmployeePaycheck } from './services/payrollController';
 import {previewSlip,finalizeSlip,getEmployeeForms,} from './controllers/yearEndController';
-import path from 'path'; // ⬅️ ADD THIS
+import path from 'path';
 
 dotenv.config();
 
@@ -508,27 +508,26 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
 });
 
 // ============================================
-// ✅ SPA FALLBACK – Serve React build
+// ✅ SPA FALLBACK – Serve React build (FIXED)
 // ============================================
 const buildPath = path.join(__dirname, '../web/build');
 app.use(express.static(buildPath));
 
-// For any non-API request, serve index.html
-app.get('*', (req, res) => {
+// Catch‑all middleware for SPA (must be placed after all API routes and static files)
+app.use((req, res) => {
   if (req.path.startsWith('/api')) {
     // If no API route matched, return 404 JSON
     return res.status(404).json({ success: false, message: 'API endpoint not found' });
   }
+  // Serve the React app's index.html for client‑side routing
   res.sendFile(path.join(buildPath, 'index.html'));
 });
 
-// ----- 404 & error handler (now only for unmatched API routes) -----
-app.use((req, res) => {
-  if (req.path.startsWith('/api')) {
-    res.status(404).json({ success: false, message: 'Route not found' });
-  }
+// ----- Error handler (for internal server errors) -----
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error(err);
+  res.status(500).json({ success: false, message: 'Internal server error' });
 });
-app.use((err: Error, req: Request, res: Response, next: NextFunction) => { console.error(err); res.status(500).json({ success: false, message: 'Internal server error' }); });
 
 // ----- WebSocket Server -----
 const server = http.createServer(app);
