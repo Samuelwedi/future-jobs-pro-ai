@@ -17,7 +17,6 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
 };
 
 // ─── PUT /api/direct-deposit/employee/:id/bank ──────────────────
-// Update bank details for an employee
 router.put('/employee/:id/bank', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -26,7 +25,6 @@ router.put('/employee/:id/bank', async (req: Request, res: Response) => {
     const { id } = req.params;
     const { bankRoutingNumber, bankAccountNumber, bankAccountType, bankAccountHolder } = req.body;
 
-    // Verify employee belongs to this company
     const empCheck = await pool.query(
       'SELECT id FROM users WHERE id = $1 AND company_id = $2',
       [id, companyId]
@@ -53,7 +51,6 @@ router.put('/employee/:id/bank', async (req: Request, res: Response) => {
 });
 
 // ─── GET /api/direct-deposit/employees ─────────────────────────
-// Get all employees with bank details (for the company)
 router.get('/employees', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -75,7 +72,6 @@ router.get('/employees', async (req: Request, res: Response) => {
 });
 
 // ─── POST /api/direct-deposit/generate ──────────────────────────
-// Generate NACHA file for a payroll
 router.post('/generate', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -114,32 +110,41 @@ router.post('/generate', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'No employees in this payroll' });
     }
 
-    // Generate NACHA file content
-    const nachaContent = generateNachaFile({
-      companyName: payroll.company_name,
-      companyId: payroll.company_id,
-      effectiveDate: new Date().toISOString().split('T')[0],
-      items: items.rows.map((row: any) => ({
+    // Filter valid employees (must have bank details and positive pay)
+    const validItems = items.rows
+      .filter((row: any) => row.bank_routing_number && row.bank_account_number && Number(row.final_pay) > 0)
+      .map((row: any) => ({
         employeeName: `${row.first_name} ${row.last_name}`,
         routingNumber: row.bank_routing_number,
         accountNumber: row.bank_account_number,
         accountType: row.bank_account_type || 'checking',
         amount: Number(row.final_pay) || 0,
-      })),
-    });
+      }));
 
-    const validItems = items.rows
-  .filter((row: any) => row.bank_routing_number && row.bank_account_number && Number(row.final_pay) > 0)
-  .map((row: any) => ({
-    employeeName: `${row.first_name} ${row.last_name}`,
-    routingNumber: row.bank_routing_number,
-    accountNumber: row.bank_account_number,
-    accountType: row.bank_account_type || 'checking',
-    amount: Number(row.final_pay) || 0,
-  }));
     if (validItems.length === 0) {
-      return res.status(400).json({ success: false, message: 'No valid employees with bank details and positive pay found' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No employees with valid bank details and positive pay found' 
+      });
     }
+
+    // Generate NACHA file using only valid items
+    let nachaContent: string;
+    try {
+      nachaContent = generateNachaFile({
+        companyName: payroll.company_name || 'Future Jobs Pro AI',
+        companyId: payroll.company_id,
+        effectiveDate: new Date().toISOString().split('T')[0],
+        items: validItems,
+      });
+    } catch (genError: any) {
+      console.error('NACHA generation error:', genError);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Failed to generate NACHA file: ' + genError.message 
+      });
+    }
+
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Content-Disposition', `attachment; filename=nacha_payroll_${payrollId}.txt`);
     res.send(nachaContent);

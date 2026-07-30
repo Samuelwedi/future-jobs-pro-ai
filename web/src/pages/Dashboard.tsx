@@ -432,7 +432,7 @@ export default function Dashboard() {
               ))}
             </Grid>
             <Box sx={{ height: 250, minHeight: 200, mt: 2 }}>
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart data={safeProfitData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" />
                   <XAxis dataKey="time" stroke="#888" />

@@ -108,6 +108,11 @@ import directDepositRouter from './routes/directDepositRouter'; app.use('/api/di
 import yearEndRouter from './routes/yearEndRouter'; app.use('/api/year-end', yearEndRouter);
 app.use(trialCheck);
 
+// ─── Dummy /api/photos endpoint to prevent frontend JSON parse errors ───
+app.get('/api/photos', (req, res) => {
+  res.json({ success: true, photos: [] });
+});
+
 // ----- Helper: get userId -----
 const getUserId = (req: Request): string | null => {
   try {

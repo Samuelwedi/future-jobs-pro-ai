@@ -35,42 +35,18 @@ export default function Integrations() {
     } catch {}
   };
 
-  const handleConnectQuickBooks = async () => {
+  // ✅ Use direct window.location.href instead of fetch to avoid CORS
+  const handleConnectQuickBooks = () => {
+    if (!user?.companyId) return;
     setLoadingQB(true);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/api/integrations/quickbooks/auth?companyId=${user?.companyId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.redirected) {
-        window.location.href = res.url;
-      } else {
-        setError('Failed to start QuickBooks connection');
-      }
-    } catch {
-      setError('Failed to start QuickBooks connection');
-    } finally {
-      setLoadingQB(false);
-    }
+    window.location.href = `${API_BASE}/api/integrations/quickbooks/auth?companyId=${user.companyId}`;
+    // The page will redirect; we can't reset loading, but it's fine.
   };
 
-  const handleConnectStripe = async () => {
+  const handleConnectStripe = () => {
+    if (!user?.companyId) return;
     setLoadingStripe(true);
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_BASE}/api/integrations/stripe/auth?companyId=${user?.companyId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.redirected) {
-        window.location.href = res.url;
-      } else {
-        setError('Failed to start Stripe Connect');
-      }
-    } catch {
-      setError('Failed to start Stripe Connect');
-    } finally {
-      setLoadingStripe(false);
-    }
+    window.location.href = `${API_BASE}/api/integrations/stripe/auth?companyId=${user.companyId}`;
   };
 
   const qbConnected = status?.quickbooks?.connected;
