@@ -36,6 +36,22 @@ router.post('/create-checkout', async (req: Request, res: Response) => {
   }
 });
 
+// ✅ NEW: /create-setup-session – used by Dashboard to add payment method
+router.post('/create-setup-session', async (req: Request, res: Response) => {
+  if (!stripe) return res.status(500).json({ success: false, message: 'Stripe not configured' });
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'setup',
+      success_url: 'https://future-jobs-pro-ai.vercel.app/dashboard',
+      cancel_url: 'https://future-jobs-pro-ai.vercel.app/pricing',
+    });
+    res.json({ success: true, url: session.url });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.post('/cancel-subscription', async (req: Request, res: Response) => {
   res.json({ success: true, message: 'Subscription canceled' });
 });

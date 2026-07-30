@@ -19,6 +19,7 @@ import { verifyToken } from './utils/auth';
 import statsRoutes from './routes/statsRoutes';
 import { processEmployeePaycheck } from './services/payrollController';
 import {previewSlip,finalizeSlip,getEmployeeForms,} from './controllers/yearEndController';
+import path from 'path'; // ⬅️ ADD THIS
 
 dotenv.config();
 
@@ -28,7 +29,6 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
 console.log(`🚀 Using PORT: ${PORT}`);
 const JWT_SECRET = process.env.JWT_SECRET!;
 
-// Base URL for internal API calls (set in .env)
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 console.log(`🔗 BASE_URL: ${BASE_URL}`);
 
@@ -53,9 +53,6 @@ app.use('/api/stats', statsRoutes);
 
 app.get('/ping', (req, res) => res.json({ success: true, message: 'pong' }));
 app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
-
-// ----- trialCheck is now moved AFTER scheduleRoutes -----
-// We'll mount trialCheck later, after we've mounted scheduleRoutes.
 
 app.get('/api/health', async (req: Request, res: Response) => {
   const dbHealthy = await checkDatabaseHealth();
@@ -85,7 +82,6 @@ import integrationRoutes from './routes/integrationRoutes'; app.use('/api/integr
 import companyRoutes from './routes/companyRoutes'; app.use('/api/companies', companyRoutes);
 import chatRoutes from './routes/chatRoutes'; app.use('/api/chat', chatRoutes);
 import userRoutes from './routes/userRoutes'; app.use('/api/users', userRoutes);
-// ----- MOVED scheduleRoutes BEFORE trialCheck -----
 import scheduleRoutes from './routes/scheduleRoutes'; app.use('/api/schedule', scheduleRoutes);
 import crewRoutes from './routes/crewRoutes'; app.use('/api/crew', crewRoutes);
 import assistantRoutes from './routes/assistantRoutes'; app.use('/api/assistant', assistantRoutes);
@@ -110,7 +106,6 @@ import pdfRouter from './routes/pdfRouter'; app.use('/pdfs', pdfRouter);
 import payStubRouter from './routes/payStubRouter'; app.use('/api/pay-stubs', payStubRouter);
 import directDepositRouter from './routes/directDepositRouter'; app.use('/api/direct-deposit', directDepositRouter);
 import yearEndRouter from './routes/yearEndRouter'; app.use('/api/year-end', yearEndRouter);
-// ----- trialCheck middleware (moved AFTER scheduleRoutes) -----
 app.use(trialCheck);
 
 // ----- Helper: get userId -----
@@ -195,11 +190,9 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return res.status(500).json({ success: false, message: 'OpenAI key not configured.' });
 
-    // Memory (last 10 messages)
     const memoryRes = await pool.query('SELECT role, content FROM lucy_conversations WHERE user_id = $1 ORDER BY created_at ASC LIMIT 10', [userId]);
     const priorMessages = memoryRes.rows.map((r: any) => ({ role: r.role, content: r.content }));
 
-    // ---- ALL FUNCTIONS LUCY CAN PERFORM ----
     const functions = [
       { name: 'get_team_status', description: 'How many team members are active', parameters: { type: 'object', properties: {} } },
       {
@@ -274,10 +267,8 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
       { role: 'user', content: message },
     ];
 
-    // Save user message
     if (userId) await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1,$2,$3)', [userId, 'user', message]);
 
-    // Call OpenAI
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -290,7 +281,6 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
     let approvalId: string | null = null;
     let resultText = '';
 
-    // Function call handling
     if (choice.finish_reason === 'function_call' && choice.message?.function_call) {
       const { name, arguments: argsStr } = choice.message.function_call;
       const args = JSON.parse(argsStr || '{}');
@@ -508,7 +498,6 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
       return res.json(responsePayload);
     }
 
-    // No function call – just text reply
     const reply = choice.message?.content || "I'm not sure how to help with that.";
     if (userId) await pool.query('INSERT INTO lucy_conversations (user_id, role, content) VALUES ($1,$2,$3)', [userId, 'assistant', reply]);
     return res.json([{ text: reply }]);
@@ -518,8 +507,27 @@ app.post('/api/lucy', async (req: Request, res: Response) => {
   }
 });
 
-// ----- 404 & error handler -----
-app.use((req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
+// ============================================
+// ✅ SPA FALLBACK – Serve React build
+// ============================================
+const buildPath = path.join(__dirname, '../web/build');
+app.use(express.static(buildPath));
+
+// For any non-API request, serve index.html
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api')) {
+    // If no API route matched, return 404 JSON
+    return res.status(404).json({ success: false, message: 'API endpoint not found' });
+  }
+  res.sendFile(path.join(buildPath, 'index.html'));
+});
+
+// ----- 404 & error handler (now only for unmatched API routes) -----
+app.use((req, res) => {
+  if (req.path.startsWith('/api')) {
+    res.status(404).json({ success: false, message: 'Route not found' });
+  }
+});
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => { console.error(err); res.status(500).json({ success: false, message: 'Internal server error' }); });
 
 // ----- WebSocket Server -----

@@ -37,49 +37,56 @@ import EmployeePortal from './pages/EmployeePortal';
 import YearEnd from './pages/YearEnd';
 import DirectDeposit from './pages/DirectDeposit';
 import MediaFolders from './pages/MediaFolders';
+import Support from './pages/Support';
+import Layout from './components/Layout';
 
 export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/direct-deposit" element={<DirectDeposit />} />
-        <Route path="/year-end" element={<YearEnd />} />
-        <Route path="/employee-portal" element={<EmployeePortal />} />
-        <Route path="/estimates" element={<Estimates />} />
+        {/* Public routes */}
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/schedule" element={<Schedule />} />
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/pricing" element={<Pricing />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/faq" element={<FAQ />} />
-        <Route path="/terms" element={<Terms />} />
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="/team" element={<Team />} />
-        <Route path="/projects" element={<Projects />} />
-        <Route path="/timesheet" element={<Timesheet />} />
-        <Route path="/chat" element={<Chat />} />
-        <Route path="/tasks" element={<Tasks />} />
-        <Route path="/pto" element={<PTO />} />
-        <Route path="/kiosk" element={<Kiosk />} />
-        <Route path="/settings" element={<Settings />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/payment-required" element={<PaymentRequired />} />
-        <Route path="/payroll" element={<Payroll />} />
-<Route path="/invoices" element={<Invoices />} />
-        <Route path="/integrations" element={<Integrations />} />
-        <Route path="/ask-lucy" element={<AskLucy />} />
-        <Route path="/voice-assistant" element={<VoiceAssistant />} />
-          <Route path="/media" element={<MediaFolders />} />
-        {/* New pages */}
+        <Route path="/pricing" element={<Pricing />} />
         <Route path="/features" element={<Features />} />
         <Route path="/demo" element={<Demo />} />
         <Route path="/about" element={<About />} />
         <Route path="/blog" element={<Blog />} />
-        <Route path="/security" element={<Security />} />
-        {/* Catch all 404 */}
+        <Route path="/faq" element={<FAQ />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/payment-required" element={<PaymentRequired />} />
+
+        {/* Protected routes with sidebar */}
+        <Route path="/" element={<Layout />}>
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="team" element={<Team />} />
+          <Route path="employee-portal" element={<EmployeePortal />} />
+          <Route path="schedule" element={<Schedule />} />
+          <Route path="timesheet" element={<Timesheet />} />
+          <Route path="tasks" element={<Tasks />} />
+          <Route path="pto" element={<PTO />} />
+          <Route path="projects" element={<Projects />} />
+          <Route path="media" element={<MediaFolders />} />
+          <Route path="chat" element={<Chat />} />
+          <Route path="support" element={<Support />} />
+          <Route path="payroll" element={<Payroll />} />
+          <Route path="direct-deposit" element={<DirectDeposit />} />
+          <Route path="year-end" element={<YearEnd />} />
+          <Route path="invoices" element={<Invoices />} />
+          <Route path="estimates" element={<Estimates />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="admin-dashboard" element={<AdminDashboard />} />
+          <Route path="kiosk" element={<Kiosk />} />
+          <Route path="ask-lucy" element={<AskLucy />} />
+          <Route path="voice-assistant" element={<VoiceAssistant />} />
+          <Route path="integrations" element={<Integrations />} />
+          <Route path="settings" element={<Settings />} />
+          <Route path="security" element={<Security />} />
+        </Route>
+
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Router>

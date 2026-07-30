@@ -14,7 +14,6 @@ router.get('/company/:companyId', async (req: Request, res: Response) => {
     
     const decoded = verifyToken(req);
 
-    // Verify the user belongs to the requested company
     const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
     if (userRes.rows[0].company_id !== req.params.companyId)
@@ -35,7 +34,7 @@ router.get('/company/:companyId', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/chat/message (optional REST fallback – not used by WebSocket frontend)
+// POST /api/chat/message (optional REST fallback)
 router.post('/message', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -51,13 +50,14 @@ router.post('/message', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/chat/room/:roomId – used by mobile (legacy)
 router.get('/room/:roomId', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     
-    const decoded = verifyToken(req);
+    verifyToken(req);
 
     const result = await pool.query(
       `SELECT cm.*, u.first_name || ' ' || u.last_name AS sender_name
@@ -74,7 +74,36 @@ router.get('/room/:roomId', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/chat/rooms/:userId – list distinct chat rooms for a user (mobile chat list)
+// ✅ NEW: GET /api/chat/messages/:roomId – used by web Chat.tsx
+router.get('/messages/:roomId', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    
+    verifyToken(req);
+
+    const { roomId } = req.params;
+    if (!roomId) {
+      return res.status(400).json({ success: false, message: 'roomId required' });
+    }
+
+    const result = await pool.query(
+      `SELECT cm.*, u.first_name || ' ' || u.last_name AS sender_name
+       FROM chat_messages cm
+       JOIN users u ON cm.sender_id = u.id
+       WHERE cm.room_id = $1
+       ORDER BY cm.created_at ASC
+       LIMIT 200`,
+      [roomId]
+    );
+    res.json({ success: true, messages: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/chat/rooms/:userId – list distinct chat rooms
 router.get('/rooms/:userId', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -83,7 +112,6 @@ router.get('/rooms/:userId', async (req: Request, res: Response) => {
     
     const decoded = verifyToken(req);
 
-    // Ensure the requesting user belongs to the same company as the target user
     const requestingUser = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
     if (requestingUser.rows.length === 0)
       return res.status(404).json({ success: false, message: 'Requesting user not found' });
@@ -95,7 +123,6 @@ router.get('/rooms/:userId', async (req: Request, res: Response) => {
     if (requestingUser.rows[0].company_id !== targetUser.rows[0].company_id)
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
-    // Get distinct room IDs for that user
     const result = await pool.query(
       'SELECT DISTINCT room_id FROM chat_messages WHERE sender_id = $1',
       [req.params.userId]

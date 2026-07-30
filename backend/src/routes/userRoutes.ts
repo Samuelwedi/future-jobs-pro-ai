@@ -29,12 +29,12 @@ router.get('/company', async (req: Request, res: Response) => {
     const companyId = userRes.rows[0].company_id;
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    // ✅ Return all employees (excluding bosses/managers if you wish)
+    // ✅ Select only columns that exist
     const result = await pool.query(
-      `SELECT id, first_name, last_name, email, employment_type, province, role
+      `SELECT id, first_name, last_name, email, role
        FROM users
        WHERE company_id = $1
-         AND role NOT IN ('boss', 'manager')   -- optional: include all roles
+         AND role NOT IN ('boss', 'manager')
        ORDER BY first_name`,
       [companyId]
     );
@@ -82,7 +82,6 @@ router.put('/profile', async (req: Request, res: Response) => {
 
     const { firstName, lastName, sin, dateOfBirth } = req.body;
 
-    // Build dynamic update
     const updates: string[] = [];
     const values: any[] = [];
     let paramCounter = 1;
@@ -128,7 +127,6 @@ router.put('/profile', async (req: Request, res: Response) => {
 });
 
 // ─── PUT /api/users/:id/tax-info ────────────────────────────────
-// Admin endpoint to update SIN/DOB for any employee in the company
 router.put('/:id/tax-info', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -138,7 +136,6 @@ router.put('/:id/tax-info', async (req: Request, res: Response) => {
     const decoded = verifyToken(req);
     const { id } = req.params;
 
-    // Verify the target user belongs to the same company
     const userRes = await pool.query(
       'SELECT company_id FROM users WHERE id = $1',
       [decoded.id]
