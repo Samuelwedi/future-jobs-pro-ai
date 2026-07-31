@@ -39,6 +39,9 @@ import DirectDeposit from './pages/DirectDeposit';
 import MediaFolders from './pages/MediaFolders';
 import Support from './pages/Support';  // <-- NEW
 import Layout from './components/Layout';
+import ProjectMedia from './pages/ProjectMedia';
+import MonthMedia from './pages/MonthMedia';
+import MonthMediaType from './pages/MonthMediaType';
 
 export default function App() {
   return (
@@ -46,6 +49,10 @@ export default function App() {
       <Routes>
         {/* Public routes */}
         <Route path="/" element={<Landing />} />
+        <Route path="media" element={<MediaFolders />} />
+<Route path="media/project/:projectId" element={<ProjectMedia />} />
+<Route path="media/project/:projectId/month/:yearMonth" element={<MonthMedia />} />
+<Route path="media/project/:projectId/month/:yearMonth/type/:mediaType" element={<MonthMediaType />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/pricing" element={<Pricing />} />

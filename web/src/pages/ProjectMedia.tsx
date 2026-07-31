@@ -3,47 +3,74 @@ import {
   Box, Container, Typography, Paper, Grid, Card, CardActionArea,
   CircularProgress, Alert, Button, Breadcrumbs, Link,
 } from '@mui/material';
-import { Folder, ChevronRight, ErrorOutline, ArrowBack } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
+import { CalendarMonth, ChevronRight, ArrowBack, ErrorOutline } from '@mui/icons-material';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
-interface Project {
-  project_id: string;
-  project_name: string;
+interface MonthItem {
+  yearMonth: string; // format: 'YYYY-MM'
+  count: number;
 }
 
-export default function MediaFolders() {
+export default function ProjectMedia() {
   const navigate = useNavigate();
+  const { projectId } = useParams<{ projectId: string }>();
+  const location = useLocation();
+  const { projectName } = location.state || { projectName: 'Project' };
   const token = localStorage.getItem('token') || '';
 
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [months, setMonths] = useState<MonthItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProjects = async () => {
-    setError(null);
+  useEffect(() => {
+    if (!projectId) {
+      setError('No project selected');
+      setLoading(false);
+      return;
+    }
+    fetchMonths();
+  }, [projectId]);
+
+  const fetchMonths = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/media/projects`, {
+      // Fetch all media for the project to extract unique months
+      const res = await fetch(`${API_BASE}/api/media/project/${projectId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Failed to load projects');
+      if (!res.ok) throw new Error('Failed to load project media');
       const data = await res.json();
-      setProjects(data.projects || []);
+      const mediaItems = data.media || [];
+
+      // Group by month (YYYY-MM)
+      const monthMap = new Map<string, number>();
+      mediaItems.forEach((item: any) => {
+        if (item.taken_at) {
+          const date = new Date(item.taken_at);
+          const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          monthMap.set(yearMonth, (monthMap.get(yearMonth) || 0) + 1);
+        }
+      });
+
+      const sortedMonths = Array.from(monthMap.entries())
+        .map(([yearMonth, count]) => ({ yearMonth, count }))
+        .sort((a, b) => b.yearMonth.localeCompare(a.yearMonth)); // newest first
+
+      setMonths(sortedMonths);
     } catch (err: any) {
-      setError(err.message || 'Failed to load projects');
+      setError(err.message || 'Failed to load months');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchProjects();
-  }, []);
-
-  const handleProjectClick = (projectId: string, projectName: string) => {
-    navigate(`/media/project/${projectId}`, { state: { projectName } });
+  const handleMonthClick = (yearMonth: string) => {
+    navigate(`/media/project/${projectId}/month/${yearMonth}`, {
+      state: { projectName, yearMonth },
+    });
   };
 
   if (loading) {
@@ -60,7 +87,7 @@ export default function MediaFolders() {
         <Paper sx={{ p: 4, bgcolor: '#1A1A1A', border: '1px solid #333', textAlign: 'center' }}>
           <ErrorOutline sx={{ fontSize: 48, color: '#F44336', mb: 2 }} />
           <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>{error}</Typography>
-          <Button variant="contained" onClick={fetchProjects} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+          <Button variant="contained" onClick={fetchMonths} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
             Retry
           </Button>
         </Paper>
@@ -80,7 +107,7 @@ export default function MediaFolders() {
           Back
         </Button>
         <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold' }}>
-          Media Folders
+          {projectName} - Months
         </Typography>
       </Box>
 
@@ -88,17 +115,20 @@ export default function MediaFolders() {
         <Link underline="hover" color="inherit" href="/dashboard" sx={{ color: '#888' }}>
           Dashboard
         </Link>
-        <Typography sx={{ color: '#FFF' }}>Media Folders</Typography>
+        <Link underline="hover" color="inherit" href="/media" sx={{ color: '#888' }}>
+          Media Folders
+        </Link>
+        <Typography sx={{ color: '#FFF' }}>{projectName}</Typography>
       </Breadcrumbs>
 
-      {projects.length === 0 ? (
+      {months.length === 0 ? (
         <Paper sx={{ p: 4, bgcolor: '#1A1A1A', border: '1px solid #333', textAlign: 'center' }}>
-          <Typography variant="body1" sx={{ color: '#888' }}>No media folders found.</Typography>
+          <Typography variant="body1" sx={{ color: '#888' }}>No media found for this project.</Typography>
         </Paper>
       ) : (
         <Grid container spacing={3}>
-          {projects.map((project) => (
-            <Grid item xs={12} sm={6} md={4} key={project.project_id}>
+          {months.map((month) => (
+            <Grid item xs={12} sm={6} md={4} key={month.yearMonth}>
               <Card
                 sx={{
                   bgcolor: '#1A1A1A',
@@ -108,22 +138,21 @@ export default function MediaFolders() {
                   '&:hover': {
                     borderColor: '#00D4FF',
                     transform: 'translateY(-4px)',
-                    boxShadow: '0 8px 24px rgba(0,212,255,0.15)',
                   },
                 }}
               >
                 <CardActionArea
-                  onClick={() => handleProjectClick(project.project_id, project.project_name)}
+                  onClick={() => handleMonthClick(month.yearMonth)}
                   sx={{ p: 2 }}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Folder sx={{ fontSize: 40, color: '#00D4FF', mr: 2 }} />
+                    <CalendarMonth sx={{ fontSize: 40, color: '#FF9800', mr: 2 }} />
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 600 }}>
-                        {project.project_name}
+                        {month.yearMonth}
                       </Typography>
                       <Typography variant="body2" sx={{ color: '#888' }}>
-                        Tap to view months
+                        {month.count} item{month.count !== 1 ? 's' : ''}
                       </Typography>
                     </Box>
                     <ChevronRight sx={{ color: '#888' }} />
