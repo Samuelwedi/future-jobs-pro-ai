@@ -15,7 +15,7 @@ import {
   Refresh, Person, FilePresent, Info as InfoIcon, Article as ArticleIcon,
   Help as HelpIcon, PrivacyTip as PrivacyTipIcon, ContactSupport as ContactSupportIcon,
   Star as StarIcon, PlayArrow as PlayArrowIcon,
-  Folder as FolderIcon, // for Media Folders
+  Folder as FolderIcon,
 } from '@mui/icons-material';
 import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
@@ -25,7 +25,6 @@ import {
 const COLORS = ['#00D4FF', '#4CAF50', '#FF9800', '#F44336'];
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
-// ------ Types ------
 interface DashboardStats {
   activeJobs: number;
   totalEmployees: number;
@@ -51,7 +50,6 @@ interface DisputeAlert {
   issue: string;
 }
 
-// ------ Main Component ------
 export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -70,7 +68,6 @@ export default function Dashboard() {
 
   const token = localStorage.getItem('token') || '';
 
-  // ------ Fetch functions (unchanged) ------
   const fetchDashboardData = useCallback(async () => {
     setRefreshing(true);
     setError(null);
@@ -133,7 +130,6 @@ export default function Dashboard() {
     } catch {}
   }, []);
 
-  // ---- Voice commands (unchanged) ----
   const startVoice = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -201,7 +197,6 @@ export default function Dashboard() {
     }
   };
 
-  // ---- Handlers ----
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -266,8 +261,6 @@ export default function Dashboard() {
   const role = user?.role || '';
   const isEmployee = role !== 'boss' && role !== 'manager';
 
-  // ─── NAVIGATION ITEMS ──────────────────────────────────────────
-  // All pages from the user's list (excluding public pages like Login, Register, Landing, etc.)
   const navItems = [
     ...(isEmployee ? [{ label: 'My Portal', icon: <Person />, path: '/employee-portal' }] : []),
     { label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
@@ -303,7 +296,6 @@ export default function Dashboard() {
     { label: 'Pricing', icon: <AttachMoney />, path: '/pricing' },
     { label: 'Features', icon: <StarIcon />, path: '/features' },
     { label: 'Demo', icon: <PlayArrowIcon />, path: '/demo' },
-    // Note: PaymentRequired is a special page, may not be in sidebar
   ];
 
   return (
@@ -450,7 +442,7 @@ export default function Dashboard() {
               <Paper sx={{ p: 3, bgcolor: '#1A1A1A', borderRadius: 2, border: '1px solid #333' }}>
                 <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 600, mb: 2 }}>Job Status</Typography>
                 <Box sx={{ height: 250, minHeight: 200 }}>
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <PieChart>
                       <Pie data={safeJobStatus} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
                         {safeJobStatus.map((_, index) => (

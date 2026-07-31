@@ -37,7 +37,7 @@ import EmployeePortal from './pages/EmployeePortal';
 import YearEnd from './pages/YearEnd';
 import DirectDeposit from './pages/DirectDeposit';
 import MediaFolders from './pages/MediaFolders';
-import Support from './pages/Support';
+import Support from './pages/Support';  // <-- NEW
 import Layout from './components/Layout';
 
 export default function App() {
@@ -59,7 +59,7 @@ export default function App() {
         <Route path="/terms" element={<Terms />} />
         <Route path="/payment-required" element={<PaymentRequired />} />
 
-        {/* Protected routes with sidebar */}
+        {/* Protected routes with sidebar (Layout) */}
         <Route path="/" element={<Layout />}>
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="team" element={<Team />} />
@@ -71,14 +71,14 @@ export default function App() {
           <Route path="projects" element={<Projects />} />
           <Route path="media" element={<MediaFolders />} />
           <Route path="chat" element={<Chat />} />
-          <Route path="support" element={<Support />} />
+          <Route path="support" element={<Support />} />  {/* NOW EXISTS */}
           <Route path="payroll" element={<Payroll />} />
           <Route path="direct-deposit" element={<DirectDeposit />} />
           <Route path="year-end" element={<YearEnd />} />
           <Route path="invoices" element={<Invoices />} />
           <Route path="estimates" element={<Estimates />} />
           <Route path="reports" element={<Reports />} />
-          <Route path="admin-dashboard" element={<AdminDashboard />} />
+          <Route path="admin-dashboard" element={<AdminDashboard />} />  {/* changed from /admin */}
           <Route path="kiosk" element={<Kiosk />} />
           <Route path="ask-lucy" element={<AskLucy />} />
           <Route path="voice-assistant" element={<VoiceAssistant />} />
