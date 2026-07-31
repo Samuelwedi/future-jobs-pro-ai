@@ -3,15 +3,10 @@ import {
   Box, Container, Typography, Paper, Grid, Card, CardActionArea,
   CircularProgress, Alert, Button, Breadcrumbs, Link,
 } from '@mui/material';
-import { CalendarMonth, ChevronRight, ArrowBack, ErrorOutline } from '@mui/icons-material';
+import { FolderOpen, ChevronRight, ArrowBack, ErrorOutline } from '@mui/icons-material';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
-
-interface MonthItem {
-  yearMonth: string; // format: 'YYYY-MM'
-  count: number;
-}
 
 export default function ProjectMedia() {
   const navigate = useNavigate();
@@ -20,7 +15,7 @@ export default function ProjectMedia() {
   const { projectName } = location.state || { projectName: 'Project' };
   const token = localStorage.getItem('token') || '';
 
-  const [months, setMonths] = useState<MonthItem[]>([]);
+  const [months, setMonths] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,40 +32,18 @@ export default function ProjectMedia() {
     setLoading(true);
     setError(null);
     try {
-      // Fetch all media for the project to extract unique months
-      const res = await fetch(`${API_BASE}/api/media/project/${projectId}`, {
+      // ✅ Exactly like the app: GET /media/project/:projectId/months
+      const res = await fetch(`${API_BASE}/api/media/project/${projectId}/months`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Failed to load project media');
+      if (!res.ok) throw new Error('Failed to load months');
       const data = await res.json();
-      const mediaItems = data.media || [];
-
-      // Group by month (YYYY-MM)
-      const monthMap = new Map<string, number>();
-      mediaItems.forEach((item: any) => {
-        if (item.taken_at) {
-          const date = new Date(item.taken_at);
-          const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-          monthMap.set(yearMonth, (monthMap.get(yearMonth) || 0) + 1);
-        }
-      });
-
-      const sortedMonths = Array.from(monthMap.entries())
-        .map(([yearMonth, count]) => ({ yearMonth, count }))
-        .sort((a, b) => b.yearMonth.localeCompare(a.yearMonth)); // newest first
-
-      setMonths(sortedMonths);
+      setMonths(data.months || []);
     } catch (err: any) {
       setError(err.message || 'Failed to load months');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleMonthClick = (yearMonth: string) => {
-    navigate(`/media/project/${projectId}/month/${yearMonth}`, {
-      state: { projectName, yearMonth },
-    });
   };
 
   if (loading) {
@@ -107,7 +80,7 @@ export default function ProjectMedia() {
           Back
         </Button>
         <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold' }}>
-          {projectName} - Months
+          {projectName}
         </Typography>
       </Box>
 
@@ -123,12 +96,12 @@ export default function ProjectMedia() {
 
       {months.length === 0 ? (
         <Paper sx={{ p: 4, bgcolor: '#1A1A1A', border: '1px solid #333', textAlign: 'center' }}>
-          <Typography variant="body1" sx={{ color: '#888' }}>No media found for this project.</Typography>
+          <Typography variant="body1" sx={{ color: '#888' }}>No months with media</Typography>
         </Paper>
       ) : (
         <Grid container spacing={3}>
           {months.map((month) => (
-            <Grid item xs={12} sm={6} md={4} key={month.yearMonth}>
+            <Grid item xs={12} sm={6} md={4} key={month}>
               <Card
                 sx={{
                   bgcolor: '#1A1A1A',
@@ -136,23 +109,27 @@ export default function ProjectMedia() {
                   borderRadius: 2,
                   transition: '0.2s',
                   '&:hover': {
-                    borderColor: '#00D4FF',
+                    borderColor: '#FF9800',
                     transform: 'translateY(-4px)',
                   },
                 }}
               >
                 <CardActionArea
-                  onClick={() => handleMonthClick(month.yearMonth)}
+                  onClick={() =>
+                    navigate(`/media/project/${projectId}/month/${month}`, {
+                      state: { projectName, yearMonth: month },
+                    })
+                  }
                   sx={{ p: 2 }}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <CalendarMonth sx={{ fontSize: 40, color: '#FF9800', mr: 2 }} />
+                    <FolderOpen sx={{ fontSize: 40, color: '#FF9800', mr: 2 }} />
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 600 }}>
-                        {month.yearMonth}
+                        {month}
                       </Typography>
                       <Typography variant="body2" sx={{ color: '#888' }}>
-                        {month.count} item{month.count !== 1 ? 's' : ''}
+                        Tap to view media types
                       </Typography>
                     </Box>
                     <ChevronRight sx={{ color: '#888' }} />
