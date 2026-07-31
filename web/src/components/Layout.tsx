@@ -15,6 +15,9 @@ import {
   Help as HelpIcon, PrivacyTip as PrivacyTipIcon, ContactSupport as ContactSupportIcon,
   Star as StarIcon, PlayArrow as PlayArrowIcon,
   Folder as FolderIcon,
+  People,
+  MyLocation,
+  Stars,
 } from '@mui/icons-material';
 
 const navItems = [
@@ -51,6 +54,10 @@ const navItems = [
   { label: 'Pricing', icon: <AttachMoney />, path: '/pricing' },
   { label: 'Features', icon: <StarIcon />, path: '/features' },
   { label: 'Demo', icon: <PlayArrowIcon />, path: '/demo' },
+{ label: 'Company Settings', icon: <Settings />, path: '/company-settings' },
+{ label: 'Crew Clock', icon: <People />, path: '/crew-clock' },
+{ label: 'Crew Tracker', icon: <MyLocation />, path: '/crew-tracking' },
+{ label: 'Subscription', icon: <Stars />, path: '/subscription' },
 ];
 
 export default function Layout() {

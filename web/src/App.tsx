@@ -42,6 +42,13 @@ import Layout from './components/Layout';
 import ProjectMedia from './pages/ProjectMedia';
 import MonthMedia from './pages/MonthMedia';
 import MonthMediaType from './pages/MonthMediaType';
+import CompanySettings from './pages/CompanySettings';
+import CrewClock from './pages/CrewClock';
+import CrewTracking from './pages/CrewTracking';
+import GPSPlayback from './pages/GPSPlayback';
+import NewChat from './pages/NewChat';
+import Subscription from './pages/Subscription';
+import 'leaflet/dist/leaflet.css';
 
 export default function App() {
   return (
@@ -55,6 +62,12 @@ export default function App() {
 <Route path="media/project/:projectId/month/:yearMonth/type/:mediaType" element={<MonthMediaType />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="company-settings" element={<CompanySettings />} />
+<Route path="crew-clock" element={<CrewClock />} />
+<Route path="crew-tracking" element={<CrewTracking />} />
+<Route path="gps-playback" element={<GPSPlayback />} />
+<Route path="new-chat" element={<NewChat />} />
+<Route path="subscription" element={<Subscription />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/features" element={<Features />} />
         <Route path="/demo" element={<Demo />} />
