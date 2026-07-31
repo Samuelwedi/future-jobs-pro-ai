@@ -6,20 +6,20 @@ import {
   Menu, MenuItem,
 } from '@mui/material';
 import {
-  Notifications, Brightness4, Person, Logout,
+  Notifications, Brightness4, Person, Logout as LogoutIcon,
   Dashboard as DashboardIcon, CalendarMonth, Assessment,
   Groups, Folder, Timer, Chat, Assignment, BeachAccess,
-  TouchApp, Settings, Logout as LogoutIcon, Link as LinkIcon,
+  TouchApp, Settings, Link as LinkIcon,
   SmartToy, Mic, SupportAgent, AttachMoney, Receipt, Description,
   Lock as LockIcon, Info as InfoIcon, Article as ArticleIcon,
   Help as HelpIcon, PrivacyTip as PrivacyTipIcon, ContactSupport as ContactSupportIcon,
   Star as StarIcon, PlayArrow as PlayArrowIcon,
   Folder as FolderIcon,
-  People,
-  MyLocation,
-  Stars,
+  // NEW ICONS
+  People, MyLocation, Stars, BusinessCenter,
 } from '@mui/icons-material';
 
+// Navigation items – now includes new pages
 const navItems = [
   { label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
   { label: 'Team', icon: <Groups />, path: '/team' },
@@ -54,10 +54,13 @@ const navItems = [
   { label: 'Pricing', icon: <AttachMoney />, path: '/pricing' },
   { label: 'Features', icon: <StarIcon />, path: '/features' },
   { label: 'Demo', icon: <PlayArrowIcon />, path: '/demo' },
-{ label: 'Company Settings', icon: <Settings />, path: '/company-settings' },
-{ label: 'Crew Clock', icon: <People />, path: '/crew-clock' },
-{ label: 'Crew Tracker', icon: <MyLocation />, path: '/crew-tracking' },
-{ label: 'Subscription', icon: <Stars />, path: '/subscription' },
+  // ✅ NEW SIDEBAR ITEMS (boss/manager only – will be conditionally shown)
+  { label: 'Company Settings', icon: <Settings />, path: '/company-settings', role: 'boss' },
+  { label: 'Crew Clock', icon: <People />, path: '/crew-clock', role: 'boss' },
+  { label: 'Crew Tracker', icon: <MyLocation />, path: '/crew-tracking', role: 'boss' },
+  { label: 'Subscription', icon: <Stars />, path: '/subscription', role: 'boss' },
+  // Note: GPSPlayback is accessed from Timesheet, not in sidebar.
+  // NewChat is accessed from Chat page or directly via button.
 ];
 
 export default function Layout() {
@@ -83,6 +86,14 @@ export default function Layout() {
     ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
     : 'U';
 
+  // Filter navItems based on user role (boss/manager only for certain items)
+  const filteredNavItems = navItems.filter(item => {
+    if (item.role && user) {
+      return user.role === 'boss' || user.role === 'manager';
+    }
+    return true;
+  });
+
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#0A0A0A' }}>
       {/* Sidebar */}
@@ -92,7 +103,7 @@ export default function Layout() {
           <Typography variant="caption" sx={{ color: '#666' }}>Samuel B.</Typography>
         </Box>
         <List sx={{ flex: 1, overflowY: 'auto' }}>
-          {navItems.map((item) => {
+          {filteredNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <ListItemButton
