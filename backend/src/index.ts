@@ -106,6 +106,7 @@ import pdfRouter from './routes/pdfRouter'; app.use('/pdfs', pdfRouter);
 import payStubRouter from './routes/payStubRouter'; app.use('/api/pay-stubs', payStubRouter);
 import directDepositRouter from './routes/directDepositRouter'; app.use('/api/direct-deposit', directDepositRouter);
 import yearEndRouter from './routes/yearEndRouter'; app.use('/api/year-end', yearEndRouter);
+import supportRoutes from './routes/supportRoutes'; app.use('/api/support', supportRoutes);
 app.use(trialCheck);
 
 // ─── Dummy /api/photos endpoint to prevent frontend JSON parse errors ───
@@ -540,13 +541,21 @@ const io = new SocketIOServer(server, { cors: { origin: '*' } });
 
 io.on('connection', (socket) => {
   console.log('🔌 New WebSocket connection:', socket.id);
+
   socket.on('join-room', (roomId) => { socket.join(`room-${roomId}`); console.log(`Socket ${socket.id} joined room-${roomId}`); });
   socket.on('leave-room', (roomId) => { socket.leave(`room-${roomId}`); console.log(`Socket ${socket.id} left room-${roomId}`); });
+  socket.on('join-agent-dashboard', () => {
+    socket.join('agent-dashboard');
+    console.log('Agent joined dashboard');
+  });
   socket.on('chat-message', async (data) => {
     try { const saved = await saveMessage(data.senderId, data.roomId, data.message, data.companyId); io.to(`room-${data.roomId}`).emit('new-message', saved); }
     catch (err) { console.error('Chat message error:', err); }
   });
 });
+
+// After creating io:
+app.set('io', io);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log('');
