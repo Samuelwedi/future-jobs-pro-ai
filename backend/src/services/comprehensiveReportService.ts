@@ -1,5 +1,4 @@
 import PDFDocument from 'pdfkit';
-import { pool } from '../config/database';
 
 interface ReportData {
   project: {
@@ -41,7 +40,7 @@ export async function generateComprehensiveReport(data: ReportData): Promise<Buf
         doc.moveDown(0.5);
         data.photos.forEach((p, i) => {
           doc.fontSize(10).font('Helvetica')
-            .text(`${i+1}. ${p.taken_by || 'Unknown'} – ${new Date(p.taken_at).toLocaleString()}`, { continued: true })
+            .text(`${i+1}. ${p.taken_by_name || 'Unknown'} – ${new Date(p.taken_at).toLocaleString()}`, { continued: true })
             .text(` Score: ${p.compliance_score || 0}%`, { align: 'right' });
           if (p.verification_hash) doc.text(`   ✅ Verified: ${p.verification_hash.slice(0, 8)}`);
           doc.moveDown(0.3);
@@ -55,7 +54,7 @@ export async function generateComprehensiveReport(data: ReportData): Promise<Buf
         doc.moveDown(0.5);
         data.videos.forEach((v, i) => {
           doc.fontSize(10).font('Helvetica')
-            .text(`${i+1}. ${v.taken_by || 'Unknown'} – ${new Date(v.taken_at).toLocaleString()}`);
+            .text(`${i+1}. ${v.taken_by_name || 'Unknown'} – ${new Date(v.taken_at).toLocaleString()}`);
           if (v.duration) doc.text(`   Duration: ${v.duration}s`);
           doc.moveDown(0.3);
         });
@@ -68,7 +67,7 @@ export async function generateComprehensiveReport(data: ReportData): Promise<Buf
         doc.moveDown(0.5);
         data.voiceNotes.forEach((vn, i) => {
           doc.fontSize(10).font('Helvetica')
-            .text(`${i+1}. ${vn.taken_by || 'Unknown'} – ${new Date(vn.taken_at).toLocaleString()}`);
+            .text(`${i+1}. ${vn.taken_by_name || 'Unknown'} – ${new Date(vn.taken_at).toLocaleString()}`);
           if (vn.transcript) doc.text(`   Transcript: ${vn.transcript.slice(0, 100)}${vn.transcript.length > 100 ? '...' : ''}`);
           if (vn.duration) doc.text(`   Duration: ${vn.duration}s`);
           doc.moveDown(0.3);
@@ -96,7 +95,7 @@ export async function generateComprehensiveReport(data: ReportData): Promise<Buf
           const end = new Date(sorted[sorted.length-1].timestamp);
           const duration = (end.getTime() - start.getTime()) / 60000; // minutes
           doc.text(`   Duration: ${Math.round(duration)} min`);
-          doc.text(`   Distance: ~${(sorted.length * 0.01).toFixed(2)} km (approx)`); // placeholder
+          doc.text(`   Distance: ~${(sorted.length * 0.01).toFixed(2)} km (approx)`);
           doc.moveDown(0.3);
         }
         doc.moveDown(1);

@@ -82,8 +82,6 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
     );
 
     // ─── Notes ────────────────────────────────────────────────
-    // If you have a notes table, adjust accordingly.
-    // For now, we'll assume notes are in time_entries or a separate notes table.
     const notes = await pool.query(
       `SELECT n.*,
               u.first_name || ' ' || u.last_name AS created_by
@@ -94,7 +92,7 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
       [projectId, startDate, endDate]
     ).catch(() => ({ rows: [] })); // If notes table doesn't exist, ignore.
 
-    // ─── Generate PDF ─────────────────────────────────────────
+    // ─── Company Name ──────────────────────────────────────────
     const companyRes = await pool.query('SELECT name FROM companies WHERE id = $1', [decoded.companyId]);
     const companyName = companyRes.rows[0]?.name || 'Future Jobs Pro AI';
 
