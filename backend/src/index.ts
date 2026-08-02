@@ -107,6 +107,7 @@ import payStubRouter from './routes/payStubRouter'; app.use('/api/pay-stubs', pa
 import directDepositRouter from './routes/directDepositRouter'; app.use('/api/direct-deposit', directDepositRouter);
 import yearEndRouter from './routes/yearEndRouter'; app.use('/api/year-end', yearEndRouter);
 import supportRoutes from './routes/supportRoutes'; app.use('/api/support', supportRoutes);
+import reportRoutes from './routes/reportRoutes'; app.use('/api/reports', reportRoutes);
 app.use(trialCheck);
 
 // ─── Dummy /api/photos endpoint to prevent frontend JSON parse errors ───

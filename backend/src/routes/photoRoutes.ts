@@ -224,4 +224,63 @@ router.get('/project/:projectId', async (req: Request, res: Response) => {
   }
 });
 
+import { generateEvidenceReport } from '../services/reportService';
+
+// ─── POST /api/photos/report ──────────────────────────────────────
+router.post('/report', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer '))
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const decoded = verifyToken(req);
+    const { photoIds, reportTitle, projectId } = req.body;
+    if (!photoIds || !Array.isArray(photoIds) || photoIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'photoIds array required' });
+    }
+
+    // Fetch photos from DB
+    const photoRes = await pool.query(
+      `SELECT p.id, p.s3_key, p.taken_at, p.taken_by, p.compliance_score, p.verification_hash,
+              u.company_id
+       FROM photos p
+       LEFT JOIN users u ON p.taken_by = u.id
+       WHERE p.id = ANY($1)`,
+      [photoIds]
+    );
+
+    if (photoRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'No photos found' });
+    }
+
+    // Get company name
+    const companyRes = await pool.query('SELECT name FROM companies WHERE id = $1', [
+      photoRes.rows[0].company_id || decoded.companyId
+    ]);
+    const companyName = companyRes.rows[0]?.name || 'Future Jobs Pro AI';
+
+    // Generate PDF
+    const pdfBuffer = await generateEvidenceReport(
+      photoRes.rows,
+      reportTitle || 'Job Evidence Report',
+      companyName
+    );
+
+    // Upload PDF to Cloudinary (or S3) and return URL
+    // For now, we'll save it temporarily and return a data URL (not ideal for production)
+    // In production, you'd upload to Cloudinary/S3 and return the URL.
+    // Let's use base64 encoding for demonstration.
+    const base64 = pdfBuffer.toString('base64');
+    const dataUrl = `data:application/pdf;base64,${base64}`;
+
+    // Optionally, you could store the PDF URL in a database for later retrieval.
+    // But for simplicity, we'll return the data URL.
+
+    res.json({ success: true, reportUrl: dataUrl });
+  } catch (error) {
+    console.error('Report generation error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 export default router;

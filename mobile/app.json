@@ -53,6 +53,9 @@
             "minSdkVersion": 26,
             "buildToolsVersion": "36.0.0",
             "kotlinVersion": "2.0.21"
+          },
+          "ios": {
+            "deploymentTarget": "16.0"
           }
         }
       ],
