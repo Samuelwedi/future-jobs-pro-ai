@@ -29,6 +29,7 @@ export default function NewChat() {
   const [isGroup, setIsGroup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchUsers();
@@ -58,7 +59,7 @@ export default function NewChat() {
       setFiltered(others);
     } catch (e) {
       console.error(e);
-      alert('Could not load users');
+      setError('Could not load users');
     } finally {
       setLoading(false);
     }
@@ -79,6 +80,7 @@ export default function NewChat() {
       alert('Select at least one person');
       return;
     }
+    setError('');
     try {
       let url = '';
       let body = {};
@@ -101,13 +103,13 @@ export default function NewChat() {
       const data = await res.json();
       if (data.success && data.roomId) {
         const otherUser = users.find(u => u.id === selectedIds[0]);
-        const roomName = isGroup ? groupName.trim() : `${otherUser?.first_name} ${otherUser?.last_name}`;
-        navigate('/chat', { state: { roomId: data.roomId, roomName } });
+        const roomName = isGroup ? groupName.trim() : `${otherUser?.first_name || ''} ${otherUser?.last_name || ''}`.trim() || 'Chat';
+        navigate(`/chat/${data.roomId}`, { state: { roomName } });
       } else {
-        alert('Failed to create chat');
+        setError(data.message || 'Failed to create chat');
       }
     } catch (e: any) {
-      alert('Error: ' + e.message);
+      setError('Error: ' + e.message);
     }
   };
 
@@ -129,6 +131,8 @@ export default function NewChat() {
           New Chat
         </Typography>
       </Box>
+
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <Button
@@ -183,7 +187,7 @@ export default function NewChat() {
               >
                 <ListItemAvatar>
                   <Avatar sx={{ bgcolor: '#00D4FF' }}>
-                    {u.first_name[0]}{u.last_name[0]}
+                    {u.first_name[0]}{u.last_name?.[0] || ''}
                   </Avatar>
                 </ListItemAvatar>
                 <ListItemText

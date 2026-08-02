@@ -38,7 +38,7 @@ export default function ChatList() {
   }, []);
 
   const renderRoom = (room: Room) => {
-    const title = room.is_group ? (room.name || 'Unnamed Group') : (room.other_user_name || 'Unknown User');
+    let title = room.is_group ? (room.name || 'Unnamed Group') : (room.other_user_name || 'Direct Chat');
     return (
       <ListItemButton
         key={room.id}
