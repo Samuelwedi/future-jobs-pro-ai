@@ -12,6 +12,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [agentId, setAgentId] = useState('');
+  const [loadingSuggest, setLoadingSuggest] = useState(false);
   const socketRef = useRef(null);
   const messagesEndRef = useRef(null);
 
@@ -48,7 +49,7 @@ function App() {
       socket.emit('join-agent-dashboard');
     });
 
-    // Fetch existing tickets on connect
+    // Fetch existing tickets
     axios.get(`${API_BASE}/api/support/tickets`, {
       headers: { Authorization: `Bearer ${token}` },
     }).then(res => {
@@ -103,7 +104,7 @@ function App() {
       senderId: agentId,
       sender_name: 'Support Agent',
       message: msg,
-      companyId: 'company-id-here', // optional; you can get from ticket
+      companyId: 'company-id-here',
     });
     setMessages((prev) => [
       ...prev,
@@ -127,6 +128,30 @@ function App() {
     } catch (error) {
       console.error('Error resolving ticket:', error);
       alert('Failed to resolve ticket. Please try again.');
+    }
+  };
+
+  // ─── AI Suggestion ─────────────────────────────────────────────
+  const generateAISuggestion = async () => {
+    if (!currentRoom) return;
+    const ticketId = currentRoom.split('-')[2];
+    setLoadingSuggest(true);
+    try {
+      const res = await axios.post(
+        `${API_BASE}/api/support/tickets/${ticketId}/suggest`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.data.success) {
+        setInput(res.data.reply);
+      } else {
+        alert('Could not generate suggestion: ' + res.data.message);
+      }
+    } catch (error) {
+      console.error('AI suggestion error:', error);
+      alert('Failed to get AI suggestion.');
+    } finally {
+      setLoadingSuggest(false);
     }
   };
 
@@ -182,12 +207,21 @@ function App() {
                 <span style={styles.roomId}>Ticket: {currentRoom}</span>
                 <span style={styles.agentBadge}>Agent: You</span>
               </div>
-              <button
-                style={styles.resolveButton}
-                onClick={() => resolveTicket(currentRoom.split('-')[2])}
-              >
-                ✅ Resolve
-              </button>
+              <div>
+                <button
+                  style={styles.aiButton}
+                  onClick={generateAISuggestion}
+                  disabled={loadingSuggest}
+                >
+                  {loadingSuggest ? '⏳ Generating...' : '🤖 AI Suggest'}
+                </button>
+                <button
+                  style={styles.resolveButton}
+                  onClick={() => resolveTicket(currentRoom.split('-')[2])}
+                >
+                  ✅ Resolve
+                </button>
+              </div>
             </div>
 
             <div style={styles.messagesContainer}>
@@ -214,15 +248,18 @@ function App() {
             </div>
 
             <div style={styles.inputArea}>
-              <input
-                type="text"
+              <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
                 placeholder="Type a message..."
-                style={styles.input}
+                style={styles.textarea}
+                rows={3}
               />
-              <button style={styles.sendButton} onClick={sendMessage}>Send</button>
+              <div style={styles.inputActions}>
+                <button style={styles.sendButton} onClick={sendMessage}>
+                  Send
+                </button>
+              </div>
             </div>
           </>
         ) : (
@@ -233,7 +270,7 @@ function App() {
   );
 }
 
-// (Keep the styles object from before – I’ll reuse them)
+// (Styles remain the same – add new styles for AI button and textarea)
 const styles = {
   container: { display: 'flex', height: '100vh', backgroundColor: '#0A0A0A', color: '#FFF', fontFamily: 'sans-serif' },
   sidebar: { width: '300px', borderRight: '1px solid #333', padding: '20px', overflowY: 'auto', backgroundColor: '#141414' },
@@ -247,13 +284,15 @@ const styles = {
   chatHeader: { padding: '16px 24px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   roomId: { fontWeight: 'bold' },
   agentBadge: { marginLeft: '16px', fontSize: '14px', color: '#4CAF50' },
-  resolveButton: { backgroundColor: '#4CAF50', color: '#FFF', border: 'none', padding: '6px 18px', borderRadius: '20px', fontWeight: '600', cursor: 'pointer' },
+  resolveButton: { backgroundColor: '#4CAF50', color: '#FFF', border: 'none', padding: '6px 18px', borderRadius: '20px', fontWeight: '600', cursor: 'pointer', marginLeft: '8px' },
+  aiButton: { backgroundColor: '#9C27B0', color: '#FFF', border: 'none', padding: '6px 18px', borderRadius: '20px', fontWeight: '600', cursor: 'pointer', marginRight: '8px' },
   messagesContainer: { flex: 1, padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' },
   message: { maxWidth: '70%', padding: '10px 16px', borderRadius: '14px', fontSize: '14px', lineHeight: '1.4', color: '#FFF' },
   senderName: { fontSize: '12px', color: '#AAA', marginBottom: '4px' },
   messageTime: { fontSize: '10px', color: '#888', marginTop: '4px', textAlign: 'right' },
-  inputArea: { padding: '16px 24px', borderTop: '1px solid #333', display: 'flex', gap: '12px' },
-  input: { flex: 1, padding: '10px 18px', borderRadius: '30px', border: 'none', backgroundColor: '#1A1A1A', color: '#FFF', fontSize: '14px', outline: 'none' },
+  inputArea: { padding: '16px 24px', borderTop: '1px solid #333', display: 'flex', flexDirection: 'column', gap: '8px' },
+  textarea: { width: '100%', padding: '10px 18px', borderRadius: '8px', border: 'none', backgroundColor: '#1A1A1A', color: '#FFF', fontSize: '14px', outline: 'none', resize: 'vertical', fontFamily: 'inherit' },
+  inputActions: { display: 'flex', justifyContent: 'flex-end' },
   sendButton: { backgroundColor: '#00D4FF', border: 'none', borderRadius: '30px', padding: '10px 24px', fontWeight: '600', color: '#0A0A0A', cursor: 'pointer' },
   selectPrompt: { flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#666', fontSize: '18px' },
   loginContainer: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#0A0A0A', color: '#FFF' },
