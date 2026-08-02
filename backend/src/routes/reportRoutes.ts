@@ -18,7 +18,7 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'projectId, startDate, endDate required' });
     }
 
-    // ─── Fetch project details ──────────────────────────────
+    // ─── 1. Project details ────────────────────────────────
     const projectRes = await pool.query(
       `SELECT id, name, address, client_name FROM projects WHERE id = $1 AND company_id = $2`,
       [projectId, decoded.companyId]
@@ -28,7 +28,7 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
     }
     const project = projectRes.rows[0];
 
-    // ─── Photos ──────────────────────────────────────────────
+    // ─── 2. Photos ──────────────────────────────────────────
     const photos = await pool.query(
       `SELECT p.id, p.s3_key, p.taken_at, p.taken_by, p.compliance_score, p.verification_hash,
               u.first_name || ' ' || u.last_name AS taken_by_name
@@ -38,7 +38,7 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
       [projectId, startDate, endDate]
     );
 
-    // ─── Videos ──────────────────────────────────────────────
+    // ─── 3. Videos ──────────────────────────────────────────
     const videos = await pool.query(
       `SELECT m.id, m.url, m.taken_at, m.type, m.duration, m.taken_by,
               u.first_name || ' ' || u.last_name AS taken_by_name
@@ -48,7 +48,7 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
       [projectId, startDate, endDate]
     );
 
-    // ─── Voice Notes ──────────────────────────────────────────
+    // ─── 4. Voice Notes ──────────────────────────────────────
     const voiceNotes = await pool.query(
       `SELECT m.id, m.url, m.taken_at, m.type, m.duration, m.transcript, m.taken_by,
               u.first_name || ' ' || u.last_name AS taken_by_name
@@ -58,7 +58,7 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
       [projectId, startDate, endDate]
     );
 
-    // ─── GPS Trails ──────────────────────────────────────────
+    // ─── 5. GPS Trails ──────────────────────────────────────
     const gpsTrails = await pool.query(
       `SELECT g.*, te.id as time_entry_id,
               u.first_name || ' ' || u.last_name AS user_name
@@ -70,7 +70,7 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
       [projectId, startDate, endDate]
     );
 
-    // ─── Timesheet ────────────────────────────────────────────
+    // ─── 6. Timesheet ────────────────────────────────────────
     const timesheet = await pool.query(
       `SELECT te.*,
               u.first_name || ' ' || u.last_name AS employee_name
@@ -81,9 +81,7 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
       [projectId, startDate, endDate]
     );
 
-    // ─── Notes ────────────────────────────────────────────────
-    // If you have a notes table, use it; otherwise, we can extract notes from time_entries.
-    // For now, we'll use a placeholder.
+    // ─── 7. Notes ────────────────────────────────────────────
     let notes = { rows: [] };
     try {
       const notesRes = await pool.query(
@@ -97,11 +95,10 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
       );
       notes = notesRes;
     } catch (e) {
-      // If notes table doesn't exist, we ignore.
-      console.warn('Notes table not available');
+      // Ignore if notes table doesn't exist
     }
 
-    // ─── Company Name ──────────────────────────────────────────
+    // ─── 8. Company Name ──────────────────────────────────────
     const companyRes = await pool.query('SELECT name FROM companies WHERE id = $1', [decoded.companyId]);
     const companyName = companyRes.rows[0]?.name || 'Future Jobs Pro AI';
 

@@ -34,6 +34,24 @@ export async function generateComprehensiveReport(data: ReportData): Promise<Buf
       doc.text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
       doc.moveDown(2);
 
+      // ─── Summary ───────────────────────────────────────────
+      const totalPhotos = data.photos.length;
+      const totalVideos = data.videos.length;
+      const totalVoice = data.voiceNotes.length;
+      const totalGPS = data.gpsTrails.length;
+      const totalTimesheet = data.timesheet.length;
+      const totalNotes = data.notes.length;
+
+      doc.fontSize(12).font('Helvetica-Bold').text('Summary');
+      doc.fontSize(10).font('Helvetica')
+        .text(`  Photos: ${totalPhotos}`)
+        .text(`  Videos: ${totalVideos}`)
+        .text(`  Voice Notes: ${totalVoice}`)
+        .text(`  GPS Trails: ${totalGPS}`)
+        .text(`  Timesheet Entries: ${totalTimesheet}`)
+        .text(`  Notes: ${totalNotes}`);
+      doc.moveDown(2);
+
       // ─── Photos ────────────────────────────────────────────
       if (data.photos.length) {
         doc.fontSize(14).font('Helvetica-Bold').text('📷 Photos');
@@ -79,21 +97,20 @@ export async function generateComprehensiveReport(data: ReportData): Promise<Buf
       if (data.gpsTrails.length) {
         doc.fontSize(14).font('Helvetica-Bold').text('📍 GPS Trails');
         doc.moveDown(0.5);
-        // Group by time entry
         const grouped = data.gpsTrails.reduce((acc, g) => {
           const key = g.time_entry_id;
           if (!acc[key]) acc[key] = { entries: [], user: g.user_name };
           acc[key].entries.push(g);
           return acc;
         }, {});
-        for (const [key, group] of Object.entries(grouped)) {
-          const g = group as { entries: any[]; user: string };
+        for (const key of Object.keys(grouped)) {
+          const g = grouped[key] as { entries: any[]; user: string };
           doc.fontSize(10).font('Helvetica-Bold').text(`User: ${g.user}`);
           const sorted = g.entries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
           doc.font('Helvetica').text(`   Points: ${sorted.length}`);
           const start = new Date(sorted[0].timestamp);
           const end = new Date(sorted[sorted.length-1].timestamp);
-          const duration = (end.getTime() - start.getTime()) / 60000; // minutes
+          const duration = (end.getTime() - start.getTime()) / 60000;
           doc.text(`   Duration: ${Math.round(duration)} min`);
           doc.text(`   Distance: ~${(sorted.length * 0.01).toFixed(2)} km (approx)`);
           doc.moveDown(0.3);
