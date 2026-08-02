@@ -49,7 +49,7 @@ import GPSPlayback from './pages/GPSPlayback';
 import NewChat from './pages/NewChat';
 import Subscription from './pages/Subscription';
 import 'leaflet/dist/leaflet.css';
-
+import ChatList from './pages/ChatList';
 
 export default function App() {
   return (
@@ -79,6 +79,9 @@ export default function App() {
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/payment-required" element={<PaymentRequired />} />
+<Route path="chat" element={<ChatList />} />
+<Route path="chat/:roomId" element={<Chat />} />
+<Route path="new-chat" element={<NewChat />} />
 
         {/* Protected routes with sidebar (Layout) */}
         <Route path="/" element={<Layout />}>
