@@ -1,182 +1,502 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Container, Typography, Grid, Card, CardContent, Button,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Paper, Chip, CircularProgress, Alert,
+  Paper, Chip, CircularProgress, Alert, Tabs, Tab, FormControl,
+  InputLabel, Select, MenuItem, IconButton, Tooltip, Divider,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField,
 } from '@mui/material';
-import { PictureAsPdf, Download, Description, Assessment } from '@mui/icons-material';
+import {
+  PictureAsPdf, Download, Description, Assessment, Refresh,
+  CheckCircle, Warning, Schedule, AttachMoney, FilePresent,
+  Clear, FilterList, Print, Share,
+} from '@mui/icons-material';
+
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+
+interface Photo {
+  id: string;
+  s3_key: string;
+  taken_at: string;
+  taken_by?: string;
+  compliance_score?: number;
+  project_id: string;
+  project_name?: string;
+  verification_hash?: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+}
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+  return (
+    <div role="tabpanel" hidden={value !== index} {...other}>
+      {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
+    </div>
+  );
+}
 
 export default function Reports() {
-  const [photos, setPhotos] = useState<any[]>([]);
+  const token = localStorage.getItem('token') || '';
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+
+  // ─── State ─────────────────────────────────────────────────────
+  const [tabValue, setTabValue] = useState(0);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [photos, setPhotos] = useState<Photo[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
   const [reportUrl, setReportUrl] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [reportTitle, setReportTitle] = useState('Job Evidence Report');
+  const [showTitleDialog, setShowTitleDialog] = useState(false);
+
+  // ─── Fetch Projects ────────────────────────────────────────────
+  const fetchProjects = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.projects) {
+        setProjects(data.projects);
+        if (data.projects.length > 0) {
+          setSelectedProject(data.projects[0].id);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch projects:', e);
+      setError('Could not load projects');
+    }
+  }, [token]);
 
   useEffect(() => {
-    // Fetch photos for the demo project
-    fetchPhotos();
-  }, []);
+    fetchProjects();
+  }, [fetchProjects]);
 
-  const fetchPhotos = async () => {
+  // ─── Fetch Photos ──────────────────────────────────────────────
+  const fetchPhotos = useCallback(async () => {
+    if (!selectedProject) return;
+    setFetching(true);
+    setError(null);
     try {
-      // In production, use your actual API
-      const res = await fetch('/api/photos/project/65aba618-d0e8-424d-a7da-bb9b5cb06df3');
+      const res = await fetch(`${API_BASE}/api/photos/project/${selectedProject}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
-      setPhotos(data.photos || []);
+      if (data.photos) {
+        setPhotos(data.photos);
+        // Auto-select high-quality photos (score >= 70)
+        const autoSelected = data.photos
+          .filter((p: Photo) => (p.compliance_score || 0) >= 70)
+          .map((p: Photo) => p.id);
+        setSelectedIds(autoSelected);
+      } else {
+        setPhotos([]);
+        setSelectedIds([]);
+      }
     } catch (e) {
-      console.error('Failed to load photos:', e);
+      console.error('Failed to fetch photos:', e);
+      setError('Could not load photos');
+    } finally {
+      setFetching(false);
     }
-  };
+  }, [selectedProject, token]);
 
+  useEffect(() => {
+    fetchPhotos();
+  }, [fetchPhotos]);
+
+  // ─── Handlers ──────────────────────────────────────────────────
   const togglePhoto = (id: string) => {
     setSelectedIds(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
   };
 
-  const generateReport = async () => {
-    if (selectedIds.length === 0) return;
+  const selectAll = () => {
+    if (selectedIds.length === photos.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(photos.map(p => p.id));
+    }
+  };
+
+  const clearSelection = () => setSelectedIds([]);
+
+  const handleGenerateReport = async () => {
+    if (selectedIds.length === 0) {
+      setError('Please select at least one photo');
+      return;
+    }
     setLoading(true);
+    setError(null);
+    setSuccess(null);
     try {
-      const res = await fetch('/api/photos/report', {
+      const res = await fetch(`${API_BASE}/api/photos/report`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           photoIds: selectedIds,
-          reportTitle: 'Job Evidence Report',
+          reportTitle: reportTitle,
+          projectId: selectedProject,
         }),
       });
       const data = await res.json();
-      setReportUrl(data.reportUrl || '');
-    } catch (e) {
-      console.error('Report generation failed:', e);
+      if (data.reportUrl) {
+        setReportUrl(data.reportUrl);
+        setSuccess('Report generated successfully!');
+        // Open in new tab after a short delay
+        setTimeout(() => {
+          window.open(data.reportUrl, '_blank');
+        }, 1000);
+      } else {
+        setError(data.message || 'Failed to generate report');
+      }
+    } catch (e: any) {
+      setError('Error generating report: ' + e.message);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
+  // ─── Render Helpers ────────────────────────────────────────────
+  const getComplianceColor = (score: number) => {
+    if (score >= 80) return '#4CAF50';
+    if (score >= 60) return '#FF9800';
+    return '#F44336';
+  };
+
+  const getComplianceLabel = (score: number) => {
+    if (score >= 80) return '✅ High';
+    if (score >= 60) return '⚠️ Medium';
+    return '❌ Low';
+  };
+
+  // ✅ Native date formatter – no external dependencies
+  const formatDate = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr;
+      const options: Intl.DateTimeFormatOptions = {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      };
+      return date.toLocaleDateString('en-US', options);
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // ─── Render ────────────────────────────────────────────────────
+  if (fetching && photos.length === 0) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', height: '70vh' }}>
+        <CircularProgress sx={{ color: '#00D4FF' }} />
+      </Container>
+    );
+  }
+
   return (
-    <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', py: 4 }}>
-      <Container maxWidth="lg">
-        <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>
-          📄 Reports
-        </Typography>
-        <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>
-          Generate evidence reports, timesheets, and payroll summaries.
-        </Typography>
+    <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
+      {/* Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Box>
+          <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold' }}>
+            📄 Reports
+          </Typography>
+          <Typography variant="body1" sx={{ color: '#888', mt: 0.5 }}>
+            Generate evidence reports, timesheets, and payroll summaries.
+          </Typography>
+        </Box>
+        <Tooltip title="Refresh">
+          <IconButton onClick={fetchPhotos} sx={{ color: '#00D4FF' }}>
+            <Refresh />
+          </IconButton>
+        </Tooltip>
+      </Box>
 
-        {/* Quick Actions */}
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          {[
-            { icon: <PictureAsPdf sx={{ fontSize: 40 }} />, title: 'Evidence Report', desc: 'Generate a tamper‑proof PDF with photos, GPS trails, and voice notes for any project.', action: 'Select Photos Below' },
-            { icon: <Assessment sx={{ fontSize: 40 }} />, title: 'Timesheet Export', desc: 'Export weekly timesheets as PDF or CSV for payroll processing.', action: 'Coming Soon' },
-            { icon: <Description sx={{ fontSize: 40 }} />, title: 'Dispute Evidence', desc: 'One‑click dispute package with all supporting documentation.', action: 'Select Photos Below' },
-          ].map((card, i) => (
-            <Grid item xs={12} md={4} key={i}>
-              <Card sx={{ bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333', height: '100%' }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Box sx={{ color: '#00D4FF', mb: 2 }}>{card.icon}</Box>
-                  <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>{card.title}</Typography>
-                  <Typography variant="body2" sx={{ color: '#AAA', lineHeight: 1.6, mb: 2 }}>{card.desc}</Typography>
-                  <Chip label={card.action} size="small" sx={{ bgcolor: '#00D4FF20', color: '#00D4FF' }} />
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+      {/* Tabs */}
+      <Tabs value={tabValue} onChange={handleTabChange} sx={{ mb: 2, borderBottom: '1px solid #333' }}>
+        <Tab label="📷 Evidence Report" icon={<PictureAsPdf />} iconPosition="start" />
+        <Tab label="⏱ Timesheet" icon={<Schedule />} iconPosition="start" />
+        <Tab label="💰 Payroll" icon={<AttachMoney />} iconPosition="start" />
+      </Tabs>
 
-        {/* Photo Selection Table */}
-        <Paper sx={{ bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333', overflow: 'hidden' }}>
-          <Box sx={{ p: 3, borderBottom: '1px solid #333' }}>
-            <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 'bold' }}>
-              Select Photos for Evidence Report
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#888', mt: 1 }}>
-              {selectedIds.length} photo{selectedIds.length !== 1 ? 's' : ''} selected
-            </Typography>
+      {/* ─── Tab 0: Evidence Report ────────────────────────────── */}
+      <TabPanel value={tabValue} index={0}>
+        {/* Project Selector */}
+        <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center', flexWrap: 'wrap' }}>
+          <FormControl sx={{ minWidth: 200 }}>
+            <InputLabel sx={{ color: '#888' }}>Project</InputLabel>
+            <Select
+              value={selectedProject}
+              onChange={(e) => setSelectedProject(e.target.value)}
+              sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+            >
+              {projects.map((p) => (
+                <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Button
+            variant="outlined"
+            startIcon={<Refresh />}
+            onClick={fetchPhotos}
+            sx={{ color: '#00D4FF', borderColor: '#00D4FF' }}
+          >
+            Load Photos
+          </Button>
+
+          <Box sx={{ flex: 1 }} />
+
+          <Chip
+            label={`${photos.length} photos`}
+            sx={{ bgcolor: '#1A1A1A', color: '#888' }}
+          />
+          <Chip
+            label={`${selectedIds.length} selected`}
+            sx={{ bgcolor: '#00D4FF20', color: '#00D4FF' }}
+          />
+        </Box>
+
+        {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+        {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
+
+        {/* Photo Table */}
+        <Paper sx={{ bgcolor: '#1A1A1A', borderRadius: 2, border: '1px solid #333', overflow: 'hidden' }}>
+          <Box sx={{ p: 2, borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" sx={{ color: '#FFF' }}>Select Photos</Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button size="small" onClick={selectAll} sx={{ color: '#00D4FF' }}>
+                {selectedIds.length === photos.length ? 'Deselect All' : 'Select All'}
+              </Button>
+              <Button size="small" onClick={clearSelection} sx={{ color: '#F44336' }}>
+                Clear
+              </Button>
+            </Box>
           </Box>
+
           <TableContainer>
-            <Table>
+            <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ color: '#888' }}>Select</TableCell>
+                  <TableCell sx={{ color: '#888', width: 50 }}>#</TableCell>
                   <TableCell sx={{ color: '#888' }}>Photo</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Date Taken</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Compliance Score</TableCell>
+                  <TableCell sx={{ color: '#888' }}>Date</TableCell>
+                  <TableCell sx={{ color: '#888' }}>Taken By</TableCell>
+                  <TableCell sx={{ color: '#888' }}>Compliance</TableCell>
+                  <TableCell sx={{ color: '#888' }}>Verified</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {photos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} sx={{ color: '#888', textAlign: 'center', py: 4 }}>
+                    <TableCell colSpan={6} sx={{ color: '#888', textAlign: 'center', py: 4 }}>
                       No photos found. Take some photos first!
                     </TableCell>
                   </TableRow>
                 ) : (
-                  photos.map((photo: any) => (
-                    <TableRow key={photo.id} hover>
-                      <TableCell>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(photo.id)}
-                          onChange={() => togglePhoto(photo.id)}
-                          style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#00D4FF' }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          <Box
-                            component="img"
-                            src={photo.s3_key}
-                            alt="Job photo"
-                            sx={{ width: 60, height: 60, borderRadius: 2, objectFit: 'cover', bgcolor: '#0A0A0A' }}
+                  photos.map((photo, index) => {
+                    const score = photo.compliance_score || 0;
+                    const isSelected = selectedIds.includes(photo.id);
+                    return (
+                      <TableRow
+                        key={photo.id}
+                        hover
+                        selected={isSelected}
+                        sx={{
+                          cursor: 'pointer',
+                          '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' },
+                          '&.Mui-selected': { bgcolor: 'rgba(0,212,255,0.1)' },
+                        }}
+                        onClick={() => togglePhoto(photo.id)}
+                      >
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => togglePhoto(photo.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#00D4FF' }}
                           />
-                          <Typography variant="body2" sx={{ color: '#FFF' }}>
-                            {photo.taken_by || 'Field Worker'}
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell sx={{ color: '#CCC' }}>
-                        {photo.taken_at ? new Date(photo.taken_at).toLocaleDateString() : 'N/A'}
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={`${photo.compliance_score || 0}/100`}
-                          size="small"
-                          sx={{
-                            bgcolor: (photo.compliance_score || 0) >= 70 ? '#4CAF5020' : '#F4433620',
-                            color: (photo.compliance_score || 0) >= 70 ? '#4CAF50' : '#F44336',
-                          }}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box
+                              component="img"
+                              src={photo.s3_key}
+                              alt="Job photo"
+                              sx={{
+                                width: 50,
+                                height: 50,
+                                borderRadius: 1,
+                                objectFit: 'cover',
+                                bgcolor: '#0A0A0A',
+                                border: '1px solid #333',
+                              }}
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="%23888" stroke-width="2"%3E%3Crect x="3" y="3" width="18" height="18" rx="2"/%3E%3Ccircle cx="9" cy="9" r="2"/%3E%3Cpath d="M21 15l-5-5-5 5-3-3-5 5"/%3E%3C/svg%3E';
+                              }}
+                            />
+                            <Typography variant="body2" sx={{ color: '#FFF' }}>
+                              {photo.taken_by || 'Unknown'}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell sx={{ color: '#CCC' }}>{formatDate(photo.taken_at)}</TableCell>
+                        <TableCell sx={{ color: '#CCC' }}>{photo.taken_by || '—'}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={`${score}%`}
+                            size="small"
+                            sx={{
+                              bgcolor: `${getComplianceColor(score)}20`,
+                              color: getComplianceColor(score),
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {photo.verification_hash ? (
+                            <Tooltip title="Blockchain verified">
+                              <CheckCircle sx={{ color: '#4CAF50', fontSize: 20 }} />
+                            </Tooltip>
+                          ) : (
+                            <Warning sx={{ color: '#888', fontSize: 20 }} />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
           </TableContainer>
-          <Box sx={{ p: 3, borderTop: '1px solid #333', display: 'flex', justifyContent: 'flex-end' }}>
-            <Button
-              variant="contained"
-              onClick={generateReport}
-              disabled={selectedIds.length === 0 || loading}
-              startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <Download />}
-              sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 4, py: 1.5, fontWeight: 'bold' }}
-            >
-              {loading ? 'Generating...' : 'Generate PDF Report'}
-            </Button>
+
+          <Box sx={{ p: 2, borderTop: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+            <Typography variant="body2" sx={{ color: '#888' }}>
+              {selectedIds.length} of {photos.length} photos selected
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                variant="contained"
+                onClick={() => setShowTitleDialog(true)}
+                disabled={selectedIds.length === 0}
+                sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}
+              >
+                Generate Report
+              </Button>
+            </Box>
           </Box>
         </Paper>
 
         {reportUrl && (
-          <Alert severity="success" sx={{ mt: 3, bgcolor: '#4CAF5020', color: '#4CAF50' }}>
-            Report generated successfully!{' '}
+          <Alert severity="success" sx={{ mt: 3 }} onClose={() => setReportUrl('')}>
+            Report ready!{' '}
             <a href={reportUrl} target="_blank" rel="noreferrer" style={{ color: '#00D4FF' }}>
               Open PDF
             </a>
           </Alert>
         )}
-      </Container>
-    </Box>
+      </TabPanel>
+
+      {/* ─── Tab 1: Timesheet ────────────────────────────────────── */}
+      <TabPanel value={tabValue} index={1}>
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
+              <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Export Timesheet</Typography>
+              <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>
+                Export timesheets as PDF or CSV for payroll processing.
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Button variant="outlined" startIcon={<PictureAsPdf />} sx={{ color: '#00D4FF', borderColor: '#00D4FF' }}>
+                  PDF
+                </Button>
+                <Button variant="outlined" startIcon={<Description />} sx={{ color: '#00D4FF', borderColor: '#00D4FF' }}>
+                  CSV
+                </Button>
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
+              <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Quick Actions</Typography>
+              <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>
+                Generate a dispute evidence package with all supporting documentation.
+              </Typography>
+              <Button variant="contained" startIcon={<FilePresent />} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+                Generate Dispute Package
+              </Button>
+            </Paper>
+          </Grid>
+        </Grid>
+      </TabPanel>
+
+      {/* ─── Tab 2: Payroll ──────────────────────────────────────── */}
+      <TabPanel value={tabValue} index={2}>
+        <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
+          <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Payroll Summary</Typography>
+          <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>
+            Export payroll summaries for selected periods.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button variant="contained" startIcon={<AttachMoney />} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+              Generate Payroll Report
+            </Button>
+          </Box>
+        </Paper>
+      </TabPanel>
+
+      {/* ─── Report Title Dialog ────────────────────────────────── */}
+      <Dialog open={showTitleDialog} onClose={() => setShowTitleDialog(false)}>
+        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>Report Title</DialogTitle>
+        <DialogContent sx={{ bgcolor: '#0A0A0A' }}>
+          <TextField
+            fullWidth
+            label="Report Title"
+            value={reportTitle}
+            onChange={(e) => setReportTitle(e.target.value)}
+            sx={{ mt: 1, input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: '#1A1A1A' }}>
+          <Button onClick={() => setShowTitleDialog(false)} sx={{ color: '#888' }}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setShowTitleDialog(false);
+              handleGenerateReport();
+            }}
+            disabled={loading}
+            sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}
+          >
+            {loading ? <CircularProgress size={24} /> : 'Generate'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Container>
   );
 }
