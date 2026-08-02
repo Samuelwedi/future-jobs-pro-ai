@@ -20,27 +20,6 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   } catch { return null; }
 };
 
-// ─── GET /api/year-end/employees ─────────────────────────────────
-// List all employees with their employment type and province
-router.get('/employees', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const result = await pool.query(
-      `SELECT id, first_name, last_name, employment_type, province
-       FROM employees
-       WHERE company_id = $1
-       ORDER BY last_name, first_name`,
-      [companyId]
-    );
-    res.json({ success: true, employees: result.rows });
-  } catch (error) {
-    console.error('Error fetching employees:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-});
-
 // ─── GET /api/year-end/employee/:employeeId/forms ────────────────
 router.get('/employee/:employeeId/forms', async (req: Request, res: Response) => {
   try {
@@ -48,14 +27,15 @@ router.get('/employee/:employeeId/forms', async (req: Request, res: Response) =>
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const { employeeId } = req.params;
-    const employeeIdStr = Array.isArray(employeeId) ? employeeId[0] : employeeId;
-    const employeeIdNum = parseInt(employeeIdStr);
-    if (!employeeIdStr || !employeeIdNum || employeeIdNum <= 0) {
+    const employeeIdParam = Array.isArray(employeeId) ? employeeId[0] : employeeId;
+    const employeeIdNum = parseInt(employeeIdParam, 10);
+    if (isNaN(employeeIdNum) || employeeIdNum <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid employee ID' });
     }
+
     const result = await pool.query(
       `SELECT id, first_name, last_name, employment_type, province
-       FROM employees WHERE id = $1 AND company_id = $2`,
+       FROM users WHERE id = $1 AND company_id = $2`,
       [employeeIdNum, companyId]
     );
     if (result.rows.length === 0) {
@@ -69,6 +49,9 @@ router.get('/employee/:employeeId/forms', async (req: Request, res: Response) =>
       if (emp.province === 'QC') forms.push('RL1');
     } else if (emp.employment_type === 'CONTRACTOR') {
       forms.push('T4A');
+    } else {
+      // Default: both employee and contractor? We'll just provide T4.
+      forms.push('T4');
     }
 
     res.json({ success: true, employee: emp, availableForms: forms });
@@ -91,8 +74,11 @@ router.get('/preview', async (req: Request, res: Response) => {
 
     const id = Number(employeeId);
     const year = Number(taxYear);
-    let result;
+    if (isNaN(id) || id <= 0 || isNaN(year)) {
+      return res.status(400).json({ success: false, message: 'Invalid parameters' });
+    }
 
+    let result;
     switch (formType) {
       case 'T4':
         result = await compileT4Slip(id, year);
@@ -124,6 +110,15 @@ router.post('/finalize', async (req: Request, res: Response) => {
     const { employeeId, taxYear, formType } = req.body;
     if (!employeeId || !taxYear || !formType) {
       return res.status(400).json({ success: false, message: 'Missing required parameters' });
+    }
+
+    // Validate employee belongs to company
+    const empCheck = await pool.query(
+      'SELECT id FROM users WHERE id = $1 AND company_id = $2',
+      [employeeId, companyId]
+    );
+    if (empCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
     await client.query('BEGIN');
