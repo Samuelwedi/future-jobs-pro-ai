@@ -1,13 +1,10 @@
 import { pool } from '../config/database';
 
-interface YearEndData {
-  employeeId: number;
-  taxYear: number;
-}
+// In a real app, these would query the database for actual payroll data.
+// For now, we return realistic sample data.
 
-export async function compileT4Slip(employeeId: number, taxYear: number) {
-  // In a real app, you would fetch payroll data from the database.
-  // For now, we'll return mock data that includes all required boxes.
+export async function compileT4Slip(employeeId: string | number, taxYear: number) {
+  // Optionally, you could fetch from a payroll_summary table.
   return {
     t4Manifest: {
       box14_employment_income: 52000.00,
@@ -27,7 +24,7 @@ export async function compileT4Slip(employeeId: number, taxYear: number) {
   };
 }
 
-export async function compileT4ASlip(employeeId: number, taxYear: number) {
+export async function compileT4ASlip(employeeId: string | number, taxYear: number) {
   return {
     t4aManifest: {
       box020_self_employed_fees: 52000.00,
@@ -36,7 +33,7 @@ export async function compileT4ASlip(employeeId: number, taxYear: number) {
   };
 }
 
-export async function compileRL1Slip(employeeId: number, taxYear: number) {
+export async function compileRL1Slip(employeeId: string | number, taxYear: number) {
   return {
     rl1Manifest: {
       box_a_employment_income: 52000.00,

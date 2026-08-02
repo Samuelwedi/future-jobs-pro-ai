@@ -82,15 +82,24 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
     );
 
     // ─── Notes ────────────────────────────────────────────────
-    const notes = await pool.query(
-      `SELECT n.*,
-              u.first_name || ' ' || u.last_name AS created_by
-       FROM notes n
-       LEFT JOIN users u ON n.created_by = u.id
-       WHERE n.project_id = $1 AND n.created_at BETWEEN $2 AND $3
-       ORDER BY n.created_at ASC`,
-      [projectId, startDate, endDate]
-    ).catch(() => ({ rows: [] })); // If notes table doesn't exist, ignore.
+    // If you have a notes table, use it; otherwise, we can extract notes from time_entries.
+    // For now, we'll use a placeholder.
+    let notes = { rows: [] };
+    try {
+      const notesRes = await pool.query(
+        `SELECT n.*,
+                u.first_name || ' ' || u.last_name AS created_by
+         FROM notes n
+         LEFT JOIN users u ON n.created_by = u.id
+         WHERE n.project_id = $1 AND n.created_at BETWEEN $2 AND $3
+         ORDER BY n.created_at ASC`,
+        [projectId, startDate, endDate]
+      );
+      notes = notesRes;
+    } catch (e) {
+      // If notes table doesn't exist, we ignore.
+      console.warn('Notes table not available');
+    }
 
     // ─── Company Name ──────────────────────────────────────────
     const companyRes = await pool.query('SELECT name FROM companies WHERE id = $1', [decoded.companyId]);

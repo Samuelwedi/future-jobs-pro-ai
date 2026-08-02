@@ -1,41 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Paper, Grid, Button, CircularProgress,
-  Alert, Chip, Stack, Divider, Select, MenuItem,
-  FormControl, InputLabel, TextField,
+  Alert, Chip, Stack, Select, MenuItem, FormControl, InputLabel, TextField,
 } from '@mui/material';
-import {
-  Receipt, Save, Visibility,
-} from '@mui/icons-material';
+import { Receipt, Save, Visibility } from '@mui/icons-material';
 
-const API_BASE = ((import.meta as any).env.VITE_API_BASE as string) || 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 interface Employee {
-  id: number;
+  id: string; // now a UUID string
   first_name: string;
   last_name: string;
   employment_type: string;
   province: string;
 }
 
-interface SlipPreview {
-  employeeId: number;
-  taxYear: number;
-  t4Manifest?: any;
-  t4aManifest?: any;
-  rl1Manifest?: any;
-  employerMetrics?: any;
-}
-
 export default function YearEnd() {
   const token = localStorage.getItem('token') || '';
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [selectedEmployee, setSelectedEmployee] = useState<number | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
   const [availableForms, setAvailableForms] = useState<string[]>([]);
   const [selectedForm, setSelectedForm] = useState<string>('T4');
   const [taxYear, setTaxYear] = useState<number>(new Date().getFullYear());
   const [loading, setLoading] = useState(false);
-  const [preview, setPreview] = useState<SlipPreview | null>(null);
+  const [preview, setPreview] = useState<any | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,23 +46,20 @@ export default function YearEnd() {
         });
         const data = await res.json();
         if (data.success) {
-          // Ensure we map all users, not just Lucy
           setEmployees(data.users.map((u: any) => ({
-            id: parseInt(u.id) || 0,
+            id: u.id, // keep as UUID string
             first_name: u.first_name,
             last_name: u.last_name,
             employment_type: u.employment_type || 'EMPLOYEE',
             province: u.province || '',
           })));
         }
-      } catch (e) {
-        console.error('Error fetching employees:', e);
-      }
+      } catch (e) { console.error(e); }
     };
     fetchEmployees();
   }, [token]);
 
-  const fetchAvailableForms = async (employeeId: number) => {
+  const fetchAvailableForms = async (employeeId: string) => {
     try {
       const res = await fetch(`${API_BASE}/api/year-end/employee/${employeeId}/forms`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -82,16 +67,12 @@ export default function YearEnd() {
       const data = await res.json();
       if (data.success) {
         setAvailableForms(data.availableForms || []);
-        if (data.availableForms.length > 0) {
-          setSelectedForm(data.availableForms[0]);
-        }
+        if (data.availableForms.length > 0) setSelectedForm(data.availableForms[0]);
       }
-    } catch (e) {
-      console.error('Error fetching forms:', e);
-    }
+    } catch (e) { console.error(e); }
   };
 
-  const handleEmployeeChange = (employeeId: number) => {
+  const handleEmployeeChange = (employeeId: string) => {
     setSelectedEmployee(employeeId);
     setPreview(null);
     setSaved(false);
@@ -145,19 +126,15 @@ export default function YearEnd() {
   const renderManifest = () => {
     if (!preview) return null;
 
-    let manifest: Record<string, string> = {};
-    let title = '';
-
-    if (preview.t4Manifest) {
-      manifest = preview.t4Manifest;
-      title = 'T4 – Statement of Remuneration Paid';
-    } else if (preview.t4aManifest) {
-      manifest = preview.t4aManifest;
-      title = 'T4A – Statement of Pension & Other Income';
-    } else if (preview.rl1Manifest) {
-      manifest = preview.rl1Manifest;
-      title = 'RL-1 – Relevé 1 (Québec)';
-    }
+    const manifest: Record<string, number | string> =
+      preview.t4Manifest || preview.t4aManifest || preview.rl1Manifest || {};
+    const title = preview.t4Manifest
+      ? 'T4 – Statement of Remuneration Paid'
+      : preview.t4aManifest
+        ? 'T4A – Statement of Pension & Other Income'
+        : preview.rl1Manifest
+          ? 'RL-1 – Relevé 1 (Québec)'
+          : '';
 
     const labelMap: Record<string, string> = {
       box14_employment_income: 'Box 14 – Employment Income',
@@ -186,27 +163,20 @@ export default function YearEnd() {
           {Object.entries(manifest).map(([key, value]) => (
             <Grid item xs={12} md={6} key={key}>
               <Paper sx={{ p: 2, bgcolor: '#0A0A0A', border: '1px solid #333' }}>
-                <Typography variant="caption" sx={{ color: '#888' }}>
-                  {labelMap[key] || key.replace(/_/g, ' ').toUpperCase()}
-                </Typography>
-                <Typography variant="h6" sx={{ color: '#FFF' }}>${value}</Typography>
+                <Typography variant="caption" sx={{ color: '#888' }}>{labelMap[key] || key.replace(/_/g, ' ').toUpperCase()}</Typography>
+                <Typography variant="h6" sx={{ color: '#FFF' }}>${String(value)}</Typography>
               </Paper>
             </Grid>
           ))}
         </Grid>
-
         {preview.employerMetrics && (
           <Box sx={{ mt: 2 }}>
-            <Typography variant="subtitle2" sx={{ color: '#888', mb: 1 }}>
-              Employer Contributions
-            </Typography>
+            <Typography variant="subtitle2" sx={{ color: '#888', mb: 1 }}>Employer Contributions</Typography>
             <Grid container spacing={2}>
               {Object.entries(preview.employerMetrics).map(([key, value]) => (
                 <Grid item xs={12} md={6} key={key}>
                   <Paper sx={{ p: 2, bgcolor: '#0A0A0A', border: '1px solid #333' }}>
-                    <Typography variant="caption" sx={{ color: '#888' }}>
-                      {key.replace(/_/g, ' ').toUpperCase()}
-                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#888' }}>{key.replace(/_/g, ' ').toUpperCase()}</Typography>
                     <Typography variant="h6" sx={{ color: '#4CAF50' }}>${String(value)}</Typography>
                   </Paper>
                 </Grid>
@@ -214,24 +184,15 @@ export default function YearEnd() {
             </Grid>
           </Box>
         )}
-
-        {saved && (
-          <Alert severity="success" sx={{ mt: 2 }}>
-            ✅ This slip has been finalized and locked in the ledger.
-          </Alert>
-        )}
+        {saved && <Alert severity="success" sx={{ mt: 2 }}>✅ This slip has been finalized and locked in the ledger.</Alert>}
       </Box>
     );
   };
 
   return (
     <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
-      <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>
-        📄 Year‑End Tax Forms
-      </Typography>
-      <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>
-        Generate, preview, and finalize T4, T4A, and RL‑1 slips for employees and contractors.
-      </Typography>
+      <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>📄 Year‑End Tax Forms</Typography>
+      <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>Generate, preview, and finalize T4, T4A, and RL‑1 slips.</Typography>
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={4}>
@@ -242,20 +203,14 @@ export default function YearEnd() {
               <InputLabel sx={{ color: '#888' }}>Employee</InputLabel>
               <Select
                 value={selectedEmployee !== null ? selectedEmployee : ''}
-                onChange={(e) => handleEmployeeChange(Number(e.target.value))}
+                onChange={(e) => handleEmployeeChange(e.target.value as string)}
                 sx={darkSelectStyle}
               >
                 {employees.map((emp) => (
                   <MenuItem key={emp.id} value={emp.id}>
                     {emp.first_name} {emp.last_name}
-                    <Chip
-                      size="small"
-                      label={emp.employment_type === 'CONTRACTOR' ? 'Contractor' : 'Employee'}
-                      sx={{ ml: 1, bgcolor: emp.employment_type === 'CONTRACTOR' ? '#FF980020' : '#00D4FF20', color: emp.employment_type === 'CONTRACTOR' ? '#FF9800' : '#00D4FF' }}
-                    />
-                    {emp.province === 'QC' && (
-                      <Chip size="small" label="QC" sx={{ ml: 1, bgcolor: '#4CAF5020', color: '#4CAF50' }} />
-                    )}
+                    <Chip size="small" label={emp.employment_type === 'CONTRACTOR' ? 'Contractor' : 'Employee'} sx={{ ml: 1, bgcolor: emp.employment_type === 'CONTRACTOR' ? '#FF980020' : '#00D4FF20', color: emp.employment_type === 'CONTRACTOR' ? '#FF9800' : '#00D4FF' }} />
+                    {emp.province === 'QC' && <Chip size="small" label="QC" sx={{ ml: 1, bgcolor: '#4CAF5020', color: '#4CAF50' }} />}
                   </MenuItem>
                 ))}
               </Select>
@@ -264,60 +219,19 @@ export default function YearEnd() {
             {availableForms.length > 0 && (
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel sx={{ color: '#888' }}>Form Type</InputLabel>
-                <Select
-                  value={selectedForm}
-                  onChange={(e) => setSelectedForm(e.target.value)}
-                  sx={darkSelectStyle}
-                >
-                  {availableForms.map((form) => (
-                    <MenuItem key={form} value={form}>
-                      {form === 'T4' && 'T4 – Employee'}
-                      {form === 'T4A' && 'T4A – Contractor'}
-                      {form === 'RL1' && 'RL-1 – Québec'}
-                    </MenuItem>
-                  ))}
+                <Select value={selectedForm} onChange={(e) => setSelectedForm(e.target.value)} sx={darkSelectStyle}>
+                  {availableForms.map((form) => <MenuItem key={form} value={form}>{form === 'T4' ? 'T4 – Employee' : form === 'T4A' ? 'T4A – Contractor' : 'RL-1 – Québec'}</MenuItem>)}
                 </Select>
               </FormControl>
             )}
 
-            <TextField
-              label="Tax Year"
-              type="number"
-              fullWidth
-              value={taxYear}
-              onChange={(e) => setTaxYear(Number(e.target.value))}
-              sx={{ mb: 2, ...darkInputStyle }}
-            />
+            <TextField label="Tax Year" type="number" fullWidth value={taxYear} onChange={(e) => setTaxYear(Number(e.target.value))} sx={{ mb: 2, ...darkInputStyle }} />
 
             <Stack direction="row" spacing={2}>
-              <Button
-                variant="contained"
-                startIcon={<Visibility />}
-                onClick={handlePreview}
-                disabled={!selectedEmployee || selectedEmployee <= 0 || loading}
-                sx={{
-                  backgroundColor: '#FFFFFF',
-                  color: '#000000',
-                  border: '2px solid #333333',
-                  '&:hover': { backgroundColor: '#F0F0F0' },
-                  flex: 1
-                }}
-              >
+              <Button variant="contained" startIcon={<Visibility />} onClick={handlePreview} disabled={!selectedEmployee || loading} sx={{ backgroundColor: '#FFFFFF', color: '#000000', border: '2px solid #333333', '&:hover': { backgroundColor: '#F0F0F0' }, flex: 1 }}>
                 Preview
               </Button>
-              <Button
-                variant="contained"
-                startIcon={<Save />}
-                onClick={handleSave}
-                disabled={!preview || saved || loading}
-                sx={{
-                  backgroundColor: '#FFFFFF',
-                  color: '#000000',
-                  border: '2px solid #333333',
-                  '&:hover': { backgroundColor: '#F0F0F0' },
-                  flex: 1
-                }}
-              >
+              <Button variant="contained" startIcon={<Save />} onClick={handleSave} disabled={!preview || saved || loading} sx={{ backgroundColor: '#FFFFFF', color: '#000000', border: '2px solid #333333', '&:hover': { backgroundColor: '#F0F0F0' }, flex: 1 }}>
                 Finalize
               </Button>
             </Stack>
@@ -329,15 +243,9 @@ export default function YearEnd() {
 
         <Grid item xs={12} md={8}>
           <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333', minHeight: 400 }}>
-            {preview ? (
-              renderManifest()
-            ) : (
+            {preview ? renderManifest() : (
               <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400, color: '#888' }}>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Receipt sx={{ fontSize: 64, color: '#333' }} />
-                  <Typography variant="h6" sx={{ mt: 2 }}>Select an employee and click Preview</Typography>
-                  <Typography variant="body2">Tax forms will appear here</Typography>
-                </Box>
+                <Box sx={{ textAlign: 'center' }}><Receipt sx={{ fontSize: 64, color: '#333' }} /><Typography variant="h6" sx={{ mt: 2 }}>Select an employee and click Preview</Typography><Typography variant="body2">Tax forms will appear here</Typography></Box>
               </Box>
             )}
           </Paper>

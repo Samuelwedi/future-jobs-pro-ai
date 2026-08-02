@@ -26,17 +26,21 @@ router.get('/employee/:employeeId/forms', async (req: Request, res: Response) =>
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { employeeId } = req.params;
-    const employeeIdParam = Array.isArray(employeeId) ? employeeId[0] : employeeId;
-    const employeeIdNum = parseInt(employeeIdParam, 10);
-    if (isNaN(employeeIdNum) || employeeIdNum <= 0) {
+    const employeeId = Array.isArray(req.params.employeeId)
+      ? req.params.employeeId[0]
+      : req.params.employeeId;
+
+    // Accept both numeric and UUID
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(employeeId);
+    if (!isUUID && isNaN(Number(employeeId))) {
       return res.status(400).json({ success: false, message: 'Invalid employee ID' });
     }
 
     const result = await pool.query(
       `SELECT id, first_name, last_name, employment_type, province
-       FROM users WHERE id = $1 AND company_id = $2`,
-      [employeeIdNum, companyId]
+       FROM users 
+       WHERE id = $1 AND company_id = $2`,
+      [employeeId, companyId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Employee not found' });
@@ -50,7 +54,6 @@ router.get('/employee/:employeeId/forms', async (req: Request, res: Response) =>
     } else if (emp.employment_type === 'CONTRACTOR') {
       forms.push('T4A');
     } else {
-      // Default: both employee and contractor? We'll just provide T4.
       forms.push('T4');
     }
 
@@ -72,10 +75,13 @@ router.get('/preview', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Missing required parameters' });
     }
 
-    const id = Number(employeeId);
+    const id = Number(String(employeeId));
     const year = Number(taxYear);
-    if (isNaN(id) || id <= 0 || isNaN(year)) {
-      return res.status(400).json({ success: false, message: 'Invalid parameters' });
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid employee ID' });
+    }
+    if (isNaN(year)) {
+      return res.status(400).json({ success: false, message: 'Invalid tax year' });
     }
 
     let result;
