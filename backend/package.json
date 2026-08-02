@@ -15,7 +15,6 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@mui/x-date-pickers": "^6.20.2",
     "@react-pdf/font": "^4.0.8",
     "@react-pdf/renderer": "^4.5.1",
     "axios": "^1.18.1",
@@ -25,7 +24,6 @@
     "compression": "^1.8.1",
     "connect-pg-simple": "^10.0.0",
     "cors": "^2.8.6",
-    "date-fns": "^4.4.0",
     "dotenv": "^17.4.2",
     "expo-av": "^16.0.8",
     "expo-document-picker": "~56.0.4",
