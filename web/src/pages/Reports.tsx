@@ -250,6 +250,7 @@ export default function Reports() {
 
       {/* ─── Tab 0: Evidence Report ────────────────────────────── */}
       <TabPanel value={tabValue} index={0}>
+        {/* ... (same as before) ... */}
         <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center', flexWrap: 'wrap' }}>
           <FormControl sx={{ minWidth: 200 }}>
             <InputLabel sx={{ color: '#888' }}>Project</InputLabel>
