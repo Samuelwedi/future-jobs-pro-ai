@@ -3,14 +3,11 @@ import {
   Box, Container, Typography, Grid, Paper, Button, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, CircularProgress, Alert, Tabs, Tab,
   FormControl, InputLabel, Select, MenuItem, IconButton, Tooltip, TextField,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
+  Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
 import {
   PictureAsPdf, Description, Assessment, Refresh, CheckCircle, Warning,
-  Schedule, AttachMoney, FilePresent, CalendarMonth,
+  Schedule, AttachMoney, FilePresent,
 } from '@mui/icons-material';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
@@ -49,6 +46,7 @@ function TabPanel(props: TabPanelProps) {
 export default function Reports() {
   const token = localStorage.getItem('token') || '';
 
+  // ─── State ─────────────────────────────────────────────────────
   const [tabValue, setTabValue] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
@@ -62,7 +60,7 @@ export default function Reports() {
   const [reportTitle, setReportTitle] = useState('Job Evidence Report');
   const [showTitleDialog, setShowTitleDialog] = useState(false);
 
-  // Comprehensive Report
+  // ─── Comprehensive Report State ──────────────────────────────
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
@@ -71,6 +69,7 @@ export default function Reports() {
   const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [loadingReport, setLoadingReport] = useState(false);
 
+  // ─── Fetch Projects ────────────────────────────────────────────
   const fetchProjects = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/projects`, {
@@ -89,6 +88,7 @@ export default function Reports() {
 
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
+  // ─── Fetch Photos (for Evidence Report) ──────────────────────
   const fetchPhotos = useCallback(async () => {
     if (!selectedProject) return;
     setFetching(true);
@@ -117,6 +117,7 @@ export default function Reports() {
 
   useEffect(() => { fetchPhotos(); }, [fetchPhotos]);
 
+  // ─── Handlers ──────────────────────────────────────────────────
   const togglePhoto = (id: string) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
@@ -161,9 +162,10 @@ export default function Reports() {
     }
   };
 
+  // ─── Comprehensive Report Handler ─────────────────────────────
   const handleGenerateComprehensiveReport = async () => {
     if (!selectedProject || !startDate || !endDate) {
-      setError('Please select project and date range');
+      setError('Please select a project and a date range.');
       return;
     }
     setLoadingReport(true);
@@ -173,12 +175,17 @@ export default function Reports() {
       const res = await fetch(`${API_BASE}/api/reports/comprehensive`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ projectId: selectedProject, startDate, endDate }),
+        body: JSON.stringify({
+          projectId: selectedProject,
+          startDate,
+          endDate,
+        }),
       });
       const data = await res.json();
       if (data.success && data.reportUrl) {
+        // Open PDF in new tab
         window.open(data.reportUrl, '_blank');
-        setSuccess('Comprehensive report generated!');
+        setSuccess('Comprehensive report generated successfully!');
       } else {
         setError(data.message || 'Failed to generate comprehensive report');
       }
@@ -193,6 +200,7 @@ export default function Reports() {
     setTabValue(newValue);
   };
 
+  // ─── Helpers ──────────────────────────────────────────────────
   const getComplianceColor = (score: number) => {
     if (score >= 80) return '#4CAF50';
     if (score >= 60) return '#FF9800';
@@ -209,6 +217,7 @@ export default function Reports() {
     } catch { return dateStr; }
   };
 
+  // ─── Render ────────────────────────────────────────────────────
   if (fetching && photos.length === 0) {
     return (
       <Container maxWidth="xl" sx={{ py: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', height: '70vh' }}>
@@ -350,21 +359,31 @@ export default function Reports() {
             </Grid>
             <Grid item xs={12} md={3}>
               <TextField
-                fullWidth label="Start Date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                fullWidth
+                label="Start Date"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
                 InputLabelProps={{ shrink: true }}
                 sx={{ input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
               />
             </Grid>
             <Grid item xs={12} md={3}>
               <TextField
-                fullWidth label="End Date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                fullWidth
+                label="End Date"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
                 InputLabelProps={{ shrink: true }}
                 sx={{ input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
               />
             </Grid>
             <Grid item xs={12} md={2}>
               <Button
-                fullWidth variant="contained" onClick={handleGenerateComprehensiveReport}
+                fullWidth
+                variant="contained"
+                onClick={handleGenerateComprehensiveReport}
                 disabled={loadingReport || !selectedProject || !startDate || !endDate}
                 sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', height: '56px' }}
               >
@@ -372,8 +391,8 @@ export default function Reports() {
               </Button>
             </Grid>
           </Grid>
-          {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
-          {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
+          {error && <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError(null)}>{error}</Alert>}
+          {success && <Alert severity="success" sx={{ mt: 2 }} onClose={() => setSuccess(null)}>{success}</Alert>}
         </Paper>
       </TabPanel>
 
@@ -413,11 +432,24 @@ export default function Reports() {
       <Dialog open={showTitleDialog} onClose={() => setShowTitleDialog(false)}>
         <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>Report Title</DialogTitle>
         <DialogContent sx={{ bgcolor: '#0A0A0A' }}>
-          <TextField fullWidth label="Report Title" value={reportTitle} onChange={(e) => setReportTitle(e.target.value)} sx={{ mt: 1, input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }} />
+          <TextField
+            fullWidth
+            label="Report Title"
+            value={reportTitle}
+            onChange={(e) => setReportTitle(e.target.value)}
+            sx={{ mt: 1, input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
+          />
         </DialogContent>
         <DialogActions sx={{ bgcolor: '#1A1A1A' }}>
           <Button onClick={() => setShowTitleDialog(false)}>Cancel</Button>
-          <Button onClick={() => { setShowTitleDialog(false); handleGenerateEvidenceReport(); }} disabled={loading} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+          <Button
+            onClick={() => {
+              setShowTitleDialog(false);
+              handleGenerateEvidenceReport();
+            }}
+            disabled={loading}
+            sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}
+          >
             {loading ? <CircularProgress size={24} /> : 'Generate'}
           </Button>
         </DialogActions>
