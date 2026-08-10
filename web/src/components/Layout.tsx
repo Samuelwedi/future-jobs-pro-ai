@@ -1,73 +1,161 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
-  Box, Typography, List, ListItemButton, ListItemIcon, ListItemText,
-  Avatar, AppBar, Toolbar, IconButton, Badge,
-  Menu, MenuItem,
+  Box,
+  Drawer,
+  AppBar,
+  Toolbar,
+  Typography,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  IconButton,
+  Collapse,
+  Divider,
+  Avatar,
+  Menu,
+  MenuItem,
+  Tooltip,
+  Badge,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import {
-  Notifications, Brightness4, Person, Logout as LogoutIcon,
-  Dashboard as DashboardIcon, CalendarMonth, Assessment,
-  Groups, Folder, Timer, Chat, Assignment, BeachAccess,
-  TouchApp, Settings, Link as LinkIcon,
-  SmartToy, Mic, SupportAgent, AttachMoney, Receipt, Description,
-  Lock as LockIcon, Info as InfoIcon, Article as ArticleIcon,
-  Help as HelpIcon, PrivacyTip as PrivacyTipIcon, ContactSupport as ContactSupportIcon,
-  Star as StarIcon, PlayArrow as PlayArrowIcon,
+  Menu as MenuIcon,
+  Dashboard as DashboardIcon,
+  CalendarMonth,
+  Assessment,
+  Groups,
+  Folder,
+  Timer,
+  Chat,
+  Assignment,
+  BeachAccess,
+  TouchApp,
+  Settings,
+  Logout as LogoutIcon,
+  Link as LinkIcon,
+  SmartToy,
+  Mic,
+  SupportAgent,
+  AttachMoney,
+  Receipt,
+  Description,
+  Lock as LockIcon,
+  Info as InfoIcon,
+  Article as ArticleIcon,
+  Help as HelpIcon,
+  PrivacyTip as PrivacyTipIcon,
+  ContactSupport as ContactSupportIcon,
+  Star as StarIcon,
+  PlayArrow as PlayArrowIcon,
+  Person,
+  Notifications,
+  Brightness4,
+  ExpandLess,
+  ExpandMore,
   Folder as FolderIcon,
-  // NEW ICONS
-  People, MyLocation, Stars, BusinessCenter,
+  AccountBalance,
+  Calculate,
+  ReceiptLong,
+  AdminPanelSettings,
+  Work,
+  People,
 } from '@mui/icons-material';
 
-// Navigation items – now includes new pages
-const navItems = [
-  { label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-  { label: 'Team', icon: <Groups />, path: '/team' },
-  { label: 'Employee Portal', icon: <Person />, path: '/employee-portal' },
-  { label: 'Schedule', icon: <CalendarMonth />, path: '/schedule' },
-  { label: 'Timesheet', icon: <Timer />, path: '/timesheet' },
-  { label: 'Tasks', icon: <Assignment />, path: '/tasks' },
-  { label: 'PTO', icon: <BeachAccess />, path: '/pto' },
-  { label: 'Projects', icon: <Folder />, path: '/projects' },
-  { label: 'Media Folders', icon: <FolderIcon />, path: '/media' },
-  { label: 'Chat', icon: <Chat />, path: '/chat' },
-  { label: 'Support', icon: <SupportAgent />, path: '/support' },
-  { label: 'Payroll', icon: <AttachMoney />, path: '/payroll' },
-  { label: 'Direct Deposit', icon: <AttachMoney />, path: '/direct-deposit' },
-  { label: 'Year‑End', icon: <Receipt />, path: '/year-end' },
-  { label: 'Invoices', icon: <Receipt />, path: '/invoices' },
-  { label: 'Estimates', icon: <Description />, path: '/estimates' },
-  { label: 'Reports', icon: <Assessment />, path: '/reports' },
-  { label: 'Admin Dashboard', icon: <DashboardIcon />, path: '/admin-dashboard' },
-  { label: 'Kiosk', icon: <TouchApp />, path: '/kiosk' },
-  { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
-  { label: 'Voice Assistant', icon: <Mic />, path: '/voice-assistant' },
-  { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
-  { label: 'Settings', icon: <Settings />, path: '/settings' },
-  { label: 'Security', icon: <LockIcon />, path: '/security' },
-  { label: 'About', icon: <InfoIcon />, path: '/about' },
-  { label: 'Blog', icon: <ArticleIcon />, path: '/blog' },
-  { label: 'FAQ', icon: <HelpIcon />, path: '/faq' },
-  { label: 'Privacy', icon: <PrivacyTipIcon />, path: '/privacy' },
-  { label: 'Terms', icon: <Description />, path: '/terms' },
-  { label: 'Contact', icon: <ContactSupportIcon />, path: '/contact' },
-  { label: 'Pricing', icon: <AttachMoney />, path: '/pricing' },
-  { label: 'Features', icon: <StarIcon />, path: '/features' },
-  { label: 'Demo', icon: <PlayArrowIcon />, path: '/demo' },
-  // ✅ NEW SIDEBAR ITEMS (boss/manager only – will be conditionally shown)
-  { label: 'Company Settings', icon: <Settings />, path: '/company-settings', role: 'boss' },
-  { label: 'Crew Clock', icon: <People />, path: '/crew-clock', role: 'boss' },
-  { label: 'Crew Tracker', icon: <MyLocation />, path: '/crew-tracking', role: 'boss' },
-  { label: 'Subscription', icon: <Stars />, path: '/subscription', role: 'boss' },
-  // Note: GPSPlayback is accessed from Timesheet, not in sidebar.
-  // NewChat is accessed from Chat page or directly via button.
+// ─── Navigation Configuration ──────────────────────────────────
+const navConfig = [
+  {
+    category: 'Main',
+    items: [
+      { label: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+    ],
+  },
+  {
+    category: 'People',
+    items: [
+      { label: 'Team', icon: <Groups />, path: '/team' },
+      { label: 'Employee Portal', icon: <Person />, path: '/employee-portal' },
+      { label: 'PTO', icon: <BeachAccess />, path: '/pto' },
+    ],
+  },
+  {
+    category: 'Work',
+    items: [
+      { label: 'Schedule', icon: <CalendarMonth />, path: '/schedule' },
+      { label: 'Timesheet', icon: <Timer />, path: '/timesheet' },
+      { label: 'Tasks', icon: <Assignment />, path: '/tasks' },
+      { label: 'Projects', icon: <Folder />, path: '/projects' },
+    ],
+  },
+  {
+    category: 'Communication',
+    items: [
+      { label: 'Chat', icon: <Chat />, path: '/chat' },
+      { label: 'Support', icon: <SupportAgent />, path: '/support' },
+      { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
+      { label: 'Voice Assistant', icon: <Mic />, path: '/voice-assistant' },
+    ],
+  },
+  {
+    category: 'Payroll & Finance',
+    items: [
+      { label: 'Payroll', icon: <AttachMoney />, path: '/payroll' },
+      { label: 'Direct Deposit', icon: <AccountBalance />, path: '/direct-deposit' },
+      { label: 'Year‑End', icon: <Receipt />, path: '/year-end' },
+      { label: 'Invoices', icon: <ReceiptLong />, path: '/invoices' },
+      { label: 'Estimates', icon: <Description />, path: '/estimates' },
+    ],
+  },
+  {
+    category: 'Reports & Admin',
+    items: [
+      { label: 'Reports', icon: <Assessment />, path: '/reports' },
+      { label: 'Admin Dashboard', icon: <AdminPanelSettings />, path: '/admin-dashboard' },
+      { label: 'Kiosk', icon: <TouchApp />, path: '/kiosk' },
+    ],
+  },
+  {
+    category: 'Integrations & Settings',
+    items: [
+      { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
+      { label: 'Settings', icon: <Settings />, path: '/settings' },
+      { label: 'Security', icon: <LockIcon />, path: '/security' },
+    ],
+  },
+  {
+    category: 'Company',
+    items: [
+      { label: 'About', icon: <InfoIcon />, path: '/about' },
+      { label: 'Blog', icon: <ArticleIcon />, path: '/blog' },
+      { label: 'FAQ', icon: <HelpIcon />, path: '/faq' },
+      { label: 'Privacy', icon: <PrivacyTipIcon />, path: '/privacy' },
+      { label: 'Terms', icon: <Description />, path: '/terms' },
+      { label: 'Contact', icon: <ContactSupportIcon />, path: '/contact' },
+      { label: 'Pricing', icon: <AttachMoney />, path: '/pricing' },
+      { label: 'Features', icon: <StarIcon />, path: '/features' },
+      { label: 'Demo', icon: <PlayArrowIcon />, path: '/demo' },
+    ],
+  },
+  // Optional: Media Folders (already included under 'Work'? Or separate)
+  // Add if not already there:
+  { category: 'Media', items: [{ label: 'Media Folders', icon: <FolderIcon />, path: '/media' }] },
 ];
+
+// Flatten all items for the sidebar
+const allNavItems = navConfig.flatMap(group => group.items);
 
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [user, setUser] = useState<any>(null);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+  const [drawerOpen, setDrawerOpen] = useState(!isMobile);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [user, setUser] = useState<any>(null);
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     try {
@@ -76,77 +164,132 @@ export default function Layout() {
     } catch {}
   }, []);
 
+  const toggleDrawer = () => setDrawerOpen(!drawerOpen);
+  const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget);
+  const handleCloseMenu = () => setAnchorEl(null);
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     navigate('/login');
+    handleCloseMenu();
+  };
+
+  const toggleCategory = (category: string) => {
+    setOpenCategories(prev => ({ ...prev, [category]: !prev[category] }));
   };
 
   const initials = user
     ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
     : 'U';
 
-  // Filter navItems based on user role (boss/manager only for certain items)
-  const filteredNavItems = navItems.filter(item => {
-    if (item.role && user) {
-      return user.role === 'boss' || user.role === 'manager';
-    }
-    return true;
-  });
-
-  return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#0A0A0A' }}>
-      {/* Sidebar */}
-      <Box sx={{ width: 260, bgcolor: '#111', borderRight: '1px solid #222', display: 'flex', flexDirection: 'column', pt: 2, pb: 2, flexShrink: 0 }}>
-        <Box sx={{ px: 2, mb: 3 }}>
-          <Typography sx={{ color: '#00D4FF', fontWeight: 'bold', fontSize: 18 }}>🚀 Future Jobs Pro</Typography>
-          <Typography variant="caption" sx={{ color: '#666' }}>Samuel B.</Typography>
-        </Box>
-        <List sx={{ flex: 1, overflowY: 'auto' }}>
-          {filteredNavItems.map((item) => {
-            const isActive = location.pathname === item.path;
-            return (
-              <ListItemButton
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                sx={{
-                  mx: 1, borderRadius: 2, mb: 0.5,
-                  color: isActive ? '#00D4FF' : '#AAA',
-                  bgcolor: isActive ? 'rgba(0,212,255,0.1)' : 'transparent',
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' },
-                }}
-              >
-                <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 14 }} />
+  const drawerContent = (
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#0A0A0A' }}>
+      <Toolbar>
+        <Typography variant="h6" sx={{ color: '#00D4FF', fontWeight: 'bold' }}>
+          Future Jobs Pro AI
+        </Typography>
+      </Toolbar>
+      <Divider sx={{ borderColor: '#333' }} />
+      <Box sx={{ flex: 1, overflowY: 'auto', px: 1 }}>
+        {navConfig.map((group) => {
+          const isOpen = openCategories[group.category] ?? true; // default open
+          return (
+            <React.Fragment key={group.category}>
+              <ListItemButton onClick={() => toggleCategory(group.category)} sx={{ pl: 1 }}>
+                <ListItemText primary={group.category} sx={{ color: '#888', fontSize: '0.75rem', fontWeight: 'bold' }} />
+                {isOpen ? <ExpandLess sx={{ color: '#888' }} /> : <ExpandMore sx={{ color: '#888' }} />}
               </ListItemButton>
-            );
-          })}
-        </List>
-        <ListItemButton onClick={handleLogout} sx={{ mx: 1, borderRadius: 2, color: '#F44336', '&:hover': { bgcolor: 'rgba(244,67,54,0.1)' } }}>
+              <Collapse in={isOpen} timeout="auto" unmountOnExit>
+                <List component="div" disablePadding>
+                  {group.items.map((item) => {
+                    const isActive = location.pathname === item.path;
+                    return (
+                      <ListItemButton
+                        key={item.path}
+                        onClick={() => navigate(item.path)}
+                        sx={{
+                          pl: 4,
+                          borderRadius: 2,
+                          mb: 0.5,
+                          color: isActive ? '#00D4FF' : '#AAA',
+                          bgcolor: isActive ? 'rgba(0,212,255,0.1)' : 'transparent',
+                          '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' },
+                        }}
+                      >
+                        <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>
+                          {item.icon}
+                        </ListItemIcon>
+                        <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 14 }} />
+                      </ListItemButton>
+                    );
+                  })}
+                </List>
+              </Collapse>
+              <Divider sx={{ borderColor: '#222', my: 1 }} />
+            </React.Fragment>
+          );
+        })}
+      </Box>
+      <Divider sx={{ borderColor: '#333' }} />
+      <List>
+        <ListItemButton onClick={handleLogout} sx={{ pl: 2, color: '#F44336' }}>
           <ListItemIcon sx={{ minWidth: 36, color: '#F44336' }}><LogoutIcon /></ListItemIcon>
           <ListItemText primary="Logout" primaryTypographyProps={{ fontSize: 14 }} />
         </ListItemButton>
-      </Box>
+      </List>
+    </Box>
+  );
 
-      {/* Main content */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <AppBar position="static" sx={{ bgcolor: '#1A1A1A', borderBottom: '1px solid #333', boxShadow: 'none' }}>
-          <Toolbar>
-            <Typography variant="h6" sx={{ flexGrow: 1, color: '#FFF', fontWeight: 'bold' }}>
-              Welcome back, {user?.fullName || user?.firstName || 'User'}
-            </Typography>
-            <IconButton color="inherit"><Badge badgeContent={3} color="error"><Notifications /></Badge></IconButton>
-            <IconButton color="inherit"><Brightness4 /></IconButton>
-            <IconButton onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ p: 0 }}>
-              <Avatar sx={{ bgcolor: '#00D4FF', width: 40, height: 40 }}>{initials}</Avatar>
+  return (
+    <Box sx={{ display: 'flex', bgcolor: '#0A0A0A', minHeight: '100vh' }}>
+      {/* App Bar */}
+      <AppBar
+        position="fixed"
+        sx={{
+          zIndex: theme.zIndex.drawer + 1,
+          bgcolor: '#1A1A1A',
+          borderBottom: '1px solid #333',
+          boxShadow: 'none',
+        }}
+      >
+        <Toolbar>
+          <IconButton
+            color="inherit"
+            edge="start"
+            onClick={toggleDrawer}
+            sx={{ mr: 2, display: { md: 'none' }, color: '#FFF' }}
+          >
+            <MenuIcon />
+          </IconButton>
+          <Typography variant="h6" sx={{ flexGrow: 1, color: '#FFF' }}>
+            {location.pathname.split('/')[1] || 'Dashboard'}
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Tooltip title="Notifications">
+              <IconButton sx={{ color: '#888' }}>
+                <Badge badgeContent={3} color="error">
+                  <Notifications />
+                </Badge>
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Toggle theme">
+              <IconButton sx={{ color: '#888' }}>
+                <Brightness4 />
+              </IconButton>
+            </Tooltip>
+            <IconButton onClick={handleMenuClick} sx={{ p: 0 }}>
+              <Avatar sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+                {initials}
+              </Avatar>
             </IconButton>
             <Menu
               anchorEl={anchorEl}
               open={Boolean(anchorEl)}
-              onClose={() => setAnchorEl(null)}
+              onClose={handleCloseMenu}
               PaperProps={{ sx: { bgcolor: '#1A1A1A', border: '1px solid #333' } }}
             >
-              <MenuItem onClick={() => { navigate('/settings'); setAnchorEl(null); }} sx={{ color: '#FFF' }}>
+              <MenuItem onClick={() => { navigate('/settings'); handleCloseMenu(); }} sx={{ color: '#FFF' }}>
                 <ListItemIcon><Person sx={{ color: '#FFF' }} /></ListItemIcon>
                 Profile
               </MenuItem>
@@ -155,12 +298,44 @@ export default function Layout() {
                 Logout
               </MenuItem>
             </Menu>
-          </Toolbar>
-        </AppBar>
+          </Box>
+        </Toolbar>
+      </AppBar>
 
-        <Box component="main" sx={{ flex: 1, p: 3, bgcolor: '#0A0A0A' }}>
-          <Outlet />
-        </Box>
+      {/* Drawer */}
+      <Drawer
+        variant={isMobile ? 'temporary' : 'permanent'}
+        open={drawerOpen}
+        onClose={toggleDrawer}
+        sx={{
+          width: 280,
+          flexShrink: 0,
+          '& .MuiDrawer-paper': {
+            width: 280,
+            bgcolor: '#0A0A0A',
+            borderRight: '1px solid #333',
+            boxSizing: 'border-box',
+            top: 0,
+            height: '100vh',
+          },
+        }}
+      >
+        {drawerContent}
+      </Drawer>
+
+      {/* Main Content */}
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          mt: 8,
+          bgcolor: '#0A0A0A',
+          minHeight: '100vh',
+          width: { md: `calc(100% - 280px)` },
+        }}
+      >
+        <Outlet />
       </Box>
     </Box>
   );

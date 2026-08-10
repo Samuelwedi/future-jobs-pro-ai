@@ -37,19 +37,19 @@ import EmployeePortal from './pages/EmployeePortal';
 import YearEnd from './pages/YearEnd';
 import DirectDeposit from './pages/DirectDeposit';
 import MediaFolders from './pages/MediaFolders';
-import Support from './pages/Support';  // <-- NEW
-import Layout from './components/Layout';
+import Support from './pages/Support';
 import ProjectMedia from './pages/ProjectMedia';
 import MonthMedia from './pages/MonthMedia';
 import MonthMediaType from './pages/MonthMediaType';
+import Layout from './components/Layout';
+
+// ✅ NEW PAGES
 import CompanySettings from './pages/CompanySettings';
 import CrewClock from './pages/CrewClock';
 import CrewTracking from './pages/CrewTracking';
 import GPSPlayback from './pages/GPSPlayback';
 import NewChat from './pages/NewChat';
 import Subscription from './pages/Subscription';
-import 'leaflet/dist/leaflet.css';
-import ChatList from './pages/ChatList';
 
 export default function App() {
   return (
@@ -57,18 +57,8 @@ export default function App() {
       <Routes>
         {/* Public routes */}
         <Route path="/" element={<Landing />} />
-        <Route path="media" element={<MediaFolders />} />
-<Route path="media/project/:projectId" element={<ProjectMedia />} />
-<Route path="media/project/:projectId/month/:yearMonth" element={<MonthMedia />} />
-<Route path="media/project/:projectId/month/:yearMonth/type/:mediaType" element={<MonthMediaType />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="company-settings" element={<CompanySettings />} />
-<Route path="crew-clock" element={<CrewClock />} />
-<Route path="crew-tracking" element={<CrewTracking />} />
-<Route path="gps-playback" element={<GPSPlayback />} />
-<Route path="new-chat" element={<NewChat />} />
-<Route path="subscription" element={<Subscription />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/features" element={<Features />} />
         <Route path="/demo" element={<Demo />} />
@@ -79,9 +69,6 @@ export default function App() {
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/payment-required" element={<PaymentRequired />} />
-<Route path="chat" element={<ChatList />} />
-<Route path="chat/:roomId" element={<Chat />} />
-<Route path="new-chat" element={<NewChat />} />
 
         {/* Protected routes with sidebar (Layout) */}
         <Route path="/" element={<Layout />}>
@@ -94,21 +81,32 @@ export default function App() {
           <Route path="pto" element={<PTO />} />
           <Route path="projects" element={<Projects />} />
           <Route path="media" element={<MediaFolders />} />
+          <Route path="media/project/:projectId" element={<ProjectMedia />} />
+          <Route path="media/project/:projectId/month/:yearMonth" element={<MonthMedia />} />
+          <Route path="media/project/:projectId/month/:yearMonth/type/:mediaType" element={<MonthMediaType />} />
           <Route path="chat" element={<Chat />} />
-          <Route path="support" element={<Support />} />  {/* NOW EXISTS */}
+          <Route path="support" element={<Support />} />
           <Route path="payroll" element={<Payroll />} />
           <Route path="direct-deposit" element={<DirectDeposit />} />
           <Route path="year-end" element={<YearEnd />} />
           <Route path="invoices" element={<Invoices />} />
           <Route path="estimates" element={<Estimates />} />
           <Route path="reports" element={<Reports />} />
-          <Route path="admin-dashboard" element={<AdminDashboard />} />  {/* changed from /admin */}
+          <Route path="admin-dashboard" element={<AdminDashboard />} />
           <Route path="kiosk" element={<Kiosk />} />
           <Route path="ask-lucy" element={<AskLucy />} />
           <Route path="voice-assistant" element={<VoiceAssistant />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="settings" element={<Settings />} />
           <Route path="security" element={<Security />} />
+
+          {/* ✅ NEW ROUTES */}
+          <Route path="company-settings" element={<CompanySettings />} />
+          <Route path="crew-clock" element={<CrewClock />} />
+          <Route path="crew-tracking" element={<CrewTracking />} />
+          <Route path="gps-playback" element={<GPSPlayback />} />
+          <Route path="new-chat" element={<NewChat />} />
+          <Route path="subscription" element={<Subscription />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />
