@@ -33,6 +33,21 @@ export const configuredOrigins = Array.from(
   new Set([...defaultOrigins, ...environmentOrigins].map(normalizeOrigin)),
 ).filter(Boolean);
 
+function isAllowedVercelPreview(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+
+    return (
+      url.protocol === 'https:' &&
+      (
+        url.hostname === 'future-jobs-pro-ai.vercel.app' ||
+        url.hostname.endsWith('-future-jobs-pro-ai.vercel.app')
+      )
+    );
+  } catch {
+    return false;
+  }
+}
 export const corsOptions: CorsOptions = {
   origin(origin, callback) {
     // Requests from curl, mobile applications and server-to-server calls
@@ -44,7 +59,7 @@ export const corsOptions: CorsOptions = {
 
     const normalizedRequestOrigin = normalizeOrigin(origin);
 
-    if (configuredOrigins.includes(normalizedRequestOrigin)) {
+    if (`r`n      configuredOrigins.includes(normalizedRequestOrigin) ||`r`n      isAllowedVercelPreview(normalizedRequestOrigin)`r`n    ) {
       callback(null, true);
       return;
     }
