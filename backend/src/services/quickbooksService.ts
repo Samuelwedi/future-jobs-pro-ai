@@ -1,130 +1,164 @@
-// ============================================
-// QUICKBOOKS API SERVICE
-// Creates Sales Receipts, Invoices, etc.
-// Created by: Samuel B.
-// ============================================
-
 import OAuthClient from 'intuit-oauth';
 import { pool } from '../config/database';
 import { decrypt, encrypt } from './encryptionService';
 
-// OAuth client instance (used to refresh tokens)
-const qbOAuth = new OAuthClient({
-  clientId: process.env.QUICKBOOKS_CLIENT_ID || 'QB_CLIENT_ID',
-  clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || 'QB_CLIENT_SECRET',
-  environment: (process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox') as any,
-  redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:5000/api/integrations/quickbooks/callback',
-});
+type QuickBooksTokens = { accessToken: string; realmId: string };
 
-// ----- Helper: get a valid token object (refreshes if needed) -----
-async function getValidToken(companyId: string) {
+function required(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is not configured`);
+  return value;
+}
+
+function environment(): 'sandbox' | 'production' {
+  return process.env.QUICKBOOKS_ENVIRONMENT === 'production' ? 'production' : 'sandbox';
+}
+
+function oauthClient(token?: Record<string, unknown>): OAuthClient {
+  return new OAuthClient({
+    clientId: required('QUICKBOOKS_CLIENT_ID'),
+    clientSecret: required('QUICKBOOKS_CLIENT_SECRET'),
+    environment: environment() as any,
+    redirectUri: required('QUICKBOOKS_REDIRECT_URI'),
+    ...(token ? { token } : {}),
+  });
+}
+
+async function getValidToken(companyId: string): Promise<QuickBooksTokens> {
   const result = await pool.query(
-    `SELECT access_token, refresh_token, realm_id, token_expires_at FROM integrations WHERE company_id=$1 AND provider='quickbooks' AND is_active=true`,
-    [companyId]
+    `SELECT access_token, refresh_token, realm_id, token_expires_at
+     FROM integrations
+     WHERE company_id = $1 AND provider = 'quickbooks' AND is_active = TRUE`,
+    [companyId],
   );
-  if (result.rows.length === 0) throw new Error('No QuickBooks integration found');
+  if (!result.rowCount) throw new Error('Connect QuickBooks before running a sync');
 
-  let { access_token, refresh_token, realm_id, token_expires_at } = result.rows[0];
-  access_token = decrypt(access_token);
-  refresh_token = refresh_token ? decrypt(refresh_token) : null;
+  let accessToken = decrypt(result.rows[0].access_token);
+  let refreshToken = result.rows[0].refresh_token
+    ? decrypt(result.rows[0].refresh_token)
+    : null;
+  const realmId = result.rows[0].realm_id;
+  const expiresAt = result.rows[0].token_expires_at
+    ? new Date(result.rows[0].token_expires_at).getTime()
+    : 0;
 
-  // Check if token is expired and refresh
-  if (token_expires_at && new Date() > new Date(token_expires_at)) {
-    if (!refresh_token) throw new Error('Token expired and no refresh token available');
-    const authResponse = await qbOAuth.refreshUsingToken(refresh_token);
-    const newToken = authResponse.getJson();
-    access_token = newToken.access_token;
-    refresh_token = newToken.refresh_token;
-    const expiresIn = newToken.expires_in;
-    const newExpiresAt = new Date(Date.now() + expiresIn * 1000);
-
-    // Update encrypted tokens in database
-    const encryptedAccess = encrypt(access_token);
-    const encryptedRefresh = refresh_token ? encrypt(refresh_token) : null;
+  // Refresh five minutes early to avoid expiring during an API request.
+  if (expiresAt <= Date.now() + 5 * 60 * 1000) {
+    if (!refreshToken) throw new Error('QuickBooks authorization has expired; reconnect QuickBooks');
+    const response = await oauthClient().refreshUsingToken(refreshToken);
+    const refreshed = response.getJson();
+    accessToken = refreshed.access_token;
+    refreshToken = refreshed.refresh_token || refreshToken;
+    const newExpiresAt = new Date(Date.now() + Number(refreshed.expires_in || 3600) * 1000);
 
     await pool.query(
-      `UPDATE integrations SET access_token=$1, refresh_token=$2, token_expires_at=$3 WHERE company_id=$4 AND provider='quickbooks'`,
-      [encryptedAccess, encryptedRefresh, newExpiresAt, companyId]
+      `UPDATE integrations SET
+         access_token = $1,
+         refresh_token = $2,
+         token_expires_at = $3,
+         updated_at = NOW()
+       WHERE company_id = $4 AND provider = 'quickbooks'`,
+      [encrypt(accessToken), encrypt(refreshToken), newExpiresAt, companyId],
     );
   }
 
-  return { access_token, realm_id };
+  return { accessToken, realmId };
 }
 
-// ----- Create a Sales Receipt -----
+function apiBase(): string {
+  return environment() === 'production'
+    ? 'https://quickbooks.api.intuit.com'
+    : 'https://sandbox-quickbooks.api.intuit.com';
+}
+
+async function makeApiCall(
+  companyId: string,
+  path: string,
+  method: 'GET' | 'POST',
+  body?: unknown,
+): Promise<any> {
+  const { accessToken, realmId } = await getValidToken(companyId);
+  const client = oauthClient({ access_token: accessToken, realmId });
+  const response: any = await client.makeApiCall({
+    url: `${apiBase()}/v3/company/${realmId}/${path}`,
+    method,
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  if (typeof response.getJson === 'function') return response.getJson();
+  return response.json || response;
+}
+
+function escapeQuickBooksQuery(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+export async function findOrCreateQuickBooksCustomer(
+  companyId: string,
+  displayName: string,
+  email?: string,
+): Promise<string> {
+  const safeName = displayName.trim().slice(0, 100) || 'Stripe customer';
+  const query = email
+    ? `select * from Customer where PrimaryEmailAddr = '${escapeQuickBooksQuery(email)}' maxresults 1`
+    : `select * from Customer where DisplayName = '${escapeQuickBooksQuery(safeName)}' maxresults 1`;
+  const found = await makeApiCall(
+    companyId,
+    `query?query=${encodeURIComponent(query)}&minorversion=75`,
+    'GET',
+  );
+  const existing = found?.QueryResponse?.Customer?.[0];
+  if (existing?.Id) return String(existing.Id);
+
+  const created = await makeApiCall(companyId, 'customer?minorversion=75', 'POST', {
+    DisplayName: `${safeName} ${Date.now().toString().slice(-6)}`.slice(0, 100),
+    ...(email ? { PrimaryEmailAddr: { Address: email } } : {}),
+  });
+  if (!created?.Customer?.Id) throw new Error('QuickBooks did not return the new customer ID');
+  return String(created.Customer.Id);
+}
+
 export async function createSalesReceipt(
   companyId: string,
-  customerRef: string,   // QuickBooks customer ID
+  customerRef: string,
   amount: number,
   description: string,
-  txnDate: string        // YYYY-MM-DD
+  txnDate: string,
 ): Promise<any> {
-  const { access_token, realm_id } = await getValidToken(companyId);
-
-  const qbClient = new OAuthClient({
-    clientId: process.env.QUICKBOOKS_CLIENT_ID || 'QB_CLIENT_ID',
-    clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || 'QB_CLIENT_SECRET',
-    environment: (process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox') as any,
-    redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:5000/api/integrations/quickbooks/callback',
-    token: { access_token, realmId: realm_id },
+  const itemId = required('QUICKBOOKS_DEFAULT_ITEM_ID');
+  return makeApiCall(companyId, 'salesreceipt?minorversion=75', 'POST', {
+    CustomerRef: { value: customerRef },
+    TxnDate: txnDate,
+    PrivateNote: description.slice(0, 4000),
+    Line: [{
+      DetailType: 'SalesItemLineDetail',
+      Amount: Number(amount.toFixed(2)),
+      Description: description.slice(0, 4000),
+      SalesItemLineDetail: {
+        ItemRef: { value: itemId },
+        Qty: 1,
+        UnitPrice: Number(amount.toFixed(2)),
+      },
+    }],
   });
-
-  const response = await qbClient.makeApiCall({
-    url: `https://sandbox-quickbooks.api.intuit.com/v3/company/${realm_id}/salesreceipt`,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      Line: [
-        {
-          DetailType: 'SalesItemLineDetail',
-          Amount: amount,
-          SalesItemLineDetail: { ItemRef: { value: '1' } }, // default item
-          Description: description,
-        },
-      ],
-      CustomerRef: { value: customerRef },
-      TxnDate: txnDate,
-    }),
-  });
-
-  return response.json;
 }
 
-// ----- Create an Invoice Payment (when an invoice is paid) -----
 export async function createInvoicePayment(
   companyId: string,
-  invoiceId: string,     // QuickBooks invoice ID
+  invoiceId: string,
+  customerRef: string,
   amount: number,
-  txnDate: string
+  txnDate: string,
 ): Promise<any> {
-  const { access_token, realm_id } = await getValidToken(companyId);
-
-  const qbClient = new OAuthClient({
-    clientId: process.env.QUICKBOOKS_CLIENT_ID || 'QB_CLIENT_ID',
-    clientSecret: process.env.QUICKBOOKS_CLIENT_SECRET || 'QB_CLIENT_SECRET',
-    environment: (process.env.QUICKBOOKS_ENVIRONMENT || 'sandbox') as any,
-    redirectUri: process.env.QUICKBOOKS_REDIRECT_URI || 'http://localhost:5000/api/integrations/quickbooks/callback',
-    token: { access_token, realmId: realm_id },
+  return makeApiCall(companyId, 'payment?minorversion=75', 'POST', {
+    CustomerRef: { value: customerRef },
+    TotalAmt: Number(amount.toFixed(2)),
+    TxnDate: txnDate,
+    Line: [{
+      Amount: Number(amount.toFixed(2)),
+      LinkedTxn: [{ TxnId: invoiceId, TxnType: 'Invoice' }],
+    }],
   });
-
-  const response = await qbClient.makeApiCall({
-    url: `https://sandbox-quickbooks.api.intuit.com/v3/company/${realm_id}/payment`,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      CustomerRef: { value: '1' }, // will be overridden later
-      TotalAmt: amount,
-      Line: [
-        {
-          Amount: amount,
-          LinkedTxn: [{ TxnId: invoiceId, TxnType: 'Invoice' }],
-        },
-      ],
-      TxnDate: txnDate,
-    }),
-  });
-
-  return response.json;
 }
 
-console.log('📊 QuickBooks API Service loaded – Future Jobs Pro AI by Samuel B.');
+console.log('QuickBooks API service loaded.');

@@ -65,7 +65,7 @@ router.post('/register', async (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, companyId: user.company_id },
+      { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, companyId },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -111,7 +111,7 @@ router.post('/login', async (req: Request, res: Response) => {
     await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role, companyId: user.company_id },
+      { id: user.id, email: user.email, firstName: user.first_name, lastName: user.last_name, role: user.role, companyId: user.company_id },
       JWT_SECRET,
       { expiresIn: '7d' }
     );

@@ -59,7 +59,10 @@ export const corsOptions: CorsOptions = {
 
     const normalizedRequestOrigin = normalizeOrigin(origin);
 
-    if (`r`n      configuredOrigins.includes(normalizedRequestOrigin) ||`r`n      isAllowedVercelPreview(normalizedRequestOrigin)`r`n    ) {
+    if (
+      configuredOrigins.includes(normalizedRequestOrigin) ||
+      isAllowedVercelPreview(normalizedRequestOrigin)
+    ) {
       callback(null, true);
       return;
     }

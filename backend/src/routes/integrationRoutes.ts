@@ -1,79 +1,103 @@
-import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
-import { pool } from '../config/database';
+import { verifyToken } from '../utils/auth';
 import {
+  disconnectIntegration,
+  getIntegrationStatus,
   getQuickBooksAuthUrl,
   getStripeConnectUrl,
   handleQuickBooksCallback,
   handleStripeConnectCallback,
+  integrationResultUrl,
+  syncRecentStripePayments,
 } from '../services/integrationService';
 
 const router = express.Router();
 
-// GET /api/integrations/status – check integration status for the company
+function authenticatedCompany(req: Request): { companyId: string; userId: string } {
+  const decoded = verifyToken(req);
+  if (!decoded.companyId) throw new Error('Your user is not assigned to a company');
+  return { companyId: decoded.companyId, userId: decoded.id };
+}
+
+function errorStatus(message: string): number {
+  if (/token|authenticated|company/i.test(message)) return 401;
+  if (/not configured/i.test(message)) return 503;
+  return 400;
+}
+
 router.get('/status', async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer '))
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    
-    const decoded = verifyToken(req);
-
-    const result = await pool.query(
-      `SELECT provider, is_active FROM integrations WHERE company_id = $1`,
-      [decoded.companyId]
-    );
-
-    const status: any = {};
-    for (const row of result.rows) {
-      status[row.provider] = { connected: row.is_active };
-    }
-
-    res.json({ success: true, ...status });
+    const { companyId } = authenticatedCompany(req);
+    res.json({ success: true, ...(await getIntegrationStatus(companyId)) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(errorStatus(error.message)).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/integrations/quickbooks/auth – start QuickBooks OAuth
 router.get('/quickbooks/auth', async (req: Request, res: Response) => {
-  const { companyId } = req.query;
-  if (!companyId) return res.status(400).json({ success: false, message: 'Missing companyId' });
-  const url = await getQuickBooksAuthUrl(companyId as string);
-  res.redirect(url);
-});
-
-// GET /api/integrations/quickbooks/callback – OAuth callback
-router.get('/quickbooks/callback', async (req: Request, res: Response) => {
   try {
-    const { code, realmId, state } = req.query;
-    const companyId = 'from-state'; // In production, retrieve companyId from state param
-    await handleQuickBooksCallback(companyId, code as string, realmId as string, state as string);
-    res.send('QuickBooks connected! You can close this tab.');
-  } catch (error) {
-    console.error('QuickBooks callback error:', error);
-    res.status(500).send('Connection failed');
+    const { companyId, userId } = authenticatedCompany(req);
+    res.json({ success: true, url: await getQuickBooksAuthUrl(companyId, userId) });
+  } catch (error: any) {
+    res.status(errorStatus(error.message)).json({ success: false, message: error.message });
   }
 });
 
-// GET /api/integrations/stripe/auth – start Stripe Connect
-router.get('/stripe/auth', (req: Request, res: Response) => {
-  const { companyId } = req.query;
-  if (!companyId) return res.status(400).json({ success: false, message: 'Missing companyId' });
-  const url = getStripeConnectUrl(companyId as string);
-  res.redirect(url);
+router.get('/quickbooks/callback', async (req: Request, res: Response) => {
+  const state = String(req.query.state || '');
+  try {
+    if (req.query.error) throw new Error(String(req.query.error_description || req.query.error));
+    const realmId = String(req.query.realmId || '');
+    const baseUrl = (process.env.BASE_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+    await handleQuickBooksCallback(`${baseUrl}${req.originalUrl}`, state, realmId);
+    res.redirect(integrationResultUrl('quickbooks', 'connected'));
+  } catch (error: any) {
+    console.error('QuickBooks callback failed:', error);
+    res.redirect(integrationResultUrl('quickbooks', 'error', error.message));
+  }
 });
 
-// GET /api/integrations/stripe/callback – Stripe Connect callback
-router.get('/stripe/callback', async (req: Request, res: Response) => {
+router.get('/stripe/auth', async (req: Request, res: Response) => {
   try {
-    const { code, state } = req.query;
-    const companyId = 'from-state'; // Retrieve from state
-    await handleStripeConnectCallback(companyId, code as string, state as string);
-    res.send('Stripe connected! You can close this tab.');
-  } catch (error) {
-    console.error('Stripe callback error:', error);
-    res.status(500).send('Connection failed');
+    const { companyId, userId } = authenticatedCompany(req);
+    res.json({ success: true, url: await getStripeConnectUrl(companyId, userId) });
+  } catch (error: any) {
+    res.status(errorStatus(error.message)).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/stripe/callback', async (req: Request, res: Response) => {
+  const state = String(req.query.state || '');
+  try {
+    if (req.query.error) throw new Error(String(req.query.error_description || req.query.error));
+    await handleStripeConnectCallback(String(req.query.code || ''), state);
+    res.redirect(integrationResultUrl('stripe', 'connected'));
+  } catch (error: any) {
+    console.error('Stripe callback failed:', error);
+    res.redirect(integrationResultUrl('stripe', 'error', error.message));
+  }
+});
+
+router.post('/:provider/disconnect', async (req: Request, res: Response) => {
+  try {
+    const provider = req.params.provider;
+    if (provider !== 'quickbooks' && provider !== 'stripe') {
+      return res.status(400).json({ success: false, message: 'Unknown integration provider' });
+    }
+    const { companyId } = authenticatedCompany(req);
+    await disconnectIntegration(companyId, provider);
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(errorStatus(error.message)).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/sync/stripe-to-quickbooks', async (req: Request, res: Response) => {
+  try {
+    const { companyId } = authenticatedCompany(req);
+    res.json({ success: true, result: await syncRecentStripePayments(companyId) });
+  } catch (error: any) {
+    res.status(errorStatus(error.message)).json({ success: false, message: error.message });
   }
 });
 

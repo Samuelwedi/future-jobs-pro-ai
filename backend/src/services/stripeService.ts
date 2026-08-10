@@ -162,14 +162,11 @@ export async function handleStripeWebhook(
   if (!stripe) throw new Error('Stripe is not configured');
 
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) throw new Error('STRIPE_WEBHOOK_SECRET is not configured');
   let event: any;
 
   try {
-    if (webhookSecret) {
-      event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
-    } else {
-      event = JSON.parse(payload);
-    }
+    event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
   } catch (err) {
     console.error('❌ Webhook signature verification failed:', err);
     throw new Error('Invalid webhook signature');

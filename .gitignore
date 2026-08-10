@@ -17,3 +17,5 @@ backend/test-shifts-query.js
 backend/src/index.ts.before-cors
 .vercel
 .env*
+
+future-jobs-integration-source.zip
