@@ -9,7 +9,9 @@ import { Download, Edit, Save, Cancel } from '@mui/icons-material';
 
 declare const process: { env: { REACT_APP_API_BASE?: string } };
 
-const API_BASE = (typeof process !== 'undefined' ? process.env.REACT_APP_API_BASE : undefined) || 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  'https://future-jobs-pro-ai-production.up.railway.app';
 
 interface EmployeeBank {
   id: string;
