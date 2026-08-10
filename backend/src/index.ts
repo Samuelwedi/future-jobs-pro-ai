@@ -5,6 +5,7 @@
 
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { corsOptions, configuredOrigins } from './config/cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
@@ -33,20 +34,12 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 console.log(`🔗 BASE_URL: ${BASE_URL}`);
 
 // ----- CORS -----
-app.use(cors({
-  origin: [
-    'http://localhost:3000', 'http://localhost:19006',
-    'http://localhost:5173', 'http://localhost:5174',
-    'https://future-jobs-pro-ai.vercel.app',
-    'https://future-jobs-pro-ai-production.up.railway.app',
-    'https://futurejobsproai.com', 'https://www.futurejobsproai.com',
-  ],
-  credentials: true,
-}));
+app.use(cors(corsOptions));
 
 app.use(helmet());
 app.use(compression());
 app.use(morgan('dev'));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/api/stats', statsRoutes);
@@ -538,7 +531,13 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 // ----- WebSocket Server -----
 const server = http.createServer(app);
-const io = new SocketIOServer(server, { cors: { origin: '*' } });
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: configuredOrigins,
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+});
 
 io.on('connection', (socket) => {
   console.log('🔌 New WebSocket connection:', socket.id);

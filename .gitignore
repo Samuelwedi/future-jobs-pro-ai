@@ -13,3 +13,5 @@ backend/scripts/fix-db.js
 backend/scripts/fix-db.js 
 backend/scripts/fix-db.js 
 backend/test-shifts-query.js 
+
+backend/src/index.ts.before-cors
