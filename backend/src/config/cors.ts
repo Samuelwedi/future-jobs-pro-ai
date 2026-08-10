@@ -1,45 +1,59 @@
-﻿import { CorsOptions } from 'cors';
+import { CorsOptions } from 'cors';
 
-export const configuredOrigins = (
-  process.env.CORS_ORIGINS ||
-  [
-    'https://www.futurejobsproai.com',
-    'https://futurejobsproai.com',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:5174',
-    'http://127.0.0.1:5174',
-  ].join(',')
-)
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const defaultOrigins = [
+  'https://www.futurejobsproai.com',
+  'https://futurejobsproai.com',
+  'https://future-jobs-pro-ai.vercel.app',
+  'https://future-jobs-pro-ai-production.up.railway.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  'http://localhost:19006',
+];
+
+function normalizeOrigin(value: string): string {
+  let origin = value.trim();
+
+  // Repair accidental Markdown URL formatting: [url](url)
+  const markdownMatch = origin.match(/^\[(https?:\/\/[^\]]+)\]\([^)]+\)$/);
+  if (markdownMatch) {
+    origin = markdownMatch[1];
+  }
+
+  return origin.replace(/\/+$/, '');
+}
+
+const environmentOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',')
+  : [];
+
+export const configuredOrigins = Array.from(
+  new Set([...defaultOrigins, ...environmentOrigins].map(normalizeOrigin)),
+).filter(Boolean);
 
 export const corsOptions: CorsOptions = {
   origin(origin, callback) {
+    // Requests from curl, mobile applications and server-to-server calls
+    // may not contain an Origin header.
     if (!origin) {
-      return callback(null, true);
+      callback(null, true);
+      return;
     }
 
-    if (configuredOrigins.includes(origin)) {
-      return callback(null, true);
+    const normalizedRequestOrigin = normalizeOrigin(origin);
+
+    if (configuredOrigins.includes(normalizedRequestOrigin)) {
+      callback(null, true);
+      return;
     }
 
-    console.warn(`Blocked CORS origin: ${origin}`);
-
-    return callback(
-      new Error(`Origin ${origin} is not permitted by CORS`),
-    );
+    console.warn(`Blocked CORS origin: ${normalizedRequestOrigin}`);
+    callback(null, false);
   },
 
-  methods: [
-    'GET',
-    'POST',
-    'PUT',
-    'PATCH',
-    'DELETE',
-    'OPTIONS',
-  ],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 
   allowedHeaders: [
     'Content-Type',
@@ -47,10 +61,10 @@ export const corsOptions: CorsOptions = {
     'X-Requested-With',
   ],
 
-  exposedHeaders: [
-    'Content-Disposition',
-  ],
+  exposedHeaders: ['Content-Disposition'],
 
   credentials: true,
   optionsSuccessStatus: 204,
 };
+
+console.log('Allowed CORS origins:', configuredOrigins);
