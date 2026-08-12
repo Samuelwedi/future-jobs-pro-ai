@@ -1,4 +1,7 @@
-import express, { Request, Response } from 'express';
+import express, {
+  Request,
+  Response,
+} from 'express';
 import { verifyToken } from '../utils/auth';
 import {
   disconnectIntegration,
@@ -12,6 +15,7 @@ import {
 } from '../services/integrationService';
 import {
   getQuickBooksCompanyInfo,
+  listQuickBooksItems,
 } from '../services/quickbooksService';
 
 const router = express.Router();
@@ -36,8 +40,14 @@ function authenticatedCompany(
   };
 }
 
-function errorStatus(message: string): number {
-  if (/token|authenticated|company/i.test(message)) {
+function errorStatus(
+  message: string,
+): number {
+  if (
+    /token|authenticated|company/i.test(
+      message,
+    )
+  ) {
     return 401;
   }
 
@@ -50,26 +60,39 @@ function errorStatus(message: string): number {
 
 router.get(
   '/status',
-  async (req: Request, res: Response) => {
+  async (
+    req: Request,
+    res: Response,
+  ) => {
     try {
-      const { companyId } = authenticatedCompany(req);
+      const { companyId } =
+        authenticatedCompany(req);
 
       res.json({
         success: true,
-        ...(await getIntegrationStatus(companyId)),
+        ...(await getIntegrationStatus(
+          companyId,
+        )),
       });
     } catch (error: any) {
-      res.status(errorStatus(error.message)).json({
-        success: false,
-        message: error.message,
-      });
+      res
+        .status(
+          errorStatus(error.message),
+        )
+        .json({
+          success: false,
+          message: error.message,
+        });
     }
   },
 );
 
 router.get(
   '/quickbooks/auth',
-  async (req: Request, res: Response) => {
+  async (
+    req: Request,
+    res: Response,
+  ) => {
     try {
       const { companyId, userId } =
         authenticatedCompany(req);
@@ -82,34 +105,47 @@ router.get(
         ),
       });
     } catch (error: any) {
-      res.status(errorStatus(error.message)).json({
-        success: false,
-        message: error.message,
-      });
+      res
+        .status(
+          errorStatus(error.message),
+        )
+        .json({
+          success: false,
+          message: error.message,
+        });
     }
   },
 );
 
 router.get(
   '/quickbooks/callback',
-  async (req: Request, res: Response) => {
-    const state = String(req.query.state || '');
+  async (
+    req: Request,
+    res: Response,
+  ) => {
+    const state = String(
+      req.query.state || '',
+    );
 
     try {
       if (req.query.error) {
         throw new Error(
           String(
             req.query.error_description ||
-            req.query.error,
+              req.query.error,
           ),
         );
       }
 
-      const realmId = String(req.query.realmId || '');
+      const realmId = String(
+        req.query.realmId || '',
+      );
 
       const baseUrl = (
         process.env.BASE_URL ||
-        `${req.protocol}://${req.get('host')}`
+        `${req.protocol}://${req.get(
+          'host',
+        )}`
       ).replace(/\/$/, '');
 
       await handleQuickBooksCallback(
@@ -142,43 +178,91 @@ router.get(
 );
 
 /**
- * Safe read-only verification endpoint.
- *
- * It confirms that the stored QuickBooks authorization
- * can access the connected company.
+ * Safe, read-only verification endpoint.
  */
 router.get(
   '/quickbooks/company-info',
-  async (req: Request, res: Response) => {
+  async (
+    req: Request,
+    res: Response,
+  ) => {
     try {
-      const { companyId } = authenticatedCompany(req);
+      const { companyId } =
+        authenticatedCompany(req);
 
       const company =
-        await getQuickBooksCompanyInfo(companyId);
+        await getQuickBooksCompanyInfo(
+          companyId,
+        );
 
       res.json({
         success: true,
         connected: true,
         environment:
-          process.env.QUICKBOOKS_ENVIRONMENT ===
+          process.env
+            .QUICKBOOKS_ENVIRONMENT ===
           'production'
             ? 'production'
             : 'sandbox',
         company,
       });
     } catch (error: any) {
-      res.status(errorStatus(error.message)).json({
-        success: false,
-        connected: false,
-        message: error.message,
+      res
+        .status(
+          errorStatus(error.message),
+        )
+        .json({
+          success: false,
+          connected: false,
+          message: error.message,
+        });
+    }
+  },
+);
+
+/**
+ * Safely lists active QuickBooks
+ * products and services.
+ */
+router.get(
+  '/quickbooks/items',
+  async (
+    req: Request,
+    res: Response,
+  ) => {
+    try {
+      const { companyId } =
+        authenticatedCompany(req);
+
+      const items =
+        await listQuickBooksItems(
+          companyId,
+        );
+
+      res.json({
+        success: true,
+        count: items.length,
+        items,
       });
+    } catch (error: any) {
+      res
+        .status(
+          errorStatus(error.message),
+        )
+        .json({
+          success: false,
+          message: error.message,
+        });
     }
   },
 );
 
 router.get(
   '/stripe/auth',
-  async (req: Request, res: Response) => {
+  async (
+    req: Request,
+    res: Response,
+  ) => {
     try {
       const { companyId, userId } =
         authenticatedCompany(req);
@@ -191,31 +275,42 @@ router.get(
         ),
       });
     } catch (error: any) {
-      res.status(errorStatus(error.message)).json({
-        success: false,
-        message: error.message,
-      });
+      res
+        .status(
+          errorStatus(error.message),
+        )
+        .json({
+          success: false,
+          message: error.message,
+        });
     }
   },
 );
 
 router.get(
   '/stripe/callback',
-  async (req: Request, res: Response) => {
-    const state = String(req.query.state || '');
+  async (
+    req: Request,
+    res: Response,
+  ) => {
+    const state = String(
+      req.query.state || '',
+    );
 
     try {
       if (req.query.error) {
         throw new Error(
           String(
             req.query.error_description ||
-            req.query.error,
+              req.query.error,
           ),
         );
       }
 
       await handleStripeConnectCallback(
-        String(req.query.code || ''),
+        String(
+          req.query.code || '',
+        ),
         state,
       );
 
@@ -244,9 +339,13 @@ router.get(
 
 router.post(
   '/:provider/disconnect',
-  async (req: Request, res: Response) => {
+  async (
+    req: Request,
+    res: Response,
+  ) => {
     try {
-      const provider = req.params.provider;
+      const provider =
+        req.params.provider;
 
       if (
         provider !== 'quickbooks' &&
@@ -271,17 +370,24 @@ router.post(
         success: true,
       });
     } catch (error: any) {
-      res.status(errorStatus(error.message)).json({
-        success: false,
-        message: error.message,
-      });
+      res
+        .status(
+          errorStatus(error.message),
+        )
+        .json({
+          success: false,
+          message: error.message,
+        });
     }
   },
 );
 
 router.post(
   '/sync/stripe-to-quickbooks',
-  async (req: Request, res: Response) => {
+  async (
+    req: Request,
+    res: Response,
+  ) => {
     try {
       const { companyId } =
         authenticatedCompany(req);
@@ -289,13 +395,19 @@ router.post(
       res.json({
         success: true,
         result:
-          await syncRecentStripePayments(companyId),
+          await syncRecentStripePayments(
+            companyId,
+          ),
       });
     } catch (error: any) {
-      res.status(errorStatus(error.message)).json({
-        success: false,
-        message: error.message,
-      });
+      res
+        .status(
+          errorStatus(error.message),
+        )
+        .json({
+          success: false,
+          message: error.message,
+        });
     }
   },
 );

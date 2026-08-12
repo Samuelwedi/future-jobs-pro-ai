@@ -15,6 +15,14 @@ export type QuickBooksCompanyInfo = {
   fiscalYearStartMonth: string | null;
 };
 
+export type QuickBooksItemSummary = {
+  id: string;
+  name: string;
+  type: string;
+  active: boolean;
+  description: string | null;
+};
+
 function required(name: string): string {
   const value = process.env[name]?.trim();
 
@@ -31,7 +39,9 @@ function environment(): 'sandbox' | 'production' {
     : 'sandbox';
 }
 
-function oauthClient(token?: Record<string, unknown>): OAuthClient {
+function oauthClient(
+  token?: Record<string, unknown>,
+): OAuthClient {
   return new OAuthClient({
     clientId: required('QUICKBOOKS_CLIENT_ID'),
     clientSecret: required('QUICKBOOKS_CLIENT_SECRET'),
@@ -58,25 +68,37 @@ async function getValidToken(
   );
 
   if (!result.rowCount) {
-    throw new Error('Connect QuickBooks before running a sync');
+    throw new Error(
+      'Connect QuickBooks before running a sync',
+    );
   }
 
-  let accessToken = decrypt(result.rows[0].access_token);
+  let accessToken = decrypt(
+    result.rows[0].access_token,
+  );
+
   let refreshToken = result.rows[0].refresh_token
     ? decrypt(result.rows[0].refresh_token)
     : null;
 
-  const realmId = String(result.rows[0].realm_id || '');
+  const realmId = String(
+    result.rows[0].realm_id || '',
+  );
 
   if (!realmId) {
-    throw new Error('The QuickBooks company ID is missing; reconnect QuickBooks');
+    throw new Error(
+      'The QuickBooks company ID is missing; reconnect QuickBooks',
+    );
   }
 
   const expiresAt = result.rows[0].token_expires_at
-    ? new Date(result.rows[0].token_expires_at).getTime()
+    ? new Date(
+        result.rows[0].token_expires_at,
+      ).getTime()
     : 0;
 
-  // Refresh five minutes early so the token does not expire mid-request.
+  // Refresh five minutes early to prevent expiry
+  // during an API request.
   if (expiresAt <= Date.now() + 5 * 60 * 1000) {
     if (!refreshToken) {
       throw new Error(
@@ -84,14 +106,21 @@ async function getValidToken(
       );
     }
 
-    const response = await oauthClient().refreshUsingToken(refreshToken);
+    const response =
+      await oauthClient().refreshUsingToken(
+        refreshToken,
+      );
+
     const refreshed = response.getJson();
 
     accessToken = refreshed.access_token;
-    refreshToken = refreshed.refresh_token || refreshToken;
+    refreshToken =
+      refreshed.refresh_token || refreshToken;
 
     const newExpiresAt = new Date(
-      Date.now() + Number(refreshed.expires_in || 3600) * 1000,
+      Date.now() +
+        Number(refreshed.expires_in || 3600) *
+          1000,
     );
 
     await pool.query(
@@ -129,7 +158,8 @@ async function makeApiCall(
   method: 'GET' | 'POST',
   body?: unknown,
 ): Promise<any> {
-  const { accessToken, realmId } = await getValidToken(companyId);
+  const { accessToken, realmId } =
+    await getValidToken(companyId);
 
   const resolvedPath =
     typeof path === 'function'
@@ -141,36 +171,43 @@ async function makeApiCall(
     realmId,
   });
 
-  const response: any = await client.makeApiCall({
-    url: `${apiBase()}/v3/company/${realmId}/${resolvedPath}`,
-    method,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    ...(body === undefined
-      ? {}
-      : { body: JSON.stringify(body) }),
-  });
+  const response: any =
+    await client.makeApiCall({
+      url:
+        `${apiBase()}/v3/company/` +
+        `${realmId}/${resolvedPath}`,
+      method,
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      ...(body === undefined
+        ? {}
+        : {
+            body: JSON.stringify(body),
+          }),
+    });
 
-  if (typeof response.getJson === 'function') {
+  if (
+    typeof response.getJson === 'function'
+  ) {
     return response.getJson();
   }
 
   return response.json || response;
 }
 
-function escapeQuickBooksQuery(value: string): string {
+function escapeQuickBooksQuery(
+  value: string,
+): string {
   return value
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'");
 }
 
 /**
- * Performs a safe, read-only request against the connected
- * QuickBooks company.
- *
- * Access and refresh tokens are never returned.
+ * Performs a safe, read-only request against
+ * the connected QuickBooks company.
  */
 export async function getQuickBooksCompanyInfo(
   companyId: string,
@@ -178,7 +215,9 @@ export async function getQuickBooksCompanyInfo(
   const response = await makeApiCall(
     companyId,
     (realmId) =>
-      `companyinfo/${encodeURIComponent(realmId)}?minorversion=75`,
+      `companyinfo/${encodeURIComponent(
+        realmId,
+      )}?minorversion=75`,
     'GET',
   );
 
@@ -191,12 +230,11 @@ export async function getQuickBooksCompanyInfo(
   }
 
   return {
-    companyName:
-      String(
-        companyInfo.CompanyName ||
+    companyName: String(
+      companyInfo.CompanyName ||
         companyInfo.LegalName ||
         'QuickBooks company',
-      ),
+    ),
     legalName: companyInfo.LegalName
       ? String(companyInfo.LegalName)
       : null,
@@ -206,10 +244,53 @@ export async function getQuickBooksCompanyInfo(
     email: companyInfo.Email?.Address
       ? String(companyInfo.Email.Address)
       : null,
-    fiscalYearStartMonth: companyInfo.FiscalYearStartMonth
-      ? String(companyInfo.FiscalYearStartMonth)
-      : null,
+    fiscalYearStartMonth:
+      companyInfo.FiscalYearStartMonth
+        ? String(
+            companyInfo.FiscalYearStartMonth,
+          )
+        : null,
   };
+}
+
+/**
+ * Returns safe information about active
+ * QuickBooks products and services.
+ */
+export async function listQuickBooksItems(
+  companyId: string,
+): Promise<QuickBooksItemSummary[]> {
+  const query =
+    'select * from Item where Active = true maxresults 100';
+
+  const response = await makeApiCall(
+    companyId,
+    `query?query=${encodeURIComponent(
+      query,
+    )}&minorversion=75`,
+    'GET',
+  );
+
+  const items =
+    response?.QueryResponse?.Item;
+
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.map((item: any) => ({
+    id: String(item.Id),
+    name: String(
+      item.Name || 'Unnamed item',
+    ),
+    type: String(
+      item.Type || 'Unknown',
+    ),
+    active: item.Active !== false,
+    description: item.Description
+      ? String(item.Description)
+      : null,
+  }));
 }
 
 export async function findOrCreateQuickBooksCustomer(
@@ -218,7 +299,8 @@ export async function findOrCreateQuickBooksCustomer(
   email?: string,
 ): Promise<string> {
   const safeName =
-    displayName.trim().slice(0, 100) || 'Stripe customer';
+    displayName.trim().slice(0, 100) ||
+    'Stripe customer';
 
   const query = email
     ? `select * from Customer where PrimaryEmailAddr = '${escapeQuickBooksQuery(
@@ -230,21 +312,23 @@ export async function findOrCreateQuickBooksCustomer(
 
   const found = await makeApiCall(
     companyId,
-    `query?query=${encodeURIComponent(query)}&minorversion=75`,
+    `query?query=${encodeURIComponent(
+      query,
+    )}&minorversion=75`,
     'GET',
   );
 
-  const existing = found?.QueryResponse?.Customer?.[0];
+  const existing =
+    found?.QueryResponse?.Customer?.[0];
 
   if (existing?.Id) {
     return String(existing.Id);
   }
 
   const uniqueDisplayName =
-    `${safeName} ${Date.now().toString().slice(-6)}`.slice(
-      0,
-      100,
-    );
+    `${safeName} ${Date.now()
+      .toString()
+      .slice(-6)}`.slice(0, 100);
 
   const created = await makeApiCall(
     companyId,
@@ -278,7 +362,9 @@ export async function createSalesReceipt(
   description: string,
   txnDate: string,
 ): Promise<any> {
-  const itemId = required('QUICKBOOKS_DEFAULT_ITEM_ID');
+  const itemId = required(
+    'QUICKBOOKS_DEFAULT_ITEM_ID',
+  );
 
   return makeApiCall(
     companyId,
@@ -289,18 +375,25 @@ export async function createSalesReceipt(
         value: customerRef,
       },
       TxnDate: txnDate,
-      PrivateNote: description.slice(0, 4000),
+      PrivateNote:
+        description.slice(0, 4000),
       Line: [
         {
-          DetailType: 'SalesItemLineDetail',
-          Amount: Number(amount.toFixed(2)),
-          Description: description.slice(0, 4000),
+          DetailType:
+            'SalesItemLineDetail',
+          Amount: Number(
+            amount.toFixed(2),
+          ),
+          Description:
+            description.slice(0, 4000),
           SalesItemLineDetail: {
             ItemRef: {
               value: itemId,
             },
             Qty: 1,
-            UnitPrice: Number(amount.toFixed(2)),
+            UnitPrice: Number(
+              amount.toFixed(2),
+            ),
           },
         },
       ],
@@ -323,11 +416,15 @@ export async function createInvoicePayment(
       CustomerRef: {
         value: customerRef,
       },
-      TotalAmt: Number(amount.toFixed(2)),
+      TotalAmt: Number(
+        amount.toFixed(2),
+      ),
       TxnDate: txnDate,
       Line: [
         {
-          Amount: Number(amount.toFixed(2)),
+          Amount: Number(
+            amount.toFixed(2),
+          ),
           LinkedTxn: [
             {
               TxnId: invoiceId,
@@ -340,4 +437,6 @@ export async function createInvoicePayment(
   );
 }
 
-console.log('QuickBooks API service loaded.');
+console.log(
+  'QuickBooks API service loaded.',
+);
