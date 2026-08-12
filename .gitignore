@@ -19,3 +19,5 @@ backend/src/index.ts.before-cors
 .env*
 
 future-jobs-integration-source.zip
+
+future-jobs-current-source.zip

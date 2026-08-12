@@ -5,7 +5,9 @@ import {
 } from '@mui/material';
 import { Send, SmartToy } from '@mui/icons-material';
 
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE =
+  ((import.meta.env as any).VITE_API_URL as string | undefined)?.replace(/\/$/, '') ||
+  'https://future-jobs-pro-ai-production.up.railway.app';
 
 interface Message {
   text: string;
@@ -95,10 +97,10 @@ export default function AskLucy() {
         body: JSON.stringify({ message: userMessage }),
       });
 
-      if (!res.ok) throw new Error(`Lucy responded with status ${res.status}`);
-
       const data = await res.json();
-      const botText = data?.[0]?.text || "I'm not sure how to respond to that yet.";
+      if (!res.ok) throw new Error(data.message || `Lucy responded with status ${res.status}`);
+
+      const botText = data?.text || data?.[0]?.text || "I'm not sure how to respond to that yet.";
       setMessages(prev => [...prev, { text: botText, isUser: false }]);
       speak(botText);
     } catch (err: any) {
@@ -126,7 +128,7 @@ export default function AskLucy() {
           Ask Lucy
         </Typography>
         <Typography variant="body2" sx={{ color: '#888', mb: 3, textAlign: 'center' }}>
-          Lucy remembers everything and can execute real tasks. Speak naturally.
+          Lucy remembers recent conversations and can prepare supported actions for approval.
         </Typography>
 
         <Paper sx={{ flex: 1, bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333', p: 2, mb: 2, overflowY: 'auto' }}>

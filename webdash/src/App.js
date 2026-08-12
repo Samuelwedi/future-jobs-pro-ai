@@ -1,304 +1,231 @@
-import React, { useState, useEffect, useRef } from 'react';
-import io from 'socket.io-client';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
+import { io } from 'socket.io-client';
+import './App.css';
 
-const API_BASE = process.env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app';
+const API_BASE = (process.env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app').replace(/\/$/, '');
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('agentToken') || '');
-  const [isLoggedIn, setIsLoggedIn] = useState(!!token);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [agent, setAgent] = useState(null);
   const [tickets, setTickets] = useState([]);
-  const [currentRoom, setCurrentRoom] = useState(null);
+  const [currentTicket, setCurrentTicket] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [agentId, setAgentId] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const [loadingSuggest, setLoadingSuggest] = useState(false);
   const socketRef = useRef(null);
+  const currentRoomRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // Login
-  const handleLogin = () => {
-    if (token.trim()) {
-      localStorage.setItem('agentToken', token);
-      setIsLoggedIn(true);
+  const authHeaders = { Authorization: `Bearer ${token}` };
+
+  const authenticate = async (candidate = token) => {
+    const cleanToken = candidate.trim();
+    if (!cleanToken) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await axios.get(`${API_BASE}/api/support/tickets`, {
+        headers: { Authorization: `Bearer ${cleanToken}` },
+      });
+      localStorage.setItem('agentToken', cleanToken);
+      setToken(cleanToken);
+      setAgent(response.data.agent);
+      setTickets(response.data.tickets || []);
+      setAuthenticated(true);
+    } catch (requestError) {
+      localStorage.removeItem('agentToken');
+      setAuthenticated(false);
+      setError(requestError.response?.data?.message || 'Agent authentication failed');
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!isLoggedIn || !token) return;
-    const storedId = localStorage.getItem('agentId');
-    if (storedId) setAgentId(storedId);
-    else {
-      const newId = 'agent-' + Math.random().toString(36).substring(7);
-      localStorage.setItem('agentId', newId);
-      setAgentId(newId);
-    }
-  }, [isLoggedIn]);
+    if (token) void authenticate(token);
+    // Authenticate the persisted token once at startup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    if (!isLoggedIn || !agentId) return;
-
+    if (!authenticated || !token) return undefined;
     const socket = io(API_BASE, {
       transports: ['websocket'],
       auth: { token },
     });
     socketRef.current = socket;
-
     socket.on('connect', () => {
-      console.log('Agent connected');
-      socket.emit('join-agent-dashboard');
+      socket.emit('join-agent-dashboard', (result) => {
+        if (!result?.success) setError(result?.message || 'Could not join the agent dashboard');
+      });
     });
-
-    // Fetch existing tickets
-    axios.get(`${API_BASE}/api/support/tickets`, {
-      headers: { Authorization: `Bearer ${token}` },
-    }).then(res => {
-      if (res.data.tickets) setTickets(res.data.tickets);
-    }).catch(console.error);
-
+    socket.on('connect_error', (socketError) => setError(socketError.message));
     socket.on('new-ticket', (ticket) => {
-      setTickets((prev) => [...prev, { ...ticket, status: 'open' }]);
+      setTickets((current) => current.some((item) => String(item.ticketId) === String(ticket.ticketId))
+        ? current
+        : [{ ...ticket, status: 'open' }, ...current]);
     });
-
     socket.on('ticket-resolved', ({ ticketId }) => {
-      setTickets((prev) => prev.filter(t => t.ticketId !== ticketId));
-      if (currentRoom && currentRoom.includes(ticketId)) {
-        setCurrentRoom(null);
+      setTickets((current) => current.filter((ticket) => String(ticket.ticketId) !== String(ticketId)));
+      if (currentRoomRef.current === `support-ticket-${ticketId}`) {
+        setCurrentTicket(null);
         setMessages([]);
+        currentRoomRef.current = null;
       }
     });
-
-    socket.on('new-message', (msg) => {
-      setMessages((prev) => [...prev, msg]);
+    socket.on('new-message', (message) => {
+      if (message.room_id && message.room_id !== currentRoomRef.current) return;
+      setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
     });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [isLoggedIn, agentId, token, currentRoom]);
+    return () => socket.disconnect();
+  }, [authenticated, token]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleJoinTicket = (ticket) => {
-    if (currentRoom) socketRef.current.emit('leave-room', currentRoom);
-    setCurrentRoom(ticket.roomId);
+  const joinTicket = async (ticket) => {
+    setError('');
+    if (currentRoomRef.current) socketRef.current?.emit('leave-room', currentRoomRef.current);
+    setCurrentTicket(ticket);
+    currentRoomRef.current = ticket.roomId;
     setMessages([]);
-    socketRef.current.emit('join-room', ticket.roomId);
-    axios
-      .get(`${API_BASE}/api/chat/room/${ticket.roomId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      .then((res) => {
-        if (res.data.messages) setMessages(res.data.messages);
-      })
-      .catch(console.error);
-  };
-
-  const sendMessage = () => {
-    if (!input.trim() || !currentRoom) return;
-    const msg = input.trim();
-    socketRef.current.emit('chat-message', {
-      roomId: currentRoom,
-      senderId: agentId,
-      sender_name: 'Support Agent',
-      message: msg,
-      companyId: 'company-id-here',
+    socketRef.current?.emit('join-room', ticket.roomId, (result) => {
+      if (!result?.success) setError(result?.message || 'Could not join the ticket');
     });
-    setMessages((prev) => [
-      ...prev,
-      {
-        sender_id: agentId,
-        sender_name: 'Support Agent',
-        message: msg,
-        created_at: new Date().toISOString(),
-      },
-    ]);
-    setInput('');
-  };
-
-  const resolveTicket = async (ticketId) => {
     try {
-      await axios.post(
-        `${API_BASE}/api/support/resolve`,
-        { ticketId },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-    } catch (error) {
-      console.error('Error resolving ticket:', error);
-      alert('Failed to resolve ticket. Please try again.');
+      const response = await axios.get(`${API_BASE}/api/chat/room/${encodeURIComponent(ticket.roomId)}`, {
+        headers: authHeaders,
+      });
+      setMessages(response.data.messages || []);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Could not load ticket messages');
     }
   };
 
-  // ─── AI Suggestion ─────────────────────────────────────────────
-  const generateAISuggestion = async () => {
-    if (!currentRoom) return;
-    const ticketId = currentRoom.split('-')[2];
-    setLoadingSuggest(true);
+  const sendMessage = () => {
+    const message = input.trim();
+    if (!message || !currentTicket) return;
+    socketRef.current?.emit('chat-message', { roomId: currentTicket.roomId, message });
+    setInput('');
+  };
+
+  const resolveTicket = async () => {
+    if (!currentTicket) return;
     try {
-      const res = await axios.post(
-        `${API_BASE}/api/support/tickets/${ticketId}/suggest`,
+      await axios.post(`${API_BASE}/api/support/resolve`, { ticketId: currentTicket.ticketId }, { headers: authHeaders });
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Could not resolve the ticket');
+    }
+  };
+
+  const generateSuggestion = async () => {
+    if (!currentTicket) return;
+    setLoadingSuggest(true);
+    setError('');
+    try {
+      const response = await axios.post(
+        `${API_BASE}/api/support/tickets/${currentTicket.ticketId}/suggest`,
         {},
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: authHeaders },
       );
-      if (res.data.success) {
-        setInput(res.data.reply);
-      } else {
-        alert('Could not generate suggestion: ' + res.data.message);
-      }
-    } catch (error) {
-      console.error('AI suggestion error:', error);
-      alert('Failed to get AI suggestion.');
+      setInput(response.data.reply || '');
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Could not generate a suggestion');
     } finally {
       setLoadingSuggest(false);
     }
   };
 
-  // Login screen
-  if (!isLoggedIn) {
+  const logout = () => {
+    localStorage.removeItem('agentToken');
+    socketRef.current?.disconnect();
+    setAuthenticated(false);
+    setAgent(null);
+    setTickets([]);
+    setCurrentTicket(null);
+    setMessages([]);
+    setToken('');
+  };
+
+  if (!authenticated) {
     return (
-      <div style={styles.loginContainer}>
-        <div style={styles.loginBox}>
-          <h2>🔐 Agent Login</h2>
-          <p>Enter your authentication token from the main app:</p>
-          <input
-            type="text"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="Paste your JWT token"
-            style={styles.loginInput}
-          />
-          <button onClick={handleLogin} style={styles.loginButton}>Login</button>
-        </div>
-      </div>
+      <main className="login-shell">
+        <form className="login-card" onSubmit={(event) => { event.preventDefault(); void authenticate(); }}>
+          <div className="brand-mark">FJ</div>
+          <h1>Support Agent Portal</h1>
+          <p>Use an authorized manager, boss, support-agent, or administrator token.</p>
+          {error && <div className="error-banner">{error}</div>}
+          <label htmlFor="agent-token">Authentication token</label>
+          <textarea id="agent-token" rows="4" value={token} onChange={(event) => setToken(event.target.value)} placeholder="Paste your JWT token" />
+          <button className="primary-button" type="submit" disabled={loading || !token.trim()}>
+            {loading ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
+      </main>
     );
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.sidebar}>
-        <h2 style={styles.title}>🛠 Support Tickets</h2>
-        {tickets.length === 0 ? (
-          <div style={styles.emptyState}>No open tickets</div>
+    <main className="portal-shell">
+      <aside className="ticket-sidebar">
+        <header className="sidebar-header">
+          <div><span className="eyebrow">Future Jobs Pro AI</span><h1>Support queue</h1></div>
+          <button className="text-button" onClick={logout}>Sign out</button>
+        </header>
+        <div className="agent-card"><strong>{agent?.name || 'Support Agent'}</strong><span>{agent?.role || 'agent'}</span></div>
+        <div className="queue-count">{tickets.length} open {tickets.length === 1 ? 'ticket' : 'tickets'}</div>
+        <div className="ticket-list">
+          {tickets.length === 0 && <div className="empty-state">No open tickets</div>}
+          {tickets.map((ticket) => (
+            <button key={ticket.ticketId} className={`ticket-card ${currentTicket?.ticketId === ticket.ticketId ? 'selected' : ''}`} onClick={() => void joinTicket(ticket)}>
+              <strong>{ticket.userName || 'Customer'}</strong>
+              <span>Ticket #{ticket.ticketId}</span>
+              <p>{ticket.lastMessage || 'No messages'}</p>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <section className="conversation-panel">
+        {error && <div className="error-banner portal-error">{error}<button onClick={() => setError('')}>×</button></div>}
+        {!currentTicket ? (
+          <div className="empty-conversation"><div className="empty-icon">↗</div><h2>Select a support ticket</h2><p>Choose an open request from the queue to begin.</p></div>
         ) : (
-          tickets.map((ticket) => (
-            <div
-              key={ticket.ticketId}
-              style={{
-                ...styles.ticketItem,
-                borderColor: currentRoom === ticket.roomId ? '#00D4FF' : 'transparent',
-              }}
-              onClick={() => handleJoinTicket(ticket)}
-            >
-              <div style={styles.ticketName}>{ticket.userName || 'User'}</div>
-              <div style={styles.ticketCompany}>Ticket #{ticket.ticketId}</div>
-              <div style={styles.ticketStatus}>Status: {ticket.status}</div>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div style={styles.chatArea}>
-        {currentRoom ? (
           <>
-            <div style={styles.chatHeader}>
-              <div>
-                <span style={styles.roomId}>Ticket: {currentRoom}</span>
-                <span style={styles.agentBadge}>Agent: You</span>
+            <header className="conversation-header">
+              <div><span className="eyebrow">Ticket #{currentTicket.ticketId}</span><h2>{currentTicket.userName || 'Customer'}</h2></div>
+              <div className="header-actions">
+                <button className="secondary-button" onClick={() => void generateSuggestion()} disabled={loadingSuggest}>{loadingSuggest ? 'Drafting…' : 'AI draft'}</button>
+                <button className="resolve-button" onClick={() => void resolveTicket()}>Resolve</button>
               </div>
-              <div>
-                <button
-                  style={styles.aiButton}
-                  onClick={generateAISuggestion}
-                  disabled={loadingSuggest}
-                >
-                  {loadingSuggest ? '⏳ Generating...' : '🤖 AI Suggest'}
-                </button>
-                <button
-                  style={styles.resolveButton}
-                  onClick={() => resolveTicket(currentRoom.split('-')[2])}
-                >
-                  ✅ Resolve
-                </button>
-              </div>
-            </div>
-
-            <div style={styles.messagesContainer}>
-              {messages.map((msg, idx) => {
-                const isAgent = msg.sender_id === agentId;
-                return (
-                  <div
-                    key={idx}
-                    style={{
-                      ...styles.message,
-                      alignSelf: isAgent ? 'flex-end' : 'flex-start',
-                      backgroundColor: isAgent ? '#00D4FF' : '#1A1A1A',
-                    }}
-                  >
-                    <div style={styles.senderName}>{msg.sender_name || msg.sender_id}</div>
-                    <div>{msg.message}</div>
-                    <div style={styles.messageTime}>
-                      {new Date(msg.created_at).toLocaleTimeString()}
-                    </div>
-                  </div>
-                );
+            </header>
+            <div className="messages">
+              {messages.map((message) => {
+                const mine = String(message.sender_id) === String(agent?.id);
+                return <article key={message.id || `${message.created_at}-${message.message}`} className={`message ${mine ? 'mine' : ''}`}>
+                  <span>{mine ? 'You' : message.sender_name || 'Customer'}</span>
+                  <p>{message.message}</p>
+                  <time>{new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+                </article>;
               })}
               <div ref={messagesEndRef} />
             </div>
-
-            <div style={styles.inputArea}>
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Type a message..."
-                style={styles.textarea}
-                rows={3}
-              />
-              <div style={styles.inputActions}>
-                <button style={styles.sendButton} onClick={sendMessage}>
-                  Send
-                </button>
-              </div>
-            </div>
+            <footer className="composer">
+              <textarea rows="3" value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }
+              }} placeholder="Write a reply…" />
+              <button className="primary-button send-button" onClick={sendMessage} disabled={!input.trim()}>Send reply</button>
+            </footer>
           </>
-        ) : (
-          <div style={styles.selectPrompt}>Select a ticket to start chatting</div>
         )}
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
-
-// (Styles remain the same – add new styles for AI button and textarea)
-const styles = {
-  container: { display: 'flex', height: '100vh', backgroundColor: '#0A0A0A', color: '#FFF', fontFamily: 'sans-serif' },
-  sidebar: { width: '300px', borderRight: '1px solid #333', padding: '20px', overflowY: 'auto', backgroundColor: '#141414' },
-  title: { fontSize: '20px', marginBottom: '16px', color: '#00D4FF' },
-  ticketItem: { padding: '12px', marginBottom: '8px', backgroundColor: '#1A1A1A', borderRadius: '8px', cursor: 'pointer', border: '2px solid transparent', transition: 'border 0.2s' },
-  ticketName: { fontWeight: 'bold', fontSize: '16px' },
-  ticketCompany: { fontSize: '12px', color: '#888', marginTop: '4px' },
-  ticketStatus: { fontSize: '12px', color: '#F44336', marginTop: '4px' },
-  emptyState: { color: '#666', textAlign: 'center', marginTop: '40px' },
-  chatArea: { flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#0A0A0A' },
-  chatHeader: { padding: '16px 24px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  roomId: { fontWeight: 'bold' },
-  agentBadge: { marginLeft: '16px', fontSize: '14px', color: '#4CAF50' },
-  resolveButton: { backgroundColor: '#4CAF50', color: '#FFF', border: 'none', padding: '6px 18px', borderRadius: '20px', fontWeight: '600', cursor: 'pointer', marginLeft: '8px' },
-  aiButton: { backgroundColor: '#9C27B0', color: '#FFF', border: 'none', padding: '6px 18px', borderRadius: '20px', fontWeight: '600', cursor: 'pointer', marginRight: '8px' },
-  messagesContainer: { flex: 1, padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' },
-  message: { maxWidth: '70%', padding: '10px 16px', borderRadius: '14px', fontSize: '14px', lineHeight: '1.4', color: '#FFF' },
-  senderName: { fontSize: '12px', color: '#AAA', marginBottom: '4px' },
-  messageTime: { fontSize: '10px', color: '#888', marginTop: '4px', textAlign: 'right' },
-  inputArea: { padding: '16px 24px', borderTop: '1px solid #333', display: 'flex', flexDirection: 'column', gap: '8px' },
-  textarea: { width: '100%', padding: '10px 18px', borderRadius: '8px', border: 'none', backgroundColor: '#1A1A1A', color: '#FFF', fontSize: '14px', outline: 'none', resize: 'vertical', fontFamily: 'inherit' },
-  inputActions: { display: 'flex', justifyContent: 'flex-end' },
-  sendButton: { backgroundColor: '#00D4FF', border: 'none', borderRadius: '30px', padding: '10px 24px', fontWeight: '600', color: '#0A0A0A', cursor: 'pointer' },
-  selectPrompt: { flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#666', fontSize: '18px' },
-  loginContainer: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#0A0A0A', color: '#FFF' },
-  loginBox: { backgroundColor: '#1A1A1A', padding: '40px', borderRadius: '12px', border: '1px solid #333', width: '400px', textAlign: 'center' },
-  loginInput: { width: '100%', padding: '12px', marginTop: '16px', borderRadius: '8px', border: 'none', backgroundColor: '#0A0A0A', color: '#FFF' },
-  loginButton: { marginTop: '16px', padding: '12px 24px', backgroundColor: '#00D4FF', border: 'none', borderRadius: '8px', color: '#0A0A0A', fontWeight: 'bold', cursor: 'pointer' },
-};
 
 export default App;

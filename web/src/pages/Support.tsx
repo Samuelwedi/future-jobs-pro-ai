@@ -1,14 +1,23 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Box, Container, Typography, TextField, IconButton, Paper,
-  CircularProgress, Alert, Button, Chip, Stack,
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Container,
+  IconButton,
+  Paper,
+  TextField,
+  Typography,
 } from '@mui/material';
-import { Send, ArrowBack, PersonAdd } from '@mui/icons-material';
+import { ArrowBack, PersonAdd, Send } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
-const WS_URL = API_BASE.replace('/api', '').replace('https', 'wss').replace('http', 'ws');
+const API_BASE =
+  ((import.meta.env as any).VITE_API_URL as string | undefined)?.replace(/\/$/, '') ||
+  'https://future-jobs-pro-ai-production.up.railway.app';
+const LUCY_ID = 'lucy-ai';
 
 interface Message {
   id: string;
@@ -19,178 +28,160 @@ interface Message {
   is_ai?: boolean;
 }
 
-export default function SupportScreen() {
+export default function Support() {
   const navigate = useNavigate();
   const token = localStorage.getItem('token') || '';
   const user = JSON.parse(localStorage.getItem('user') || '{}');
-
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(true);
   const [agentActive, setAgentActive] = useState(false);
   const [aiTyping, setAiTyping] = useState(false);
   const [humanRequested, setHumanRequested] = useState(false);
   const [ticketRoom, setTicketRoom] = useState<string | null>(null);
+  const [error, setError] = useState('');
   const socketRef = useRef<Socket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const addMessage = (message: Message) => {
+    setMessages((current) =>
+      current.some((item) => item.id === message.id)
+        ? current
+        : [...current, message],
+    );
+  };
+
   useEffect(() => {
     if (!token) return;
-
-    const socket = io(WS_URL, {
+    const socket = io(API_BASE, {
       transports: ['websocket'],
       auth: { token },
     });
     socketRef.current = socket;
-
-    socket.on('connect', () => {
-      socket.emit('join-room', 'support-waiting');
-      console.log('Connected to support');
+    socket.on('connect_error', (socketError) => setError(socketError.message));
+    socket.on('new-message', (message: Message) => addMessage(message));
+    socket.on('agent-joined', () => setAgentActive(true));
+    socket.on('ticket-resolved', () => {
+      setAgentActive(false);
+      setHumanRequested(false);
+      setTicketRoom(null);
     });
-
-    socket.on('new-message', (msg: Message) => {
-      setMessages((prev) => [...prev, msg]);
-      if (msg.sender_id === '00000000-0000-0000-0000-000000000001') {
-        setAiTyping(false);
-      }
-      if (msg.sender_id !== user?.id && msg.sender_id !== '00000000-0000-0000-0000-000000000001') {
-        setAgentActive(true);
-      }
-      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-    });
-
-    socket.on('agent-joined', (data: { ticketId: string }) => {
-      setAgentActive(true);
-      alert('A support agent is now assisting you.');
-    });
-
-    // Fetch initial messages (optional)
-    // ...
-
     return () => {
-      if (ticketRoom) socket.emit('leave-room', ticketRoom);
       socket.disconnect();
     };
   }, [token]);
 
-  const sendMessage = () => {
-    if (!input.trim() || !socketRef.current || !user) return;
-    const messageText = input.trim();
-    setInput('');
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, aiTyping]);
 
-    const room = ticketRoom || 'support-waiting';
-
-    if (agentActive) {
-      socketRef.current.emit('chat-message', {
-        senderId: user.id,
-        companyId: user.companyId || '',
-        roomId: room,
-        message: messageText,
-      });
-    } else {
-      // AI mode
-      const tempMsg: Message = {
-        id: `temp-${Date.now()}`,
-        sender_id: user.id,
-        sender_name: user.first_name + ' ' + user.last_name,
-        message: messageText,
-        created_at: new Date().toISOString(),
-        is_ai: false,
-      };
-      setMessages((prev) => [...prev, tempMsg]);
-
-      // Check for human request
-      const humanKeywords = ['human', 'agent', 'talk to someone', 'real person', 'support agent'];
-      if (humanKeywords.some(keyword => messageText.toLowerCase().includes(keyword))) {
-        requestHumanSupport();
-        socketRef.current?.emit('chat-message', {
-          senderId: '00000000-0000-0000-0000-000000000001',
-          companyId: user.companyId || '',
-          roomId: room,
-          message: "I've notified our support team. They'll join shortly.",
-        });
-        return;
-      }
-
-      setAiTyping(true);
-      fetch(`${API_BASE}/api/chatbot/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ question: messageText }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          socketRef.current?.emit('chat-message', {
-            senderId: '00000000-0000-0000-0000-000000000001',
-            companyId: user.companyId || '',
-            roomId: room,
-            message: data.answer || "I'm not sure, please try again.",
-          });
-          setAiTyping(false);
-        })
-        .catch(() => {
-          socketRef.current?.emit('chat-message', {
-            senderId: '00000000-0000-0000-0000-000000000001',
-            companyId: user.companyId || '',
-            roomId: room,
-            message: "I'm having trouble. Please request a human.",
-          });
-          setAiTyping(false);
-        });
-    }
+  const loadTicketMessages = async (roomId: string) => {
+    const response = await fetch(`${API_BASE}/api/chat/room/${encodeURIComponent(roomId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Could not load support messages');
+    setMessages(data.messages || []);
   };
 
   const requestHumanSupport = async () => {
-    if (humanRequested) {
-      alert('Already requested. An agent will join shortly.');
-      return;
-    }
+    if (humanRequested) return;
+    setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/support/request-human`, {
+      const response = await fetch(`${API_BASE}/api/support/request-human`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          userId: user?.id,
-          companyId: user?.companyId,
-          userName: user?.first_name + ' ' + user?.last_name,
-        }),
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
       });
-      const data = await res.json();
-      const ticketId = data.ticketId;
-      const roomId = `support-ticket-${ticketId}`;
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Could not request support');
+      const roomId = String(data.roomId);
       setTicketRoom(roomId);
-
-      socketRef.current?.emit('leave-room', 'support-waiting');
-      socketRef.current?.emit('join-room', roomId);
-
       setHumanRequested(true);
-      alert('Support team notified. They will join shortly.');
-    } catch (err) {
-      alert('Could not reach support. Please try again.');
+      socketRef.current?.emit('join-room', roomId);
+      await loadTicketMessages(roomId);
+    } catch (requestError: any) {
+      setError(requestError.message || 'Could not reach support');
     }
   };
 
-  const renderMessage = (msg: Message) => {
-    const isMine = msg.sender_id === user?.id;
-    const isAI = msg.sender_id === '00000000-0000-0000-0000-000000000001';
-    const isAgent = !isMine && !isAI;
+  const askLucy = async (question: string) => {
+    setAiTyping(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/lucy`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: question }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Lucy could not respond');
+      const text = Array.isArray(data) ? data[0]?.text : data.text;
+      addMessage({
+        id: `lucy-${Date.now()}`,
+        sender_id: LUCY_ID,
+        sender_name: 'Lucy',
+        message: text || "I'm not sure how to help with that.",
+        created_at: new Date().toISOString(),
+        is_ai: true,
+      });
+    } catch (lucyError: any) {
+      setError(lucyError.message || 'Lucy is temporarily unavailable');
+    } finally {
+      setAiTyping(false);
+    }
+  };
 
-    let bgcolor = '#1A1A1A';
-    let color = '#FFF';
-    let border = '1px solid #333';
-    if (isMine) { bgcolor = '#00D4FF'; color = '#0A0A0A'; border = 'none'; }
-    if (isAI) { border = '1px solid #00D4FF'; }
-    if (isAgent) { border = '1px solid #4CAF50'; }
+  const sendMessage = async () => {
+    const message = input.trim();
+    if (!message) return;
+    setInput('');
+    setError('');
 
+    if (ticketRoom && humanRequested) {
+      socketRef.current?.emit('chat-message', { roomId: ticketRoom, message });
+      return;
+    }
+
+    addMessage({
+      id: `local-${Date.now()}`,
+      sender_id: user.id,
+      sender_name: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'You',
+      message,
+      created_at: new Date().toISOString(),
+    });
+
+    if (/\b(human|agent|real person|talk to someone|support agent)\b/i.test(message)) {
+      await requestHumanSupport();
+      return;
+    }
+    await askLucy(message);
+  };
+
+  const renderMessage = (message: Message) => {
+    const mine = message.sender_id === user.id;
+    const ai = message.sender_id === LUCY_ID || message.is_ai;
     return (
-      <Box key={msg.id} sx={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', mb: 1.5 }}>
-        <Paper sx={{ maxWidth: '70%', p: 1.5, bgcolor, border, borderRadius: 2 }}>
-          <Typography variant="caption" sx={{ color: isMine ? '#0A0A0A' : '#00D4FF', display: 'block', mb: 0.5 }}>
-            {msg.sender_name || (isMine ? 'You' : isAI ? 'Lucy (AI)' : 'Support Agent')}
+      <Box key={message.id} sx={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', mb: 1.5 }}>
+        <Paper
+          sx={{
+            maxWidth: '75%',
+            p: 1.5,
+            bgcolor: mine ? '#00D4FF' : '#1A1A1A',
+            border: mine ? 'none' : `1px solid ${ai ? '#00D4FF' : '#4CAF50'}`,
+            borderRadius: 2,
+          }}
+        >
+          <Typography variant="caption" sx={{ color: mine ? '#0A0A0A' : ai ? '#00D4FF' : '#4CAF50' }}>
+            {mine ? 'You' : message.sender_name || (ai ? 'Lucy' : 'Support Agent')}
           </Typography>
-          <Typography variant="body2" sx={{ color }}>{msg.message}</Typography>
-          <Typography variant="caption" sx={{ color: '#888', display: 'block', textAlign: 'right', mt: 0.5 }}>
-            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          <Typography variant="body2" sx={{ color: mine ? '#0A0A0A' : '#FFF', whiteSpace: 'pre-wrap' }}>
+            {message.message}
           </Typography>
         </Paper>
       </Box>
@@ -199,70 +190,56 @@ export default function SupportScreen() {
 
   return (
     <Container maxWidth="md" sx={{ py: 2, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
-      {/* Header */}
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-        <IconButton onClick={() => navigate(-1)} sx={{ color: '#FFF' }}>
-          <ArrowBack />
-        </IconButton>
-        <Typography variant="h6" sx={{ color: '#FFF', ml: 1 }}>
-          Support
-        </Typography>
+        <IconButton onClick={() => navigate(-1)} sx={{ color: '#FFF' }}><ArrowBack /></IconButton>
+        <Typography variant="h6" sx={{ color: '#FFF', ml: 1 }}>Support</Typography>
       </Box>
 
-      {/* Status Bar */}
-      <Paper sx={{ p: 1, bgcolor: '#1A1A1A', border: '1px solid #333', mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+
+      <Paper sx={{ p: 1.5, bgcolor: '#1A1A1A', border: '1px solid #333', mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Typography variant="body2" sx={{ color: '#00D4FF' }}>
-          {agentActive
-            ? '👤 A support agent is online'
-            : humanRequested
-            ? '⏳ Agent will join shortly'
-            : '🤖 Lucy (AI) is assisting you'}
+          {agentActive ? 'A support agent is online' : humanRequested ? 'Your support ticket is open' : 'Lucy is assisting you'}
         </Typography>
-        {!agentActive && !humanRequested && (
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={<PersonAdd />}
-            onClick={requestHumanSupport}
-            sx={{ bgcolor: '#F44336', color: '#FFF' }}
-          >
+        {!humanRequested && (
+          <Button variant="contained" size="small" startIcon={<PersonAdd />} onClick={requestHumanSupport} sx={{ bgcolor: '#F44336' }}>
             Request Human
           </Button>
         )}
       </Paper>
 
-      {/* Messages */}
-      <Box sx={{ flex: 1, maxHeight: 'calc(100vh - 260px)', overflowY: 'auto', p: 1 }}>
+      <Box sx={{ minHeight: 420, maxHeight: 'calc(100vh - 270px)', overflowY: 'auto', p: 1 }}>
+        {messages.length === 0 && (
+          <Typography sx={{ color: '#888', textAlign: 'center', mt: 8 }}>
+            Ask Lucy a question, or request a human support agent.
+          </Typography>
+        )}
         {messages.map(renderMessage)}
         {aiTyping && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
             <CircularProgress size={16} sx={{ color: '#00D4FF' }} />
-            <Typography variant="caption" sx={{ color: '#888' }}>Lucy is typing...</Typography>
+            <Typography variant="caption" sx={{ color: '#888' }}>Lucy is typing…</Typography>
           </Box>
         )}
         <div ref={messagesEndRef} />
       </Box>
 
-      {/* Input Bar */}
       <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, borderTop: '1px solid #333', pt: 2 }}>
         <TextField
           fullWidth
-          variant="outlined"
-          placeholder={agentActive ? 'Type your message...' : 'Ask Lucy or request a human'}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              color: '#FFF',
-              backgroundColor: '#1A1A1A',
-              borderRadius: 20,
-              '& fieldset': { borderColor: '#333' },
-            },
-            mr: 1,
+          placeholder={humanRequested ? 'Message support…' : 'Ask Lucy…'}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              void sendMessage();
+            }
           }}
+          disabled={aiTyping}
+          sx={{ '& .MuiOutlinedInput-root': { color: '#FFF', bgcolor: '#1A1A1A', borderRadius: 20 }, mr: 1 }}
         />
-        <IconButton onClick={sendMessage} sx={{ bgcolor: '#00D4FF', borderRadius: '50%', p: 1 }}>
+        <IconButton onClick={() => void sendMessage()} disabled={aiTyping || !input.trim()} sx={{ bgcolor: '#00D4FF' }}>
           <Send sx={{ color: '#0A0A0A' }} />
         </IconButton>
       </Box>

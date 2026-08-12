@@ -15,16 +15,15 @@ export async function askAssistant(question: string, userId: string, voiceMode: 
         ? 'You are a helpful voice assistant for a field service management app. Answer concisely and clearly, as if speaking to the user. If the user asks you to perform an action (e.g., create shift, clock in), include a JSON action block in your response with type and parameters so the app can execute it.'
         : 'You are a helpful assistant for a field service management app. Use the provided context to answer the user\'s question concisely. If the context does not contain the answer, say you don\'t have that information.';
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Context:\n${context}\n\nQuestion: ${question}` }
-        ],
-        temperature: 0.3,
-        max_tokens: 300,
+      const response = await openai.responses.create({
+        model: process.env.OPENAI_ASSISTANT_MODEL?.trim() || process.env.OPENAI_LUCY_MODEL?.trim() || 'gpt-5',
+        instructions: systemPrompt,
+        input: `Context:\n${context}\n\nQuestion: ${question}`,
+        reasoning: { effort: 'low' },
+        max_output_tokens: 300,
+        store: false,
       });
-      return response.choices[0].message.content || 'I could not generate a response.';
+      return response.output_text?.trim() || 'I could not generate a response.';
     } catch (err) {
       console.error('OpenAI assistant error:', err);
       // fall back to rule‑based

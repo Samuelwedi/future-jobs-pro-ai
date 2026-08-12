@@ -5,6 +5,35 @@ import { saveMessage } from '../services/chatService';
 
 const router = express.Router();
 
+async function roomAccess(userId: string, roomId: string): Promise<{ allowed: boolean; companyId: string }> {
+  const userResult = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [userId]);
+  if (!userResult.rowCount) return { allowed: false, companyId: '' };
+  const user = userResult.rows[0];
+  const supportMatch = /^support-ticket-([a-zA-Z0-9-]+)$/.exec(roomId);
+  if (supportMatch) {
+    const ticket = await pool.query('SELECT company_id, user_id FROM support_tickets WHERE id = $1', [supportMatch[1]]);
+    if (!ticket.rowCount) return { allowed: false, companyId: '' };
+    const row = ticket.rows[0];
+    const globalAgent = ['admin', 'support_agent'].includes(String(user.role));
+    const companyAgent = ['boss', 'manager'].includes(String(user.role)) && String(row.company_id) === String(user.company_id);
+    return {
+      allowed: String(row.user_id) === userId || globalAgent || companyAgent,
+      companyId: String(row.company_id),
+    };
+  }
+  const room = await pool.query(
+    `SELECT cr.company_id,
+            EXISTS(SELECT 1 FROM chat_room_members WHERE room_id = cr.id AND user_id = $2) AS member
+     FROM chat_rooms cr WHERE cr.id = $1`,
+    [roomId, userId],
+  );
+  if (!room.rowCount) return { allowed: false, companyId: '' };
+  return {
+    allowed: Boolean(room.rows[0].member) && String(room.rows[0].company_id) === String(user.company_id),
+    companyId: String(room.rows[0].company_id),
+  };
+}
+
 // ─── GET /api/chat/company/:companyId ─────────────────────────────
 router.get('/company/:companyId', async (req: Request, res: Response) => {
   try {
@@ -42,8 +71,14 @@ router.post('/message', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const decoded = verifyToken(req);
-    const { roomId, message } = req.body;
-    const saved = await saveMessage(decoded.id, roomId, message, decoded.companyId);
+    const roomId = String(req.body?.roomId || '');
+    const message = String(req.body?.message || '').trim();
+    if (!roomId || !message || message.length > 5000) {
+      return res.status(400).json({ success: false, message: 'Valid roomId and message are required' });
+    }
+    const access = await roomAccess(decoded.id, roomId);
+    if (!access.allowed) return res.status(403).json({ success: false, message: 'Forbidden' });
+    const saved = await saveMessage(decoded.id, roomId, message, access.companyId);
     res.json({ success: true, message: saved });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -57,7 +92,9 @@ router.get('/room/:roomId', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    verifyToken(req);
+    const decoded = verifyToken(req);
+    const access = await roomAccess(decoded.id, String(req.params.roomId));
+    if (!access.allowed) return res.status(403).json({ success: false, message: 'Forbidden' });
 
     const result = await pool.query(
       `SELECT cm.*, u.first_name || ' ' || u.last_name AS sender_name
@@ -81,12 +118,14 @@ router.get('/messages/:roomId', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    verifyToken(req);
+    const decoded = verifyToken(req);
 
-    const { roomId } = req.params;
+    const roomId = String(req.params.roomId || '');
     if (!roomId) {
       return res.status(400).json({ success: false, message: 'roomId required' });
     }
+    const access = await roomAccess(decoded.id, roomId);
+    if (!access.allowed) return res.status(403).json({ success: false, message: 'Forbidden' });
 
     const result = await pool.query(
       `SELECT cm.*, u.first_name || ' ' || u.last_name AS sender_name

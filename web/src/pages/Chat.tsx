@@ -47,7 +47,10 @@ export default function Chat() {
     };
     fetchMessages();
 
-    const socket = io(WS_URL, { transports: ['websocket'] });
+    const socket = io(WS_URL, {
+      transports: ['websocket'],
+      auth: { token },
+    });
     socketRef.current = socket;
     socket.on('connect', () => socket.emit('join-room', roomId));
     socket.on('new-message', (msg: Message) => {
@@ -64,8 +67,6 @@ export default function Chat() {
   const sendMessage = () => {
     if (!input.trim() || !socketRef.current) return;
     socketRef.current.emit('chat-message', {
-      senderId: user.id,
-      companyId: user.companyId,
       roomId,
       message: input.trim(),
     });
