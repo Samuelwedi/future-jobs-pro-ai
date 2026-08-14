@@ -5,10 +5,9 @@
 
 import { v2 as cloudinary } from 'cloudinary';
 
-// Temporarily hardcoding credentials – replace with process.env before production
-const CLOUD_NAME = 'dt03vcinm';
-const API_KEY = '474676432561489';
-const API_SECRET = 'ptapCkU3LaCuP-Gwwt1sZGwnSvQ';
+const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
+const API_KEY = process.env.CLOUDINARY_API_KEY;
+const API_SECRET = process.env.CLOUDINARY_API_SECRET;
 
 cloudinary.config({
   cloud_name: CLOUD_NAME,
@@ -63,6 +62,19 @@ export async function uploadVideo(filePath: string, folder = 'future-jobs-pro/vi
     overwrite: false,
   });
   console.log(`✅ Cloudinary video upload complete: ${result.secure_url}`);
+  return result.secure_url;
+}
+
+// Documents, images, audio, and video. Cloudinary chooses the correct resource type.
+export async function uploadAttachment(filePath: string, folder = 'future-jobs-pro/attachments'): Promise<string> {
+  if (!CLOUD_NAME || !API_KEY || !API_SECRET) throw new Error('Cloudinary is not configured');
+  const result = await cloudinary.uploader.upload(filePath, {
+    folder,
+    resource_type: 'auto',
+    use_filename: true,
+    unique_filename: true,
+    overwrite: false,
+  });
   return result.secure_url;
 }
 

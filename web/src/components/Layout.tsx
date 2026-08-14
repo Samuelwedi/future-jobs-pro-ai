@@ -17,7 +17,6 @@ import {
   Menu,
   MenuItem,
   Tooltip,
-  Badge,
   useTheme,
   useMediaQuery,
 } from '@mui/material';
@@ -51,8 +50,8 @@ import {
   Star as StarIcon,
   PlayArrow as PlayArrowIcon,
   Person,
-  Notifications,
   Brightness4,
+  Brightness7,
   ExpandLess,
   ExpandMore,
   Folder as FolderIcon,
@@ -62,7 +61,10 @@ import {
   AdminPanelSettings,
   Work,
   People,
+  Gavel,
 } from '@mui/icons-material';
+import NotificationCenter from './NotificationCenter';
+import { useAppTheme } from './AppThemeProvider';
 
 // ─── Navigation Configuration ──────────────────────────────────
 const navConfig = [
@@ -87,6 +89,7 @@ const navConfig = [
       { label: 'Timesheet', icon: <Timer />, path: '/timesheet' },
       { label: 'Tasks', icon: <Assignment />, path: '/tasks' },
       { label: 'Projects', icon: <Folder />, path: '/projects' },
+      { label: 'Evidence Center', icon: <Gavel />, path: '/evidence' },
     ],
   },
   {
@@ -151,6 +154,7 @@ export default function Layout() {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const appTheme = useAppTheme();
 
   const [drawerOpen, setDrawerOpen] = useState(!isMobile);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -184,7 +188,7 @@ export default function Layout() {
     : 'U';
 
   const drawerContent = (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#0A0A0A' }}>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
       <Toolbar>
         <Typography variant="h6" sx={{ color: '#00D4FF', fontWeight: 'bold' }}>
           Future Jobs Pro AI
@@ -242,13 +246,13 @@ export default function Layout() {
   );
 
   return (
-    <Box sx={{ display: 'flex', bgcolor: '#0A0A0A', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex', bgcolor: 'background.default', minHeight: '100vh' }}>
       {/* App Bar */}
       <AppBar
         position="fixed"
         sx={{
           zIndex: theme.zIndex.drawer + 1,
-          bgcolor: '#1A1A1A',
+          bgcolor: 'background.paper',
           borderBottom: '1px solid #333',
           boxShadow: 'none',
         }}
@@ -266,16 +270,10 @@ export default function Layout() {
             {location.pathname.split('/')[1] || 'Dashboard'}
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Tooltip title="Notifications">
-              <IconButton sx={{ color: '#888' }}>
-                <Badge badgeContent={3} color="error">
-                  <Notifications />
-                </Badge>
-              </IconButton>
-            </Tooltip>
+            <NotificationCenter />
             <Tooltip title="Toggle theme">
-              <IconButton sx={{ color: '#888' }}>
-                <Brightness4 />
+              <IconButton onClick={appTheme.toggle} sx={{ color: 'text.secondary' }}>
+                {appTheme.mode === 'dark' ? <Brightness7 /> : <Brightness4 />}
               </IconButton>
             </Tooltip>
             <IconButton onClick={handleMenuClick} sx={{ p: 0 }}>
@@ -312,7 +310,7 @@ export default function Layout() {
           flexShrink: 0,
           '& .MuiDrawer-paper': {
             width: 280,
-            bgcolor: '#0A0A0A',
+            bgcolor: 'background.default',
             borderRight: '1px solid #333',
             boxSizing: 'border-box',
             top: 0,
@@ -330,7 +328,7 @@ export default function Layout() {
           flexGrow: 1,
           p: 3,
           mt: 8,
-          bgcolor: '#0A0A0A',
+          bgcolor: 'background.default',
           minHeight: '100vh',
           width: { md: `calc(100% - 280px)` },
         }}

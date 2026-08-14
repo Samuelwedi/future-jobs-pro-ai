@@ -10,6 +10,22 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const decoded = verifyToken(req);
+    const result = await pool.query(`SELECT id,title,message,notification_type,action_url,is_read,created_at FROM in_app_notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50`, [decoded.id]);
+    res.json({ success: true, notifications: result.rows, unread: result.rows.filter((row: any) => !row.is_read).length });
+  } catch (error: any) { res.status(401).json({ success: false, message: error.message || 'Not authenticated' }); }
+});
+router.patch('/:id/read', async (req: Request, res: Response) => {
+  try { const decoded=verifyToken(req); await pool.query(`UPDATE in_app_notifications SET is_read=TRUE,read_at=NOW() WHERE id=$1 AND user_id=$2`,[req.params.id,decoded.id]); res.json({success:true}); }
+  catch(error:any){res.status(401).json({success:false,message:error.message});}
+});
+router.post('/read-all', async (req: Request, res: Response) => {
+  try { const decoded=verifyToken(req); await pool.query(`UPDATE in_app_notifications SET is_read=TRUE,read_at=COALESCE(read_at,NOW()) WHERE user_id=$1 AND is_read=FALSE`,[decoded.id]); res.json({success:true}); }
+  catch(error:any){res.status(401).json({success:false,message:error.message});}
+});
+
 // ─── POST /api/notifications/test ───
 router.post('/test', async (req: Request, res: Response) => {
   try {

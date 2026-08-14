@@ -6,6 +6,7 @@ import {
   DialogContent, TextField, Button, Stack,
 } from '@mui/material';
 import { Groups, Edit } from '@mui/icons-material';
+import ResourceAttachments from '../components/ResourceAttachments';
 
 const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
@@ -169,6 +170,7 @@ export default function Team() {
                 Save
               </Button>
             </Stack>
+            {selectedMember && <Box sx={{mt:3}}><ResourceAttachments target="subjectUserId" targetId={selectedMember.id} title="Employee documents" /></Box>}
           </DialogContent>
         </Dialog>
       </Container>

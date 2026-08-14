@@ -58,11 +58,30 @@ router.post('/', async (req: Request, res: Response) => {
        RETURNING *`,
       [companyId, description, assigned_to || null]
     );
+    if (assigned_to) {
+      await pool.query(
+        `INSERT INTO in_app_notifications (company_id,user_id,title,message,notification_type,action_url)
+         SELECT $1,id,'New task assigned',$2,'task','/tasks' FROM users WHERE id=$3 AND company_id=$1`,
+        [companyId, description, assigned_to],
+      );
+    }
     res.status(201).json({ success: true, task: result.rows[0] });
   } catch (error: any) {
     console.error('Task creation error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to create task' });
   }
+});
+
+router.patch('/:id', async (req: Request, res: Response) => {
+  try {
+    const decoded=verifyToken(req); const actor=await pool.query('SELECT company_id,role FROM users WHERE id=$1',[decoded.id]);
+    if(!actor.rowCount||!actor.rows[0].company_id)return res.status(401).json({success:false,message:'Not authenticated'});
+    if(!['boss','manager','admin'].includes(String(actor.rows[0].role||'')))return res.status(403).json({success:false,message:'Manager access is required'});
+    const status=String(req.body.status||''); if(!['pending','in_progress','completed'].includes(status))return res.status(400).json({success:false,message:'Invalid task status'});
+    const result=await pool.query('UPDATE tasks SET status=$1 WHERE id=$2 AND company_id=$3 RETURNING *',[status,req.params.id,actor.rows[0].company_id]);
+    if(!result.rowCount)return res.status(404).json({success:false,message:'Task not found'});
+    res.json({success:true,task:result.rows[0]});
+  } catch(error:any){res.status(500).json({success:false,message:error.message});}
 });
 
 export default router;

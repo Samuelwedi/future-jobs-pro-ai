@@ -87,6 +87,7 @@ import webhookRoutes from './routes/webhookRoutes'; app.use('/api/webhooks', web
 import ptoRoutes from './routes/ptoRoutes'; app.use('/api/pto', ptoRoutes);
 import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
 import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
+import evidenceBundleRoutes from './routes/evidenceBundleRoutes'; app.use('/api/evidence-bundles', evidenceBundleRoutes);
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
 import mediaRoutes from './routes/mediaRoutes'; app.use('/api/media', mediaRoutes);

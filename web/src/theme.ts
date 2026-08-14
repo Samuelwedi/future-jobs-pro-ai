@@ -7,13 +7,13 @@ const panel = '#10161E';
 const field = '#0B1118';
 const border = '#344357';
 
-const theme = createTheme({
+export const createFutureJobsTheme = (mode: 'dark' | 'light' = 'dark') => createTheme({
   palette: {
-    mode: 'dark',
+    mode,
     primary: { main: cyan, contrastText: '#041014' },
     secondary: { main: '#8B5CF6' },
-    background: { default: '#070B10', paper: panel },
-    text: { primary: white, secondary: muted, disabled: '#8292A6' },
+    background: mode === 'dark' ? { default: '#070B10', paper: panel } : { default: '#F4F7FA', paper: '#FFFFFF' },
+    text: mode === 'dark' ? { primary: white, secondary: muted, disabled: '#8292A6' } : { primary: '#172033', secondary: '#526174', disabled: '#8A96A6' },
     divider: '#2A3543',
   },
   typography: {
@@ -22,8 +22,8 @@ const theme = createTheme({
   components: {
     MuiCssBaseline: {
       styleOverrides: {
-        html: { colorScheme: 'dark', backgroundColor: '#070B10' },
-        body: { color: white, backgroundColor: '#070B10' },
+        html: { colorScheme: mode, backgroundColor: mode === 'dark' ? '#070B10' : '#F4F7FA' },
+        body: { color: mode === 'dark' ? white : '#172033', backgroundColor: mode === 'dark' ? '#070B10' : '#F4F7FA' },
         '#root': { minHeight: '100vh', color: white },
         'a': { color: cyan },
         'input, textarea, select, option': { color: white },
@@ -158,4 +158,5 @@ const theme = createTheme({
   },
 });
 
+const theme = createFutureJobsTheme('dark');
 export default theme;

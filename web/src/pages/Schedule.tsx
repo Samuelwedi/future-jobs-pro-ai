@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import { Add, Delete, DragIndicator, Repeat } from '@mui/icons-material';
 import { API_BASE } from '../services/api';
+import ResourceAttachments from '../components/ResourceAttachments';
 
 const localizer = momentLocalizer(moment);
 
@@ -490,6 +491,8 @@ export default function SchedulePage() {
               onChange={(e) => setFormName(e.target.value)}
               sx={{ mt: 2, input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
             />
+
+            {editingShift && <Box sx={{mt:2}}><ResourceAttachments target="shiftId" targetId={editingShift.id} title="Shift documents & media" compact /></Box>}
 
             <FormControl fullWidth sx={{ mt: 2 }}>
               <InputLabel sx={{ color: '#888' }}>Project</InputLabel>

@@ -51,6 +51,7 @@ import CrewTracking from './pages/CrewTracking';
 import GPSPlayback from './pages/GPSPlayback';
 import NewChat from './pages/NewChat';
 import Subscription from './pages/Subscription';
+import EvidenceCenter from './pages/EvidenceCenter';
 
 export default function App() {
   return (
@@ -108,7 +109,8 @@ export default function App() {
           <Route path="crew-tracking" element={<CrewTracking />} />
           <Route path="gps-playback" element={<GPSPlayback />} />
           <Route path="new-chat" element={<NewChat />} />
-          <Route path="subscription" element={<Subscription />} />
+      <Route path="subscription" element={<Subscription />} />
+      <Route path="evidence" element={<EvidenceCenter />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />
