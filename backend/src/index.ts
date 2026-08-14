@@ -71,6 +71,7 @@ import disputeRoutes from './routes/disputeRoutes'; app.use('/api/dispute', disp
 import notificationRoutes from './routes/notificationRoutes'; app.use('/api/notifications', notificationRoutes);
 import stripeRoutes from './routes/stripeRoutes'; app.use('/api/stripe', stripeRoutes);
 import adminRoutes from './routes/adminRoutes'; app.use('/api/admin', adminRoutes);
+import companyAdminRoutes from './routes/companyAdminRoutes'; app.use('/api/company-admin', companyAdminRoutes);
 import timeEntryRoutes from './routes/timeEntryRoutes'; app.use('/api/time-entries', timeEntryRoutes);
 import projectRoutes from './routes/projectRoutes'; app.use('/api/projects', projectRoutes);
 import integrationRoutes from './routes/integrationRoutes'; app.use('/api/integrations', integrationRoutes);
