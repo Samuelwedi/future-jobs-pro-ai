@@ -40,7 +40,7 @@ async function mapBackground(points: any[], width: number, height: number) {
   const tileTemplate = String(process.env.EVIDENCE_MAP_TILE_URL || '').trim();
   const centerLat = points.reduce((sum, point) => sum + Number(point.latitude), 0) / points.length;
   const centerLng = points.reduce((sum, point) => sum + Number(point.longitude), 0) / points.length;
-  let zoom = 19;
+  let zoom = Math.max(3, Math.min(19, Number(process.env.EVIDENCE_MAP_MAX_ZOOM || 14)));
   for (; zoom >= 3; zoom--) {
     const pixels = points.map((point) => worldPixel(Number(point.latitude), Number(point.longitude), zoom));
     const spanX = Math.max(...pixels.map((point) => point.x)) - Math.min(...pixels.map((point) => point.x));
