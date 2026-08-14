@@ -38,6 +38,7 @@ export default function Support() {
   const [aiTyping, setAiTyping] = useState(false);
   const [humanRequested, setHumanRequested] = useState(false);
   const [ticketRoom, setTicketRoom] = useState<string | null>(null);
+  const [ticketId, setTicketId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const socketRef = useRef<Socket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -59,11 +60,19 @@ export default function Support() {
     socketRef.current = socket;
     socket.on('connect_error', (socketError) => setError(socketError.message));
     socket.on('new-message', (message: Message) => addMessage(message));
+    socket.on('support-message', (message: any) => addMessage({
+      id: String(message.id),
+      sender_id: message.senderType === 'agent' ? 'support-agent' : String(user.id),
+      sender_name: message.senderName,
+      message: message.message,
+      created_at: message.createdAt,
+    }));
     socket.on('agent-joined', () => setAgentActive(true));
     socket.on('ticket-resolved', () => {
       setAgentActive(false);
       setHumanRequested(false);
       setTicketRoom(null);
+      setTicketId(null);
     });
     return () => {
       socket.disconnect();
@@ -71,17 +80,47 @@ export default function Support() {
   }, [token]);
 
   useEffect(() => {
+    if (!token) return;
+    void fetch(`${API_BASE}/api/support/active`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    }).then(async (response) => {
+      const data = await response.json();
+      if (!response.ok || !data.ticket) return;
+      const id = String(data.ticket.id);
+      const roomId = String(data.ticket.roomId);
+      setTicketId(id);
+      setTicketRoom(roomId);
+      setHumanRequested(true);
+      setAgentActive(Boolean(data.ticket.assignedAgentId));
+      socketRef.current?.emit('join-room', roomId);
+      await loadTicketMessages(roomId);
+    }).catch(() => {});
+    // Restore an open support conversation after refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, aiTyping]);
 
   const loadTicketMessages = async (roomId: string) => {
-    const response = await fetch(`${API_BASE}/api/chat/room/${encodeURIComponent(roomId)}`, {
+    const id = roomId.replace(/^support-ticket-/, '');
+    const response = await fetch(`${API_BASE}/api/support/tickets/${encodeURIComponent(id)}/messages`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || 'Could not load support messages');
-    setMessages(data.messages || []);
+    setAgentActive(Boolean(data.agentActive));
+    setMessages((data.messages || []).map((item: any) => ({
+      id: String(item.id),
+      sender_id: item.senderType === 'customer' ? String(user.id) : item.senderType === 'lucy' ? LUCY_ID : 'support-agent',
+      sender_name: item.senderName,
+      message: item.message,
+      created_at: item.createdAt,
+      is_ai: item.senderType === 'lucy',
+    })));
   };
 
   const requestHumanSupport = async () => {
@@ -94,11 +133,15 @@ export default function Support() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          lucyMessages: messages,
+          lucySummary: messages.slice(-10).map((item) => `${item.sender_name || 'Customer'}: ${item.message}`).join('\n'),
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Could not request support');
       const roomId = String(data.roomId);
+      setTicketId(String(data.ticketId));
       setTicketRoom(roomId);
       setHumanRequested(true);
       socketRef.current?.emit('join-room', roomId);
@@ -143,8 +186,15 @@ export default function Support() {
     setInput('');
     setError('');
 
-    if (ticketRoom && humanRequested) {
-      socketRef.current?.emit('chat-message', { roomId: ticketRoom, message });
+    if (ticketRoom && ticketId && humanRequested) {
+      const response = await fetch(`${API_BASE}/api/support/tickets/${encodeURIComponent(ticketId)}/messages`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Could not send support message');
+      await loadTicketMessages(ticketRoom);
       return;
     }
 

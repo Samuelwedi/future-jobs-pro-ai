@@ -102,6 +102,7 @@ import payStubRouter from './routes/payStubRouter'; app.use('/api/pay-stubs', pa
 import directDepositRouter from './routes/directDepositRouter'; app.use('/api/direct-deposit', directDepositRouter);
 import yearEndRouter from './routes/yearEndRouter'; app.use('/api/year-end', yearEndRouter);
 import supportRoutes from './routes/supportRoutes'; app.use('/api/support', supportRoutes);
+import supportAgentRoutes from './routes/supportAgentRoutes'; app.use('/api/support-agent', supportAgentRoutes);
 import reportRoutes from './routes/reportRoutes'; app.use('/api/reports', reportRoutes);
 app.use(trialCheck);
 
@@ -571,8 +572,9 @@ const io = new SocketIOServer(server, {
   },
 });
 
-const socketAgentRoles = new Set(['admin', 'support_agent', 'boss', 'manager']);
-const socketGlobalAgentRoles = new Set(['admin', 'support_agent']);
+// Customer JWTs never grant access to the platform support-agent dashboard.
+const socketAgentRoles = new Set<string>();
+const socketGlobalAgentRoles = new Set<string>();
 
 io.use(async (socket, next) => {
   try {
