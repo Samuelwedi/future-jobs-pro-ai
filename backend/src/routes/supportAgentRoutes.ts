@@ -20,7 +20,7 @@ function tokenFrom(req: Request): string {
   return header.slice(7);
 }
 
-async function authenticateAgent(req: AgentRequest, _res: Response, next: NextFunction) {
+async function authenticateAgent(req: AgentRequest, res: Response, next: NextFunction) {
   try {
     const decoded = jwt.verify(tokenFrom(req), secret()) as any;
     if (decoded.tokenType !== 'platform_support_agent' || !decoded.agentId) throw new Error('Invalid agent token');
@@ -197,7 +197,7 @@ router.get('/tickets/:ticketId/messages', authenticateAgent, async (req: AgentRe
 
 router.post('/tickets/:ticketId/reply', authenticateAgent, async (req: AgentRequest, res: Response) => {
   const message = String(req.body?.message || '').trim();
-  if (!message || message.length > 5000) return res.status(400).json({ success: false, message: 'A reply of 1–5000 characters is required' });
+  if (!message || message.length > 5000) return res.status(400).json({ success: false, message: 'A reply of 1â€“5000 characters is required' });
   const ticket = await pool.query(
     `SELECT id FROM support_tickets WHERE id::text = $1 AND assigned_agent_id = $2 AND status = 'open'`,
     [req.params.ticketId, req.supportAgent!.id],

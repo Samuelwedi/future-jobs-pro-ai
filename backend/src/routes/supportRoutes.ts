@@ -87,7 +87,7 @@ router.post('/request-human', async (req: Request, res: Response) => {
 router.get('/tickets/:ticketId/messages', async (req: Request, res: Response) => {
   try {
     const actor = await customer(req);
-    const ticket = await ownedTicket(actor.id, req.params.ticketId);
+    const ticket = await ownedTicket(actor.id, String(req.params.ticketId));
     const messages = await pool.query(
       `SELECT id, sender_type AS "senderType", sender_name AS "senderName", message, created_at AS "createdAt"
        FROM platform_support_messages WHERE ticket_id = $1 ORDER BY created_at ASC`, [req.params.ticketId],
@@ -99,10 +99,10 @@ router.get('/tickets/:ticketId/messages', async (req: Request, res: Response) =>
 router.post('/tickets/:ticketId/messages', async (req: Request, res: Response) => {
   try {
     const actor = await customer(req);
-    const ticket = await ownedTicket(actor.id, req.params.ticketId);
+    const ticket = await ownedTicket(actor.id, String(req.params.ticketId));
     if (ticket.status !== 'open') return res.status(409).json({ success: false, message: 'This support ticket is closed' });
     const message = String(req.body?.message || '').trim();
-    if (!message || message.length > 5000) return res.status(400).json({ success: false, message: 'A message of 1–5000 characters is required' });
+    if (!message || message.length > 5000) return res.status(400).json({ success: false, message: 'A message of 1â€“5000 characters is required' });
     const inserted = await pool.query(
       `INSERT INTO platform_support_messages (ticket_id, customer_user_id, sender_type, sender_name, message)
        VALUES ($1, $2, 'customer', $3, $4)
@@ -117,7 +117,7 @@ router.post('/tickets/:ticketId/messages', async (req: Request, res: Response) =
 router.post('/tickets/:ticketId/suggest', async (req: Request, res: Response) => {
   try {
     const actor = await customer(req);
-    await ownedTicket(actor.id, req.params.ticketId);
+    await ownedTicket(actor.id, String(req.params.ticketId));
     const messages = await pool.query(
       `SELECT sender_name, message FROM platform_support_messages WHERE ticket_id = $1 ORDER BY created_at ASC LIMIT 100`,
       [req.params.ticketId],
