@@ -1,0 +1,64 @@
+:root {
+  color: #ffffff;
+  background: #070b10;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  color: #ffffff;
+  background: #070b10;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+input,
+textarea,
+select {
+  color: #ffffff;
+  caret-color: #ffffff;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #a8b4c4;
+  opacity: 1;
+}
+
+select option {
+  color: #ffffff;
+  background: #121a24;
+}
+
+/* Apply this class/data attribute to an intentionally white surface. */
+.surface-light,
+[data-surface="light"] {
+  color: #111827 !important;
+  background-color: #ffffff !important;
+}
+
+.surface-light :is(h1, h2, h3, h4, h5, h6, p, span, label, input, textarea, select, td, th),
+[data-surface="light"] :is(h1, h2, h3, h4, h5, h6, p, span, label, input, textarea, select, td, th) {
+  color: #111827 !important;
+}
+
+code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
