@@ -72,6 +72,7 @@ import notificationRoutes from './routes/notificationRoutes'; app.use('/api/noti
 import stripeRoutes from './routes/stripeRoutes'; app.use('/api/stripe', stripeRoutes);
 import adminRoutes from './routes/adminRoutes'; app.use('/api/admin', adminRoutes);
 import companyAdminRoutes from './routes/companyAdminRoutes'; app.use('/api/company-admin', companyAdminRoutes);
+import workforceOperationsRoutes from './routes/workforceOperationsRoutes'; app.use('/api/workforce-operations', workforceOperationsRoutes);
 import timeEntryRoutes from './routes/timeEntryRoutes'; app.use('/api/time-entries', timeEntryRoutes);
 import projectRoutes from './routes/projectRoutes'; app.use('/api/projects', projectRoutes);
 import integrationRoutes from './routes/integrationRoutes'; app.use('/api/integrations', integrationRoutes);

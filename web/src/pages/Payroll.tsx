@@ -14,6 +14,7 @@ import {
   FilePresent, Visibility, FilterList, Close, PlayArrow,
 } from '@mui/icons-material';
 import { API_BASE } from '../services/api';
+import VacationPolicyPanel from '../components/VacationPolicyPanel';
 // ─── Types ────────────────────────────────────────────────────────
 interface Payroll {
   id: string;
@@ -1126,6 +1127,7 @@ export default function PayrollPage() {
         <Tab label="Schedule & Settings" icon={<Settings />} iconPosition="start" />
         <Tab label="What‑If" icon={<TrendingUp />} iconPosition="start" />
         <Tab label="Run Payroll" icon={<PlayArrow />} iconPosition="start" />
+        <Tab label="Vacation Pay" icon={<Schedule />} iconPosition="start" />
       </Tabs>
 
       {activeTab === 0 && renderOverview()}
@@ -1133,6 +1135,7 @@ export default function PayrollPage() {
       {activeTab === 2 && renderSettings()}
       {activeTab === 3 && renderWhatIf()}
       {activeTab === 4 && renderRunPayroll()}
+      {activeTab === 5 && <VacationPolicyPanel />}
     </Container>
   );
 }

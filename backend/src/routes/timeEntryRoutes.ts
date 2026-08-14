@@ -62,6 +62,9 @@ router.get('/', async (req: Request, res: Response) => {
         overtimeHours: overtimeHours.toFixed(2),
         alerts: row.alerts || [],
         is_manual: row.is_manual || false,
+        approval_status: row.approval_status || 'draft',
+        correction_reason: row.correction_reason || '',
+        payroll_locked: Boolean(row.payroll_locked_at),
         attachments: [],
       };
     });

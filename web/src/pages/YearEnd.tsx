@@ -6,6 +6,7 @@ import {
 import { Receipt, Save, Visibility } from '@mui/icons-material';
 
 import { API_BASE } from '../services/api';
+import YearEndCompanyProfile from '../components/YearEndCompanyProfile';
 
 interface Employee {
   id: string; // now a UUID string
@@ -159,6 +160,22 @@ export default function YearEnd() {
     return (
       <Box>
         <Typography variant="h6" sx={{ color: '#00D4FF', mb: 2 }}>{title}</Typography>
+        {preview.employer && (
+          <Paper sx={{ p: 2, mb: 2, bgcolor: '#10151c', border: '1px solid #334155' }}>
+            <Typography sx={{ color: '#FFF', fontWeight: 800 }}>{preview.employer.name || 'Company information incomplete'}</Typography>
+            <Typography variant="body2" sx={{ color: '#AAA' }}>
+              Business number: {preview.employer.businessNumber || 'Not entered'} · Payroll account: {preview.employer.payrollAccountNumber || 'Not entered'}
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#AAA' }}>
+              {[preview.employer.address, preview.employer.city, preview.employer.province, preview.employer.postalCode].filter(Boolean).join(', ') || 'Address not entered'}
+            </Typography>
+          </Paper>
+        )}
+        {preview.employee && (
+          <Alert severity={preview.employee.maskedSin ? 'info' : 'warning'} sx={{ mb: 2 }}>
+            Employee: {preview.employee.firstName} {preview.employee.lastName} · SIN: {preview.employee.maskedSin || 'not configured'}
+          </Alert>
+        )}
         <Grid container spacing={2}>
           {Object.entries(manifest).map(([key, value]) => (
             <Grid item xs={12} md={6} key={key}>
@@ -194,6 +211,7 @@ export default function YearEnd() {
       <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>📄 Year‑End Tax Forms</Typography>
       <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>Generate, preview, and finalize T4, T4A, and RL‑1 slips.</Typography>
       <Alert severity="warning" sx={{ mb: 3 }}>Review year-end slips with a qualified payroll professional before filing. Values are compiled from finalized payroll records and are not submitted automatically.</Alert>
+      <YearEndCompanyProfile />
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={4}>
