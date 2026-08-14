@@ -9,7 +9,7 @@ import {
   TextField, Button, Select, MenuItem, FormControl, InputLabel, Chip, IconButton,
   FormControlLabel, Switch, Stack, Alert,
 } from '@mui/material';
-import { Add, Delete, DragIndicator, Repeat } from '@mui/icons-material';
+import { Add, Delete, DragIndicator, Repeat, AttachFile, UploadFile, Close } from '@mui/icons-material';
 import { API_BASE } from '../services/api';
 import ResourceAttachments from '../components/ResourceAttachments';
 
@@ -107,6 +107,8 @@ export default function SchedulePage() {
   const [formEnd, setFormEnd] = useState('16:00');
   const [formNotes, setFormNotes] = useState('');
   const [formEmployees, setFormEmployees] = useState<string[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [saving, setSaving] = useState(false);
   // Recurring fields
   const [formDayOfWeek, setFormDayOfWeek] = useState<number>(1);
   const [formStartDate, setFormStartDate] = useState('');
@@ -190,6 +192,7 @@ export default function SchedulePage() {
     setFormEnd(moment(date).add(8, 'hours').format('HH:mm'));
     setFormNotes('');
     setFormEmployees([]);
+    setPendingFiles([]);
     setIsRecurring(false);
     setFormDayOfWeek(moment(date).day());
     setFormStartDate(moment(date).format('YYYY-MM-DD'));
@@ -230,11 +233,16 @@ export default function SchedulePage() {
     setFormNotes(shift.notes || '');
     setFormEmployees(shift.assignments?.map((a: any) => a.user_id) || []);
     setIsRecurring(false);
+    setPendingFiles([]);
     setDialogOpen(true);
   };
 
   // ---------- Save / Update ----------
   const handleSave = async () => {
+    if (!formName.trim()) return setError('Shift name is required.');
+    if (!formProjectId && !isRecurring) return setError('Select a project before creating a shift or uploading job files.');
+    setSaving(true);
+    setError('');
     try {
       if (isRecurring) {
         // Save recurring rule
@@ -250,17 +258,19 @@ export default function SchedulePage() {
         };
 
         if (editingRecurring) {
-          await fetch(`${API_BASE}/api/recurring-shifts/${editingRecurring.id}`, {
+          const response = await fetch(`${API_BASE}/api/recurring-shifts/${editingRecurring.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify(payload),
           });
+          if (!response.ok) throw new Error((await response.json()).message || 'Recurring shift could not be updated');
         } else {
-          await fetch(`${API_BASE}/api/recurring-shifts`, {
+          const response = await fetch(`${API_BASE}/api/recurring-shifts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify(payload),
           });
+          if (!response.ok) throw new Error((await response.json()).message || 'Recurring shift could not be created');
         }
       } else {
         // Save one‑off shift
@@ -274,7 +284,7 @@ export default function SchedulePage() {
           employeeIds: formEmployees,
         };
         if (editingShift) {
-          await fetch(`${API_BASE}/api/schedule/shifts/${editingShift.id}`, {
+          const response = await fetch(`${API_BASE}/api/schedule/shifts/${editingShift.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({
@@ -288,19 +298,35 @@ export default function SchedulePage() {
               employeeIds: formEmployees,
             }),
           });
+          if (!response.ok) throw new Error((await response.json()).message || 'Shift could not be updated');
+          for (const file of pendingFiles) {
+            const body = new FormData(); body.append('file', file); body.append('shiftId', editingShift.id); body.append('category', 'schedule');
+            const uploadResponse = await fetch(`${API_BASE}/api/attachments/upload`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body });
+            if (!uploadResponse.ok) throw new Error((await uploadResponse.json()).message || `${file.name} could not be uploaded`);
+          }
         } else {
-          await fetch(`${API_BASE}/api/schedule/shifts`, {
+          const response = await fetch(`${API_BASE}/api/schedule/shifts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify(payload),
           });
+          const created = await response.json();
+          if (!response.ok || !created.shift?.id) throw new Error(created.message || 'Shift could not be created');
+          for (const file of pendingFiles) {
+            const body = new FormData(); body.append('file', file); body.append('shiftId', created.shift.id); body.append('category', 'schedule');
+            const uploadResponse = await fetch(`${API_BASE}/api/attachments/upload`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body });
+            if (!uploadResponse.ok) throw new Error((await uploadResponse.json()).message || `${file.name} could not be uploaded`);
+          }
         }
       }
+      setPendingFiles([]);
       setDialogOpen(false);
       fetchCalendarData();
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('Failed to save shift');
+      setError(e.message || 'Failed to save shift');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -492,6 +518,14 @@ export default function SchedulePage() {
               sx={{ mt: 2, input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
             />
 
+            {!isRecurring && <Paper variant="outlined" sx={{mt:2,p:2,bgcolor:'background.paper'}}>
+              <Stack direction={{xs:'column',sm:'row'}} gap={1} justifyContent="space-between" alignItems={{sm:'center'}}>
+                <Box><Typography fontWeight={800}><AttachFile sx={{verticalAlign:'middle',mr:.5}}/>Schedule files</Typography><Typography variant="caption" color="text.secondary">Add PDF, Word, Excel, image, audio, or video files before creating this shift.</Typography></Box>
+                <Button component="label" variant="outlined" startIcon={<UploadFile/>}>Choose files<input hidden multiple type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.rtf,.png,.jpg,.jpeg,.webp,.mp3,.m4a,.wav,.mp4,.mov,.webm" onChange={event=>{const chosen=Array.from(event.target.files||[]);setPendingFiles(current=>[...current,...chosen].filter((file,index,all)=>all.findIndex(other=>other.name===file.name&&other.size===file.size)===index));event.target.value='';}}/></Button>
+              </Stack>
+              <Stack direction="row" flexWrap="wrap" gap={1} mt={pendingFiles.length?1.5:0}>{pendingFiles.map((file,index)=><Chip key={`${file.name}-${file.size}`} label={`${file.name} · ${(file.size/1024/1024).toFixed(1)} MB`} onDelete={()=>setPendingFiles(current=>current.filter((_,i)=>i!==index))} deleteIcon={<Close/>}/>)}</Stack>
+            </Paper>}
+
             {editingShift && <Box sx={{mt:2}}><ResourceAttachments target="shiftId" targetId={editingShift.id} title="Shift documents & media" compact /></Box>}
 
             <FormControl fullWidth sx={{ mt: 2 }}>
@@ -579,8 +613,8 @@ export default function SchedulePage() {
                   Delete
                 </Button>
               )}
-              <Button variant="contained" onClick={handleSave} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', ml: 'auto' }}>
-                {editingShift || editingRecurring ? 'Update' : 'Create'}
+              <Button variant="contained" disabled={saving} onClick={handleSave} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', ml: 'auto' }}>
+                {saving ? `Saving${pendingFiles.length ? ` & uploading ${pendingFiles.length}` : ''}…` : editingShift || editingRecurring ? 'Update' : 'Create'}
               </Button>
             </Box>
           </DialogContent>

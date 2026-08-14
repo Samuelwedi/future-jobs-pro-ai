@@ -1,8 +1,9 @@
 import crypto from 'crypto';
 import { pool } from '../config/database';
+import { generateGpsTrailVideo, generateTimeEntryPdf, generateVoiceCaptionVideo } from './evidenceMediaService';
 
 type ZipEntry = { name: string; data: Buffer };
-type Selection = { photoIds?: string[]; voiceNoteIds?: string[]; attachmentIds?: string[] };
+type Selection = { photoIds?: string[]; voiceNoteIds?: string[]; attachmentIds?: string[]; includeGpsVideo?: boolean; includeTimeEntryPdf?: boolean; includeVoiceVideos?: boolean };
 const crcTable = Array.from({ length: 256 }, (_, n) => { let c=n; for(let k=0;k<8;k++) c=(c&1)?0xedb88320^(c>>>1):c>>>1; return c>>>0; });
 function crc32(data: Buffer) { let c=0xffffffff; for(const byte of data)c=crcTable[(c^byte)&255]^(c>>>8); return (c^0xffffffff)>>>0; }
 function zip(entries: ZipEntry[]): Buffer {
@@ -26,7 +27,7 @@ export async function evidenceOptions(companyId:string,timeEntryId:string){
   return { entry:entry.rows[0], photos:photos.rows, voiceNotes:voices.rows, attachments:attachments.rows, gps:gps.rows };
 }
 export async function buildEvidenceZip(companyId:string,userId:string,timeEntryId:string,selection:Selection){
-  const data=await evidenceOptions(companyId,timeEntryId); const choose=(rows:any[],ids?:string[])=>ids?.length?rows.filter(r=>ids.includes(String(r.id))):rows;
+  const data=await evidenceOptions(companyId,timeEntryId); const choose=(rows:any[],ids?:string[])=>ids===undefined?rows:rows.filter(r=>ids.includes(String(r.id)));
   const photos=choose(data.photos,selection.photoIds); const voices=choose(data.voiceNotes,selection.voiceNoteIds); const attachments=choose(data.attachments,selection.attachmentIds);
   const generatedAt=new Date().toISOString(); const packageId=crypto.randomUUID();
   const canonical={packageId,generatedAt,timeEntry:data.entry,gps:data.gps,photos,voiceNotes:voices,attachments,generatedBy:userId};
@@ -34,6 +35,9 @@ export async function buildEvidenceZip(companyId:string,userId:string,timeEntryI
   const rows=data.gps.map((p:any)=>`${p.timestamp},${p.latitude},${p.longitude},${p.accuracy??''},${p.speed??''}`).join('\n');
   const report=`<!doctype html><html><head><meta charset="utf-8"><title>Evidence ${esc(packageId)}</title><style>body{font:14px Arial;color:#172033;margin:40px}h1{color:#006b82}.card{border:1px solid #ccd7e2;border-radius:10px;padding:16px;margin:14px 0}.hash{word-break:break-all;font-family:monospace;background:#eef7fa;padding:10px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #d8e0e8;padding:8px;text-align:left}</style></head><body><h1>Future Jobs Pro AI — Verified Evidence Package</h1><p>All-in-one job record for independent review.</p><div class="card"><b>Company:</b> ${esc(data.entry.company_name)}<br><b>Employee:</b> ${esc(data.entry.employee_name)}<br><b>Project:</b> ${esc(data.entry.project_name)}<br><b>Site:</b> ${esc(data.entry.project_address)}<br><b>Clock in:</b> ${esc(data.entry.clock_in)}<br><b>Clock out:</b> ${esc(data.entry.clock_out)}</div><div class="card"><b>Included evidence:</b> ${data.gps.length} GPS points, ${photos.length} photo/video files, ${voices.length} voice notes, ${attachments.length} documents.</div><div class="card"><b>Package ID:</b> ${esc(packageId)}<br><b>Generated:</b> ${esc(generatedAt)}<div class="hash"><b>SHA-256:</b> ${hash}</div></div><p>Open manifest.json for source metadata and gps-trail.csv for the complete trail.</p></body></html>`;
   const entries:ZipEntry[]=[{name:'evidence-report.html',data:Buffer.from(report)},{name:'manifest.json',data:Buffer.from(JSON.stringify({...canonical,verificationHash:hash},null,2))},{name:'gps-trail.csv',data:Buffer.from(`timestamp,latitude,longitude,accuracy,speed\n${rows}`)}];
+  if(selection.includeTimeEntryPdf!==false){const pdf=await generateTimeEntryPdf(companyId,timeEntryId);entries.push({name:`generated/${pdf.fileName}`,data:pdf.buffer});}
+  if(selection.includeGpsVideo!==false){try{const video=await generateGpsTrailVideo(companyId,timeEntryId);entries.push({name:`generated/${video.fileName}`,data:video.buffer});}catch(error:any){entries.push({name:'generated/gps-video-not-created.txt',data:Buffer.from(error.message)});}}
+  if(selection.includeVoiceVideos!==false){for(const note of voices){try{const video=await generateVoiceCaptionVideo(companyId,String(note.id));entries.push({name:`generated/${video.fileName}`,data:video.buffer});}catch(error:any){entries.push({name:`generated/voice-${note.id}-video-not-created.txt`,data:Buffer.from(error.message)});}}}
   let total=entries.reduce((n,e)=>n+e.data.length,0); const addRemote=async(folder:string,item:any,index:number)=>{if(!item.url)return; const body=await fetchMedia(item.url); total+=body.length;if(total>250*1024*1024)throw new Error('Selected package exceeds 250 MB'); entries.push({name:`${folder}/${String(index+1).padStart(3,'0')}-${String(item.file_name||item.id)}${ext(item.url,item.file_type)}`,data:body});};
   for(let i=0;i<photos.length;i++)await addRemote(photos[i].file_type==='video'?'videos':'photos',photos[i],i);
   for(let i=0;i<voices.length;i++){await addRemote('voice-notes',voices[i],i);entries.push({name:`voice-notes/${String(i+1).padStart(3,'0')}-${voices[i].id}.txt`,data:Buffer.from(voices[i].transcript||'No transcript')});}

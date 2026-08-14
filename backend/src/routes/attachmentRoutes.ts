@@ -34,7 +34,7 @@ async function validateTarget(companyId: string, value: AttachmentTarget) {
     if (!result.rowCount) throw new Error('Time entry was not found in your company');
   }
   if (value.shiftId) {
-    const result = await pool.query('SELECT s.id FROM shifts s JOIN projects p ON p.id=s.project_id WHERE s.id=$1 AND p.company_id=$2', [value.shiftId, companyId]);
+    const result = await pool.query(`SELECT s.id FROM shifts s LEFT JOIN projects p ON p.id=s.project_id LEFT JOIN users creator ON creator.id=s.created_by WHERE s.id=$1 AND (p.company_id=$2 OR creator.company_id=$2)`, [value.shiftId, companyId]);
     if (!result.rowCount) throw new Error('Shift was not found in your company');
   }
 }
