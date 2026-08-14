@@ -1,0 +1,24 @@
+{
+  "options": {
+    "paths": {
+      "root": "",
+      "fonts": "fonts",
+      "styles": "styles",
+      "mbtiles": "data"
+    }
+  },
+  "styles": {
+    "future-jobs": {
+      "style": "future-jobs.json",
+      "tilejson": {
+        "type": "baselayer",
+        "attribution": "© OpenStreetMap contributors"
+      }
+    }
+  },
+  "data": {
+    "openmaptiles": {
+      "mbtiles": "region.mbtiles"
+    }
+  }
+}

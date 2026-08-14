@@ -17,6 +17,72 @@ const runFfmpeg = (command: ffmpeg.FfmpegCommand, output: string) => new Promise
 const safeUnlink = (value: string) => fs.unlink(value, () => undefined);
 const safeRmdir = (value: string) => fs.rm(value, { recursive: true, force: true }, () => undefined);
 
+const TILE_SIZE = 256;
+function worldPixel(latitude: number, longitude: number, zoom: number) {
+  const scale = TILE_SIZE * 2 ** zoom;
+  const sin = Math.sin((Math.max(-85.0511, Math.min(85.0511, latitude)) * Math.PI) / 180);
+  return {
+    x: ((longitude + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale,
+  };
+}
+function haversine(a: any, b: any) {
+  const radius = 6371000;
+  const toRadians = (value: number) => value * Math.PI / 180;
+  const dLat = toRadians(Number(b.latitude) - Number(a.latitude));
+  const dLng = toRadians(Number(b.longitude) - Number(a.longitude));
+  const lat1 = toRadians(Number(a.latitude));
+  const lat2 = toRadians(Number(b.latitude));
+  const value = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+}
+async function mapBackground(points: any[], width: number, height: number) {
+  const tileTemplate = String(process.env.EVIDENCE_MAP_TILE_URL || '').trim();
+  const centerLat = points.reduce((sum, point) => sum + Number(point.latitude), 0) / points.length;
+  const centerLng = points.reduce((sum, point) => sum + Number(point.longitude), 0) / points.length;
+  let zoom = 19;
+  for (; zoom >= 3; zoom--) {
+    const pixels = points.map((point) => worldPixel(Number(point.latitude), Number(point.longitude), zoom));
+    const spanX = Math.max(...pixels.map((point) => point.x)) - Math.min(...pixels.map((point) => point.x));
+    const spanY = Math.max(...pixels.map((point) => point.y)) - Math.min(...pixels.map((point) => point.y));
+    if (spanX <= width * 0.68 && spanY <= height * 0.68) break;
+  }
+  const center = worldPixel(centerLat, centerLng, zoom);
+  const firstTileX = Math.floor(center.x / TILE_SIZE) - 2;
+  const firstTileY = Math.floor(center.y / TILE_SIZE) - 1;
+  const canvasWidth = TILE_SIZE * 4;
+  const canvasHeight = TILE_SIZE * 3;
+  const composites: sharp.OverlayOptions[] = [];
+  try {
+    if (!tileTemplate || !tileTemplate.includes('{z}') || !tileTemplate.includes('{x}') || !tileTemplate.includes('{y}')) {
+      throw new Error('EVIDENCE_MAP_TILE_URL is not configured');
+    }
+    for (let row = 0; row < 3; row++) {
+      for (let column = 0; column < 4; column++) {
+        const tileX = firstTileX + column;
+        const tileY = firstTileY + row;
+        const tileUrl = tileTemplate.replace('{z}', String(zoom)).replace('{x}', String(tileX)).replace('{y}', String(tileY));
+        const response = await fetch(tileUrl, {
+          headers: { 'User-Agent': 'FutureJobsProAI-PrivateEvidenceRenderer/2.0' },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!response.ok) throw new Error(`Map tile ${response.status}`);
+        composites.push({ input: Buffer.from(await response.arrayBuffer()), left: column * TILE_SIZE, top: row * TILE_SIZE });
+      }
+    }
+    const stitched = await sharp({ create: { width: canvasWidth, height: canvasHeight, channels: 4, background: '#dce7ea' } }).composite(composites).png().toBuffer();
+    const originX = firstTileX * TILE_SIZE;
+    const originY = firstTileY * TILE_SIZE;
+    const left = Math.max(0, Math.min(canvasWidth - width, Math.round(center.x - originX - width / 2)));
+    const top = Math.max(0, Math.min(canvasHeight - height, Math.round(center.y - originY - height / 2)));
+    return { buffer: await sharp(stitched).extract({ left, top, width, height }).modulate({ brightness: 0.72, saturation: 0.72 }).png().toBuffer(), zoom, center, cropX: originX + left, cropY: originY + top, realMap: true };
+  } catch (error) {
+    console.warn('Evidence map tiles unavailable; using verified coordinate fallback:', error);
+    const fallback = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#10212b"/><g stroke="#294250" stroke-width="2">${Array.from({length:12},(_,i)=>`<path d="M ${i*90-120} 0 L ${i*90+180} ${height}"/>`).join('')}${Array.from({length:8},(_,i)=>`<path d="M 0 ${i*75} L ${width} ${i*75-120}"/>`).join('')}</g><text x="32" y="${height-28}" fill="#9db2bf" font-family="Arial" font-size="14">Map service unavailable — route remains plotted from original coordinates</text></svg>`;
+    return { buffer: await sharp(Buffer.from(fallback)).png().toBuffer(), zoom, center, cropX: center.x-width/2, cropY: center.y-height/2, realMap: false };
+  }
+}
+
 async function ownedEntry(companyId: string, timeEntryId: string) {
   const result = await pool.query(
     `SELECT te.*, concat_ws(' ',u.first_name,u.last_name) employee_name,
@@ -48,15 +114,42 @@ export async function generateTimeEntryPdf(companyId: string, timeEntryId: strin
 }
 
 export async function generateGpsTrailVideo(companyId: string, timeEntryId: string): Promise<Artifact> {
-  const entry=await ownedEntry(companyId,timeEntryId);const gps=await pool.query('SELECT latitude,longitude,timestamp,accuracy,speed FROM gps_tracking WHERE time_entry_id=$1 ORDER BY timestamp',[timeEntryId]);
-  if(gps.rowCount<2)throw new Error('At least two GPS points are required to create a trail video');
-  const points=gps.rows;const dir=fs.mkdtempSync(path.join(tempRoot,'gps-'));const output=path.join(dir,'gps-trail.mp4');
-  try{
-    const lats=points.map((p:any)=>Number(p.latitude)),lngs=points.map((p:any)=>Number(p.longitude));const minLat=Math.min(...lats),maxLat=Math.max(...lats),minLng=Math.min(...lngs),maxLng=Math.max(...lngs);const count=Math.min(90,Math.max(30,points.length));
-    const project=(p:any)=>({x:110+((Number(p.longitude)-minLng)/(maxLng-minLng||1))*900,y:570-((Number(p.latitude)-minLat)/(maxLat-minLat||1))*430});
-    for(let frame=0;frame<count;frame++){const upto=Math.max(1,Math.round((frame/(count-1))*(points.length-1)));const shown=points.slice(0,upto+1);const route=shown.map((p:any)=>{const q=project(p);return `${q.x.toFixed(1)},${q.y.toFixed(1)}`}).join(' ');const current=project(points[upto]);const first=project(points[0]);const last=project(points[points.length-1]);const svg=`<svg width="1280" height="720" xmlns="http://www.w3.org/2000/svg"><rect width="1280" height="720" fill="#071018"/><g stroke="#173041" stroke-width="1">${Array.from({length:13},(_,i)=>`<line x1="${i*100}" y1="90" x2="${i*100}" y2="620"/>`).join('')}${Array.from({length:6},(_,i)=>`<line x1="60" y1="${120+i*100}" x2="1040" y2="${120+i*100}"/>`).join('')}</g><rect x="1048" y="92" width="202" height="528" rx="18" fill="#0E1D28" stroke="#264457"/><text x="64" y="48" fill="#00D4FF" font-family="Arial" font-size="24" font-weight="700">VERIFIED GPS TRAIL PLAYBACK</text><text x="64" y="76" fill="#AFC1D0" font-family="Arial" font-size="14">${escapeXml(entry.employee_name)} • ${escapeXml(entry.project_name)}</text><polyline points="${route}" fill="none" stroke="#00D4FF" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${first.x}" cy="${first.y}" r="10" fill="#4ADE80"/><circle cx="${last.x}" cy="${last.y}" r="10" fill="#FFB020"/><circle cx="${current.x}" cy="${current.y}" r="17" fill="#FFFFFF" stroke="#00D4FF" stroke-width="7"/><text x="1074" y="132" fill="#7D91A3" font-family="Arial" font-size="12">CURRENT POINT</text><text x="1074" y="164" fill="#FFFFFF" font-family="Arial" font-size="24" font-weight="700">${upto+1} / ${points.length}</text><text x="1074" y="214" fill="#7D91A3" font-family="Arial" font-size="12">TIME</text><text x="1074" y="239" fill="#FFFFFF" font-family="Arial" font-size="15">${escapeXml(new Date(points[upto].timestamp).toLocaleTimeString('en-CA'))}</text><text x="1074" y="286" fill="#7D91A3" font-family="Arial" font-size="12">LATITUDE</text><text x="1074" y="311" fill="#FFFFFF" font-family="Arial" font-size="15">${Number(points[upto].latitude).toFixed(6)}</text><text x="1074" y="358" fill="#7D91A3" font-family="Arial" font-size="12">LONGITUDE</text><text x="1074" y="383" fill="#FFFFFF" font-family="Arial" font-size="15">${Number(points[upto].longitude).toFixed(6)}</text><text x="1074" y="430" fill="#7D91A3" font-family="Arial" font-size="12">ACCURACY</text><text x="1074" y="455" fill="#FFFFFF" font-family="Arial" font-size="15">${Number(points[upto].accuracy||0).toFixed(1)} m</text><rect x="64" y="652" width="1186" height="8" rx="4" fill="#1E3442"/><rect x="64" y="652" width="${1186*(frame/(count-1))}" height="8" rx="4" fill="#00D4FF"/><text x="64" y="690" fill="#8396A6" font-family="Arial" font-size="12">Route visualization generated from ${points.length} recorded coordinates • ${escapeXml(entry.project_address||'Job site')}</text></svg>`;await sharp(Buffer.from(svg)).png().toFile(path.join(dir,`frame-${String(frame).padStart(4,'0')}.png`));}
-    await runFfmpeg(ffmpeg(path.join(dir,'frame-%04d.png')).inputFPS(15).outputOptions(['-c:v libx264','-pix_fmt yuv420p','-movflags +faststart']).fps(15),output);const buffer=fs.readFileSync(output);return{buffer,fileName:`gps-trail-${timeEntryId}.mp4`,mimeType:'video/mp4',verificationHash:hash(buffer)};
-  }finally{safeRmdir(dir)}
+  const entry = await ownedEntry(companyId, timeEntryId);
+  const gps = await pool.query('SELECT latitude,longitude,timestamp,accuracy,speed FROM gps_tracking WHERE time_entry_id=$1 ORDER BY timestamp', [timeEntryId]);
+  if (gps.rowCount < 2) throw new Error('At least two GPS points are required to create a trail video');
+  const points = gps.rows;
+  const dir = fs.mkdtempSync(path.join(tempRoot, 'gps-'));
+  const output = path.join(dir, 'gps-trail.mp4');
+  const mapWidth = 900;
+  const mapHeight = 500;
+  try {
+    const map = await mapBackground(points, mapWidth, mapHeight);
+    const project = (point: any) => { const pixel=worldPixel(Number(point.latitude),Number(point.longitude),map.zoom);return{x:40+pixel.x-map.cropX,y:112+pixel.y-map.cropY}; };
+    const distances = [0];
+    for (let index=1; index<points.length; index++) distances.push(distances[index-1]+haversine(points[index-1],points[index]));
+    const totalDistance = distances[distances.length-1];
+    const startTime = new Date(points[0].timestamp).getTime();
+    const endTime = new Date(points[points.length-1].timestamp).getTime();
+    const evidenceId = hash(Buffer.from(JSON.stringify({timeEntryId,points}))).slice(0,16).toUpperCase();
+    const introFrames=18, routeFrames=Math.min(150,Math.max(90,points.length*3)),closingFrames=24,totalFrames=introFrames+routeFrames+closingFrames;
+    for (let frame=0; frame<totalFrames; frame++) {
+      const routeProgress=Math.max(0,Math.min(1,(frame-introFrames)/Math.max(1,routeFrames-1)));
+      const upto=Math.max(0,Math.round(routeProgress*(points.length-1)));
+      const shown=points.slice(0,upto+1);
+      const route=shown.map((point:any)=>{const q=project(point);return `${q.x.toFixed(1)},${q.y.toFixed(1)}`}).join(' ');
+      const current=project(points[upto]),first=project(points[0]),last=project(points[points.length-1]);
+      const elapsed=Math.max(0,new Date(points[upto].timestamp).getTime()-startTime);
+      const segment=upto?haversine(points[upto-1],points[upto]):0;
+      const status=segment<=Math.max(3,Number(points[upto].accuracy||0))?'STATIONARY / GPS DRIFT':'MOVEMENT RECORDED';
+      const closing=frame>=introFrames+routeFrames;
+      const title=frame<introFrames;
+      const overlay=`<svg width="1280" height="720" xmlns="http://www.w3.org/2000/svg"><rect width="1280" height="720" fill="#061018"/><rect x="40" y="112" width="900" height="500" rx="18" fill="none" stroke="#49606e" stroke-width="2"/><rect x="40" y="112" width="900" height="500" rx="18" fill="#041018" opacity=".16"/><polyline points="${route}" fill="none" stroke="#001820" stroke-width="15" stroke-linejoin="round" stroke-linecap="round" opacity=".55"/><polyline points="${route}" fill="none" stroke="#00E5FF" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${first.x}" cy="${first.y}" r="15" fill="#22C55E" stroke="#fff" stroke-width="4"/><circle cx="${last.x}" cy="${last.y}" r="13" fill="#FFB020" stroke="#fff" stroke-width="4"/><circle cx="${current.x}" cy="${current.y}" r="25" fill="#00D4FF" opacity=".22"/><circle cx="${current.x}" cy="${current.y}" r="13" fill="#fff" stroke="#00D4FF" stroke-width="7"/><rect x="958" y="112" width="282" height="500" rx="18" fill="#0B1A24" stroke="#284757"/><text x="40" y="43" fill="#00D4FF" font-family="Arial" font-size="24" font-weight="700">FUTURE JOBS PRO AI • VERIFIED GPS EVIDENCE</text><text x="40" y="74" fill="#DDEAF2" font-family="Arial" font-size="16">${escapeXml(entry.employee_name)} • ${escapeXml(entry.project_name||'Unassigned project')}</text><text x="40" y="96" fill="#8EA4B2" font-family="Arial" font-size="12">${escapeXml(entry.project_address||'Recorded job site')} • Evidence ${evidenceId}</text><text x="982" y="151" fill="#7F96A5" font-family="Arial" font-size="11">PLAYBACK STATUS</text><text x="982" y="181" fill="${status.startsWith('MOVEMENT')?'#22C55E':'#FFB020'}" font-family="Arial" font-size="16" font-weight="700">${status}</text><text x="982" y="225" fill="#7F96A5" font-family="Arial" font-size="11">RECORDED TIME</text><text x="982" y="251" fill="#FFFFFF" font-family="Arial" font-size="17">${escapeXml(new Date(points[upto].timestamp).toLocaleString('en-CA'))}</text><text x="982" y="295" fill="#7F96A5" font-family="Arial" font-size="11">ELAPSED / POINT</text><text x="982" y="321" fill="#FFFFFF" font-family="Arial" font-size="17">${Math.floor(elapsed/60000)}m ${Math.floor((elapsed%60000)/1000)}s • ${upto+1}/${points.length}</text><text x="982" y="365" fill="#7F96A5" font-family="Arial" font-size="11">ROUTE DISTANCE</text><text x="982" y="391" fill="#FFFFFF" font-family="Arial" font-size="22" font-weight="700">${distances[upto].toFixed(1)} m</text><text x="982" y="435" fill="#7F96A5" font-family="Arial" font-size="11">GPS ACCURACY</text><text x="982" y="461" fill="#FFFFFF" font-family="Arial" font-size="17">±${Number(points[upto].accuracy||0).toFixed(1)} m</text><text x="982" y="505" fill="#7F96A5" font-family="Arial" font-size="11">COORDINATES</text><text x="982" y="531" fill="#FFFFFF" font-family="Arial" font-size="14">${Number(points[upto].latitude).toFixed(6)}</text><text x="982" y="553" fill="#FFFFFF" font-family="Arial" font-size="14">${Number(points[upto].longitude).toFixed(6)}</text><text x="982" y="585" fill="#7F96A5" font-family="Arial" font-size="11">TOTAL ${totalDistance.toFixed(1)} m • ${map.realMap?'STREET MAP':'MAP FALLBACK'}</text><rect x="40" y="642" width="1200" height="9" rx="4" fill="#213845"/><rect x="40" y="642" width="${1200*routeProgress}" height="9" rx="4" fill="#00D4FF"/><text x="40" y="682" fill="#89A0AE" font-family="Arial" font-size="12">● Start  ● End  ● Current • Map © OpenStreetMap contributors • Source coordinates preserved in gps-trail.csv</text>${title?`<rect x="175" y="220" width="930" height="250" rx="28" fill="#061018" opacity=".93"/><text x="640" y="294" text-anchor="middle" fill="#00E5FF" font-family="Arial" font-size="18" font-weight="700">VERIFIED WORKSITE PRESENCE</text><text x="640" y="349" text-anchor="middle" fill="#FFFFFF" font-family="Arial" font-size="38" font-weight="700">GPS Trail Reconstruction</text><text x="640" y="393" text-anchor="middle" fill="#B7CAD5" font-family="Arial" font-size="17">${points.length} recorded points • ${Math.round((endTime-startTime)/1000)} seconds • SHA-256 traceability</text><text x="640" y="430" text-anchor="middle" fill="#7F96A5" font-family="Arial" font-size="14">Evidence ${evidenceId}</text>`:''}${closing?`<rect x="155" y="190" width="970" height="310" rx="30" fill="#061018" opacity=".95"/><circle cx="640" cy="261" r="28" fill="#22C55E"/><path d="M625 261 l11 12 l22 -26" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/><text x="640" y="331" text-anchor="middle" fill="#FFFFFF" font-family="Arial" font-size="34" font-weight="700">Evidence playback complete</text><text x="640" y="375" text-anchor="middle" fill="#00D4FF" font-family="Arial" font-size="21">${points.length} source points • ${totalDistance.toFixed(1)} m reconstructed</text><text x="640" y="414" text-anchor="middle" fill="#B7CAD5" font-family="Arial" font-size="15">Full coordinates, timestamps and accuracy remain in the signed evidence package.</text><text x="640" y="453" text-anchor="middle" fill="#7F96A5" font-family="Courier" font-size="13">${evidenceId}</text>`:''}</svg>`;
+      await sharp(map.buffer).resize(mapWidth,mapHeight).extend({top:112,bottom:108,left:40,right:340,background:'#061018'}).composite([{input:Buffer.from(overlay),left:0,top:0,blend:'screen'}]).png().toFile(path.join(dir,`frame-${String(frame).padStart(4,'0')}.png`));
+    }
+    await runFfmpeg(ffmpeg(path.join(dir,'frame-%04d.png')).inputFPS(15).outputOptions(['-c:v libx264','-crf 19','-pix_fmt yuv420p','-movflags +faststart']).fps(15),output);
+    const buffer=fs.readFileSync(output);
+    return{buffer,fileName:`gps-trail-${timeEntryId}.mp4`,mimeType:'video/mp4',verificationHash:hash(buffer)};
+  } finally { safeRmdir(dir); }
 }
 
 export async function generateVoiceCaptionVideo(companyId:string,voiceNoteId:string):Promise<Artifact>{
