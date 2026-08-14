@@ -16,6 +16,7 @@ import Team from './pages/Team';
 import Projects from './pages/Projects';
 import Timesheet from './pages/Timesheet';
 import Chat from './pages/Chat';
+import ChatList from './pages/ChatList';
 import Tasks from './pages/Tasks';
 import PTO from './pages/PTO';
 import Kiosk from './pages/Kiosk';
@@ -84,7 +85,8 @@ export default function App() {
           <Route path="media/project/:projectId" element={<ProjectMedia />} />
           <Route path="media/project/:projectId/month/:yearMonth" element={<MonthMedia />} />
           <Route path="media/project/:projectId/month/:yearMonth/type/:mediaType" element={<MonthMediaType />} />
-          <Route path="chat" element={<Chat />} />
+          <Route path="chat" element={<ChatList />} />
+          <Route path="chat/:roomId" element={<Chat />} />
           <Route path="support" element={<Support />} />
           <Route path="payroll" element={<Payroll />} />
           <Route path="direct-deposit" element={<DirectDeposit />} />

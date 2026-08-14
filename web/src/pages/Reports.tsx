@@ -10,7 +10,7 @@ import {
   Schedule, AttachMoney, FilePresent,
 } from '@mui/icons-material';
 
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 interface Photo {
   id: string;

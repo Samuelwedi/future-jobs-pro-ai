@@ -20,7 +20,6 @@ import { trialCheck } from './middleware/trialMiddleware';
 import { verifyToken } from './utils/auth';
 import statsRoutes from './routes/statsRoutes';
 import { processEmployeePaycheck } from './services/payrollController';
-import {previewSlip,finalizeSlip,getEmployeeForms,} from './controllers/yearEndController';
 import path from 'path';
 import connectedStripeWebhook from './routes/connectedStripeWebhook';
 
@@ -61,9 +60,6 @@ app.get('/api/health', async (req: Request, res: Response) => {
 app.get('/', (req, res) => res.send('<h1>🚀 Future Jobs Pro AI</h1>'));
 
 // ─── Year-End Routes ──────────────────────────────────────────────
-app.get('/api/year-end/preview', previewSlip);
-app.post('/api/year-end/finalize', finalizeSlip);
-app.get('/api/year-end/employee/:employeeId/forms', getEmployeeForms);
 
 // ===== REST ROUTES =====
 import authRoutes from './routes/authRoutes'; app.use('/api/auth', authRoutes);

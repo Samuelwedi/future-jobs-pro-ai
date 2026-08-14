@@ -11,7 +11,7 @@
 }
 
 * { box-sizing: border-box; }
-button, textarea { font: inherit; }
+button, textarea, input { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 
@@ -40,11 +40,13 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .login-card h1 { margin: 22px 0 8px; font-size: 28px; }
 .login-card p, .login-card label { color: var(--muted); }
 .login-card label { display: block; margin: 24px 0 8px; font-size: 13px; font-weight: 700; }
-.login-card textarea, .composer textarea {
+.login-card textarea, .login-card input, .composer textarea {
   width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 12px;
   background: #091216; color: #fff; padding: 14px; outline: none;
 }
-.login-card textarea:focus, .composer textarea:focus { border-color: var(--cyan); }
+.login-card input { resize: none; }
+.login-card textarea:focus, .login-card input:focus, .composer textarea:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(32,216,245,.08); }
+.security-note { margin: 18px 0 0; font-size: 12px; line-height: 1.5; text-align: center; }
 
 .primary-button, .secondary-button, .resolve-button, .text-button {
   border: 0; border-radius: 10px; padding: 11px 16px; font-weight: 800;

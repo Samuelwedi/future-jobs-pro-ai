@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box, Container, Typography, Button, Grid, Card, CardContent, Chip, Divider,
+  Alert, Box, Container, Typography, Button, Grid, Card, CardContent, Chip, Divider,
 } from '@mui/material';
 import { Check } from '@mui/icons-material';
 
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 const plans = [
   { id: 'price_basic_monthly', name: 'Basic', price: 49, interval: 'month', features: ['Up to 5 employees', 'Time tracking', 'GPS location', 'Basic reports'] },
@@ -15,10 +15,12 @@ const plans = [
 
 export default function Pricing() {
   const [loading, setLoading] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState('');
   const navigate = useNavigate();
 
   const handleSubscribe = async (priceId: string) => {
     setLoading(priceId);
+    setCheckoutError('');
     try {
       const token = localStorage.getItem('token');
       if (!token) { navigate('/register'); return; }
@@ -28,10 +30,11 @@ export default function Pricing() {
         body: JSON.stringify({ priceId, successUrl: window.location.origin + '/dashboard', cancelUrl: window.location.origin + '/pricing' }),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Checkout is not available yet');
       if (data.checkoutUrl) window.location.href = data.checkoutUrl;
-      else alert(data.message || 'Failed to start checkout');
+      else throw new Error(data.message || 'Checkout is not available yet');
     } catch (err: any) {
-      alert(err.message);
+      setCheckoutError(err.message || 'Payments are temporarily unavailable while Stripe verification is completed.');
     } finally {
       setLoading(null);
     }
@@ -42,6 +45,7 @@ export default function Pricing() {
       <Container maxWidth="lg">
         <Typography variant="h3" align="center" sx={{ color: '#FFF', fontWeight: 'bold', mb: 2 }}>Choose Your Plan</Typography>
         <Typography variant="h6" align="center" sx={{ color: '#888', mb: 6 }}>14‑day free trial on all plans. No credit card required.</Typography>
+        {checkoutError && <Alert severity="info" onClose={() => setCheckoutError('')} sx={{ mb: 4 }}>Stripe onboarding is still being completed. Your account and current trial remain available; contact sales if you need immediate plan assistance. Technical detail: {checkoutError}</Alert>}
         <Grid container spacing={4} justifyContent="center">
           {plans.map((plan) => (
             <Grid item xs={12} md={4} key={plan.id}>

@@ -4,73 +4,14 @@ import { pool } from '../config/database';
 
 const router = express.Router();
 
-// ========== VERSION & DEBUG ENDPOINTS (unprotected) ==========
+// Public build information only. Operational schedule data always requires authentication.
 router.get('/version', (req: Request, res: Response) => {
   res.json({ version: '2.0.5', fixed: 'recurring shifts support added' });
-});
-
-router.get('/debug-all', async (req: Request, res: Response) => {
-  try {
-    const result = await pool.query('SELECT * FROM shifts ORDER BY date');
-    res.json({ shifts: result.rows });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-router.get('/debug-shifts', async (req: Request, res: Response) => {
-  try {
-    const { userId } = req.query;
-    if (!userId) return res.status(400).json({ error: 'userId required' });
-    const result = await pool.query(
-      `SELECT s.*, array_agg(sa.user_id) as assigned_user_ids
-       FROM shifts s
-       LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
-       WHERE s.user_id = $1 OR sa.user_id = $1
-       GROUP BY s.id
-       ORDER BY s.date`,
-      [userId]
-    );
-    res.json({ shifts: result.rows });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-router.get('/my-shifts-debug', async (req: Request, res: Response) => {
-  try {
-    const { userId, start, end } = req.query;
-    if (!userId || !start || !end) {
-      return res.status(400).json({ error: 'userId, start, and end required' });
-    }
-    const result = await pool.query(
-      `SELECT s.*, 
-              array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
-              p.name as project_name,
-              p.address as project_address
-       FROM shifts s
-       LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
-       LEFT JOIN projects p ON s.project_id = p.id
-       WHERE (s.user_id = $1 OR sa.user_id = $1)
-         AND s.date >= $2::date
-         AND s.date < $3::date + interval '1 day'
-       GROUP BY s.id, p.name, p.address
-       ORDER BY s.date, s.start_time`,
-      [userId, start, end]
-    );
-    res.json({ shifts: result.rows });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
-  }
 });
 
 // ========== AUTH-PROTECTED ROUTES ==========
 
 const getCompanyId = async (req: Request): Promise<string | null> => {
-  const testUserHeader = req.headers['x-test-user'];
-  if (testUserHeader === 'samuel@test.com') {
-    return 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
-  }
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
@@ -79,6 +20,15 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
     return userRes.rows[0]?.company_id || null;
   } catch { return null; }
 };
+
+const getActor = async (req: Request) => {
+  const decoded = verifyToken(req);
+  const result = await pool.query('SELECT id, company_id, role FROM users WHERE id = $1', [decoded.id]);
+  if (!result.rowCount) throw new Error('Authenticated user was not found');
+  return { id: String(result.rows[0].id), companyId: String(result.rows[0].company_id || ''), role: String(result.rows[0].role || '') };
+};
+
+const canManageSchedule = (role: string) => ['boss', 'manager', 'admin'].includes(role);
 
 // GET /api/schedule/shifts?start=&end= (company‑scoped)
 router.get('/shifts', async (req: Request, res: Response) => {
@@ -118,7 +68,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     }
 
     // Get company IDs
-    const requestUserRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    const requestUserRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
     if (requestUserRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Requesting user not found' });
     }
@@ -132,6 +82,9 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
 
     if (requestCompanyId !== targetCompanyId) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    if (String(userId) !== String(decoded.id) && !canManageSchedule(String(requestUserRes.rows[0].role || ''))) {
+      return res.status(403).json({ success: false, message: 'Manager access is required to view another employee schedule' });
     }
 
     const result = await pool.query(
@@ -159,10 +112,12 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
 // ===== POST /shifts (updated to support recurring_shift_id) =====
 router.post('/shifts', async (req: Request, res: Response) => {
   try {
-    const companyId = await getCompanyId(req);
+    const current = await getActor(req);
+    const companyId = current.companyId;
     if (!companyId) {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
+    if (!canManageSchedule(current.role)) return res.status(403).json({ success: false, message: 'Manager access is required to create shifts' });
 
     const {
       name,
@@ -188,6 +143,17 @@ router.post('/shifts', async (req: Request, res: Response) => {
       );
       if (projectCheck.rows.length === 0) {
         return res.status(403).json({ success: false, message: 'Project not found or does not belong to your company' });
+      }
+    }
+
+    if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
+      const uniqueEmployeeIds = [...new Set(employeeIds.map(String))];
+      const validEmployees = await pool.query(
+        'SELECT id FROM users WHERE company_id = $1 AND id = ANY($2::uuid[])',
+        [companyId, uniqueEmployeeIds],
+      );
+      if (validEmployees.rowCount !== uniqueEmployeeIds.length) {
+        return res.status(403).json({ success: false, message: 'Every assigned employee must belong to your company' });
       }
     }
 
@@ -242,8 +208,10 @@ router.post('/shifts', async (req: Request, res: Response) => {
 // ===== PUT /shifts/:id (updated to support recurring_shift_id) =====
 router.put('/shifts/:id', async (req: Request, res: Response) => {
   try {
-    const companyId = await getCompanyId(req);
+    const current = await getActor(req);
+    const companyId = current.companyId;
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    if (!canManageSchedule(current.role)) return res.status(403).json({ success: false, message: 'Manager access is required to update shifts' });
 
     const {
       name,
@@ -307,8 +275,10 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
 // ===== DELETE /shifts/:id (unchanged) =====
 router.delete('/shifts/:id', async (req: Request, res: Response) => {
   try {
-    const companyId = await getCompanyId(req);
+    const current = await getActor(req);
+    const companyId = current.companyId;
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    if (!canManageSchedule(current.role)) return res.status(403).json({ success: false, message: 'Manager access is required to delete shifts' });
 
     const checkResult = await pool.query(
       `SELECT s.id 

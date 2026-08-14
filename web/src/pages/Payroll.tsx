@@ -1,15 +1,4 @@
 import React, { useState, useEffect } from 'react';
-// declare process for environments where Node types are not available to TypeScript
-declare const process: any;
-declare global {
-  interface ImportMetaEnv {
-    VITE_API_BASE?: string;
-  }
-
-  interface ImportMeta {
-    readonly env: ImportMetaEnv;
-  }
-}
 import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, Dialog, DialogTitle, DialogContent,
@@ -24,10 +13,7 @@ import {
   Download, PictureAsPdf, Description, TableChart,
   FilePresent, Visibility, FilterList, Close, PlayArrow,
 } from '@mui/icons-material';
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE ||
-  'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 // ─── Types ────────────────────────────────────────────────────────
 interface Payroll {
   id: string;

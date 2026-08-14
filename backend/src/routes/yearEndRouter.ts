@@ -20,11 +20,22 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
   } catch { return null; }
 };
 
+const requirePayrollManager = async (req: Request): Promise<{ companyId: string; userId: string }> => {
+  const decoded = verifyToken(req);
+  const result = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
+  if (!result.rowCount || !result.rows[0].company_id) throw new Error('Not authenticated');
+  if (!['boss', 'manager', 'admin'].includes(String(result.rows[0].role || ''))) {
+    const error: any = new Error('Payroll manager access is required');
+    error.status = 403;
+    throw error;
+  }
+  return { companyId: String(result.rows[0].company_id), userId: String(decoded.id) };
+};
+
 // ─── GET /api/year-end/employee/:employeeId/forms ────────────────
 router.get('/employee/:employeeId/forms', async (req: Request, res: Response) => {
   try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { companyId } = await requirePayrollManager(req);
 
     const employeeId = Array.isArray(req.params.employeeId)
       ? req.params.employeeId[0]
@@ -67,17 +78,16 @@ router.get('/employee/:employeeId/forms', async (req: Request, res: Response) =>
 // ─── GET /api/year-end/preview ────────────────────────────────────
 router.get('/preview', async (req: Request, res: Response) => {
   try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { companyId } = await requirePayrollManager(req);
 
     const { employeeId, taxYear, formType } = req.query;
     if (!employeeId || !taxYear || !formType) {
       return res.status(400).json({ success: false, message: 'Missing required parameters' });
     }
 
-    const id = Number(String(employeeId));
+    const id = String(employeeId);
     const year = Number(taxYear);
-    if (!Number.isInteger(id) || id <= 0) {
+    if (!/^[0-9a-f-]{36}$/i.test(id) && !/^\d+$/.test(id)) {
       return res.status(400).json({ success: false, message: 'Invalid employee ID' });
     }
     if (isNaN(year)) {
@@ -87,13 +97,13 @@ router.get('/preview', async (req: Request, res: Response) => {
     let result;
     switch (formType) {
       case 'T4':
-        result = await compileT4Slip(id, year);
+        result = await compileT4Slip(id, year, companyId);
         break;
       case 'T4A':
-        result = await compileT4ASlip(id, year);
+        result = await compileT4ASlip(id, year, companyId);
         break;
       case 'RL1':
-        result = await compileRL1Slip(id, year);
+        result = await compileRL1Slip(id, year, companyId);
         break;
       default:
         return res.status(400).json({ success: false, message: 'Invalid form type' });
@@ -102,7 +112,7 @@ router.get('/preview', async (req: Request, res: Response) => {
     res.json({ success: true, preview: result });
   } catch (error: any) {
     console.error('Preview error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(error.status || 500).json({ success: false, error: error.message });
   }
 });
 
@@ -110,8 +120,7 @@ router.get('/preview', async (req: Request, res: Response) => {
 router.post('/finalize', async (req: Request, res: Response) => {
   const client = await pool.connect();
   try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { companyId } = await requirePayrollManager(req);
 
     const { employeeId, taxYear, formType } = req.body;
     if (!employeeId || !taxYear || !formType) {
@@ -132,7 +141,7 @@ router.post('/finalize', async (req: Request, res: Response) => {
     let result;
     switch (formType) {
       case 'T4': {
-        const data = await compileT4Slip(employeeId, taxYear);
+        const data = await compileT4Slip(employeeId, Number(taxYear), companyId);
         const m = data.t4Manifest;
         const em = data.employerMetrics;
         await client.query(
@@ -169,7 +178,7 @@ router.post('/finalize', async (req: Request, res: Response) => {
         break;
       }
       case 'T4A': {
-        const data = await compileT4ASlip(employeeId, taxYear);
+        const data = await compileT4ASlip(employeeId, Number(taxYear), companyId);
         const m = data.t4aManifest;
         await client.query(
           `INSERT INTO generated_t4a_slips
@@ -184,7 +193,7 @@ router.post('/finalize', async (req: Request, res: Response) => {
         break;
       }
       case 'RL1': {
-        const data = await compileRL1Slip(employeeId, taxYear);
+        const data = await compileRL1Slip(employeeId, Number(taxYear), companyId);
         const m = data.rl1Manifest;
         await client.query(
           `INSERT INTO generated_rl1_slips
@@ -222,7 +231,7 @@ router.post('/finalize', async (req: Request, res: Response) => {
   } catch (error: any) {
     await client.query('ROLLBACK');
     console.error('Finalize error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(error.status || 500).json({ success: false, error: error.message });
   } finally {
     client.release();
   }

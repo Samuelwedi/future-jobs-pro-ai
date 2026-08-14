@@ -150,7 +150,10 @@ router.get('/rooms/:userId', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const decoded = verifyToken(req);
-    const userId = req.params.userId;
+    const userId = decoded.id;
+    if (String(req.params.userId) !== String(decoded.id)) {
+      return res.status(403).json({ success: false, message: 'You can only list your own conversations' });
+    }
 
     // Verify the requesting user belongs to the same company as target user
     const requestingUser = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
@@ -203,9 +206,10 @@ router.post('/create-direct', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const decoded = verifyToken(req);
-    const { userId1, userId2 } = req.body;
-    if (!userId1 || !userId2) {
-      return res.status(400).json({ success: false, message: 'Both userId1 and userId2 are required' });
+    const userId1 = decoded.id;
+    const userId2 = String(req.body?.userId2 || '');
+    if (!userId2 || userId1 === userId2) {
+      return res.status(400).json({ success: false, message: 'Choose another user for this conversation' });
     }
 
     // Ensure users exist and belong to same company
@@ -253,9 +257,13 @@ router.post('/create-group', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const decoded = verifyToken(req);
-    const { name, creatorId, memberIds } = req.body;
-    if (!name || !creatorId || !memberIds || !Array.isArray(memberIds) || memberIds.length === 0) {
-      return res.status(400).json({ success: false, message: 'name, creatorId, and memberIds array are required' });
+    const name = String(req.body?.name || '').trim();
+    const creatorId = decoded.id;
+    const memberIds = Array.isArray(req.body?.memberIds)
+      ? [...new Set(req.body.memberIds.map((id: unknown) => String(id)).filter(Boolean))]
+      : [];
+    if (!name || name.length > 100 || memberIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'A group name and at least one member are required' });
     }
 
     // Ensure creator belongs to a company
@@ -265,24 +273,38 @@ router.post('/create-group', async (req: Request, res: Response) => {
     }
     const companyId = userRes.rows[0].company_id;
 
+    const allowedMembers = await pool.query(
+      `SELECT id FROM users WHERE company_id = $1 AND id = ANY($2::uuid[]) AND COALESCE(is_active, TRUE) = TRUE`,
+      [companyId, memberIds],
+    );
+    if (allowedMembers.rowCount !== memberIds.length) {
+      return res.status(403).json({ success: false, message: 'Every group member must be an active user in your company' });
+    }
+
     // Generate a unique room ID for group
     const roomId = `group-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-    // Insert into chat_rooms
-    await pool.query(
-      `INSERT INTO chat_rooms (id, name, is_group, company_id, created_by)
-       VALUES ($1, $2, true, $3, $4)`,
-      [roomId, name, companyId, creatorId]
-    );
-
-    // Add members (including creator)
-    const allMembers = [creatorId, ...memberIds];
-    for (const userId of allMembers) {
-      await pool.query(
-        `INSERT INTO chat_room_members (room_id, user_id)
-         VALUES ($1, $2)`,
-        [roomId, userId]
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO chat_rooms (id, name, is_group, company_id, created_by)
+         VALUES ($1, $2, true, $3, $4)`,
+        [roomId, name, companyId, creatorId],
       );
+      const allMembers = [...new Set([creatorId, ...memberIds])];
+      for (const userId of allMembers) {
+        await client.query(
+          `INSERT INTO chat_room_members (room_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [roomId, userId],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
 
     res.json({ success: true, roomId });

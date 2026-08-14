@@ -3,105 +3,207 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { pool } from '../config/database';
+import { verifyToken } from '../utils/auth';
 
 const router = express.Router();
-const COMPANY_ID = 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
+const projectManagers = new Set(['boss', 'manager', 'admin']);
+
+type Actor = { id: string; companyId: string; role: string };
+
+async function actor(req: Request): Promise<Actor> {
+  const decoded = verifyToken(req);
+  const result = await pool.query(
+    'SELECT id, company_id, role FROM users WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE',
+    [decoded.id],
+  );
+  if (!result.rowCount || !result.rows[0].company_id) {
+    const error: any = new Error('Your user is not assigned to an active company');
+    error.status = 401;
+    throw error;
+  }
+  return {
+    id: String(result.rows[0].id),
+    companyId: String(result.rows[0].company_id),
+    role: String(result.rows[0].role || ''),
+  };
+}
+
+function requireProjectManager(current: Actor): void {
+  if (!projectManagers.has(current.role)) {
+    const error: any = new Error('Manager access is required to change projects');
+    error.status = 403;
+    throw error;
+  }
+}
+
+function sendError(res: Response, error: any): void {
+  const message = String(error?.message || 'Project request failed');
+  const status = Number(error?.status) || (/token|authenticated|active company/i.test(message) ? 401 : 500);
+  res.status(status).json({ success: false, message });
+}
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = './uploads/projects';
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
+  destination: (_req, _file, callback) => {
+    const directory = './uploads/projects';
+    if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
+    callback(null, directory);
   },
-  filename: (req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, unique + path.extname(file.originalname));
+  filename: (_req, file, callback) => {
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    callback(null, unique + path.extname(file.originalname));
   },
 });
-const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// ─── GET all projects ───
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => {
+    const allowed = /^(application\/pdf|image\/|text\/plain|application\/(msword|vnd\.|zip))/i.test(file.mimetype);
+    if (allowed) callback(null, true);
+    else callback(new Error('Unsupported project attachment type'));
+  },
+});
+
 router.get('/', async (req: Request, res: Response) => {
   try {
+    const current = await actor(req);
     const result = await pool.query(
-      `SELECT id, name, client_name, address, latitude, longitude, geofence_radius, status 
-       FROM projects WHERE company_id = $1`,
-      [COMPANY_ID]
+      `SELECT id, name, client_name, address, latitude, longitude,
+              COALESCE(geofence_radius, 100) AS geofence_radius,
+              COALESCE(status, 'active') AS status
+       FROM projects WHERE company_id = $1
+       ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, name`,
+      [current.companyId],
     );
     res.json({ success: true, projects: result.rows });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
-// ─── GET active projects ───
 router.get('/active', async (req: Request, res: Response) => {
   try {
+    const current = await actor(req);
     const result = await pool.query(
-      `SELECT id, name, client_name, address, latitude, longitude, geofence_radius, status 
-       FROM projects WHERE company_id = $1 AND status = $2`,
-      [COMPANY_ID, 'active']
+      `SELECT id, name, client_name, address, latitude, longitude,
+              COALESCE(geofence_radius, 100) AS geofence_radius, status
+       FROM projects WHERE company_id = $1 AND status = 'active' ORDER BY name`,
+      [current.companyId],
     );
     res.json({ success: true, projects: result.rows });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
-// ─── CREATE project ───
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, client_name, address, latitude, longitude, geofence_radius } = req.body;
+    const current = await actor(req);
+    requireProjectManager(current);
+    const name = String(req.body?.name || '').trim();
     if (!name) return res.status(400).json({ success: false, message: 'Project name is required' });
     const result = await pool.query(
-      `INSERT INTO projects (company_id, name, client_name, address, latitude, longitude, geofence_radius, status) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'active') RETURNING *`,
-      [COMPANY_ID, name, client_name || null, address || null, latitude || null, longitude || null, geofence_radius || 100]
+      `INSERT INTO projects
+       (company_id, name, client_name, address, latitude, longitude, geofence_radius, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [
+        current.companyId,
+        name,
+        String(req.body?.client_name || '').trim() || null,
+        String(req.body?.address || '').trim() || null,
+        req.body?.latitude || null,
+        req.body?.longitude || null,
+        Number(req.body?.geofence_radius) || 100,
+        ['active', 'on_hold', 'completed'].includes(req.body?.status) ? req.body.status : 'active',
+      ],
     );
     res.status(201).json({ success: true, project: result.rows[0] });
   } catch (error: any) {
-    console.error('Create project error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
-// ─── UPDATE geofence ─── (new endpoint)
-router.put('/:id/geofence', async (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { latitude, longitude, geofence_radius } = req.body;
+    const current = await actor(req);
+    requireProjectManager(current);
+    const name = String(req.body?.name || '').trim();
+    if (!name) return res.status(400).json({ success: false, message: 'Project name is required' });
+    const status = ['active', 'on_hold', 'completed'].includes(req.body?.status) ? req.body.status : 'active';
     const result = await pool.query(
-      `UPDATE projects 
-       SET latitude = $1, longitude = $2, geofence_radius = $3 
-       WHERE id = $4 AND company_id = $5 
-       RETURNING *`,
-      [latitude, longitude, geofence_radius, id, COMPANY_ID]
+      `UPDATE projects SET name = $1, client_name = $2, address = $3,
+              latitude = $4, longitude = $5, geofence_radius = $6, status = $7
+       WHERE id = $8 AND company_id = $9 RETURNING *`,
+      [
+        name,
+        String(req.body?.client_name || '').trim() || null,
+        String(req.body?.address || '').trim() || null,
+        req.body?.latitude || null,
+        req.body?.longitude || null,
+        Number(req.body?.geofence_radius) || 100,
+        status,
+        String(req.params.id),
+        current.companyId,
+      ],
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Project not found' });
-    }
+    if (!result.rowCount) return res.status(404).json({ success: false, message: 'Project not found' });
     res.json({ success: true, project: result.rows[0] });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 
-// ─── POST /api/projects/:id/attachments ───
+router.put('/:id/geofence', async (req: Request, res: Response) => {
+  try {
+    const current = await actor(req);
+    requireProjectManager(current);
+    const result = await pool.query(
+      `UPDATE projects SET latitude = $1, longitude = $2, geofence_radius = $3
+       WHERE id = $4 AND company_id = $5 RETURNING *`,
+      [req.body?.latitude, req.body?.longitude, Number(req.body?.geofence_radius) || 100, String(req.params.id), current.companyId],
+    );
+    if (!result.rowCount) return res.status(404).json({ success: false, message: 'Project not found' });
+    res.json({ success: true, project: result.rows[0] });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const current = await actor(req);
+    requireProjectManager(current);
+    const result = await pool.query(
+      `UPDATE projects SET status = 'completed'
+       WHERE id = $1 AND company_id = $2 RETURNING id`,
+      [String(req.params.id), current.companyId],
+    );
+    if (!result.rowCount) return res.status(404).json({ success: false, message: 'Project not found' });
+    res.json({ success: true, message: 'Project archived' });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
 router.post('/:id/attachments', upload.single('file'), async (req: Request, res: Response) => {
   try {
-    const projectId = req.params.id;
-    const projectCheck = await pool.query('SELECT id FROM projects WHERE id = $1 AND company_id = $2', [projectId, COMPANY_ID]);
-    if (projectCheck.rows.length === 0) return res.status(404).json({ success: false, message: 'Project not found' });
-    const file = req.file;
-    if (!file) return res.status(400).json({ success: false, message: 'No file uploaded' });
-    await pool.query(
-      `INSERT INTO project_attachments (project_id, file_name, file_path, file_size, mime_type) 
-       VALUES ($1, $2, $3, $4, $5)`,
-      [projectId, file.originalname, file.path, file.size, file.mimetype]
+    const current = await actor(req);
+    requireProjectManager(current);
+    const projectId = String(req.params.id);
+    const project = await pool.query(
+      'SELECT id FROM projects WHERE id = $1 AND company_id = $2',
+      [projectId, current.companyId],
     );
-    res.json({ success: true, message: 'File uploaded' });
+    if (!project.rowCount) return res.status(404).json({ success: false, message: 'Project not found' });
+    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+    await pool.query(
+      `INSERT INTO project_attachments (project_id, file_name, file_path, file_size, mime_type)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [projectId, req.file.originalname, req.file.path, req.file.size, req.file.mimetype],
+    );
+    res.status(201).json({ success: true, message: 'File uploaded' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    sendError(res, error);
   }
 });
 

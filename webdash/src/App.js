@@ -7,6 +7,8 @@ const API_BASE = (process.env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('agentToken') || '');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [authenticated, setAuthenticated] = useState(false);
   const [agent, setAgent] = useState(null);
   const [tickets, setTickets] = useState([]);
@@ -41,6 +43,25 @@ function App() {
       setAuthenticated(false);
       setError(requestError.response?.data?.message || 'Agent authentication failed');
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const login = async () => {
+    if (!email.trim() || !password) return;
+    setLoading(true);
+    setError('');
+    try {
+      const response = await axios.post(`${API_BASE}/api/auth/login`, {
+        email: email.trim().toLowerCase(),
+        password,
+      });
+      const newToken = response.data?.token;
+      if (!newToken) throw new Error('The server did not return an authentication token');
+      await authenticate(newToken);
+      setPassword('');
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || requestError.message || 'Agent sign-in failed');
       setLoading(false);
     }
   };
@@ -155,16 +176,19 @@ function App() {
   if (!authenticated) {
     return (
       <main className="login-shell">
-        <form className="login-card" onSubmit={(event) => { event.preventDefault(); void authenticate(); }}>
+        <form className="login-card" onSubmit={(event) => { event.preventDefault(); void login(); }}>
           <div className="brand-mark">FJ</div>
           <h1>Support Agent Portal</h1>
-          <p>Use an authorized manager, boss, support-agent, or administrator token.</p>
+          <p>Sign in with an authorized manager, boss, support-agent, or administrator account.</p>
           {error && <div className="error-banner">{error}</div>}
-          <label htmlFor="agent-token">Authentication token</label>
-          <textarea id="agent-token" rows="4" value={token} onChange={(event) => setToken(event.target.value)} placeholder="Paste your JWT token" />
-          <button className="primary-button" type="submit" disabled={loading || !token.trim()}>
+          <label htmlFor="agent-email">Email address</label>
+          <input id="agent-email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="agent@company.com" />
+          <label htmlFor="agent-password">Password</label>
+          <input id="agent-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Your password" />
+          <button className="primary-button" type="submit" disabled={loading || !email.trim() || !password}>
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
+          <p className="security-note">Access is limited by your role and company. Every ticket remains tenant-scoped.</p>
         </form>
       </main>
     );

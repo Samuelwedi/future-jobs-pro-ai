@@ -6,7 +6,7 @@ import {
 import { Check, Close } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 interface Plan {
   id: string;
@@ -22,6 +22,7 @@ export default function Subscription() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPlans();
@@ -46,6 +47,8 @@ export default function Subscription() {
   };
 
   const handleSubscribe = async (priceId: string) => {
+    setCheckoutLoading(priceId);
+    setError('');
     try {
       const res = await fetch(`${API_BASE}/api/stripe/create-checkout`, {
         method: 'POST',
@@ -53,13 +56,16 @@ export default function Subscription() {
         body: JSON.stringify({ priceId }),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Checkout is not available yet');
       if (data.checkoutUrl) {
         window.location.href = data.checkoutUrl;
       } else {
-        alert('Failed to start checkout');
+        throw new Error(data.message || 'Checkout is not available yet');
       }
-    } catch (e) {
-      alert('Error starting checkout');
+    } catch (e: any) {
+      setError(`Stripe onboarding is still being completed. Your existing access is unchanged. ${e.message || ''}`.trim());
+    } finally {
+      setCheckoutLoading(null);
     }
   };
 
@@ -117,9 +123,10 @@ export default function Subscription() {
                   variant="contained"
                   fullWidth
                   onClick={() => handleSubscribe(plan.id)}
+                  disabled={checkoutLoading === plan.id}
                   sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', mt: 2 }}
                 >
-                  Subscribe
+                  {checkoutLoading === plan.id ? 'Opening checkout…' : 'Subscribe'}
                 </Button>
               </CardContent>
             </Card>

@@ -10,9 +10,9 @@ import {
   FormControlLabel, Switch, Stack, Alert,
 } from '@mui/material';
 import { Add, Delete, DragIndicator, Repeat } from '@mui/icons-material';
+import { API_BASE } from '../services/api';
 
 const localizer = momentLocalizer(moment);
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 // ---------- Types ----------
 interface Shift {
@@ -90,6 +90,9 @@ export default function SchedulePage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [visibleStart, setVisibleStart] = useState(moment().startOf('month').subtract(7, 'days').format('YYYY-MM-DD'));
+  const [visibleEnd, setVisibleEnd] = useState(moment().endOf('month').add(7, 'days').format('YYYY-MM-DD'));
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<moment.Moment | null>(null);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
@@ -114,14 +117,16 @@ export default function SchedulePage() {
   // ---------- Fetch Data ----------
   const fetchCalendarData = useCallback(async () => {
     if (!companyId) return;
-    const start = moment().startOf('week').format('YYYY-MM-DD');
-    const end = moment().endOf('week').format('YYYY-MM-DD');
+    const start = visibleStart;
+    const end = visibleEnd;
+    setError('');
     try {
       // Fetch one‑off shifts
       const shiftsRes = await fetch(`${API_BASE}/api/schedule/shifts?start=${start}&end=${end}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const shiftsData = await shiftsRes.json();
+      if (!shiftsRes.ok) throw new Error(shiftsData.message || 'Shifts could not be loaded');
       setShifts(shiftsData.shifts || []);
 
       // Fetch recurring rules
@@ -129,13 +134,14 @@ export default function SchedulePage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const recData = await recRes.json();
+      if (!recRes.ok) throw new Error(recData.message || 'Recurring shifts could not be loaded');
       setRecurringShifts(recData.shifts || []);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      setError(e.message || 'Schedule could not be loaded');
     } finally {
       setLoading(false);
     }
-  }, [companyId, token]);
+  }, [companyId, token, visibleStart, visibleEnd]);
 
   const fetchProjects = async () => {
     try {
@@ -337,8 +343,8 @@ export default function SchedulePage() {
     });
 
     // Recurring shifts – expand to occurrences within the current view
-    const startDate = moment().startOf('week');
-    const endDate = moment().endOf('week').add(4, 'weeks'); // show 5 weeks
+    const startDate = moment(visibleStart);
+    const endDate = moment(visibleEnd);
     recurringShifts.forEach(rule => {
       let current = moment(rule.start_date).startOf('day');
       const ruleEnd = rule.end_date ? moment(rule.end_date) : moment().add(6, 'months');
@@ -399,9 +405,12 @@ export default function SchedulePage() {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
+            name: resource.name,
             date: newDate,
-            start_time: newStart,
-            end_time: newEnd,
+            startTime: newStart,
+            endTime: newEnd,
+            notes: resource.notes || '',
+            employeeIds: resource.assigned_user_ids || resource.assignments?.map((a: any) => a.user_id) || [],
           }),
         });
       }
@@ -416,7 +425,12 @@ export default function SchedulePage() {
   return (
     <DndProvider backend={HTML5Backend}>
       <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
-        <Typography variant="h4" sx={{ color: '#FFF', mb: 2 }}>📅 Schedule</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, flexDirection: { xs: 'column', md: 'row' }, gap: 2, mb: 3 }}>
+          <Box><Typography variant="overline" sx={{ color: '#00D4FF', letterSpacing: 2 }}>WORKFORCE PLANNING</Typography><Typography variant="h3" sx={{ color: '#FFF', fontWeight: 800, fontSize: { xs: 32, md: 44 } }}>Schedule</Typography><Typography sx={{ color: '#8FA0B4' }}>Plan one-time and recurring shifts across projects and crews.</Typography></Box>
+          <Button variant="contained" startIcon={<Add />} onClick={() => openCreateDialog(new Date())} sx={{ bgcolor: '#00D4FF', color: '#041016', fontWeight: 800 }}>Create shift</Button>
+        </Box>
+
+        {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
 
         <Paper sx={{ bgcolor: '#1A1A1A', borderRadius: 2, p: 2, border: '1px solid #333' }}>
           <BigCalendar
@@ -444,6 +458,15 @@ export default function SchedulePage() {
             selectable
             draggableAccessor={() => true}
             onEventDrop={handleEventDrop}
+            onRangeChange={(range: Date[] | { start: Date; end: Date }) => {
+              if (Array.isArray(range) && range.length) {
+                setVisibleStart(moment(range[0]).format('YYYY-MM-DD'));
+                setVisibleEnd(moment(range[range.length - 1]).format('YYYY-MM-DD'));
+              } else if (!Array.isArray(range) && range?.start && range?.end) {
+                setVisibleStart(moment(range.start).format('YYYY-MM-DD'));
+                setVisibleEnd(moment(range.end).format('YYYY-MM-DD'));
+              }
+            }}
             components={{ event: DraggableEvent }}
           />
         </Paper>

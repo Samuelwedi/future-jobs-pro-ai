@@ -36,9 +36,8 @@ export default function Landing() {
               <Box component="span" sx={{ color: '#00D4FF' }}> Actually Works</Box>
             </Typography>
             <Typography variant="h6" sx={{ color: '#888', mb: 4, lineHeight: 1.6 }}>
-              Stop losing money to disputed invoices. Future Jobs Pro AI gives you
-              legal‑grade proof of work with AI‑powered photo verification,
-              GPS breadcrumbs, and automatic dispute resolution.
+              Bring scheduling, time tracking, projects, payroll preparation and field evidence into one secure workspace.
+              Give your team clearer operations while keeping every important decision under human review.
             </Typography>
             <Button component={RouterLink} to="/pricing" variant="contained" size="large" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 6, py: 1.5, fontSize: 18 }}>
               Start Your Free Trial →
@@ -73,7 +72,7 @@ export default function Landing() {
       <Box sx={{ borderTop: '1px solid #222', borderBottom: '1px solid #222', py: 3 }}>
         <Container maxWidth="lg">
           <Typography align="center" sx={{ color: '#888', mb: 2 }}>
-            Trusted by field service companies across North America
+            Built for growing field-service teams across North America
           </Typography>
         </Container>
       </Box>
@@ -92,7 +91,7 @@ export default function Landing() {
             { icon: <PhotoCamera sx={{ fontSize: 40, color: '#00D4FF' }} />, title: 'AI Photo Compliance', desc: 'Our AI analyzes photos BEFORE upload. Know immediately if your photo will hold up in a dispute.' },
             { icon: <LocationOn sx={{ fontSize: 40, color: '#4CAF50' }} />, title: 'GPS Breadcrumb Trails', desc: 'Complete location history proves exactly where your team was and for how long.' },
             { icon: <Mic sx={{ fontSize: 40, color: '#FF9800' }} />, title: 'Voice‑to‑Text Notes', desc: 'Hands‑free documentation. Speak your notes and our AI creates professional summaries.' },
-            { icon: <Security sx={{ fontSize: 40, color: '#E91E63' }} />, title: 'Auto‑Dispute Evidence', desc: 'One click generates a tamper‑proof PDF with all evidence. Win disputes instantly.' },
+            { icon: <Security sx={{ fontSize: 40, color: '#E91E63' }} />, title: 'Dispute Evidence Reports', desc: 'Organize job records, timestamps, photos and location history into a reviewable evidence package.' },
             { icon: <Speed sx={{ fontSize: 40, color: '#9C27B0' }} />, title: 'Real‑Time Profit Tracking', desc: 'See your margin change as work happens. Stop losing money before month‑end.' },
             { icon: <CheckCircle sx={{ fontSize: 40, color: '#00BCD4' }} />, title: '14‑Day Free Trial', desc: 'Try everything risk‑free. No credit card required to start.' },
           ].map((feature, index) => (
@@ -161,7 +160,7 @@ export default function Landing() {
             </Grid>
           </Grid>
           <Typography align="center" sx={{ color: '#555', fontSize: 14, mt: 6 }}>
-            © 2024 Future Jobs Pro AI – Created by Samuel B. All rights reserved.
+            © {new Date().getFullYear()} Future Jobs Pro AI – Created by Samuel B. All rights reserved.
           </Typography>
         </Container>
       </Box>

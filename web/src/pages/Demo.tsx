@@ -12,7 +12,10 @@ export default function Demo() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const subject = encodeURIComponent(`Future Jobs Pro AI demo request - ${form.company}`);
+    const body = encodeURIComponent(`Name: ${form.name}\nWork email: ${form.email}\nCompany: ${form.company}\n\nPlease contact me to schedule a product demo.`);
     setSubmitted(true);
+    window.location.href = `mailto:sales@futurejobsproai.com?subject=${subject}&body=${body}`;
   };
 
   return (
@@ -27,7 +30,7 @@ export default function Demo() {
 
         <Paper sx={{ p: 5, bgcolor: '#1A1A1A', borderRadius: 4, border: '1px solid #333' }}>
           {submitted ? (
-            <Alert severity="success" sx={{ bgcolor: '#4CAF5020', color: '#4CAF50' }}>Thank you! We'll reach out to schedule your demo shortly.</Alert>
+            <Alert severity="success" sx={{ bgcolor: '#4CAF5020', color: '#4CAF50' }}>Your email application has been opened with the demo request. Send that message to complete your request.</Alert>
           ) : (
             <Box component="form" onSubmit={handleSubmit}>
               <Grid container spacing={3}>

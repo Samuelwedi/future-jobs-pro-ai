@@ -3,7 +3,8 @@ import {
   Box, TextField, IconButton, Paper, Typography, List, ListItem,
   Avatar, ListItemAvatar, ListItemText, CircularProgress,
 } from '@mui/material';
-import { Send, SmartToy } from '@mui/icons-material';
+import { Mic, Send, SmartToy } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 
 const API_BASE =
   ((import.meta.env as any).VITE_API_URL as string | undefined)?.replace(/\/$/, '') ||
@@ -15,6 +16,7 @@ interface Message {
 }
 
 export default function AskLucy() {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([
     {
       text: "Hi! I'm Lucy. I remember our conversations. I can schedule, run payroll, and generate reports. Try me!",
@@ -157,6 +159,9 @@ export default function AskLucy() {
         </Paper>
 
         <Box sx={{ display: 'flex', gap: 1 }}>
+          <IconButton aria-label="Open Lucy voice assistant" onClick={() => navigate('/voice-assistant')} sx={{ border: '1px solid #27404C', color: '#00D4FF', width: 48, height: 48 }}>
+            <Mic />
+          </IconButton>
           <TextField
             fullWidth
             placeholder="Type a command..."

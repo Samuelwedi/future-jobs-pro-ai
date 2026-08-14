@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import { Receipt, Save, Visibility } from '@mui/icons-material';
 
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 interface Employee {
   id: string; // now a UUID string
@@ -101,6 +101,7 @@ export default function YearEnd() {
 
   const handleSave = async () => {
     if (!selectedEmployee || !selectedForm) return;
+    if (!window.confirm(`Finalize this ${selectedForm} using the displayed payroll totals? Review every amount before continuing.`)) return;
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/year-end/finalize`, {
@@ -115,7 +116,6 @@ export default function YearEnd() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
       setSaved(true);
-      alert(`${selectedForm} slip finalized and saved!`);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -184,7 +184,7 @@ export default function YearEnd() {
             </Grid>
           </Box>
         )}
-        {saved && <Alert severity="success" sx={{ mt: 2 }}>✅ This slip has been finalized and locked in the ledger.</Alert>}
+        {saved && <Alert severity="success" sx={{ mt: 2 }}>This slip was finalized from the recorded payroll totals.</Alert>}
       </Box>
     );
   };
@@ -193,6 +193,7 @@ export default function YearEnd() {
     <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
       <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>📄 Year‑End Tax Forms</Typography>
       <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>Generate, preview, and finalize T4, T4A, and RL‑1 slips.</Typography>
+      <Alert severity="warning" sx={{ mb: 3 }}>Review year-end slips with a qualified payroll professional before filing. Values are compiled from finalized payroll records and are not submitted automatically.</Alert>
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={4}>

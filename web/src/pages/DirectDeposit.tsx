@@ -6,12 +6,7 @@ import {
   FormControl, InputLabel,
 } from '@mui/material';
 import { Download, Edit, Save, Cancel } from '@mui/icons-material';
-
-declare const process: { env: { REACT_APP_API_BASE?: string } };
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE ||
-  'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 interface EmployeeBank {
   id: string;

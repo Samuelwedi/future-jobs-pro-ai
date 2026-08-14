@@ -4,10 +4,9 @@ import {
   List, ListItem, ListItemText, ListItemAvatar, Avatar, Checkbox,
   CircularProgress, Alert, IconButton, Chip,
 } from '@mui/material';
-import { ArrowBack, Search } from '@mui/icons-material';
+import { ArrowBack, GroupAddOutlined, PersonAddAltOutlined, Search } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { api } from '../services/api';
 
 interface User {
   id: string;
@@ -19,7 +18,6 @@ interface User {
 
 export default function NewChat() {
   const navigate = useNavigate();
-  const token = localStorage.getItem('token') || '';
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
   const [users, setUsers] = useState<User[]>([]);
@@ -48,10 +46,7 @@ export default function NewChat() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/users/company/${user?.companyId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
+      const data = await api.get<{ users: User[] }>('/api/users/company', { cache: 'no-store' });
       const allUsers = data.users || [];
       // Exclude current user
       const others = allUsers.filter((u: any) => u.id !== user?.id);
@@ -77,7 +72,7 @@ export default function NewChat() {
 
   const createChat = async () => {
     if (selectedIds.length === 0) {
-      alert('Select at least one person');
+      setError('Select at least one person');
       return;
     }
     setError('');
@@ -86,21 +81,16 @@ export default function NewChat() {
       let body = {};
       if (isGroup) {
         if (!groupName.trim()) {
-          alert('Enter a group name');
+          setError('Enter a group name');
           return;
         }
         url = '/api/chat/create-group';
-        body = { name: groupName.trim(), creatorId: user?.id, memberIds: selectedIds };
+        body = { name: groupName.trim(), memberIds: selectedIds };
       } else {
         url = '/api/chat/create-direct';
-        body = { userId1: user?.id, userId2: selectedIds[0] };
+        body = { userId2: selectedIds[0] };
       }
-      const res = await fetch(`${API_BASE}${url}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
+      const data = await api.post<{ success: boolean; roomId?: string; message?: string }>(url, body);
       if (data.success && data.roomId) {
         const otherUser = users.find(u => u.id === selectedIds[0]);
         const roomName = isGroup ? groupName.trim() : `${otherUser?.first_name || ''} ${otherUser?.last_name || ''}`.trim() || 'Chat';
@@ -109,7 +99,7 @@ export default function NewChat() {
         setError(data.message || 'Failed to create chat');
       }
     } catch (e: any) {
-      setError('Error: ' + e.message);
+      setError(e.message || 'Conversation could not be created');
     }
   };
 
@@ -122,13 +112,13 @@ export default function NewChat() {
   }
 
   return (
-    <Container maxWidth="md" sx={{ py: 4 }}>
+    <Box sx={{ bgcolor: '#080B10', minHeight: '100vh', py: { xs: 2, md: 4 } }}><Container maxWidth="md">
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <IconButton onClick={() => navigate(-1)} sx={{ color: '#FFF' }}>
           <ArrowBack />
         </IconButton>
         <Typography variant="h5" sx={{ color: '#FFF', fontWeight: 'bold', ml: 1 }}>
-          New Chat
+          New conversation
         </Typography>
       </Box>
 
@@ -140,14 +130,14 @@ export default function NewChat() {
           onClick={() => { setIsGroup(false); setSelectedIds([]); }}
           sx={!isGroup ? { bgcolor: '#00D4FF', color: '#0A0A0A' } : { color: '#00D4FF', borderColor: '#00D4FF' }}
         >
-          Direct
+          <PersonAddAltOutlined sx={{ mr: 1 }} /> Direct
         </Button>
         <Button
           variant={isGroup ? 'contained' : 'outlined'}
           onClick={() => { setIsGroup(true); setSelectedIds([]); }}
           sx={isGroup ? { bgcolor: '#00D4FF', color: '#0A0A0A' } : { color: '#00D4FF', borderColor: '#00D4FF' }}
         >
-          Group
+          <GroupAddOutlined sx={{ mr: 1 }} /> Group
         </Button>
       </Box>
 
@@ -212,6 +202,6 @@ export default function NewChat() {
       >
         {isGroup ? `Create Group (${selectedIds.length} members)` : 'Start Chat'}
       </Button>
-    </Container>
+    </Container></Box>
   );
 }
