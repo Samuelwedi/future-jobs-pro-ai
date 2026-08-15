@@ -3,14 +3,15 @@ import {
   Box, Container, Typography, Grid, Paper, Button, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, CircularProgress, Alert, Tabs, Tab,
   FormControl, InputLabel, Select, MenuItem, IconButton, Tooltip, TextField,
-  Dialog, DialogTitle, DialogContent, DialogActions,
+  Dialog, DialogTitle, DialogContent, DialogActions, Stack,
 } from '@mui/material';
 import {
   PictureAsPdf, Description, Assessment, Refresh, CheckCircle, Warning,
-  Schedule, AttachMoney, FilePresent,
+  Schedule, AttachMoney, FilePresent, VerifiedUser, Gavel,
 } from '@mui/icons-material';
 
 import { API_BASE } from '../services/api';
+import EvidencePackageDialog from '../components/EvidencePackageDialog';
 
 interface Photo {
   id: string;
@@ -26,6 +27,17 @@ interface Photo {
 interface Project {
   id: string;
   name: string;
+}
+
+interface EvidenceEntry {
+  id: string;
+  employee_name: string;
+  project_name?: string;
+  clock_in: string;
+  clock_out?: string;
+  gps_count: number;
+  media_count: number;
+  voice_count: number;
 }
 
 interface TabPanelProps {
@@ -59,6 +71,9 @@ export default function Reports() {
   const [success, setSuccess] = useState<string | null>(null);
   const [reportTitle, setReportTitle] = useState('Job Evidence Report');
   const [showTitleDialog, setShowTitleDialog] = useState(false);
+  const [evidenceEntries, setEvidenceEntries] = useState<EvidenceEntry[]>([]);
+  const [selectedEvidence, setSelectedEvidence] = useState('');
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
 
   // ─── Comprehensive Report State ──────────────────────────────
   const [startDate, setStartDate] = useState<string>(() => {
@@ -116,6 +131,25 @@ export default function Reports() {
   }, [selectedProject, token]);
 
   useEffect(() => { fetchPhotos(); }, [fetchPhotos]);
+
+  const fetchEvidenceEntries = useCallback(async () => {
+    setEvidenceLoading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/evidence-bundles/recent`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Could not load verified work records');
+      setEvidenceEntries(data.entries || []);
+    } catch (e: any) {
+      setError(e.message || 'Could not load verified work records');
+    } finally {
+      setEvidenceLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => { fetchEvidenceEntries(); }, [fetchEvidenceEntries]);
 
   // ─── Handlers ──────────────────────────────────────────────────
   const togglePhoto = (id: string) => {
@@ -241,11 +275,29 @@ export default function Reports() {
         </Tooltip>
       </Box>
 
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {[
+          { label: 'Projects ready', value: projects.length, detail: 'Available for project reporting', color: '#00D4FF' },
+          { label: 'Verified work records', value: evidenceEntries.length, detail: 'Recent audit-ready time entries', color: '#36D399' },
+          { label: 'Evidence media', value: evidenceEntries.reduce((sum, entry) => sum + Number(entry.media_count || 0) + Number(entry.voice_count || 0), 0), detail: 'Photo, video and voice records', color: '#A78BFA' },
+          { label: 'GPS observations', value: evidenceEntries.reduce((sum, entry) => sum + Number(entry.gps_count || 0), 0), detail: 'Location points ready for playback', color: '#FFB020' },
+        ].map((metric) => (
+          <Grid item xs={12} sm={6} lg={3} key={metric.label}>
+            <Paper sx={{ p: 2.25, bgcolor: '#111820', border: '1px solid #263846', borderRadius: 3 }}>
+              <Typography variant="overline" sx={{ color: '#8EA4B2', letterSpacing: 1 }}>{metric.label}</Typography>
+              <Typography variant="h4" sx={{ color: metric.color, fontWeight: 900 }}>{metric.value}</Typography>
+              <Typography variant="caption" sx={{ color: '#9FB2BE' }}>{metric.detail}</Typography>
+            </Paper>
+          </Grid>
+        ))}
+      </Grid>
+
       <Tabs value={tabValue} onChange={handleTabChange} sx={{ mb: 2, borderBottom: '1px solid #333' }}>
         <Tab label="📷 Evidence Report" icon={<PictureAsPdf />} iconPosition="start" />
         <Tab label="📋 Comprehensive Report" icon={<Description />} iconPosition="start" />
         <Tab label="⏱ Timesheet" icon={<Schedule />} iconPosition="start" />
         <Tab label="💰 Payroll" icon={<AttachMoney />} iconPosition="start" />
+        <Tab label="🛡 Verified Evidence" icon={<VerifiedUser />} iconPosition="start" />
       </Tabs>
 
       {/* ─── Tab 0: Evidence Report ────────────────────────────── */}
@@ -429,6 +481,46 @@ export default function Reports() {
         </Paper>
       </TabPanel>
 
+      {/* ─── Tab 4: Verified Evidence ───────────────────────────── */}
+      <TabPanel value={tabValue} index={4}>
+        <Paper sx={{ bgcolor: '#111820', border: '1px solid #263846', borderRadius: 3, overflow: 'hidden' }}>
+          <Box sx={{ p: 3, display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', borderBottom: '1px solid #263846' }}>
+            <Box>
+              <Typography variant="h5" sx={{ color: '#FFF', fontWeight: 800 }}>
+                <Gavel sx={{ mr: 1, verticalAlign: 'middle', color: '#00D4FF' }} />Evidence Report Studio
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#9FB2BE', mt: 1, maxWidth: 760 }}>
+                Turn one verified time entry into a portable case file containing its time-entry PDF, animated worldwide GPS reconstruction, original coordinates, selected media, voice notes, documents, manifest, and SHA-256 integrity records.
+              </Typography>
+            </Box>
+            <Button variant="outlined" startIcon={<Refresh />} onClick={fetchEvidenceEntries} disabled={evidenceLoading} sx={{ color: '#00D4FF', borderColor: '#00D4FF', alignSelf: 'center' }}>
+              Refresh records
+            </Button>
+          </Box>
+          {evidenceLoading ? (
+            <Box sx={{ p: 6, textAlign: 'center' }}><CircularProgress /></Box>
+          ) : (
+            <TableContainer>
+              <Table>
+                <TableHead><TableRow><TableCell>Employee and project</TableCell><TableCell>Recorded period</TableCell><TableCell>Evidence inventory</TableCell><TableCell align="right">Verified package</TableCell></TableRow></TableHead>
+                <TableBody>
+                  {evidenceEntries.length === 0 ? (
+                    <TableRow><TableCell colSpan={4} align="center" sx={{ py: 6, color: '#9FB2BE' }}>No completed time records are currently available.</TableCell></TableRow>
+                  ) : evidenceEntries.map((entry) => (
+                    <TableRow key={entry.id} hover>
+                      <TableCell><Typography sx={{ color: '#FFF', fontWeight: 700 }}>{entry.employee_name}</Typography><Typography variant="caption" sx={{ color: '#9FB2BE' }}>{entry.project_name || 'Unassigned project'}</Typography></TableCell>
+                      <TableCell><Typography variant="body2" sx={{ color: '#DCE8EF' }}>{formatDate(entry.clock_in)}</Typography><Typography variant="caption" sx={{ color: '#9FB2BE' }}>{entry.clock_out ? `to ${formatDate(entry.clock_out)}` : 'Work session in progress'}</Typography></TableCell>
+                      <TableCell><Stack direction="row" gap={1} flexWrap="wrap"><Chip size="small" label={`${entry.gps_count || 0} GPS`} sx={{ color: '#FFCB66' }} /><Chip size="small" label={`${entry.media_count || 0} media`} sx={{ color: '#66E5FF' }} /><Chip size="small" label={`${entry.voice_count || 0} voice`} sx={{ color: '#C4A8FF' }} /></Stack></TableCell>
+                      <TableCell align="right"><Button variant="contained" startIcon={<VerifiedUser />} onClick={() => setSelectedEvidence(entry.id)} sx={{ bgcolor: '#00D4FF', color: '#061018', fontWeight: 800 }}>Build evidence</Button></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Paper>
+      </TabPanel>
+
       {/* ─── Report Title Dialog ────────────────────────────────── */}
       <Dialog open={showTitleDialog} onClose={() => setShowTitleDialog(false)}>
         <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>Report Title</DialogTitle>
@@ -455,6 +547,7 @@ export default function Reports() {
           </Button>
         </DialogActions>
       </Dialog>
+      {selectedEvidence && <EvidencePackageDialog timeEntryId={selectedEvidence} onClose={() => setSelectedEvidence('')} />}
     </Container>
   );
 }

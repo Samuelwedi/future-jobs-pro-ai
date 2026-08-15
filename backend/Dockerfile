@@ -36,7 +36,7 @@ EXPOSE 8080
 RUN echo '#!/bin/sh' > /start.sh && \
     echo 'echo "=== Starting container ==="' >> /start.sh && \
     echo 'echo "--- Environment ---"' >> /start.sh && \
-    echo 'env | grep -E "^(PORT|NODE_ENV|BASE_URL|EVIDENCE_MAP_STYLE_URL|EVIDENCE_MAP_MAX_ZOOM)="' >> /start.sh && \
+    echo 'env | grep -E "^(PORT|NODE_ENV|BASE_URL|EVIDENCE_MAP_STYLE_URL|EVIDENCE_MAP_RASTER_TILE_URL|EVIDENCE_MAP_MAX_ZOOM)="' >> /start.sh && \
     echo 'echo "--- Files in /app/dist ---"' >> /start.sh && \
     echo 'ls -la /app/dist' >> /start.sh && \
     echo 'echo "--- Running node ---"' >> /start.sh && \
