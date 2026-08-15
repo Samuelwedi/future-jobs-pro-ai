@@ -177,6 +177,7 @@ async function renderWorldwideRasterMap(
 
 async function mapBackground(points: any[], width: number, height: number) {
   const tileTemplate = String(process.env.EVIDENCE_MAP_TILE_URL || '').trim();
+  const renderer = String(process.env.EVIDENCE_MAP_RENDERER || 'raster').trim().toLowerCase();
   const rasterTemplate = String(
     process.env.EVIDENCE_MAP_RASTER_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
   ).trim();
@@ -198,7 +199,7 @@ async function mapBackground(points: any[], width: number, height: number) {
     if (spanX <= width * 0.68 && spanY <= height * 0.68) break;
   }
   const center = worldPixel(centerLat, centerLng, zoom);
-  if (!tileTemplate) {
+  if (!tileTemplate && (renderer === 'vector' || renderer === 'auto')) {
     try {
       const vectorMap = await renderWorldwideVectorMap(points, width, height, centerLat, centerLng, zoom);
       return {
@@ -211,7 +212,7 @@ async function mapBackground(points: any[], width: number, height: number) {
         provider: 'OPENFREEMAP',
       };
     } catch (error) {
-      console.warn('OpenFreeMap vector render unavailable; trying worldwide raster map:', error);
+      console.warn('Vector map render unavailable; continuing with worldwide raster map:', error);
     }
   }
 
@@ -257,7 +258,11 @@ export async function generateTimeEntryPdf(companyId: string, timeEntryId: strin
   doc.rect(0,0,612,92).fill('#07121A'); doc.fillColor('#00D4FF').fontSize(21).text('FUTURE JOBS PRO AI',48,28); doc.fillColor('#FFFFFF').fontSize(11).text('Verified Time Entry Evidence Record',48,57);
   doc.fillColor('#162334').fontSize(18).text('Work record',48,120); doc.moveDown(.7);
   const line=(label:string,value:unknown)=>{doc.fillColor('#66768A').fontSize(9).text(label.toUpperCase());doc.fillColor('#172033').fontSize(12).text(String(value??'—'));doc.moveDown(.55)};
-  line('Company',entry.company_name);line('Employee',entry.employee_name);line('Project',entry.project_name);line('Job-site address',entry.project_address);line('Clock in',new Date(entry.clock_in).toLocaleString('en-CA'));line('Clock out',entry.clock_out?new Date(entry.clock_out).toLocaleString('en-CA'):'In progress');line('Recorded duration',`${duration.toFixed(2)} hours`);line('Unpaid break',`${entry.break_minutes||0} minutes`);line('Approval status',entry.approval_status||'pending');line('Correction reason',entry.correction_reason||'No correction recorded');
+  const firstGps = gps.rows[0];
+  const jobSite = entry.project_address || (firstGps
+    ? `Address not supplied — GPS ${Number(firstGps.latitude).toFixed(6)}, ${Number(firstGps.longitude).toFixed(6)}`
+    : 'Address and GPS location not supplied');
+  line('Company',entry.company_name);line('Employee',entry.employee_name);line('Project',entry.project_name);line('Job-site address',jobSite);line('Clock in',new Date(entry.clock_in).toLocaleString('en-CA'));line('Clock out',entry.clock_out?new Date(entry.clock_out).toLocaleString('en-CA'):'In progress');line('Recorded duration',`${duration.toFixed(2)} hours`);line('Unpaid break',`${entry.break_minutes||0} minutes`);line('Approval status',entry.approval_status||'pending');line('Correction reason',entry.correction_reason||'No correction recorded');
   doc.moveDown();doc.fillColor('#162334').fontSize(16).text('Evidence inventory');doc.moveDown(.5);doc.fillColor('#172033').fontSize(11).text(`${gps.rowCount} GPS points  •  ${media.rows[0]?.count||0} photo/video records  •  ${voices.rows[0]?.count||0} voice notes`);
   const canonical=Buffer.from(JSON.stringify({entry,gps:gps.rows,generatedAt:new Date().toISOString()}));const verificationHash=hash(canonical);
   doc.moveDown(2);doc.fillColor('#66768A').fontSize(9).text('SHA-256 VERIFICATION HASH');doc.fillColor('#172033').font('Courier').fontSize(8).text(verificationHash,{width:500});doc.font('Helvetica').moveDown();doc.fillColor('#66768A').fontSize(8).text('This report summarizes records stored by Future Jobs Pro AI. The accompanying evidence manifest contains the complete source metadata.');doc.end();
