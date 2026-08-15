@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
 
 type Artifact = { buffer: Buffer; fileName: string; mimeType: string; verificationHash: string };
 const tempRoot = path.join(os.tmpdir(), 'future-jobs-evidence-media');
@@ -16,6 +17,9 @@ const hash = (buffer: Buffer) => crypto.createHash('sha256').update(buffer).dige
 const runFfmpeg = (command: ffmpeg.FfmpegCommand, output: string) => new Promise<void>((resolve, reject) => command.on('end', resolve).on('error', reject).save(output));
 const safeUnlink = (value: string) => fs.unlink(value, () => undefined);
 const safeRmdir = (value: string) => fs.rm(value, { recursive: true, force: true }, () => undefined);
+const runFile = (file: string, args: string[]) => new Promise<void>((resolve, reject) => {
+  execFile(file, args, { timeout: 30000, maxBuffer: 1024 * 1024 }, (error) => error ? reject(error) : resolve());
+});
 
 const TILE_SIZE = 256;
 function worldPixel(latitude: number, longitude: number, zoom: number) {
@@ -36,13 +40,79 @@ function haversine(a: any, b: any) {
   const value = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
   return radius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
 }
+
+function circularLongitude(points: any[]): number {
+  const vectors = points.reduce((result, point) => {
+    const radians = Number(point.longitude) * Math.PI / 180;
+    return { x: result.x + Math.cos(radians), y: result.y + Math.sin(radians) };
+  }, { x: 0, y: 0 });
+  return Math.atan2(vectors.y, vectors.x) * 180 / Math.PI;
+}
+
+function chromiumExecutable(): string {
+  const configured = String(process.env.CHROMIUM_PATH || '').trim();
+  const candidates = [configured, '/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/google-chrome'];
+  const found = candidates.find((candidate) => candidate && fs.existsSync(candidate));
+  if (!found) throw new Error('Chromium is not installed');
+  return found;
+}
+
+async function renderWorldwideVectorMap(
+  points: any[],
+  width: number,
+  height: number,
+  centerLat: number,
+  centerLng: number,
+  zoom: number,
+): Promise<Buffer> {
+  const styleUrl = String(
+    process.env.EVIDENCE_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty',
+  ).trim();
+  if (!/^https:\/\//i.test(styleUrl)) throw new Error('EVIDENCE_MAP_STYLE_URL must use HTTPS');
+
+  const directory = fs.mkdtempSync(path.join(tempRoot, 'maplibre-'));
+  const htmlPath = path.join(directory, 'map.html');
+  const outputPath = path.join(directory, 'map.png');
+  const route = points.map((point) => [Number(point.longitude), Number(point.latitude)]);
+  const mapLibreVersion = '5.15.0';
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://unpkg.com/maplibre-gl@${mapLibreVersion}/dist/maplibre-gl.css"><style>html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;background:#10212b}.maplibregl-control-container{display:none}</style></head><body><div id="map"></div><script src="https://unpkg.com/maplibre-gl@${mapLibreVersion}/dist/maplibre-gl.js"></script><script>
+  const map = new maplibregl.Map({container:'map',style:${JSON.stringify(styleUrl)},center:[${centerLng},${centerLat}],zoom:${zoom},interactive:false,attributionControl:false,fadeDuration:0,preserveDrawingBuffer:true});
+  const route = ${JSON.stringify(route)};
+  map.on('load',()=>{map.addSource('evidence-route',{type:'geojson',data:{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:route}}});map.addLayer({id:'evidence-route-shadow',type:'line',source:'evidence-route',paint:{'line-color':'#001820','line-opacity':.35,'line-width':9}});map.addLayer({id:'evidence-route',type:'line',source:'evidence-route',paint:{'line-color':'#00d4ff','line-opacity':.28,'line-width':4}});});
+  map.once('idle',()=>{document.documentElement.dataset.ready='true'});
+  setTimeout(()=>{document.documentElement.dataset.ready='timeout'},10000);
+  </script></body></html>`;
+
+  try {
+    fs.writeFileSync(htmlPath, html, 'utf8');
+    await runFile(chromiumExecutable(), [
+      '--headless', '--no-sandbox', '--disable-dev-shm-usage', '--use-gl=angle',
+      '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+      '--hide-scrollbars', '--force-device-scale-factor=1', `--window-size=${width},${height}`,
+      '--virtual-time-budget=12000', `--screenshot=${outputPath}`, `file://${htmlPath}`,
+    ]);
+    if (!fs.existsSync(outputPath)) throw new Error('Chromium did not create the map image');
+    return sharp(outputPath).resize(width, height, { fit: 'fill' }).png().toBuffer();
+  } finally {
+    safeRmdir(directory);
+  }
+}
+
 async function mapBackground(points: any[], width: number, height: number) {
   const tileTemplate = String(process.env.EVIDENCE_MAP_TILE_URL || '').trim();
   const centerLat = points.reduce((sum, point) => sum + Number(point.latitude), 0) / points.length;
-  const centerLng = points.reduce((sum, point) => sum + Number(point.longitude), 0) / points.length;
+  const centerLng = circularLongitude(points);
   let zoom = Math.max(3, Math.min(19, Number(process.env.EVIDENCE_MAP_MAX_ZOOM || 14)));
   for (; zoom >= 3; zoom--) {
-    const pixels = points.map((point) => worldPixel(Number(point.latitude), Number(point.longitude), zoom));
+    const centerAtZoom = worldPixel(centerLat, centerLng, zoom);
+    const worldSize = TILE_SIZE * 2 ** zoom;
+    const pixels = points.map((point) => {
+      const pixel = worldPixel(Number(point.latitude), Number(point.longitude), zoom);
+      let x = pixel.x - centerAtZoom.x;
+      if (x > worldSize / 2) x -= worldSize;
+      if (x < -worldSize / 2) x += worldSize;
+      return { x, y: pixel.y };
+    });
     const spanX = Math.max(...pixels.map((point) => point.x)) - Math.min(...pixels.map((point) => point.x));
     const spanY = Math.max(...pixels.map((point) => point.y)) - Math.min(...pixels.map((point) => point.y));
     if (spanX <= width * 0.68 && spanY <= height * 0.68) break;
@@ -54,6 +124,18 @@ async function mapBackground(points: any[], width: number, height: number) {
   const canvasHeight = TILE_SIZE * 3;
   const composites: sharp.OverlayOptions[] = [];
   try {
+    if (!tileTemplate) {
+      const vectorMap = await renderWorldwideVectorMap(points, width, height, centerLat, centerLng, zoom);
+      return {
+        buffer: await sharp(vectorMap).modulate({ brightness: 0.78, saturation: 0.78 }).png().toBuffer(),
+        zoom,
+        center,
+        cropX: center.x - width / 2,
+        cropY: center.y - height / 2,
+        realMap: true,
+        provider: 'OPENFREEMAP',
+      };
+    }
     if (!tileTemplate || !tileTemplate.includes('{z}') || !tileTemplate.includes('{x}') || !tileTemplate.includes('{y}')) {
       throw new Error('EVIDENCE_MAP_TILE_URL is not configured');
     }
@@ -75,11 +157,11 @@ async function mapBackground(points: any[], width: number, height: number) {
     const originY = firstTileY * TILE_SIZE;
     const left = Math.max(0, Math.min(canvasWidth - width, Math.round(center.x - originX - width / 2)));
     const top = Math.max(0, Math.min(canvasHeight - height, Math.round(center.y - originY - height / 2)));
-    return { buffer: await sharp(stitched).extract({ left, top, width, height }).modulate({ brightness: 0.72, saturation: 0.72 }).png().toBuffer(), zoom, center, cropX: originX + left, cropY: originY + top, realMap: true };
+    return { buffer: await sharp(stitched).extract({ left, top, width, height }).modulate({ brightness: 0.72, saturation: 0.72 }).png().toBuffer(), zoom, center, cropX: originX + left, cropY: originY + top, realMap: true, provider: 'PRIVATE MAP' };
   } catch (error) {
     console.warn('Evidence map tiles unavailable; using verified coordinate fallback:', error);
     const fallback = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#10212b"/><g stroke="#294250" stroke-width="2">${Array.from({length:12},(_,i)=>`<path d="M ${i*90-120} 0 L ${i*90+180} ${height}"/>`).join('')}${Array.from({length:8},(_,i)=>`<path d="M 0 ${i*75} L ${width} ${i*75-120}"/>`).join('')}</g><text x="32" y="${height-28}" fill="#9db2bf" font-family="Arial" font-size="14">Map service unavailable — route remains plotted from original coordinates</text></svg>`;
-    return { buffer: await sharp(Buffer.from(fallback)).png().toBuffer(), zoom, center, cropX: center.x-width/2, cropY: center.y-height/2, realMap: false };
+    return { buffer: await sharp(Buffer.from(fallback)).png().toBuffer(), zoom, center, cropX: center.x-width/2, cropY: center.y-height/2, realMap: false, provider: 'MAP FALLBACK' };
   }
 }
 
@@ -124,7 +206,14 @@ export async function generateGpsTrailVideo(companyId: string, timeEntryId: stri
   const mapHeight = 500;
   try {
     const map = await mapBackground(points, mapWidth, mapHeight);
-    const project = (point: any) => { const pixel=worldPixel(Number(point.latitude),Number(point.longitude),map.zoom);return{x:40+pixel.x-map.cropX,y:112+pixel.y-map.cropY}; };
+    const project = (point: any) => {
+      const pixel = worldPixel(Number(point.latitude), Number(point.longitude), map.zoom);
+      const worldSize = TILE_SIZE * 2 ** map.zoom;
+      let deltaX = pixel.x - map.center.x;
+      if (deltaX > worldSize / 2) deltaX -= worldSize;
+      if (deltaX < -worldSize / 2) deltaX += worldSize;
+      return { x: 40 + mapWidth / 2 + deltaX, y: 112 + mapHeight / 2 + pixel.y - map.center.y };
+    };
     const distances = [0];
     for (let index=1; index<points.length; index++) distances.push(distances[index-1]+haversine(points[index-1],points[index]));
     const totalDistance = distances[distances.length-1];
@@ -143,7 +232,7 @@ export async function generateGpsTrailVideo(companyId: string, timeEntryId: stri
       const status=segment<=Math.max(3,Number(points[upto].accuracy||0))?'STATIONARY / GPS DRIFT':'MOVEMENT RECORDED';
       const closing=frame>=introFrames+routeFrames;
       const title=frame<introFrames;
-      const overlay=`<svg width="1280" height="720" xmlns="http://www.w3.org/2000/svg"><rect width="1280" height="720" fill="#061018"/><rect x="40" y="112" width="900" height="500" rx="18" fill="none" stroke="#49606e" stroke-width="2"/><rect x="40" y="112" width="900" height="500" rx="18" fill="#041018" opacity=".16"/><polyline points="${route}" fill="none" stroke="#001820" stroke-width="15" stroke-linejoin="round" stroke-linecap="round" opacity=".55"/><polyline points="${route}" fill="none" stroke="#00E5FF" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${first.x}" cy="${first.y}" r="15" fill="#22C55E" stroke="#fff" stroke-width="4"/><circle cx="${last.x}" cy="${last.y}" r="13" fill="#FFB020" stroke="#fff" stroke-width="4"/><circle cx="${current.x}" cy="${current.y}" r="25" fill="#00D4FF" opacity=".22"/><circle cx="${current.x}" cy="${current.y}" r="13" fill="#fff" stroke="#00D4FF" stroke-width="7"/><rect x="958" y="112" width="282" height="500" rx="18" fill="#0B1A24" stroke="#284757"/><text x="40" y="43" fill="#00D4FF" font-family="Arial" font-size="24" font-weight="700">FUTURE JOBS PRO AI • VERIFIED GPS EVIDENCE</text><text x="40" y="74" fill="#DDEAF2" font-family="Arial" font-size="16">${escapeXml(entry.employee_name)} • ${escapeXml(entry.project_name||'Unassigned project')}</text><text x="40" y="96" fill="#8EA4B2" font-family="Arial" font-size="12">${escapeXml(entry.project_address||'Recorded job site')} • Evidence ${evidenceId}</text><text x="982" y="151" fill="#7F96A5" font-family="Arial" font-size="11">PLAYBACK STATUS</text><text x="982" y="181" fill="${status.startsWith('MOVEMENT')?'#22C55E':'#FFB020'}" font-family="Arial" font-size="16" font-weight="700">${status}</text><text x="982" y="225" fill="#7F96A5" font-family="Arial" font-size="11">RECORDED TIME</text><text x="982" y="251" fill="#FFFFFF" font-family="Arial" font-size="17">${escapeXml(new Date(points[upto].timestamp).toLocaleString('en-CA'))}</text><text x="982" y="295" fill="#7F96A5" font-family="Arial" font-size="11">ELAPSED / POINT</text><text x="982" y="321" fill="#FFFFFF" font-family="Arial" font-size="17">${Math.floor(elapsed/60000)}m ${Math.floor((elapsed%60000)/1000)}s • ${upto+1}/${points.length}</text><text x="982" y="365" fill="#7F96A5" font-family="Arial" font-size="11">ROUTE DISTANCE</text><text x="982" y="391" fill="#FFFFFF" font-family="Arial" font-size="22" font-weight="700">${distances[upto].toFixed(1)} m</text><text x="982" y="435" fill="#7F96A5" font-family="Arial" font-size="11">GPS ACCURACY</text><text x="982" y="461" fill="#FFFFFF" font-family="Arial" font-size="17">±${Number(points[upto].accuracy||0).toFixed(1)} m</text><text x="982" y="505" fill="#7F96A5" font-family="Arial" font-size="11">COORDINATES</text><text x="982" y="531" fill="#FFFFFF" font-family="Arial" font-size="14">${Number(points[upto].latitude).toFixed(6)}</text><text x="982" y="553" fill="#FFFFFF" font-family="Arial" font-size="14">${Number(points[upto].longitude).toFixed(6)}</text><text x="982" y="585" fill="#7F96A5" font-family="Arial" font-size="11">TOTAL ${totalDistance.toFixed(1)} m • ${map.realMap?'STREET MAP':'MAP FALLBACK'}</text><rect x="40" y="642" width="1200" height="9" rx="4" fill="#213845"/><rect x="40" y="642" width="${1200*routeProgress}" height="9" rx="4" fill="#00D4FF"/><text x="40" y="682" fill="#89A0AE" font-family="Arial" font-size="12">● Start  ● End  ● Current • Map © OpenStreetMap contributors • Source coordinates preserved in gps-trail.csv</text>${title?`<rect x="175" y="220" width="930" height="250" rx="28" fill="#061018" opacity=".93"/><text x="640" y="294" text-anchor="middle" fill="#00E5FF" font-family="Arial" font-size="18" font-weight="700">VERIFIED WORKSITE PRESENCE</text><text x="640" y="349" text-anchor="middle" fill="#FFFFFF" font-family="Arial" font-size="38" font-weight="700">GPS Trail Reconstruction</text><text x="640" y="393" text-anchor="middle" fill="#B7CAD5" font-family="Arial" font-size="17">${points.length} recorded points • ${Math.round((endTime-startTime)/1000)} seconds • SHA-256 traceability</text><text x="640" y="430" text-anchor="middle" fill="#7F96A5" font-family="Arial" font-size="14">Evidence ${evidenceId}</text>`:''}${closing?`<rect x="155" y="190" width="970" height="310" rx="30" fill="#061018" opacity=".95"/><circle cx="640" cy="261" r="28" fill="#22C55E"/><path d="M625 261 l11 12 l22 -26" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/><text x="640" y="331" text-anchor="middle" fill="#FFFFFF" font-family="Arial" font-size="34" font-weight="700">Evidence playback complete</text><text x="640" y="375" text-anchor="middle" fill="#00D4FF" font-family="Arial" font-size="21">${points.length} source points • ${totalDistance.toFixed(1)} m reconstructed</text><text x="640" y="414" text-anchor="middle" fill="#B7CAD5" font-family="Arial" font-size="15">Full coordinates, timestamps and accuracy remain in the signed evidence package.</text><text x="640" y="453" text-anchor="middle" fill="#7F96A5" font-family="Courier" font-size="13">${evidenceId}</text>`:''}</svg>`;
+      const overlay=`<svg width="1280" height="720" xmlns="http://www.w3.org/2000/svg"><rect width="1280" height="720" fill="#061018"/><rect x="40" y="112" width="900" height="500" rx="18" fill="none" stroke="#49606e" stroke-width="2"/><rect x="40" y="112" width="900" height="500" rx="18" fill="#041018" opacity=".16"/><polyline points="${route}" fill="none" stroke="#001820" stroke-width="15" stroke-linejoin="round" stroke-linecap="round" opacity=".55"/><polyline points="${route}" fill="none" stroke="#00E5FF" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${first.x}" cy="${first.y}" r="15" fill="#22C55E" stroke="#fff" stroke-width="4"/><circle cx="${last.x}" cy="${last.y}" r="13" fill="#FFB020" stroke="#fff" stroke-width="4"/><circle cx="${current.x}" cy="${current.y}" r="25" fill="#00D4FF" opacity=".22"/><circle cx="${current.x}" cy="${current.y}" r="13" fill="#fff" stroke="#00D4FF" stroke-width="7"/><rect x="958" y="112" width="282" height="500" rx="18" fill="#0B1A24" stroke="#284757"/><text x="40" y="43" fill="#00D4FF" font-family="Arial" font-size="24" font-weight="700">FUTURE JOBS PRO AI • VERIFIED GPS EVIDENCE</text><text x="40" y="74" fill="#DDEAF2" font-family="Arial" font-size="16">${escapeXml(entry.employee_name)} • ${escapeXml(entry.project_name||'Unassigned project')}</text><text x="40" y="96" fill="#8EA4B2" font-family="Arial" font-size="12">${escapeXml(entry.project_address||'Recorded job site')} • Evidence ${evidenceId}</text><text x="982" y="151" fill="#7F96A5" font-family="Arial" font-size="11">PLAYBACK STATUS</text><text x="982" y="181" fill="${status.startsWith('MOVEMENT')?'#22C55E':'#FFB020'}" font-family="Arial" font-size="16" font-weight="700">${status}</text><text x="982" y="225" fill="#7F96A5" font-family="Arial" font-size="11">RECORDED TIME</text><text x="982" y="251" fill="#FFFFFF" font-family="Arial" font-size="17">${escapeXml(new Date(points[upto].timestamp).toLocaleString('en-CA'))}</text><text x="982" y="295" fill="#7F96A5" font-family="Arial" font-size="11">ELAPSED / POINT</text><text x="982" y="321" fill="#FFFFFF" font-family="Arial" font-size="17">${Math.floor(elapsed/60000)}m ${Math.floor((elapsed%60000)/1000)}s • ${upto+1}/${points.length}</text><text x="982" y="365" fill="#7F96A5" font-family="Arial" font-size="11">ROUTE DISTANCE</text><text x="982" y="391" fill="#FFFFFF" font-family="Arial" font-size="22" font-weight="700">${distances[upto].toFixed(1)} m</text><text x="982" y="435" fill="#7F96A5" font-family="Arial" font-size="11">GPS ACCURACY</text><text x="982" y="461" fill="#FFFFFF" font-family="Arial" font-size="17">±${Number(points[upto].accuracy||0).toFixed(1)} m</text><text x="982" y="505" fill="#7F96A5" font-family="Arial" font-size="11">COORDINATES</text><text x="982" y="531" fill="#FFFFFF" font-family="Arial" font-size="14">${Number(points[upto].latitude).toFixed(6)}</text><text x="982" y="553" fill="#FFFFFF" font-family="Arial" font-size="14">${Number(points[upto].longitude).toFixed(6)}</text><text x="982" y="585" fill="#7F96A5" font-family="Arial" font-size="11">TOTAL ${totalDistance.toFixed(1)} m • ${map.provider}</text><rect x="40" y="642" width="1200" height="9" rx="4" fill="#213845"/><rect x="40" y="642" width="${1200*routeProgress}" height="9" rx="4" fill="#00D4FF"/><text x="40" y="682" fill="#89A0AE" font-family="Arial" font-size="12">● Start  ● End  ● Current • OpenFreeMap © OpenMapTiles • Data © OpenStreetMap contributors</text>${title?`<rect x="175" y="220" width="930" height="250" rx="28" fill="#061018" opacity=".93"/><text x="640" y="294" text-anchor="middle" fill="#00E5FF" font-family="Arial" font-size="18" font-weight="700">VERIFIED WORKSITE PRESENCE</text><text x="640" y="349" text-anchor="middle" fill="#FFFFFF" font-family="Arial" font-size="38" font-weight="700">GPS Trail Reconstruction</text><text x="640" y="393" text-anchor="middle" fill="#B7CAD5" font-family="Arial" font-size="17">${points.length} recorded points • ${Math.round((endTime-startTime)/1000)} seconds • SHA-256 traceability</text><text x="640" y="430" text-anchor="middle" fill="#7F96A5" font-family="Arial" font-size="14">Evidence ${evidenceId}</text>`:''}${closing?`<rect x="155" y="190" width="970" height="310" rx="30" fill="#061018" opacity=".95"/><circle cx="640" cy="261" r="28" fill="#22C55E"/><path d="M625 261 l11 12 l22 -26" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/><text x="640" y="331" text-anchor="middle" fill="#FFFFFF" font-family="Arial" font-size="34" font-weight="700">Evidence playback complete</text><text x="640" y="375" text-anchor="middle" fill="#00D4FF" font-family="Arial" font-size="21">${points.length} source points • ${totalDistance.toFixed(1)} m reconstructed</text><text x="640" y="414" text-anchor="middle" fill="#B7CAD5" font-family="Arial" font-size="15">Full coordinates, timestamps and accuracy remain in the signed evidence package.</text><text x="640" y="453" text-anchor="middle" fill="#7F96A5" font-family="Courier" font-size="13">${evidenceId}</text>`:''}</svg>`;
       await sharp(map.buffer).resize(mapWidth,mapHeight).extend({top:112,bottom:108,left:40,right:340,background:'#061018'}).composite([{input:Buffer.from(overlay),left:0,top:0,blend:'screen'}]).png().toFile(path.join(dir,`frame-${String(frame).padStart(4,'0')}.png`));
     }
     await runFfmpeg(ffmpeg(path.join(dir,'frame-%04d.png')).inputFPS(15).outputOptions(['-c:v libx264','-crf 19','-pix_fmt yuv420p','-movflags +faststart']).fps(15),output);

@@ -10,6 +10,7 @@ RUN apk add --no-cache \
     librsvg-dev \
     python3 \
     ffmpeg \
+    chromium \
     fontconfig \
     ttf-freefont \
     font-noto-emoji
@@ -35,7 +36,7 @@ EXPOSE 8080
 RUN echo '#!/bin/sh' > /start.sh && \
     echo 'echo "=== Starting container ==="' >> /start.sh && \
     echo 'echo "--- Environment ---"' >> /start.sh && \
-    echo 'env | grep -E "PORT|NODE_ENV|DATABASE_URL|JWT_SECRET|BASE_URL"' >> /start.sh && \
+    echo 'env | grep -E "^(PORT|NODE_ENV|BASE_URL|EVIDENCE_MAP_STYLE_URL|EVIDENCE_MAP_MAX_ZOOM)="' >> /start.sh && \
     echo 'echo "--- Files in /app/dist ---"' >> /start.sh && \
     echo 'ls -la /app/dist' >> /start.sh && \
     echo 'echo "--- Running node ---"' >> /start.sh && \
