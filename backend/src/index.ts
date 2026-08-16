@@ -89,7 +89,6 @@ import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
 import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);
 import evidenceBundleRoutes from './routes/evidenceBundleRoutes'; app.use('/api/evidence-bundles', evidenceBundleRoutes);
 import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
-import paymentRoutes from './routes/paymentRoutes'; app.use('/api/stripe', paymentRoutes);
 import mediaRoutes from './routes/mediaRoutes'; app.use('/api/media', mediaRoutes);
 import uploadRoutes from './routes/uploadRoutes'; app.use('/api/upload', uploadRoutes);
 import approvalRoutes from './routes/approvalRoutes'; app.use('/api/approvals', approvalRoutes);

@@ -1,86 +1,112 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Alert, Box, Container, Typography, Button, Grid, Card, CardContent, Chip, Divider,
+  Alert, Box, Button, Card, CardContent, Chip, CircularProgress,
+  Container, Divider, Grid, Typography,
 } from '@mui/material';
 import { Check } from '@mui/icons-material';
-
 import { API_BASE } from '../services/api';
 
-const plans = [
-  { id: 'price_basic_monthly', name: 'Basic', price: 49, interval: 'month', features: ['Up to 5 employees', 'Time tracking', 'GPS location', 'Basic reports'] },
-  { id: 'price_pro_monthly', name: 'Professional', price: 99, interval: 'month', features: ['Up to 20 employees', 'AI photo compliance', 'Voice notes', 'Advanced reports'], popular: true },
-  { id: 'price_enterprise_monthly', name: 'Enterprise', price: 199, interval: 'month', features: ['Unlimited employees', 'Dispute evidence reports', 'Priority support', 'Custom integrations'] },
-];
+interface Plan {
+  key: string;
+  name: string;
+  amount: number;
+  currency: string;
+  interval: string;
+  features: string[];
+  trialDays: number;
+}
 
 export default function Pricing() {
-  const [loading, setLoading] = useState<string | null>(null);
-  const [checkoutError, setCheckoutError] = useState('');
   const navigate = useNavigate();
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
-  const handleSubscribe = async (priceId: string) => {
-    setLoading(priceId);
-    setCheckoutError('');
+  useEffect(() => {
+    fetch(`${API_BASE}/api/stripe/plans`, { cache: 'no-store' })
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.message || 'Plans are unavailable');
+        setPlans(body.plans || []);
+      })
+      .catch((reason) => setError(reason.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const beginCheckout = async (plan: Plan) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/register');
+      return;
+    }
+    setWorking(plan.key);
+    setError('');
     try {
-      const token = localStorage.getItem('token');
-      if (!token) { navigate('/register'); return; }
-      const res = await fetch(`${API_BASE}/api/stripe/create-checkout`, {
+      const response = await fetch(`${API_BASE}/api/stripe/create-checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ priceId, successUrl: window.location.origin + '/dashboard', cancelUrl: window.location.origin + '/pricing' }),
+        body: JSON.stringify({ plan: plan.key }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Checkout is not available yet');
-      if (data.checkoutUrl) window.location.href = data.checkoutUrl;
-      else throw new Error(data.message || 'Checkout is not available yet');
-    } catch (err: any) {
-      setCheckoutError(err.message || 'Payments are temporarily unavailable while Stripe verification is completed.');
-    } finally {
-      setLoading(null);
+      const body = await response.json();
+      if (!response.ok || !body.checkoutUrl) throw new Error(body.message || 'Checkout could not start');
+      window.location.assign(body.checkoutUrl);
+    } catch (reason: any) {
+      setError(reason.message || 'Checkout could not start');
+      setWorking(null);
     }
   };
 
   return (
-    <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', py: 8 }}>
+    <Box sx={{ minHeight: '100vh', py: 8, bgcolor: '#080b12', color: '#fff' }}>
       <Container maxWidth="lg">
-        <Typography variant="h3" align="center" sx={{ color: '#FFF', fontWeight: 'bold', mb: 2 }}>Choose Your Plan</Typography>
-        <Typography variant="h6" align="center" sx={{ color: '#888', mb: 6 }}>14‑day free trial on all plans. No credit card required.</Typography>
-        {checkoutError && <Alert severity="info" onClose={() => setCheckoutError('')} sx={{ mb: 4 }}>Stripe onboarding is still being completed. Your account and current trial remain available; contact sales if you need immediate plan assistance. Technical detail: {checkoutError}</Alert>}
-        <Grid container spacing={4} justifyContent="center">
-          {plans.map((plan) => (
-            <Grid item xs={12} md={4} key={plan.id}>
-              <Card sx={{ bgcolor: '#1A1A1A', borderRadius: 4, border: plan.popular ? '2px solid #00D4FF' : '1px solid #333', position: 'relative' }}>
-                {plan.popular && <Chip label="Most Popular" sx={{ position: 'absolute', top: -12, right: 20, bgcolor: '#00D4FF', color: '#0A0A0A', fontWeight: 'bold' }} />}
-                <CardContent sx={{ p: 4 }}>
-                  <Typography variant="h5" sx={{ color: '#FFF', fontWeight: 'bold', mb: 2 }}>{plan.name}</Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'baseline', mb: 3 }}>
-                    <Typography variant="h3" sx={{ color: '#FFF', fontWeight: 'bold' }}>${plan.price}</Typography>
-                    <Typography variant="body2" sx={{ color: '#888', ml: 1 }}>/{plan.interval}</Typography>
-                  </Box>
-                  <Divider sx={{ my: 2, bgcolor: '#333' }} />
-                  <Box sx={{ mb: 3 }}>
-                    {plan.features.map((feat, i) => (
-                      <Box key={i} sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                        <Check sx={{ color: '#4CAF50', mr: 1, fontSize: 18 }} />
-                        <Typography variant="body2" sx={{ color: '#CCC' }}>{feat}</Typography>
+        <Chip label="Secure Stripe billing" sx={{ bgcolor: 'rgba(0,212,255,.14)', color: '#7ee8ff', mb: 2 }} />
+        <Typography variant="h3" fontWeight={800}>Plans built for field operations</Typography>
+        <Typography sx={{ color: '#b7c1d6', mt: 1, mb: 5 }}>
+          One company subscription covers your web workspace. Owners can manage invoices,
+          payment methods, upgrades, and cancellation from the secure billing portal.
+        </Typography>
+
+        {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+        {loading ? <CircularProgress /> : (
+          <Grid container spacing={3}>
+            {plans.map((plan) => {
+              const popular = plan.key === 'professional';
+              return (
+                <Grid item xs={12} md={4} key={plan.key}>
+                  <Card sx={{ height: '100%', bgcolor: '#121827', color: '#fff', border: popular ? '2px solid #00d4ff' : '1px solid #2a3448', borderRadius: 4 }}>
+                    <CardContent sx={{ p: 4 }}>
+                      {popular && <Chip label="Most popular" size="small" sx={{ bgcolor: '#00d4ff', fontWeight: 800, mb: 2 }} />}
+                      <Typography variant="h5" fontWeight={800}>{plan.name}</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'baseline', my: 2 }}>
+                        <Typography variant="h3" fontWeight={800}>
+                          {new Intl.NumberFormat(undefined, { style: 'currency', currency: plan.currency.toUpperCase(), maximumFractionDigits: 0 }).format(plan.amount / 100)}
+                        </Typography>
+                        <Typography sx={{ color: '#a8b4ca', ml: 1 }}>/{plan.interval}</Typography>
                       </Box>
-                    ))}
-                  </Box>
-                  <Button fullWidth variant={plan.popular ? 'contained' : 'outlined'}
-                    onClick={() => handleSubscribe(plan.id)} disabled={loading === plan.id}
-                    sx={{ bgcolor: plan.popular ? '#00D4FF' : 'transparent', color: plan.popular ? '#0A0A0A' : '#00D4FF', borderColor: '#00D4FF', py: 1.5 }}>
-                    {loading === plan.id ? 'Processing...' : 'Start Free Trial'}
-                  </Button>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-        <Box sx={{ mt: 6, textAlign: 'center' }}>
-          <Typography variant="body2" sx={{ color: '#888' }}>
-            Need a custom plan? Contact sales: <a href="mailto:sales@futurejobsproai.com" style={{ color: '#00D4FF' }}>sales@futurejobsproai.com</a>
-          </Typography>
-        </Box>
+                      <Typography sx={{ color: '#7ee8ff' }}>{plan.trialDays > 0 ? `${plan.trialDays}-day trial for eligible companies` : 'Subscription starts today'}</Typography>
+                      <Divider sx={{ my: 3, borderColor: '#2a3448' }} />
+                      {plan.features.map((feature) => (
+                        <Box key={feature} sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
+                          <Check sx={{ color: '#51d88a' }} />
+                          <Typography sx={{ color: '#dce5f5' }}>{feature}</Typography>
+                        </Box>
+                      ))}
+                      <Button fullWidth variant="contained" disabled={Boolean(working)} onClick={() => beginCheckout(plan)}
+                        sx={{ mt: 3, py: 1.4, bgcolor: popular ? '#00d4ff' : '#365cff', color: '#06101a', fontWeight: 800 }}>
+                        {working === plan.key ? 'Opening secure checkout…' : 'Choose plan'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            })}
+          </Grid>
+        )}
+        <Typography sx={{ color: '#8996ad', textAlign: 'center', mt: 5 }}>
+          Prices are loaded directly from Stripe. Taxes may be added based on the billing address.
+        </Typography>
       </Container>
     </Box>
   );

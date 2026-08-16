@@ -1,85 +1,82 @@
-import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
-import Stripe from 'stripe';
-import { syncStripeEventToQuickBooks } from '../services/integrationService';
+import { verifyToken } from '../utils/auth';
+import {
+  createBillingPortalSession,
+  createCheckoutSession,
+  getPricingPlans,
+  getSubscriptionStatus,
+  setSubscriptionCancellation,
+} from '../services/stripeService';
 
 const router = express.Router();
 
-let stripe: any = null;
-if (process.env.STRIPE_SECRET_KEY) {
-  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-01-27.acacia' as any });
+function actor(req: Request) {
+  const decoded = verifyToken(req);
+  return { userId: decoded.id, companyId: decoded.companyId };
 }
 
-router.get('/plans', async (req: Request, res: Response) => {
-  const plans = [
-    { id: 'price_basic_monthly', name: 'Basic', price: 49, interval: 'month' },
-    { id: 'price_pro_monthly', name: 'Professional', price: 99, interval: 'month' },
-    { id: 'price_enterprise_monthly', name: 'Enterprise', price: 199, interval: 'month' },
-  ];
-  res.json({ success: true, plans });
-});
+function statusFor(error: any): number {
+  const message = String(error?.message || 'Billing request failed');
+  if (/token|authenticated/i.test(message)) return 401;
+  if (/owner|administrator/i.test(message)) return 403;
+  if (/not configured/i.test(message)) return 503;
+  return 400;
+}
 
-router.post('/create-checkout', async (req: Request, res: Response) => {
-  if (!stripe) return res.status(500).json({ success: false, message: 'Stripe not configured' });
+router.get('/plans', async (_req: Request, res: Response) => {
   try {
-    const { priceId, successUrl, cancelUrl } = req.body;
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      mode: 'subscription',
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url: successUrl || 'https://future-jobs-pro-ai.vercel.app/dashboard',
-      cancel_url: cancelUrl || 'https://future-jobs-pro-ai.vercel.app/pricing',
-    });
-    res.json({ success: true, checkoutUrl: session.url });
+    res.json({ success: true, plans: await getPricingPlans() });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(statusFor(error)).json({ success: false, message: error.message });
   }
 });
 
-// ✅ NEW: /create-setup-session – used by Dashboard to add payment method
-router.post('/create-setup-session', async (req: Request, res: Response) => {
-  if (!stripe) return res.status(500).json({ success: false, message: 'Stripe not configured' });
+router.get('/status', async (req: Request, res: Response) => {
   try {
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      mode: 'setup',
-      success_url: 'https://future-jobs-pro-ai.vercel.app/dashboard',
-      cancel_url: 'https://future-jobs-pro-ai.vercel.app/pricing',
-    });
-    res.json({ success: true, url: session.url });
+    const { companyId } = actor(req);
+    res.set('Cache-Control', 'no-store');
+    res.json({ success: true, subscription: await getSubscriptionStatus(companyId) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(statusFor(error)).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/create-checkout', async (req: Request, res: Response) => {
+  try {
+    const { userId, companyId } = actor(req);
+    const checkoutUrl = await createCheckoutSession(userId, companyId, req.body?.plan);
+    res.json({ success: true, checkoutUrl });
+  } catch (error: any) {
+    res.status(statusFor(error)).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/billing-portal', async (req: Request, res: Response) => {
+  try {
+    const { userId, companyId } = actor(req);
+    res.json({ success: true, url: await createBillingPortalSession(userId, companyId) });
+  } catch (error: any) {
+    res.status(statusFor(error)).json({ success: false, message: error.message });
   }
 });
 
 router.post('/cancel-subscription', async (req: Request, res: Response) => {
-  res.json({ success: true, message: 'Subscription canceled' });
-});
-
-router.get('/status/:companyId', async (req: Request, res: Response) => {
-  res.json({ success: true, status: 'active' });
-});
-
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
-  if (!stripe) return res.status(500).json({ success: false, message: 'Stripe not configured' });
   try {
-    const signature = req.headers['stripe-signature'] as string;
-    const event = stripe.webhooks.constructEvent(req.body, signature, process.env.STRIPE_WEBHOOK_SECRET || '');
-    res.json({ received: true });
+    const { userId, companyId } = actor(req);
+    await setSubscriptionCancellation(userId, companyId, true);
+    res.json({ success: true, message: 'Subscription will end after the current billing period.' });
   } catch (error: any) {
-    res.status(400).send(`Webhook Error: ${error.message}`);
+    res.status(statusFor(error)).json({ success: false, message: error.message });
   }
 });
 
-router.post('/connected-webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
-  if (!stripe) return res.status(500).json({ success: false, message: 'Stripe not configured' });
+router.post('/resume-subscription', async (req: Request, res: Response) => {
   try {
-    const signature = req.headers['stripe-signature'] as string;
-    const event = stripe.webhooks.constructEvent(req.body, signature, process.env.STRIPE_WEBHOOK_SECRET || '');
-    await syncStripeEventToQuickBooks(JSON.parse(req.body.toString()));
-    res.json({ received: true });
+    const { userId, companyId } = actor(req);
+    await setSubscriptionCancellation(userId, companyId, false);
+    res.json({ success: true, message: 'Scheduled cancellation was removed.' });
   } catch (error: any) {
-    res.status(400).send(`Webhook Error: ${error.message}`);
+    res.status(statusFor(error)).json({ success: false, message: error.message });
   }
 });
 
