@@ -27,7 +27,8 @@ import TeamScreen from './src/screens/TeamScreen';
 import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import { StatusBar } from 'expo-status-bar';
 import { listenToNetworkChanges, processQueue } from './src/services/offlineService';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import { DeviceEventEmitter, View, Text, TouchableOpacity } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import ContactScreen from './src/screens/ContactScreen';
 import PrivacyScreen from './src/screens/PrivacyScreen';
 import TermsScreen from './src/screens/TermsScreen';
@@ -105,46 +106,33 @@ function AppNavigator() {
     return cleanup;
   }, []);
 
-  // 👇 NEW: Start / stop wake word service based on authentication
+  // Wake-word listening is privacy-sensitive and remains off until the user opts in.
   useEffect(() => {
-    // Only start if user is authenticated and we have a navigation ref
-    if (isAuthenticated && user && navigationRef.current) {
-      // Create the service with a callback
-      const wakeWord = new WakeWordService(() => {
-        console.log('🔊 Wake word detected – opening voice assistant');
-        // Navigate to VoiceNoteScreen with a flag to auto-start listening
-        // We'll pass a parameter so the screen knows to start listening immediately
-        if (navigationRef.current) {
-          navigationRef.current.navigate('VoiceNote', { 
-            autoStart: true,
-            // Optionally, you can pass a projectId if you want to associate with a default project
-            // projectId: user.defaultProjectId, // if you have such a field
-          });
-        }
+    let cancelled = false;
+    const configure = async (enabled?: boolean) => {
+      const optedIn = enabled ?? (await AsyncStorage.getItem('lucyWakeWordEnabled')) === 'true';
+      await wakeWordRef.current?.stop();
+      wakeWordRef.current = null;
+      if (cancelled || !isAuthenticated || !user || !optedIn) return;
+
+      const service = new WakeWordService(() => {
+        navigationRef.current?.navigate('AIAssistant', { autoRecord: true });
       });
-
-      wakeWordRef.current = wakeWord;
-
-      // Start the service (it will request microphone permission internally)
-      wakeWord.start().catch((err) => {
-        console.error('Failed to start wake word service:', err);
-        Alert.alert('Wake Word Error', 'Could not start voice assistant. Please check permissions.');
-      });
-
-      // Cleanup on logout or unmount
-      return () => {
-        if (wakeWordRef.current) {
-          wakeWordRef.current.stop();
-          wakeWordRef.current = null;
-        }
-      };
-    } else {
-      // If not authenticated, stop the service
-      if (wakeWordRef.current) {
-        wakeWordRef.current.stop();
-        wakeWordRef.current = null;
+      wakeWordRef.current = service;
+      try {
+        await service.start();
+      } catch (error) {
+        console.warn('Wake word is unavailable:', error);
       }
-    }
+    };
+    configure();
+    const listener = DeviceEventEmitter.addListener('lucyWakeWordPreferenceChanged', configure);
+    return () => {
+      cancelled = true;
+      listener.remove();
+      wakeWordRef.current?.stop();
+      wakeWordRef.current = null;
+    };
   }, [isAuthenticated, user]);
 
   if (isLoading) return null;

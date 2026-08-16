@@ -63,8 +63,9 @@ async function getValidToken(
      FROM integrations
      WHERE company_id = $1
        AND provider = 'quickbooks'
-       AND is_active = TRUE`,
-    [companyId],
+       AND is_active = TRUE
+       AND environment = $2`,
+    [companyId, environment()],
   );
 
   if (!result.rowCount) {

@@ -15,7 +15,7 @@ if (fs.existsSync(envPath)) {
 if (!process.env.DATABASE_URL) {
   console.error('❌ DATABASE_URL environment variable is not set.');
   console.error('   Please create a .env file in the backend folder with:');
-  console.error('   DATABASE_URL=postgresql://user:password@localhost:5432/database');
+  console.error('   Set DATABASE_URL to your PostgreSQL connection string.');
   process.exit(1);
 }
 

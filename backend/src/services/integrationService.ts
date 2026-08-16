@@ -10,6 +10,13 @@ import {
 
 type Provider = 'quickbooks' | 'stripe';
 
+function integrationEnvironment(provider: Provider): 'sandbox' | 'production' {
+  if (provider === 'quickbooks') {
+    return process.env.QUICKBOOKS_ENVIRONMENT === 'production' ? 'production' : 'sandbox';
+  }
+  return requireEnvironment('STRIPE_SECRET_KEY').startsWith('sk_live_') ? 'production' : 'sandbox';
+}
+
 const frontendUrl = (process.env.FRONTEND_URL || 'https://www.futurejobsproai.com').replace(/\/$/, '');
 const quickBooksEnvironment = process.env.QUICKBOOKS_ENVIRONMENT === 'production'
   ? 'production'
@@ -110,13 +117,14 @@ export async function handleQuickBooksCallback(callbackUrl: string, state: strin
 
   await pool.query(
     `INSERT INTO integrations
-       (company_id, provider, access_token, refresh_token, realm_id, token_expires_at, is_active, updated_at)
-     VALUES ($1, 'quickbooks', $2, $3, $4, $5, TRUE, NOW())
+       (company_id, provider, access_token, refresh_token, realm_id, token_expires_at, environment, is_active, updated_at)
+     VALUES ($1, 'quickbooks', $2, $3, $4, $5, $6, TRUE, NOW())
      ON CONFLICT (company_id, provider) DO UPDATE SET
        access_token = EXCLUDED.access_token,
        refresh_token = EXCLUDED.refresh_token,
        realm_id = EXCLUDED.realm_id,
        token_expires_at = EXCLUDED.token_expires_at,
+       environment = EXCLUDED.environment,
        is_active = TRUE,
        updated_at = NOW()`,
     [
@@ -125,6 +133,7 @@ export async function handleQuickBooksCallback(callbackUrl: string, state: strin
       token.refresh_token ? encrypt(token.refresh_token) : null,
       realmId,
       expiresAt,
+      integrationEnvironment('quickbooks'),
     ],
   );
 }
@@ -143,12 +152,13 @@ export async function handleStripeConnectCallback(code: string, state: string): 
   const compatibilityToken = response.access_token || response.stripe_user_id;
   await pool.query(
     `INSERT INTO integrations
-       (company_id, provider, access_token, refresh_token, stripe_account_id, is_active, updated_at)
-     VALUES ($1, 'stripe', $2, $3, $4, TRUE, NOW())
+       (company_id, provider, access_token, refresh_token, stripe_account_id, environment, is_active, updated_at)
+     VALUES ($1, 'stripe', $2, $3, $4, $5, TRUE, NOW())
      ON CONFLICT (company_id, provider) DO UPDATE SET
        access_token = EXCLUDED.access_token,
        refresh_token = EXCLUDED.refresh_token,
        stripe_account_id = EXCLUDED.stripe_account_id,
+       environment = EXCLUDED.environment,
        is_active = TRUE,
        updated_at = NOW()`,
     [
@@ -156,13 +166,14 @@ export async function handleStripeConnectCallback(code: string, state: string): 
       encrypt(compatibilityToken),
       response.refresh_token ? encrypt(response.refresh_token) : null,
       response.stripe_user_id,
+      integrationEnvironment('stripe'),
     ],
   );
 }
 
 export async function getIntegrationStatus(companyId: string): Promise<Record<string, unknown>> {
   const result = await pool.query(
-    `SELECT provider, is_active, realm_id, stripe_account_id, updated_at
+    `SELECT provider, is_active, realm_id, stripe_account_id, environment, updated_at
      FROM integrations
      WHERE company_id = $1`,
     [companyId],
@@ -174,8 +185,12 @@ export async function getIntegrationStatus(companyId: string): Promise<Record<st
   };
 
   for (const row of result.rows) {
+    const expectedEnvironment = integrationEnvironment(row.provider as Provider);
+    const environmentMatches = row.environment === expectedEnvironment;
     status[row.provider] = {
-      connected: Boolean(row.is_active),
+      connected: Boolean(row.is_active && environmentMatches),
+      reconnectRequired: Boolean(row.is_active && !environmentMatches),
+      environment: expectedEnvironment,
       accountId: row.provider === 'stripe' ? row.stripe_account_id : row.realm_id,
       updatedAt: row.updated_at,
     };
@@ -222,8 +237,8 @@ export async function disconnectIntegration(companyId: string, provider: Provide
 export async function syncRecentStripePayments(companyId: string): Promise<{ created: number; skipped: number; failed: number }> {
   const connection = await pool.query(
     `SELECT stripe_account_id FROM integrations
-     WHERE company_id = $1 AND provider = 'stripe' AND is_active = TRUE`,
-    [companyId],
+     WHERE company_id = $1 AND provider = 'stripe' AND is_active = TRUE AND environment = $2`,
+    [companyId, integrationEnvironment('stripe')],
   );
   const stripeAccount = connection.rows[0]?.stripe_account_id;
   if (!stripeAccount) throw new Error('Connect Stripe before running a sync');
@@ -299,8 +314,9 @@ export async function syncStripeEventToQuickBooks(event: any): Promise<void> {
   if (!event.account) return;
   const connection = await pool.query(
     `SELECT company_id FROM integrations
-     WHERE provider = 'stripe' AND stripe_account_id = $1 AND is_active = TRUE`,
-    [event.account],
+     WHERE provider = 'stripe' AND stripe_account_id = $1
+       AND is_active = TRUE AND environment = $2`,
+    [event.account, integrationEnvironment('stripe')],
   );
   if (!connection.rowCount) return;
 
