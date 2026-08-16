@@ -61,7 +61,7 @@ async function reportData(companyId: string, projectId: string, startDate: strin
       range,
     ),
     pool.query(
-      `SELECT p.id, p.taken_at, p.file_type, p.verification_hash,
+      `SELECT p.id, p.taken_at, p.file_type, p.verification_hash, p.compliance_score,
               concat_ws(' ', u.first_name, u.last_name) taken_by_name
        FROM photos p
        LEFT JOIN users u ON u.id = p.user_id
@@ -126,14 +126,35 @@ function summary(data: ProjectReportData) {
   const employees = new Set(data.workforce.map((entry) => entry.employee_name).filter(Boolean)).size;
   const approved = data.workforce.filter((entry) => entry.approval_status === 'approved').length;
   const verifiedMedia = data.media.filter((item) => item.verification_hash).length;
+  const complianceScores = data.media
+    .map((item) => item.compliance_score)
+    .filter((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+    .map(Number);
+  const analyzedPhotos = complianceScores.length;
+  const averageComplianceScore = analyzedPhotos
+    ? Math.round(complianceScores.reduce((total, value) => total + value, 0) / analyzedPhotos)
+    : null;
+  const compliantPhotos = complianceScores.filter((value) => value >= 70).length;
+  const anomalousEntries = data.workforce.filter((entry) => {
+    if (!entry.clock_out) return false;
+    const elapsed = (new Date(entry.clock_out).getTime() - new Date(entry.clock_in).getTime()) / 3600000;
+    return elapsed > 24 || Number(entry.overtime_hours || 0) > 16 || elapsed < 0;
+  }).length;
+  const payrollHours = regularHours + overtimeHours;
+  const hoursVariance = totalHours - payrollHours;
   const completionRate = data.workforce.length ? Math.round((completed.length / data.workforce.length) * 100) : 0;
   const approvalRate = completed.length ? Math.round((approved / completed.length) * 100) : 0;
-  const readinessScore = Math.round((completionRate * 0.45) + (approvalRate * 0.35) + (data.project.address ? 10 : 0) + (data.attachments.length ? 10 : 0));
+  const readinessScore = Math.round(
+    (completionRate * 0.4) + (approvalRate * 0.3) + (data.project.address ? 10 : 0) +
+    (data.attachments.length ? 10 : 0) + (anomalousEntries ? 0 : 10),
+  );
   return {
     totalHours, grossWages, regularHours, overtimeHours, employees,
     timeEntries: data.workforce.length, completedEntries: completed.length, approvedEntries: approved,
-    mediaFiles: data.media.length, verifiedMedia, voiceNotes: data.voiceNotes.length,
+    mediaFiles: data.media.length, verifiedMedia, analyzedPhotos, averageComplianceScore,
+    compliantPhotos, voiceNotes: data.voiceNotes.length,
     gpsPoints: data.gpsPoints.length, attachments: data.attachments.length,
+    anomalousEntries, payrollHours, hoursVariance,
     completionRate, approvalRate, readinessScore: Math.min(100, readinessScore),
   };
 }

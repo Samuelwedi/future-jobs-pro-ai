@@ -1,261 +1,179 @@
-// ============================================
-// AI PHOTO COMPLIANCE SERVICE
-// Analyses photos for dispute‑readiness
-// Created by: Samuel B.
-// ============================================
-
 import sharp from 'sharp';
-import { pool } from '../config/database';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 import OpenAI from 'openai';
 
-let openai: OpenAI | null = null;
-if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'your_openai_api_key_here') {
-  openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-} else {
-  console.log('⚠️  OpenAI API key not set – photo AI analysis is disabled.');
-}
-
-interface PhotoMetadata {
+export type PhotoMetadata = {
   fileName: string;
   fileSize: number;
   width: number;
   height: number;
   format: string;
   hasExif: boolean;
-  gpsLatitude?: number;
-  gpsLongitude?: number;
-  dateTaken?: Date;
-  deviceMake?: string;
-  deviceModel?: string;
-}
+};
 
-interface ComplianceCheckResult {
+export type ComplianceCheckResult = {
   passed: boolean;
   score: number;
   issues: string[];
   suggestions: string[];
   metadata: PhotoMetadata;
   verificationHash: string;
+  aiAnalyzed: boolean;
+  aiModel: string | null;
+  aiDescription: string | null;
+  aiTags: string[];
+};
+
+type AiResult = {
+  isWorkRelated: boolean;
+  description: string;
+  tags: string[];
+  concerns: string[];
+};
+
+function client(): OpenAI | null {
+  const key = process.env.OPENAI_API_KEY?.trim();
+  return key && key !== 'your_openai_api_key_here' ? new OpenAI({ apiKey: key }) : null;
 }
 
-// ============================================
-// MAIN FUNCTION: Analyze a photo
-// ============================================
-export async function analyzePhotoCompliance(
-  photoPath: string,
-  expectedLatitude?: number,
-  expectedLongitude?: number,
-): Promise<ComplianceCheckResult> {
+function clamp(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
 
-  console.log(`🔍 [Samuel B. AI] Analyzing photo: ${path.basename(photoPath)}`);
+async function sharpness(imagePath: string): Promise<number> {
+  const stats = await sharp(imagePath).greyscale().stats();
+  const deviation = stats.channels[0]?.stdev || 0;
+  return Math.min(1, deviation / 55);
+}
 
+async function brightness(imagePath: string): Promise<number> {
+  const stats = await sharp(imagePath).removeAlpha().stats();
+  const means = stats.channels.slice(0, 3).map((channel) => channel.mean);
+  return means.reduce((sum, value) => sum + value, 0) / Math.max(1, means.length) / 255;
+}
+
+function parseJsonObject(value: string): any {
+  const cleaned = value.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start < 0 || end <= start) throw new Error('Photo AI did not return JSON');
+  return JSON.parse(cleaned.slice(start, end + 1));
+}
+
+async function analyzeWithAI(imagePath: string, format: string): Promise<{ model: string; result: AiResult }> {
+  const openai = client();
+  if (!openai) throw new Error('OPENAI_API_KEY is not configured');
+  const model = process.env.OPENAI_PHOTO_MODEL?.trim() || 'gpt-5.6';
+  const encoded = await sharp(imagePath)
+    .rotate()
+    .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 82 })
+    .toBuffer();
+  const response = await openai.responses.create({
+    model,
+    input: [{
+      role: 'user',
+      content: [
+        {
+          type: 'input_text',
+          text: 'Analyze this job-site evidence photo. Return JSON only: {"isWorkRelated":boolean,"description":string,"tags":string[],"concerns":string[]}. Judge whether it visibly documents construction, repair, maintenance, inspection, delivery, or completed work. Do not infer facts that are not visible.',
+        },
+        {
+          type: 'input_image',
+          image_url: `data:image/jpeg;base64,${encoded.toString('base64')}`,
+          detail: 'auto',
+        },
+      ],
+    }],
+  });
+  const parsed = parseJsonObject(response.output_text || '');
+  return {
+    model,
+    result: {
+      isWorkRelated: parsed.isWorkRelated === true,
+      description: String(parsed.description || '').slice(0, 1000),
+      tags: Array.isArray(parsed.tags) ? parsed.tags.map(String).slice(0, 20) : [],
+      concerns: Array.isArray(parsed.concerns) ? parsed.concerns.map(String).slice(0, 20) : [],
+    },
+  };
+}
+
+export async function analyzePhotoCompliance(photoPath: string): Promise<ComplianceCheckResult> {
+  const image = sharp(photoPath);
+  const source = await image.metadata();
+  const file = fs.statSync(photoPath);
+  const metadata: PhotoMetadata = {
+    fileName: path.basename(photoPath),
+    fileSize: file.size,
+    width: source.width || 0,
+    height: source.height || 0,
+    format: source.format || 'unknown',
+    hasExif: Boolean(source.exif),
+  };
   let score = 100;
   const issues: string[] = [];
   const suggestions: string[] = [];
 
-  const image = sharp(photoPath);
-  const metadata = await image.metadata();
-  const stats = fs.statSync(photoPath);
-
-  const photoMetadata: PhotoMetadata = {
-    fileName: path.basename(photoPath),
-    fileSize: stats.size,
-    width: metadata.width || 0,
-    height: metadata.height || 0,
-    format: metadata.format || 'unknown',
-    hasExif: !!metadata.exif,
-    deviceMake: metadata.exif ? 'From EXIF' : 'Unknown',
-    deviceModel: metadata.exif ? 'From EXIF' : 'Unknown',
-  };
-
-  // ----- CHECK 1: Resolution (20 points) -----
-  const MIN_WIDTH = 1920;
-  const MIN_HEIGHT = 1080;
-  if (photoMetadata.width < MIN_WIDTH || photoMetadata.height < MIN_HEIGHT) {
-    const deduction = 20;
-    score -= deduction;
-    issues.push(`Low resolution: ${photoMetadata.width}x${photoMetadata.height}`);
-    suggestions.push(`Take photo at minimum ${MIN_WIDTH}x${MIN_HEIGHT} resolution`);
-    console.log(`❌ Resolution check failed (-${deduction} pts)`);
-  } else {
-    console.log(`✅ Resolution check passed`);
+  if (metadata.width < 1280 || metadata.height < 720) {
+    score -= 20;
+    issues.push(`Low resolution: ${metadata.width}×${metadata.height}`);
+    suggestions.push('Capture at 1280×720 or higher, preferably 1920×1080.');
+  }
+  const focus = await sharpness(photoPath);
+  if (focus < 0.45) {
+    score -= Math.round((0.45 - focus) * 45);
+    issues.push(`Limited image detail (quality signal ${Math.round(focus * 100)}%).`);
+    suggestions.push('Steady the camera, clean the lens, and retake the photo in focus.');
+  }
+  const light = await brightness(photoPath);
+  if (light < 0.18) {
+    score -= 25;
+    issues.push(`Image is too dark (${Math.round(light * 100)}% brightness).`);
+    suggestions.push('Add light or enable flash while keeping the work area visible.');
+  } else if (light > 0.92) {
+    score -= 15;
+    issues.push(`Image is overexposed (${Math.round(light * 100)}% brightness).`);
+    suggestions.push('Reduce exposure or move away from direct glare.');
   }
 
-  // ----- CHECK 2: Blur Detection (30 points) -----
-  const blurScore = await detectBlur(photoPath);
-  if (blurScore < 0.7) {
-    const deduction = Math.round((1 - blurScore) * 30);
-    score -= deduction;
-    issues.push(`Photo is blurry (sharpness: ${Math.round(blurScore * 100)}%)`);
-    suggestions.push('Hold camera steady or use a tripod');
-    console.log(`❌ Blur check failed (-${deduction} pts)`);
-  } else {
-    console.log(`✅ Blur check passed`);
-  }
-
-  // ----- CHECK 3: Brightness (25 points) -----
-  const brightness = await detectBrightness(photoPath);
-  if (brightness < 0.2) {
-    const deduction = 25;
-    score -= deduction;
-    issues.push(`Photo is too dark (brightness: ${Math.round(brightness * 100)}%)`);
-    suggestions.push('Use flash or move to better lighting');
-    console.log(`❌ Brightness check failed (-${deduction} pts)`);
-  } else if (brightness > 0.9) {
-    const deduction = 15;
-    score -= deduction;
-    issues.push(`Photo is overexposed (brightness: ${Math.round(brightness * 100)}%)`);
-    suggestions.push('Move away from bright light source');
-    console.log(`❌ Overexposure check failed (-${deduction} pts)`);
-  } else {
-    console.log(`✅ Brightness check passed`);
-  }
-
-  // ----- CHECK 4: GPS Location (40 points, if expected location given) -----
-  if (expectedLatitude !== undefined && expectedLongitude !== undefined) {
-    const distanceFromExpected = 0.02; // miles
-    if (distanceFromExpected > 0.1) {
-      const deduction = 40;
-      score -= deduction;
-      issues.push(`Photo taken ${distanceFromExpected.toFixed(2)} miles from job site`);
-      suggestions.push('Take photo at the actual job location');
-      console.log(`❌ Location check failed (-${deduction} pts)`);
-    } else {
-      console.log(`✅ Location check passed`);
+  let aiAnalyzed = false;
+  let aiModel: string | null = null;
+  let aiDescription: string | null = null;
+  let aiTags: string[] = [];
+  try {
+    const ai = await analyzeWithAI(photoPath, metadata.format);
+    aiAnalyzed = true;
+    aiModel = ai.model;
+    aiDescription = ai.result.description;
+    aiTags = ai.result.tags;
+    if (!ai.result.isWorkRelated) {
+      score -= 25;
+      issues.push('AI review could not confirm visible job-related evidence.');
+      suggestions.push('Retake the photo with the work, equipment, damage, or completed result clearly framed.');
     }
+    for (const concern of ai.result.concerns) issues.push(`AI observation: ${concern}`);
+  } catch (error: any) {
+    console.warn('Photo AI analysis unavailable; local quality checks were retained:', error.message);
   }
 
-  // ----- CHECK 5: AI Content Analysis (optional) -----
-  if (openai) {
-    try {
-      const aiAnalysis = await analyzeWithAI(photoPath);
-      if (!aiAnalysis.isWorkRelated) {
-        const deduction = 25;
-        score -= deduction;
-        issues.push('Photo may not show actual work being performed');
-        suggestions.push('Ensure the photo clearly shows the completed work');
-        console.log(`❌ AI content check failed (-${deduction} pts)`);
-      } else {
-        console.log(`✅ AI content check passed`);
-      }
-    } catch (error) {
-      console.log('⚠️ AI analysis skipped due to error');
-    }
-  }
-
-  // ----- Generate Verification Hash -----
-  const fileBuffer = fs.readFileSync(photoPath);
-  const hash = crypto.createHash('sha256');
-  hash.update(fileBuffer);
-  hash.update(JSON.stringify(photoMetadata));
-  hash.update(new Date().toISOString());
-  const verificationHash = hash.digest('hex');
-  console.log(`🔐 Verification hash: ${verificationHash.substring(0, 16)}...`);
-
-  const passed = score >= 70;
-
+  const verificationHash = crypto
+    .createHash('sha256')
+    .update(fs.readFileSync(photoPath))
+    .update(JSON.stringify(metadata))
+    .digest('hex');
+  const finalScore = clamp(score);
   return {
-    passed,
-    score: Math.max(0, score),
+    passed: finalScore >= 70,
+    score: finalScore,
     issues,
     suggestions,
-    metadata: photoMetadata,
+    metadata,
     verificationHash,
+    aiAnalyzed,
+    aiModel,
+    aiDescription,
+    aiTags,
   };
 }
-
-// ============================================
-// HELPER: Detect blur using edge detection
-// ============================================
-async function detectBlur(imagePath: string): Promise<number> {
-  const image = sharp(imagePath);
-  const { data, info } = await image.greyscale().raw().toBuffer({ resolveWithObject: true });
-  let edgeCount = 0;
-  const totalPixels = info.width * info.height;
-  for (let i = 0; i < data.length; i += 40) {
-    if (i > 0 && i < data.length - 1) {
-      const diff = Math.abs(data[i] - data[i - 1]) + Math.abs(data[i] - data[i + 1]);
-      if (diff > 30) edgeCount++;
-    }
-  }
-  const edgeRatio = edgeCount / (totalPixels / 40);
-  return Math.min(edgeRatio * 5, 1.0);
-}
-
-// ============================================
-// HELPER: Detect brightness
-// ============================================
-async function detectBrightness(imagePath: string): Promise<number> {
-  const image = sharp(imagePath);
-  const { data } = await image.raw().toBuffer({ resolveWithObject: true });
-  let totalBrightness = 0;
-  let pixelCount = 0;
-  for (let i = 0; i < data.length; i += 300) {
-    const r = data[i], g = data[i+1], b = data[i+2];
-    totalBrightness += 0.299 * r + 0.587 * g + 0.114 * b;
-    pixelCount++;
-  }
-  return (totalBrightness / pixelCount) / 255;
-}
-
-// ============================================
-// HELPER: AI content check (if OpenAI available)
-// ============================================
-async function analyzeWithAI(imagePath: string): Promise<{ isWorkRelated: boolean; description: string }> {
-  if (!openai) return { isWorkRelated: true, description: 'AI disabled' };
-  const imageBuffer = fs.readFileSync(imagePath);
-  const base64Image = imageBuffer.toString('base64');
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4-vision-preview',
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'text', text: 'Is this photo showing construction, repair, or maintenance work? Answer JSON: {"isWorkRelated": boolean, "description": string}' },
-        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
-      ]
-    }],
-    max_tokens: 150
-  });
-  const content = response.choices[0].message.content;
-  if (content) return JSON.parse(content);
-  return { isWorkRelated: true, description: 'Unable to analyze' };
-}
-
-// ============================================
-// Save photo record to database
-// ============================================
-export async function savePhotoToDatabase(
-  userId: string,
-  projectId: string,
-  timeEntryId: string | null,
-  photoPath: string,
-  complianceResult: ComplianceCheckResult,
-  latitude?: number,
-  longitude?: number
-) {
-  const query = `
-    INSERT INTO photos (
-      user_id, project_id, time_entry_id, s3_key, latitude, longitude,
-      taken_at, compliance_score, verification_hash, ai_tags
-    ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7, $8, $9)
-    RETURNING id
-  `;
-  const result = await pool.query(query, [
-    userId,
-    projectId,
-    timeEntryId,
-    photoPath,
-    latitude || null,
-    longitude || null,
-    complianceResult.score,
-    complianceResult.verificationHash,
-    complianceResult.issues   // ✅ plain array, no JSON.stringify
-  ]);
-  console.log(`✅ Photo saved with ID: ${result.rows[0].id}`);
-  return result.rows[0];
-}
-
-console.log('📸 Photo Compliance Service loaded – Future Jobs Pro AI by Samuel B.');

@@ -61,19 +61,27 @@ type Summary = {
   approvedEntries: number;
   mediaFiles: number;
   verifiedMedia: number;
+  analyzedPhotos: number;
+  averageComplianceScore: number | null;
+  compliantPhotos: number;
   voiceNotes: number;
   gpsPoints: number;
   attachments: number;
   completionRate: number;
   approvalRate: number;
   readinessScore: number;
+  anomalousEntries: number;
+  payrollHours: number;
+  hoursVariance: number;
 };
 
 const emptySummary: Summary = {
   totalHours: 0, grossWages: 0, regularHours: 0, overtimeHours: 0,
   employees: 0, timeEntries: 0, completedEntries: 0, approvedEntries: 0,
-  mediaFiles: 0, verifiedMedia: 0, voiceNotes: 0, gpsPoints: 0,
+  mediaFiles: 0, verifiedMedia: 0, analyzedPhotos: 0, averageComplianceScore: null,
+  compliantPhotos: 0, voiceNotes: 0, gpsPoints: 0,
   attachments: 0, completionRate: 0, approvalRate: 0, readinessScore: 0,
+  anomalousEntries: 0, payrollHours: 0, hoursVariance: 0,
 };
 
 const card = {
@@ -236,6 +244,15 @@ export default function Reports() {
 
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 3 }}>{error}</Alert>}
 
+      {!loading && summary.anomalousEntries > 0 && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography fontWeight={900}>Time-entry review required</Typography>
+          <Typography variant="body2">
+            {summary.anomalousEntries} entr{summary.anomalousEntries === 1 ? 'y has' : 'ies have'} a negative duration, a shift longer than 24 hours, or more than 16 overtime hours. Correct these records before payroll or client reporting.
+          </Typography>
+        </Alert>
+      )}
+
       <Paper sx={{ ...card, p: 2.5, mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={5}>
@@ -342,6 +359,9 @@ export default function Reports() {
               {[
                 ['Media records', summary.mediaFiles],
                 ['Verified media', summary.verifiedMedia],
+                ['AI-analyzed photos', summary.analyzedPhotos],
+                ['Average photo compliance', summary.averageComplianceScore === null ? '—' : `${summary.averageComplianceScore}%`],
+                ['Compliant photos', summary.compliantPhotos],
                 ['Voice notes', summary.voiceNotes],
                 ['GPS observations', summary.gpsPoints],
                 ['Supporting files', summary.attachments],

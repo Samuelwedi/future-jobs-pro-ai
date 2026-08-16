@@ -4,16 +4,15 @@ import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import { pool } from '../config/database';
 import { applyWatermark } from '../services/watermarkService';
+import { analyzePhotoCompliance, ComplianceCheckResult } from '../services/photoComplianceService';
+import { generateEvidenceReport } from '../services/reportService';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 
 const router = express.Router();
-
 const tempDir = path.join(__dirname, '../../uploads/temp');
-if (!fs.existsSync(tempDir)) {
-  fs.mkdirSync(tempDir, { recursive: true });
-}
+if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -21,265 +20,182 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 1024 * 1024 * 1024 },
-});
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 * 1024 } });
 
-const getCompanyId = async (req: Request): Promise<string | null> => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+async function actor(req: Request): Promise<{ userId: string; companyId: string } | null> {
   try {
     const decoded = verifyToken(req);
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
-    return userRes.rows[0]?.company_id || null;
-  } catch {
-    return null;
-  }
-};
+    const result = await pool.query('SELECT id, company_id FROM users WHERE id = $1', [decoded.id]);
+    if (!result.rowCount || !result.rows[0].company_id) return null;
+    return { userId: String(result.rows[0].id), companyId: String(result.rows[0].company_id) };
+  } catch { return null; }
+}
+
+function removeFile(file: string | undefined) {
+  if (file && fs.existsSync(file)) fs.unlinkSync(file);
+}
 
 router.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
+  let tempInput: string | undefined;
+  let tempOutput: string | undefined;
   try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'No file uploaded' });
-    }
+    const current = await actor(req);
+    if (!current) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
 
     const { userId, projectId, timeEntryId, template, latitude, longitude, weather, address } = req.body;
-    if (!userId || !projectId) {
-      return res.status(400).json({ success: false, message: 'Missing userId or projectId' });
+    if (!userId || !projectId) return res.status(400).json({ success: false, message: 'Missing userId or projectId' });
+    const ownership = await pool.query(
+      `SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND company_id = $3) valid_user,
+              EXISTS(SELECT 1 FROM projects WHERE id = $2 AND company_id = $3) valid_project`,
+      [userId, projectId, current.companyId],
+    );
+    if (!ownership.rows[0]?.valid_user || !ownership.rows[0]?.valid_project) {
+      return res.status(403).json({ success: false, message: 'Employee or project is outside your company' });
     }
 
     const isVideo = req.file.mimetype.startsWith('video/');
-    const ext = isVideo ? '.mp4' : '.jpg';
-    const tempInput = path.join(tempDir, `input-${Date.now()}${ext}`);
-    const tempOutput = path.join(tempDir, `watermarked-${Date.now()}${ext}`);
-
+    const extension = isVideo ? '.mp4' : path.extname(req.file.originalname || '') || '.jpg';
+    const unique = `${Date.now()}-${crypto.randomBytes(5).toString('hex')}`;
+    tempInput = path.join(tempDir, `input-${unique}${extension}`);
+    tempOutput = path.join(tempDir, `watermarked-${unique}${extension}`);
     fs.writeFileSync(tempInput, req.file.buffer);
 
-    const metadata = {
-      latitude: latitude ? parseFloat(latitude) : undefined,
-      longitude: longitude ? parseFloat(longitude) : undefined,
+    const compliance: ComplianceCheckResult | null = isVideo
+      ? null
+      : await analyzePhotoCompliance(tempInput);
+    const watermarkMetadata = {
+      latitude: latitude ? Number(latitude) : undefined,
+      longitude: longitude ? Number(longitude) : undefined,
       address: address || undefined,
       weather: weather || undefined,
-      altitude: req.body.altitude ? parseFloat(req.body.altitude) : undefined,
-      direction: req.body.direction ? parseFloat(req.body.direction) : undefined,
+      altitude: req.body.altitude ? Number(req.body.altitude) : undefined,
+      direction: req.body.direction ? Number(req.body.direction) : undefined,
       takenAt: new Date(),
     };
-
-    const { outputPath, verificationHash } = await applyWatermark(
-      tempInput,
-      tempOutput,
-      metadata,
-      { position: isVideo ? 'bottom-left' : 'bottom-left' }
-    );
-
-    // --- DYNAMIC FOLDER PATH ---
+    const watermarked = await applyWatermark(tempInput, tempOutput, watermarkMetadata, { position: 'bottom-left' });
     const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const mediaType = isVideo ? 'videos' : 'photos';
-    const folderPath = `future-jobs-pro-ai/projects/${projectId}/${year}-${month}/${mediaType}`;
-
-    const uploadResult = await cloudinary.uploader.upload(outputPath, {
+    const folderPath = `future-jobs-pro-ai/projects/${projectId}/${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}/${isVideo ? 'videos' : 'photos'}`;
+    const uploaded = await cloudinary.uploader.upload(watermarked.outputPath, {
       folder: folderPath,
       resource_type: isVideo ? 'video' : 'image',
     });
-
-    const fileUrl = uploadResult.secure_url;
-
+    const analysis = compliance ? {
+      aiAnalyzed: compliance.aiAnalyzed,
+      description: compliance.aiDescription,
+      image: compliance.metadata,
+    } : null;
     const result = await pool.query(
       `INSERT INTO photos (
-        company_id, user_id, project_id, time_entry_id, s3_key, taken_at,
-        latitude, longitude, metadata, file_type, verification_hash, folder_path
-      ) VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, $8, $9, $10, $11) RETURNING id`,
+         company_id, user_id, project_id, time_entry_id, s3_key, taken_at,
+         latitude, longitude, metadata, file_type, verification_hash, folder_path,
+         compliance_score, compliance_passed, compliance_issues,
+         compliance_suggestions, compliance_analysis, compliance_model,
+         compliance_analyzed_at, ai_tags
+       ) VALUES (
+         $1,$2,$3,$4,$5,NOW(),$6,$7,$8,$9,$10,$11,
+         $12,$13,$14::jsonb,$15::jsonb,$16::jsonb,$17,$18,$19::jsonb
+       ) RETURNING id`,
       [
-        companyId,
-        userId,
-        projectId,
-        timeEntryId || null,
-        fileUrl,
-        latitude || null,
-        longitude || null,
-        JSON.stringify({ template, watermarked: true, address, weather, verificationHash }),
-        isVideo ? 'video' : 'image',
-        verificationHash,
-        folderPath,
-      ]
+        current.companyId, userId, projectId, timeEntryId || null, uploaded.secure_url,
+        latitude || null, longitude || null,
+        JSON.stringify({ template, watermarked: true, address, weather, verificationHash: watermarked.verificationHash }),
+        isVideo ? 'video' : 'image', watermarked.verificationHash, folderPath,
+        compliance?.score ?? null, compliance?.passed ?? null,
+        JSON.stringify(compliance?.issues || []), JSON.stringify(compliance?.suggestions || []),
+        JSON.stringify(analysis), compliance?.aiModel || null, compliance ? new Date() : null,
+        JSON.stringify(compliance?.aiTags || []),
+      ],
     );
-
-    fs.unlinkSync(tempInput);
-    fs.unlinkSync(tempOutput);
-
-    const complianceScore = isVideo ? 80 : 85;
     res.json({
       success: true,
       photoId: result.rows[0].id,
-      verificationHash,
-      compliance: { passed: complianceScore >= 70, score: complianceScore, issues: [], suggestions: ['Good file'] },
+      verificationHash: watermarked.verificationHash,
+      compliance: compliance || {
+        analyzed: false,
+        score: null,
+        passed: null,
+        issues: [],
+        suggestions: ['Still-photo compliance scoring does not assign fabricated scores to video files.'],
+      },
       fileType: isVideo ? 'video' : 'image',
     });
   } catch (error: any) {
     console.error('Photo upload error:', error);
     res.status(500).json({ success: false, message: error.message });
+  } finally {
+    removeFile(tempInput);
+    removeFile(tempOutput);
   }
 });
 
-// GET /api/photos/verify/:id
 router.get('/verify/:id', async (req: Request, res: Response) => {
   try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-
-    const { id } = req.params;
+    const current = await actor(req);
+    if (!current) return res.status(401).json({ success: false, message: 'Not authenticated' });
     const result = await pool.query(
-      `SELECT id, verification_hash, latitude, longitude, address, weather, taken_at, metadata
+      `SELECT id, verification_hash, compliance_score, compliance_passed,
+              compliance_analyzed_at, compliance_model
        FROM photos WHERE id = $1 AND company_id = $2`,
-      [id, companyId]
+      [String(req.params.id), current.companyId],
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Photo not found' });
-    }
-
+    if (!result.rowCount) return res.status(404).json({ success: false, message: 'Photo not found' });
     const photo = result.rows[0];
-    if (!photo.verification_hash) {
-      return res.json({ success: true, verified: false, message: 'No hash stored for this photo' });
-    }
-
-    const meta = photo.metadata || {};
-    const address = meta.address || photo.address || '';
-    const weather = meta.weather || photo.weather || '';
-    const lat = photo.latitude || 0;
-    const lng = photo.longitude || 0;
-    const takenAt = photo.taken_at || new Date();
-
-    const data = JSON.stringify({
-      lat,
-      lng,
-      address,
-      weather,
-      time: takenAt.toISOString(),
-    });
-    const recomputedHash = crypto.createHash('sha256').update(data).digest('hex').slice(0, 8);
-    const verified = recomputedHash === photo.verification_hash;
-
     res.json({
       success: true,
-      verified,
+      verified: Boolean(photo.verification_hash),
       storedHash: photo.verification_hash,
-      recomputedHash,
-      message: verified
-        ? '✅ Photo is authentic and tamper‑proof'
-        : '❌ Hash mismatch – photo may have been altered',
+      compliance: {
+        score: photo.compliance_score,
+        passed: photo.compliance_passed,
+        analyzedAt: photo.compliance_analyzed_at,
+        model: photo.compliance_model,
+      },
+      message: photo.verification_hash ? 'Evidence has a stored upload verification hash.' : 'No verification hash is stored.',
     });
-  } catch (error: any) {
-    console.error('Verification error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
+  } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// GET /api/photos/company
 router.get('/company', async (req: Request, res: Response) => {
   try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-    const result = await pool.query(
-      'SELECT * FROM photos WHERE company_id = $1 ORDER BY taken_at DESC',
-      [companyId]
-    );
+    const current = await actor(req);
+    if (!current) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const result = await pool.query('SELECT * FROM photos WHERE company_id = $1 ORDER BY taken_at DESC', [current.companyId]);
     res.json({ success: true, photos: result.rows });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+  } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// GET /api/photos/project/:projectId
 router.get('/project/:projectId', async (req: Request, res: Response) => {
   try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-    const { projectId } = req.params;
-    if (!projectId) {
-      return res.status(400).json({ success: false, message: 'Project ID required' });
-    }
+    const current = await actor(req);
+    if (!current) return res.status(401).json({ success: false, message: 'Not authenticated' });
     const result = await pool.query(
       'SELECT * FROM photos WHERE project_id = $1 AND company_id = $2 ORDER BY taken_at DESC',
-      [projectId, companyId]
+      [String(req.params.projectId), current.companyId],
     );
     res.json({ success: true, photos: result.rows });
-  } catch (error: any) {
-    console.error('Error fetching project photos:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
+  } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-import { generateEvidenceReport } from '../services/reportService';
-
-// ─── POST /api/photos/report ──────────────────────────────────────
 router.post('/report', async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer '))
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const decoded = verifyToken(req);
-    const { photoIds, reportTitle, projectId } = req.body;
-    if (!photoIds || !Array.isArray(photoIds) || photoIds.length === 0) {
-      return res.status(400).json({ success: false, message: 'photoIds array required' });
-    }
-
-    // Fetch photos from DB
-    const photoRes = await pool.query(
-      `SELECT p.id, p.s3_key, p.taken_at, p.taken_by, p.compliance_score, p.verification_hash,
-              u.company_id
-       FROM photos p
-       LEFT JOIN users u ON p.taken_by = u.id
-       WHERE p.id = ANY($1)`,
-      [photoIds]
+    const current = await actor(req);
+    if (!current) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const { photoIds, reportTitle } = req.body;
+    if (!Array.isArray(photoIds) || !photoIds.length) return res.status(400).json({ success: false, message: 'photoIds array required' });
+    const photoResult = await pool.query(
+      `SELECT p.id, p.s3_key, p.taken_at, p.user_id AS taken_by,
+              p.compliance_score, p.verification_hash, p.company_id
+       FROM photos p WHERE p.id = ANY($1) AND p.company_id = $2`,
+      [photoIds, current.companyId],
     );
-
-    if (photoRes.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'No photos found' });
-    }
-
-    // Get company name
-    const companyRes = await pool.query('SELECT name FROM companies WHERE id = $1', [
-      photoRes.rows[0].company_id || decoded.companyId
-    ]);
-    const companyName = companyRes.rows[0]?.name || 'Future Jobs Pro AI';
-
-    // Generate PDF
-    const pdfBuffer = await generateEvidenceReport(
-      photoRes.rows,
-      reportTitle || 'Job Evidence Report',
-      companyName
-    );
-
-    // Upload PDF to Cloudinary (or S3) and return URL
-    // For now, we'll save it temporarily and return a data URL (not ideal for production)
-    // In production, you'd upload to Cloudinary/S3 and return the URL.
-    // Let's use base64 encoding for demonstration.
-    const base64 = pdfBuffer.toString('base64');
-    const dataUrl = `data:application/pdf;base64,${base64}`;
-
-    // Optionally, you could store the PDF URL in a database for later retrieval.
-    // But for simplicity, we'll return the data URL.
-
-    res.json({ success: true, reportUrl: dataUrl });
-  } catch (error) {
+    if (!photoResult.rowCount) return res.status(404).json({ success: false, message: 'No photos found' });
+    const company = await pool.query('SELECT name FROM companies WHERE id = $1', [current.companyId]);
+    const pdf = await generateEvidenceReport(photoResult.rows, reportTitle || 'Job Evidence Report', company.rows[0]?.name || 'Future Jobs Pro AI');
+    res.json({ success: true, reportUrl: `data:application/pdf;base64,${pdf.toString('base64')}` });
+  } catch (error: any) {
     console.error('Report generation error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
