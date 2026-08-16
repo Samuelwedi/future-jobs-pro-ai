@@ -62,15 +62,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = async (email: string, password: string) => {
-    console.log('🔑 AuthContext.login called with:', email);
     try {
       const response = await api.post<{ success: boolean; token: string; user: User }>('/auth/login', { email, password });
-      console.log('✅ AuthContext.login response:', response);
       if (response.success && response.token) {
         await api.setToken(response.token);
         await SecureStore.setItemAsync('userData', JSON.stringify(response.user));
         setUser(response.user);
-        console.log('✅ AuthContext.login: user set');
       } else {
         throw new Error('Login failed');
       }

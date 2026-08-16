@@ -44,6 +44,7 @@
     },
     "plugins": [
       "expo-secure-store",
+      "expo-iap",
       [
         "expo-build-properties",
         {

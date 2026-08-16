@@ -1,408 +1,386 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Switch,
-  TextInput,
-  Alert,
   ActivityIndicator,
-  Image,
+  Alert,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import {
+  ErrorCode,
+  finishTransaction,
+  type ProductSubscription,
+  type Purchase,
+  useIAP,
+} from 'expo-iap';
 import { useNavigation } from '@react-navigation/native';
-import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
+import { useAuth } from '../context/AuthContext';
+import {
+  FALLBACK_PLAN_COPY,
+  STORE_PRODUCT_IDS,
+  type PlanKey,
+  planKeyForProduct,
+} from '../config/subscriptionProducts';
 
-interface CompanySettings {
-  id: string;
-  name: string;
-  logo_url: string | null;
-  address: string | null;
-  phone: string | null;
-  email: string | null;
-  overtime_enabled: boolean;
-  overtime_threshold_hours: number;
-  overtime_multiplier: number;
-  default_hourly_rate: number;
-}
+type SubscriptionState = {
+  tier?: string;
+  status?: string;
+  provider?: string | null;
+  expiresAt?: string | null;
+  currentPeriodEnd?: string | null;
+  cancelAtPeriodEnd?: boolean;
+};
 
-interface CompanyResponse {
-  id: string;
-  name: string;
-  logo_url: string | null;
-  address: string | null;
-  phone: string | null;
-  email: string | null;
-}
-
-interface SettingsResponse {
+type StatusResponse = {
   success: boolean;
-  settings: {
-    overtime_enabled: boolean;
-    overtime_threshold_hours: number;
-    overtime_multiplier: number;
-  };
+  subscription: SubscriptionState;
+};
+
+type VerificationResponse = {
+  success: boolean;
+  message?: string;
+  subscription?: SubscriptionState;
+};
+
+const ACTIVE_STATUSES = new Set(['active', 'trialing', 'in_trial', 'grace_period']);
+
+function friendlyError(error: unknown): string {
+  const candidate = error as { response?: { data?: { message?: string } }; message?: string };
+  return candidate?.response?.data?.message || candidate?.message || 'The store could not complete this request.';
 }
 
-export default function CompanySettingsScreen() {
+function planLabel(tier?: string): string {
+  if (!tier) return 'No active plan';
+  return tier.charAt(0).toUpperCase() + tier.slice(1);
+}
+
+export default function SubscriptionScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [settings, setSettings] = useState<CompanySettings>({
-    id: '',
-    name: '',
-    logo_url: null,
-    address: null,
-    phone: null,
-    email: null,
-    overtime_enabled: true,
-    overtime_threshold_hours: 40,
-    overtime_multiplier: 1.5,
-    default_hourly_rate: 20,
-  });
-  const [originalSettings, setOriginalSettings] = useState<CompanySettings>(settings);
-  const [logoFile, setLogoFile] = useState<any>(null);
-  const [thresholdStr, setThresholdStr] = useState('40');
-  const [multiplierStr, setMultiplierStr] = useState('1.5');
-  const [hourlyRateStr, setHourlyRateStr] = useState('20');
+  const [status, setStatus] = useState<SubscriptionState>({});
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [processingProductId, setProcessingProductId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  const fetchSettings = async () => {
+  const verifyAndFinish = useCallback(async (purchase: Purchase) => {
     try {
-      const companyData = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
-      const settingsData = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
-
-      const merged: CompanySettings = {
-        id: companyData.id,
-        name: companyData.name || '',
-        logo_url: companyData.logo_url || null,
-        address: companyData.address || null,
-        phone: companyData.phone || null,
-        email: companyData.email || null,
-        overtime_enabled: settingsData.settings?.overtime_enabled ?? true,
-        overtime_threshold_hours: settingsData.settings?.overtime_threshold_hours ?? 40,
-        overtime_multiplier: settingsData.settings?.overtime_multiplier ?? 1.5,
-        default_hourly_rate: 20,
-      };
-      setSettings(merged);
-      setOriginalSettings(merged);
-      setThresholdStr(String(merged.overtime_threshold_hours));
-      setMultiplierStr(String(merged.overtime_multiplier));
-      setHourlyRateStr(String(merged.default_hourly_rate));
-    } catch (e) {
-      console.error('Error fetching settings:', e);
-      Alert.alert('Error', 'Could not load company settings');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const saveSettings = async () => {
-    const threshold = parseFloat(thresholdStr);
-    const multiplier = parseFloat(multiplierStr);
-    const hourlyRate = parseFloat(hourlyRateStr);
-
-    if (isNaN(threshold) || threshold < 0) {
-      Alert.alert('Invalid Value', 'Please enter a valid positive number for overtime threshold.');
-      return;
-    }
-    if (isNaN(multiplier) || multiplier < 1) {
-      Alert.alert('Invalid Value', 'Overtime multiplier must be at least 1.');
-      return;
-    }
-    if (isNaN(hourlyRate) || hourlyRate < 0) {
-      Alert.alert('Invalid Value', 'Hourly rate must be a positive number.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await api.put(`/companies/${user?.companyId}/settings`, {
-        overtime_enabled: settings.overtime_enabled,
-        overtime_threshold_hours: threshold,
-        overtime_multiplier: multiplier,
-        default_hourly_rate: hourlyRate,
+      const response = await api.post<VerificationResponse>('/subscriptions/verify', {
+        platform: Platform.OS,
+        productId: purchase.productId,
+        purchaseToken: purchase.purchaseToken,
+        transactionId: purchase.transactionId || purchase.id,
+        transactionDate: purchase.transactionDate,
       });
 
-      if (
-        settings.name !== originalSettings.name ||
-        settings.address !== originalSettings.address ||
-        settings.phone !== originalSettings.phone ||
-        settings.email !== originalSettings.email
-      ) {
-        await api.put(`/companies/${user?.companyId}`, {
-          name: settings.name,
-          address: settings.address,
-          phone: settings.phone,
-          email: settings.email,
-        });
+      if (!response.success) {
+        throw new Error(response.message || 'The purchase could not be verified.');
       }
 
-      if (logoFile) {
-        const formData = new FormData();
-        formData.append('logo', {
-          uri: logoFile.uri,
-          name: 'logo.png',
-          type: 'image/png',
-        } as any);
-        await api.post(`/companies/${user?.companyId}/logo`, formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        setLogoFile(null);
-      }
-
-      Alert.alert('✅ Success', 'Company settings updated.');
-      fetchSettings();
-    } catch (e: any) {
-      console.error('Error saving settings:', e);
-      Alert.alert('Error', e.message || 'Failed to save settings');
+      await finishTransaction({ purchase, isConsumable: false });
+      if (response.subscription) setStatus(response.subscription);
+      Alert.alert('Subscription activated', 'Your purchase was verified and your workspace is ready.');
+    } catch (error) {
+      // Never finish an unverified transaction. The store can safely deliver it again.
+      Alert.alert('Verification pending', friendlyError(error));
     } finally {
-      setSaving(false);
+      setProcessingProductId(null);
     }
-  };
+  }, []);
 
-  const pickLogo = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const asset = result.assets[0];
-      setLogoFile({ uri: asset.uri, name: 'logo.png', type: 'image/png' });
-      setSettings({ ...settings, logo_url: asset.uri });
-    }
-  };
-
-  const getOvertimeSuggestion = () => ({
-    suggestion: 'Industry standard is 40h. Your team is within healthy limits.',
-    threshold: 40,
-    multiplier: 1.5,
+  const {
+    connected,
+    subscriptions,
+    availablePurchases,
+    fetchProducts,
+    getAvailablePurchases,
+    requestPurchase,
+  } = useIAP({
+    onPurchaseSuccess: verifyAndFinish,
+    onPurchaseError: (error) => {
+      setProcessingProductId(null);
+      if (error.code !== ErrorCode.UserCancelled) {
+        Alert.alert('Purchase not completed', error.message);
+      }
+    },
+    onError: (error) => Alert.alert('Store unavailable', error.message),
   });
 
-  const applySuggestion = () => {
-    const suggestion = getOvertimeSuggestion();
-    setThresholdStr(String(suggestion.threshold));
-    setMultiplierStr(String(suggestion.multiplier));
-    setSettings({
-      ...settings,
-      overtime_threshold_hours: suggestion.threshold,
-      overtime_multiplier: suggestion.multiplier,
+  const loadStatus = useCallback(async () => {
+    try {
+      const response = await api.get<StatusResponse>('/subscriptions/status');
+      if (response.success) setStatus(response.subscription || {});
+    } catch (error) {
+      Alert.alert('Could not load subscription', friendlyError(error));
+    } finally {
+      setLoadingStatus(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
+
+  useEffect(() => {
+    if (connected) {
+      void fetchProducts({ skus: Object.values(STORE_PRODUCT_IDS), type: 'subs' });
+    }
+  }, [connected, fetchProducts]);
+
+  useEffect(() => {
+    if (!availablePurchases.length) return;
+    const recover = async () => {
+      for (const purchase of availablePurchases) {
+        if (planKeyForProduct(purchase.productId)) {
+          await verifyAndFinish(purchase);
+        }
+      }
+    };
+    void recover();
+  }, [availablePurchases, verifyAndFinish]);
+
+  const productsByPlan = useMemo(() => {
+    const map = new Map<PlanKey, ProductSubscription>();
+    subscriptions.forEach((product) => {
+      const key = planKeyForProduct(product.id);
+      if (key) map.set(key, product);
     });
-    Alert.alert('💡 AI Suggestion Applied', suggestion.suggestion);
+    return map;
+  }, [subscriptions]);
+
+  const startPurchase = async (plan: PlanKey) => {
+    const product = productsByPlan.get(plan);
+    if (!connected || !product) {
+      Alert.alert(
+        'Plan not available yet',
+        'This product must be active in App Store Connect or Google Play Console before it can be purchased.',
+      );
+      return;
+    }
+
+    setProcessingProductId(product.id);
+    const androidOffer = product.platform === 'android'
+      ? product.subscriptionOffers?.find((offer) => Boolean(offer.offerTokenAndroid))
+      : undefined;
+
+    try {
+      await requestPurchase({
+        request: {
+          apple: { sku: product.id, appAccountToken: user?.id },
+          google: {
+            skus: [product.id],
+            ...(androidOffer?.offerTokenAndroid
+              ? { subscriptionOffers: [{ sku: product.id, offerToken: androidOffer.offerTokenAndroid }] }
+              : {}),
+          },
+        },
+        type: 'subs',
+      });
+    } catch (error) {
+      setProcessingProductId(null);
+      Alert.alert('Purchase not started', friendlyError(error));
+    }
   };
 
-  if (loading) {
-    return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
-  }
+  const restore = async () => {
+    setProcessingProductId('restore');
+    try {
+      await getAvailablePurchases({ onlyIncludeActiveItemsIOS: true });
+      Alert.alert('Restore started', 'Any active store purchase will be verified automatically.');
+    } catch (error) {
+      setProcessingProductId(null);
+      Alert.alert('Restore failed', friendlyError(error));
+    }
+  };
+
+  const active = ACTIVE_STATUSES.has((status.status || '').toLowerCase());
+  const renewalDate = status.currentPeriodEnd || status.expiresAt;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Company Settings</Text>
-        <TouchableOpacity onPress={saveSettings} disabled={saving}>
-          <Text style={[styles.saveBtn, saving && { opacity: 0.5 }]}>
-            {saving ? 'Saving...' : 'Save'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.logoSection}>
-        {settings.logo_url ? (
-          <Image source={{ uri: settings.logo_url }} style={styles.logo} />
-        ) : (
-          <View style={styles.logoPlaceholder}>
-            <MaterialIcons name="business" size={48} color="#666" />
-          </View>
-        )}
-        <TouchableOpacity style={styles.uploadBtn} onPress={pickLogo}>
-          <MaterialIcons name="upload" size={20} color="#00D4FF" />
-          <Text style={styles.uploadBtnText}>Change Logo</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Section title="Company Profile" icon="business">
-        <InputField label="Company Name" value={settings.name} onChange={(text: string) => setSettings({ ...settings, name: text })} />
-        <InputField label="Address" value={settings.address || ''} onChange={(text: string) => setSettings({ ...settings, address: text })} />
-        <InputField label="Phone" value={settings.phone || ''} onChange={(text: string) => setSettings({ ...settings, phone: text })} keyboardType="phone-pad" />
-        <InputField label="Email" value={settings.email || ''} onChange={(text: string) => setSettings({ ...settings, email: text })} keyboardType="email-address" />
-      </Section>
-
-      <Section title="Overtime Rules" icon="timer">
-        <View style={styles.switchRow}>
-          <Text style={styles.label}>Enable Overtime</Text>
-          <Switch
-            value={settings.overtime_enabled}
-            onValueChange={(val) => setSettings({ ...settings, overtime_enabled: val })}
-            trackColor={{ false: '#333', true: '#00D4FF' }}
-            thumbColor={settings.overtime_enabled ? '#FFF' : '#888'}
+    <LinearGradient colors={['#07111F', '#0B1830', '#09101B']} style={styles.background}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor="#6FE7FF"
+            onRefresh={() => {
+              setRefreshing(true);
+              void loadStatus();
+            }}
           />
+        }
+      >
+        <View style={styles.header}>
+          <TouchableOpacity accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.iconButton}>
+            <MaterialIcons name="arrow-back" size={23} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.headerCopy}>
+            <Text style={styles.eyebrow}>FUTURE JOBS PRO AI</Text>
+            <Text style={styles.title}>Choose your workspace plan</Text>
+          </View>
+          <View style={styles.secureBadge}>
+            <Ionicons name="shield-checkmark" size={15} color="#6FE7FF" />
+            <Text style={styles.secureText}>Store secured</Text>
+          </View>
         </View>
-        {settings.overtime_enabled && (
-          <>
-            <InputFieldDecimal
-              label="Threshold (hours per week)"
-              value={thresholdStr}
-              onChangeText={setThresholdStr}
-              placeholder="e.g. 40.5"
-            />
-            <InputFieldDecimal
-              label="Overtime Multiplier (e.g. 1.5)"
-              value={multiplierStr}
-              onChangeText={setMultiplierStr}
-              placeholder="e.g. 1.5"
-            />
-            <TouchableOpacity style={styles.aiSuggestionBtn} onPress={applySuggestion}>
-              <Ionicons name="sparkles" size={20} color="#FFF" />
-              <Text style={styles.aiSuggestionText}>AI‑recommended threshold</Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </Section>
 
-      <Section title="Payroll & Branding" icon="palette">
-        <InputFieldDecimal
-          label="Default Hourly Rate ($)"
-          value={hourlyRateStr}
-          onChangeText={setHourlyRateStr}
-          placeholder="e.g. 20.00"
-        />
-      </Section>
+        <View style={styles.statusCard}>
+          <View style={[styles.statusDot, active ? styles.statusActive : styles.statusInactive]} />
+          <View style={styles.statusCopy}>
+            <Text style={styles.statusLabel}>CURRENT WORKSPACE</Text>
+            <Text style={styles.statusTitle}>{loadingStatus ? 'Checking entitlement…' : planLabel(status.tier)}</Text>
+            <Text style={styles.statusMeta}>
+              {active ? `Status: ${status.status}` : 'Select a plan to unlock premium tools'}
+              {renewalDate ? ` · ${status.cancelAtPeriodEnd ? 'Ends' : 'Renews'} ${new Date(renewalDate).toLocaleDateString()}` : ''}
+            </Text>
+          </View>
+          {loadingStatus && <ActivityIndicator color="#6FE7FF" />}
+        </View>
 
-      <Section title="Smart Insights" icon="analytics">
-        <View style={styles.insightCard}>
-          <Text style={styles.insightTitle}>Overtime Usage</Text>
-          <Text style={styles.insightValue}>$1,240 this month</Text>
-          <Text style={styles.insightSub}>↑ 12% from last month</Text>
+        <View style={styles.promiseRow}>
+          <Promise icon="sparkles" text="14-day trial when eligible" />
+          <Promise icon="lock-closed" text="Verified by your app store" />
+          <Promise icon="refresh" text="Restore on any signed-in device" />
         </View>
-        <View style={styles.insightCard}>
-          <Text style={styles.insightTitle}>Average Weekly Hours</Text>
-          <Text style={styles.insightValue}>38.2h</Text>
-          <Text style={styles.insightSub}>Within threshold ✓</Text>
-        </View>
-      </Section>
-    </ScrollView>
+
+        {(Object.keys(FALLBACK_PLAN_COPY) as PlanKey[]).map((plan, index) => {
+          const copy = FALLBACK_PLAN_COPY[plan];
+          const product = productsByPlan.get(plan);
+          const selected = status.tier?.toLowerCase() === plan ||
+            (plan === 'professional' && status.tier?.toLowerCase() === 'pro');
+          const busy = processingProductId === product?.id;
+
+          return (
+            <View key={plan} style={[styles.planCard, copy.featured && styles.featuredCard]}>
+              {copy.featured && (
+                <View style={styles.featuredPill}>
+                  <Ionicons name="flash" size={13} color="#06111D" />
+                  <Text style={styles.featuredText}>MOST POPULAR</Text>
+                </View>
+              )}
+              <View style={styles.planTopRow}>
+                <View style={styles.planIdentity}>
+                  <View style={[styles.planIcon, { backgroundColor: copy.tint }]}>
+                    <Ionicons name={copy.icon} size={22} color="#FFFFFF" />
+                  </View>
+                  <View>
+                    <Text style={styles.planName}>{copy.name}</Text>
+                    <Text style={styles.planAudience}>{copy.audience}</Text>
+                  </View>
+                </View>
+                <View style={styles.priceBox}>
+                  <Text style={styles.price}>{product?.displayPrice || copy.fallbackPrice}</Text>
+                  <Text style={styles.interval}>/ month</Text>
+                </View>
+              </View>
+
+              <View style={styles.divider} />
+              {copy.features.map((feature) => (
+                <View key={feature} style={styles.featureRow}>
+                  <View style={styles.checkCircle}>
+                    <Ionicons name="checkmark" size={13} color="#07111F" />
+                  </View>
+                  <Text style={styles.featureText}>{feature}</Text>
+                </View>
+              ))}
+
+              <TouchableOpacity
+                disabled={selected || busy}
+                onPress={() => void startPurchase(plan)}
+                style={[styles.purchaseButton, copy.featured && styles.featuredButton, selected && styles.selectedButton]}
+              >
+                {busy ? (
+                  <ActivityIndicator color="#07111F" />
+                ) : (
+                  <Text style={[styles.purchaseText, !copy.featured && !selected && styles.secondaryPurchaseText]}>
+                    {selected ? 'Current plan' : index === 0 ? 'Start with Basic' : `Choose ${copy.name}`}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          );
+        })}
+
+        <TouchableOpacity disabled={processingProductId === 'restore'} onPress={() => void restore()} style={styles.restoreButton}>
+          {processingProductId === 'restore' ? (
+            <ActivityIndicator color="#6FE7FF" />
+          ) : (
+            <>
+              <Ionicons name="cloud-download-outline" size={19} color="#6FE7FF" />
+              <Text style={styles.restoreText}>Restore previous purchase</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <Text style={styles.legal}>
+          Payment is charged by {Platform.OS === 'ios' ? 'Apple' : Platform.OS === 'android' ? 'Google Play' : 'your app store'}.
+          Subscriptions renew automatically unless cancelled in your store account. Purchases are activated only after secure server verification.
+        </Text>
+      </ScrollView>
+    </LinearGradient>
   );
 }
 
-// ─── Reusable components ───
-const Section = ({ title, icon, children }: any) => (
-  <View style={styles.section}>
-    <View style={styles.sectionHeader}>
-      <MaterialIcons name={icon} size={22} color="#00D4FF" />
-      <Text style={styles.sectionTitle}>{title}</Text>
+function Promise({ icon, text }: { icon: React.ComponentProps<typeof Ionicons>['name']; text: string }) {
+  return (
+    <View style={styles.promise}>
+      <Ionicons name={icon} size={16} color="#6FE7FF" />
+      <Text style={styles.promiseText}>{text}</Text>
     </View>
-    <View style={styles.sectionContent}>{children}</View>
-  </View>
-);
-
-const InputField = ({ label, value, onChange, keyboardType = 'default' }: any) => (
-  <View style={styles.field}>
-    <Text style={styles.label}>{label}</Text>
-    <TextInput
-      style={styles.input}
-      value={value}
-      onChangeText={(text: string) => onChange(text)}
-      keyboardType={keyboardType}
-      placeholderTextColor="#666"
-    />
-  </View>
-);
-
-const InputFieldDecimal = ({ label, value, onChangeText, placeholder = '' }: any) => (
-  <View style={styles.field}>
-    <Text style={styles.label}>{label}</Text>
-    <TextInput
-      style={styles.input}
-      value={value}
-      onChangeText={onChangeText}
-      keyboardType="decimal-pad"
-      placeholder={placeholder}
-      placeholderTextColor="#666"
-    />
-  </View>
-);
+  );
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-  },
-  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold', flex: 1, marginLeft: 16 },
-  saveBtn: { color: '#00D4FF', fontSize: 16, fontWeight: '600' },
-  logoSection: { alignItems: 'center', paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: '#333' },
-  logo: { width: 100, height: 100, borderRadius: 50 },
-  logoPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#1A1A1A',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  uploadBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 6 },
-  uploadBtnText: { color: '#00D4FF', fontSize: 14 },
-  section: { marginTop: 20, paddingHorizontal: 16 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  sectionTitle: { color: '#FFF', fontSize: 16, fontWeight: '600' },
-  sectionContent: {
-    backgroundColor: '#1A1A1A',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  field: { marginBottom: 12 },
-  label: { color: '#AAA', fontSize: 13, marginBottom: 4 },
-  input: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    color: '#FFF',
-    fontSize: 15,
-    borderWidth: 1,
-    borderColor: '#333',
-  },
-  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  aiSuggestionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#9C27B0',
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-    marginTop: 8,
-  },
-  aiSuggestionText: { color: '#FFF', fontSize: 14, fontWeight: '500' },
-  insightCard: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-  },
-  insightTitle: { color: '#888', fontSize: 12 },
-  insightValue: { color: '#00D4FF', fontSize: 22, fontWeight: 'bold', marginVertical: 2 },
-  insightSub: { color: '#888', fontSize: 12 },
+  background: { flex: 1 },
+  content: { paddingHorizontal: 18, paddingTop: 56, paddingBottom: 48 },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 22 },
+  iconButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
+  headerCopy: { flex: 1, marginLeft: 13 },
+  eyebrow: { color: '#6FE7FF', fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
+  title: { color: '#FFFFFF', fontSize: 23, fontWeight: '800', marginTop: 3 },
+  secureBadge: { flexDirection: 'row', gap: 5, alignItems: 'center', paddingHorizontal: 9, paddingVertical: 7, borderRadius: 20, backgroundColor: 'rgba(111,231,255,0.10)', borderWidth: 1, borderColor: 'rgba(111,231,255,0.22)' },
+  secureText: { color: '#C8F7FF', fontSize: 10, fontWeight: '700' },
+  statusCard: { flexDirection: 'row', alignItems: 'center', padding: 17, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.11)' },
+  statusDot: { width: 11, height: 11, borderRadius: 6, marginRight: 12 },
+  statusActive: { backgroundColor: '#42E8A7', shadowColor: '#42E8A7', shadowOpacity: 0.8, shadowRadius: 7 },
+  statusInactive: { backgroundColor: '#65758B' },
+  statusCopy: { flex: 1 },
+  statusLabel: { color: '#8292A9', fontSize: 10, fontWeight: '800', letterSpacing: 1.1 },
+  statusTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', marginTop: 2 },
+  statusMeta: { color: '#A9B6C8', fontSize: 12, marginTop: 3 },
+  promiseRow: { marginVertical: 20, gap: 9 },
+  promise: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  promiseText: { color: '#C0CBDA', fontSize: 13 },
+  planCard: { borderRadius: 24, padding: 19, marginBottom: 15, backgroundColor: 'rgba(15,31,53,0.94)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', overflow: 'hidden' },
+  featuredCard: { borderColor: 'rgba(111,231,255,0.58)', backgroundColor: 'rgba(13,39,63,0.98)' },
+  featuredPill: { position: 'absolute', right: 0, top: 0, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#6FE7FF', paddingHorizontal: 12, paddingVertical: 7, borderBottomLeftRadius: 14 },
+  featuredText: { color: '#06111D', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  planTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 9 },
+  planIdentity: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  planIcon: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  planName: { color: '#FFFFFF', fontSize: 19, fontWeight: '800' },
+  planAudience: { color: '#91A1B6', fontSize: 12, marginTop: 2, maxWidth: 150 },
+  priceBox: { alignItems: 'flex-end' },
+  price: { color: '#FFFFFF', fontSize: 20, fontWeight: '900' },
+  interval: { color: '#8393A9', fontSize: 11 },
+  divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.09)', marginVertical: 16 },
+  featureRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  checkCircle: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#6FE7FF', alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  featureText: { color: '#D7E0EB', fontSize: 13, flex: 1 },
+  purchaseButton: { minHeight: 50, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 11, borderWidth: 1, borderColor: '#6FE7FF' },
+  featuredButton: { backgroundColor: '#6FE7FF' },
+  selectedButton: { backgroundColor: '#42E8A7', borderColor: '#42E8A7' },
+  purchaseText: { color: '#07111F', fontSize: 15, fontWeight: '900' },
+  secondaryPurchaseText: { color: '#A8F1FF' },
+  restoreButton: { minHeight: 50, flexDirection: 'row', gap: 9, alignItems: 'center', justifyContent: 'center', marginTop: 5 },
+  restoreText: { color: '#A8F1FF', fontSize: 14, fontWeight: '800' },
+  legal: { color: '#718198', fontSize: 11, lineHeight: 17, textAlign: 'center', marginTop: 8, paddingHorizontal: 10 },
 });
