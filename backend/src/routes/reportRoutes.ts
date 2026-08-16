@@ -61,7 +61,7 @@ async function reportData(companyId: string, projectId: string, startDate: strin
       range,
     ),
     pool.query(
-      `SELECT p.id, p.taken_at, p.file_type, p.compliance_score, p.verification_hash,
+      `SELECT p.id, p.taken_at, p.file_type, p.verification_hash,
               concat_ws(' ', u.first_name, u.last_name) taken_by_name
        FROM photos p
        LEFT JOIN users u ON u.id = p.user_id
