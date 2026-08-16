@@ -1,127 +1,211 @@
 import express, { Request, Response } from 'express';
 import { verifyToken } from '../utils/auth';
 import { pool } from '../config/database';
-import { generateComprehensiveReport } from '../services/comprehensiveReportService';
+import { generateComprehensiveReport, ProjectReportData } from '../services/comprehensiveReportService';
 
 const router = express.Router();
 
-// ─── POST /api/reports/comprehensive ──────────────────────────────
+type Actor = { id: string; companyId: string };
+
+async function actor(req: Request): Promise<Actor> {
+  const decoded = verifyToken(req);
+  const result = await pool.query(
+    'SELECT id, company_id FROM users WHERE id = $1',
+    [decoded.id],
+  );
+  if (!result.rowCount || !result.rows[0].company_id) throw new Error('Not authenticated');
+  return { id: String(result.rows[0].id), companyId: String(result.rows[0].company_id) };
+}
+
+function dateRange(source: any) {
+  const startDate = String(source.startDate || '').trim();
+  const endDate = String(source.endDate || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    throw new Error('Choose a valid start and end date');
+  }
+  if (startDate > endDate) throw new Error('Start date must be before or equal to end date');
+  return { startDate, endDate };
+}
+
+async function projectForCompany(companyId: string, projectId: string) {
+  const result = await pool.query(
+    `SELECT id, name, address, client_name, status
+     FROM projects WHERE id = $1 AND company_id = $2`,
+    [projectId, companyId],
+  );
+  if (!result.rowCount) throw new Error('Project not found in your company');
+  return result.rows[0];
+}
+
+async function reportData(companyId: string, projectId: string, startDate: string, endDate: string): Promise<ProjectReportData> {
+  const project = await projectForCompany(companyId, projectId);
+  const range = [projectId, companyId, startDate, endDate];
+  const [companyResult, workforceResult, photoResult, voiceResult, gpsResult, attachmentResult] = await Promise.all([
+    pool.query(
+      `SELECT name, legal_name, address, city, province, postal_code, phone, email
+       FROM companies WHERE id = $1`,
+      [companyId],
+    ),
+    pool.query(
+      `SELECT te.id, te.clock_in, te.clock_out, COALESCE(te.break_minutes, 0) break_minutes,
+              COALESCE(te.regular_hours, 0) regular_hours,
+              COALESCE(te.overtime_hours, 0) overtime_hours,
+              COALESCE(te.total_wage, 0) total_wage,
+              COALESCE(te.approval_status, 'draft') approval_status,
+              concat_ws(' ', u.first_name, u.last_name) employee_name
+       FROM time_entries te
+       JOIN users u ON u.id = te.user_id
+       WHERE te.project_id = $1 AND u.company_id = $2
+         AND te.clock_in >= $3::date AND te.clock_in < ($4::date + INTERVAL '1 day')
+       ORDER BY te.clock_in`,
+      range,
+    ),
+    pool.query(
+      `SELECT p.id, p.taken_at, p.file_type, p.compliance_score, p.verification_hash,
+              concat_ws(' ', u.first_name, u.last_name) taken_by_name
+       FROM photos p
+       LEFT JOIN users u ON u.id = p.user_id
+       WHERE p.project_id = $1 AND p.company_id = $2
+         AND p.taken_at >= $3::date AND p.taken_at < ($4::date + INTERVAL '1 day')
+       ORDER BY p.taken_at`,
+      range,
+    ),
+    pool.query(
+      `SELECT vn.id, vn.taken_at, vn.duration_seconds, vn.transcript,
+              concat_ws(' ', u.first_name, u.last_name) taken_by_name
+       FROM voice_notes vn
+       JOIN users u ON u.id = vn.user_id
+       WHERE vn.project_id = $1 AND u.company_id = $2
+         AND vn.taken_at >= $3::date AND vn.taken_at < ($4::date + INTERVAL '1 day')
+       ORDER BY vn.taken_at`,
+      range,
+    ),
+    pool.query(
+      `SELECT g.time_entry_id, g.latitude, g.longitude, g.timestamp, g.accuracy,
+              concat_ws(' ', u.first_name, u.last_name) employee_name
+       FROM gps_tracking g
+       JOIN time_entries te ON te.id = g.time_entry_id
+       JOIN users u ON u.id = te.user_id
+       WHERE te.project_id = $1 AND u.company_id = $2
+         AND g.timestamp >= $3::date AND g.timestamp < ($4::date + INTERVAL '1 day')
+       ORDER BY g.timestamp`,
+      range,
+    ),
+    pool.query(
+      `SELECT id, file_name, file_type, file_size, category, created_at
+       FROM attachments
+       WHERE project_id = $1 AND company_id = $2
+         AND created_at >= $3::date AND created_at < ($4::date + INTERVAL '1 day')
+       ORDER BY created_at`,
+      range,
+    ),
+  ]);
+
+  return {
+    company: companyResult.rows[0] || { name: 'Future Jobs Pro AI' },
+    project,
+    dateRange: { start: startDate, end: endDate },
+    workforce: workforceResult.rows,
+    media: photoResult.rows,
+    voiceNotes: voiceResult.rows,
+    gpsPoints: gpsResult.rows,
+    attachments: attachmentResult.rows,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function summary(data: ProjectReportData) {
+  const completed = data.workforce.filter((entry) => entry.clock_out);
+  const totalHours = completed.reduce((total, entry) => {
+    const hours = (new Date(entry.clock_out).getTime() - new Date(entry.clock_in).getTime()) / 3600000;
+    return total + Math.max(0, hours - Number(entry.break_minutes || 0) / 60);
+  }, 0);
+  const grossWages = data.workforce.reduce((total, entry) => total + Number(entry.total_wage || 0), 0);
+  const regularHours = data.workforce.reduce((total, entry) => total + Number(entry.regular_hours || 0), 0);
+  const overtimeHours = data.workforce.reduce((total, entry) => total + Number(entry.overtime_hours || 0), 0);
+  const employees = new Set(data.workforce.map((entry) => entry.employee_name).filter(Boolean)).size;
+  const approved = data.workforce.filter((entry) => entry.approval_status === 'approved').length;
+  const verifiedMedia = data.media.filter((item) => item.verification_hash).length;
+  const completionRate = data.workforce.length ? Math.round((completed.length / data.workforce.length) * 100) : 0;
+  const approvalRate = completed.length ? Math.round((approved / completed.length) * 100) : 0;
+  const readinessScore = Math.round((completionRate * 0.45) + (approvalRate * 0.35) + (data.project.address ? 10 : 0) + (data.attachments.length ? 10 : 0));
+  return {
+    totalHours, grossWages, regularHours, overtimeHours, employees,
+    timeEntries: data.workforce.length, completedEntries: completed.length, approvedEntries: approved,
+    mediaFiles: data.media.length, verifiedMedia, voiceNotes: data.voiceNotes.length,
+    gpsPoints: data.gpsPoints.length, attachments: data.attachments.length,
+    completionRate, approvalRate, readinessScore: Math.min(100, readinessScore),
+  };
+}
+
+router.get('/summary', async (req: Request, res: Response) => {
+  try {
+    const current = await actor(req);
+    const projectId = String(req.query.projectId || '');
+    if (!projectId) throw new Error('Choose a project');
+    const range = dateRange(req.query);
+    const data = await reportData(current.companyId, projectId, range.startDate, range.endDate);
+    res.set('Cache-Control', 'no-store').json({
+      success: true,
+      project: data.project,
+      dateRange: data.dateRange,
+      summary: summary(data),
+      workforce: data.workforce,
+    });
+  } catch (error: any) {
+    const status = /authenticated/i.test(error.message) ? 401 : /not found/i.test(error.message) ? 404 : 400;
+    res.status(status).json({ success: false, message: error.message });
+  }
+});
+
 router.post('/comprehensive', async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer '))
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const decoded = verifyToken(req);
-    const { projectId, startDate, endDate } = req.body;
-    if (!projectId || !startDate || !endDate) {
-      return res.status(400).json({ success: false, message: 'projectId, startDate, endDate required' });
-    }
-
-    // ─── 1. Project details ────────────────────────────────
-    const projectRes = await pool.query(
-      `SELECT id, name, address, client_name FROM projects WHERE id = $1 AND company_id = $2`,
-      [projectId, decoded.companyId]
-    );
-    if (projectRes.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Project not found' });
-    }
-    const project = projectRes.rows[0];
-
-    // ─── 2. Photos ──────────────────────────────────────────
-    const photos = await pool.query(
-      `SELECT p.id, p.s3_key, p.taken_at, p.taken_by, p.compliance_score, p.verification_hash,
-              u.first_name || ' ' || u.last_name AS taken_by_name
-       FROM photos p
-       LEFT JOIN users u ON p.taken_by = u.id
-       WHERE p.project_id = $1 AND p.taken_at BETWEEN $2 AND $3`,
-      [projectId, startDate, endDate]
-    );
-
-    // ─── 3. Videos ──────────────────────────────────────────
-    const videos = await pool.query(
-      `SELECT m.id, m.url, m.taken_at, m.type, m.duration, m.taken_by,
-              u.first_name || ' ' || u.last_name AS taken_by_name
-       FROM media m
-       LEFT JOIN users u ON m.taken_by = u.id
-       WHERE m.project_id = $1 AND m.type = 'video' AND m.taken_at BETWEEN $2 AND $3`,
-      [projectId, startDate, endDate]
-    );
-
-    // ─── 4. Voice Notes ──────────────────────────────────────
-    const voiceNotes = await pool.query(
-      `SELECT m.id, m.url, m.taken_at, m.type, m.duration, m.transcript, m.taken_by,
-              u.first_name || ' ' || u.last_name AS taken_by_name
-       FROM media m
-       LEFT JOIN users u ON m.taken_by = u.id
-       WHERE m.project_id = $1 AND m.type = 'voice_note' AND m.taken_at BETWEEN $2 AND $3`,
-      [projectId, startDate, endDate]
-    );
-
-    // ─── 5. GPS Trails ──────────────────────────────────────
-    const gpsTrails = await pool.query(
-      `SELECT g.*, te.id as time_entry_id,
-              u.first_name || ' ' || u.last_name AS user_name
-       FROM gps_points g
-       JOIN time_entries te ON g.time_entry_id = te.id
-       JOIN users u ON te.user_id = u.id
-       WHERE te.project_id = $1 AND g.timestamp BETWEEN $2 AND $3
-       ORDER BY g.timestamp ASC`,
-      [projectId, startDate, endDate]
-    );
-
-    // ─── 6. Timesheet ────────────────────────────────────────
-    const timesheet = await pool.query(
-      `SELECT te.*,
-              u.first_name || ' ' || u.last_name AS employee_name
-       FROM time_entries te
-       JOIN users u ON te.user_id = u.id
-       WHERE te.project_id = $1 AND te.clock_in BETWEEN $2 AND $3
-       ORDER BY te.clock_in ASC`,
-      [projectId, startDate, endDate]
-    );
-
-    // ─── 7. Notes ────────────────────────────────────────────
-    let notes = { rows: [] };
-    try {
-      const notesRes = await pool.query(
-        `SELECT n.*,
-                u.first_name || ' ' || u.last_name AS created_by
-         FROM notes n
-         LEFT JOIN users u ON n.created_by = u.id
-         WHERE n.project_id = $1 AND n.created_at BETWEEN $2 AND $3
-         ORDER BY n.created_at ASC`,
-        [projectId, startDate, endDate]
-      );
-      notes = notesRes;
-    } catch (e) {
-      // Ignore if notes table doesn't exist
-    }
-
-    // ─── 8. Company Name ──────────────────────────────────────
-    const companyRes = await pool.query('SELECT name FROM companies WHERE id = $1', [decoded.companyId]);
-    const companyName = companyRes.rows[0]?.name || 'Future Jobs Pro AI';
-
-    const reportData = {
-      project,
-      dateRange: { start: startDate, end: endDate },
-      photos: photos.rows,
-      videos: videos.rows,
-      voiceNotes: voiceNotes.rows,
-      gpsTrails: gpsTrails.rows,
-      timesheet: timesheet.rows,
-      notes: notes.rows || [],
-      companyName,
-    };
-
-    const pdfBuffer = await generateComprehensiveReport(reportData);
-    const base64 = pdfBuffer.toString('base64');
-    const dataUrl = `data:application/pdf;base64,${base64}`;
-
-    res.json({ success: true, reportUrl: dataUrl });
-  } catch (error) {
+    const current = await actor(req);
+    const projectId = String(req.body.projectId || '');
+    if (!projectId) throw new Error('Choose a project');
+    const range = dateRange(req.body);
+    const data = await reportData(current.companyId, projectId, range.startDate, range.endDate);
+    const pdfBuffer = await generateComprehensiveReport({ ...data, summary: summary(data) });
+    const safeProjectName = String(data.project.name || 'project').replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeProjectName || 'project'}-${range.startDate}-${range.endDate}.pdf"`);
+    res.setHeader('Content-Length', String(pdfBuffer.length));
+    res.send(pdfBuffer);
+  } catch (error: any) {
     console.error('Comprehensive report error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    const status = /authenticated/i.test(error.message) ? 401 : /not found/i.test(error.message) ? 404 : 400;
+    res.status(status).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/timesheet.csv', async (req: Request, res: Response) => {
+  try {
+    const current = await actor(req);
+    const projectId = String(req.query.projectId || '');
+    if (!projectId) throw new Error('Choose a project');
+    const range = dateRange(req.query);
+    const data = await reportData(current.companyId, projectId, range.startDate, range.endDate);
+    const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = [
+      ['Employee', 'Date', 'Clock In', 'Clock Out', 'Regular Hours', 'Overtime Hours', 'Gross Wages', 'Approval Status'],
+      ...data.workforce.map((entry) => [
+        entry.employee_name,
+        new Date(entry.clock_in).toISOString().slice(0, 10),
+        new Date(entry.clock_in).toISOString(),
+        entry.clock_out ? new Date(entry.clock_out).toISOString() : '',
+        Number(entry.regular_hours || 0).toFixed(2),
+        Number(entry.overtime_hours || 0).toFixed(2),
+        Number(entry.total_wage || 0).toFixed(2),
+        entry.approval_status,
+      ]),
+    ];
+    const csv = rows.map((row) => row.map(quote).join(',')).join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="timesheet-${range.startDate}-${range.endDate}.csv"`);
+    res.send(`\uFEFF${csv}`);
+  } catch (error: any) {
+    const status = /authenticated/i.test(error.message) ? 401 : /not found/i.test(error.message) ? 404 : 400;
+    res.status(status).json({ success: false, message: error.message });
   }
 });
 

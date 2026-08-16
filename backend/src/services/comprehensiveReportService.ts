@@ -1,178 +1,171 @@
 import PDFDocument from 'pdfkit';
 
-interface ReportData {
-  project: {
-    id: string;
-    name: string;
-    address?: string;
-    client_name?: string;
-  };
+export interface ProjectReportData {
+  company: { name?: string; legal_name?: string; address?: string; city?: string; province?: string; postal_code?: string; phone?: string; email?: string };
+  project: { id: string; name: string; address?: string; client_name?: string; status?: string };
   dateRange: { start: string; end: string };
-  photos: any[];
-  videos: any[];
+  workforce: any[];
+  media: any[];
   voiceNotes: any[];
-  gpsTrails: any[];
-  timesheet: any[];
-  notes: any[];
-  companyName: string;
+  gpsPoints: any[];
+  attachments: any[];
+  generatedAt: string;
+  summary?: any;
 }
 
-export async function generateComprehensiveReport(data: ReportData): Promise<Buffer> {
+const money = (value: unknown) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(Number(value || 0));
+const number = (value: unknown, digits = 1) => Number(value || 0).toFixed(digits);
+const dateTime = (value: unknown) => value ? new Date(String(value)).toLocaleString('en-CA') : 'In progress';
+
+export async function generateComprehensiveReport(data: ProjectReportData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
-      const doc = new PDFDocument({ margin: 50, size: 'A4' });
-      const buffers: Buffer[] = [];
-      doc.on('data', buffers.push.bind(buffers));
-      doc.on('end', () => resolve(Buffer.concat(buffers)));
+      const doc = new PDFDocument({ size: 'LETTER', margin: 46, bufferPages: true, info: { Title: `${data.project.name} Operations Report`, Author: data.company.name || 'Future Jobs Pro AI' } });
+      const chunks: Buffer[] = [];
+      doc.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
 
-      // ─── Title ─────────────────────────────────────────────
-      doc.fontSize(24).font('Helvetica-Bold').text('Project Report', { align: 'center' });
-      doc.moveDown(0.5);
-      doc.fontSize(16).font('Helvetica').text(`${data.project.name}`, { align: 'center' });
-      doc.fontSize(12).text(`Client: ${data.project.client_name || 'N/A'}`, { align: 'center' });
-      doc.text(`Period: ${data.dateRange.start} – ${data.dateRange.end}`, { align: 'center' });
-      doc.text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
-      doc.moveDown(2);
+      const navy = '#071720';
+      const cyan = '#00CDEA';
+      const ink = '#17232D';
+      const muted = '#687B88';
+      const line = '#D8E2E7';
+      const green = '#168A5B';
+      const amber = '#B96D00';
 
-      // ─── Summary ───────────────────────────────────────────
-      const totalPhotos = data.photos.length;
-      const totalVideos = data.videos.length;
-      const totalVoice = data.voiceNotes.length;
-      const totalGPS = data.gpsTrails.length;
-      const totalTimesheet = data.timesheet.length;
-      const totalNotes = data.notes.length;
-
-      doc.fontSize(12).font('Helvetica-Bold').text('Summary');
-      doc.fontSize(10).font('Helvetica')
-        .text(`  Photos: ${totalPhotos}`)
-        .text(`  Videos: ${totalVideos}`)
-        .text(`  Voice Notes: ${totalVoice}`)
-        .text(`  GPS Trails: ${totalGPS}`)
-        .text(`  Timesheet Entries: ${totalTimesheet}`)
-        .text(`  Notes: ${totalNotes}`);
-      doc.moveDown(2);
-
-      // ─── Photos ────────────────────────────────────────────
-      if (data.photos.length) {
-        doc.fontSize(14).font('Helvetica-Bold').text('📷 Photos');
+      const section = (title: string, subtitle?: string) => {
+        if (doc.y > 690) doc.addPage();
+        doc.moveDown(1.1);
+        doc.fillColor(cyan).font('Helvetica-Bold').fontSize(9).text(title.toUpperCase(), { characterSpacing: 1.2 });
+        if (subtitle) doc.fillColor(muted).font('Helvetica').fontSize(8).text(subtitle);
         doc.moveDown(0.5);
-        data.photos.forEach((p, i) => {
-          doc.fontSize(10).font('Helvetica')
-            .text(`${i+1}. ${p.taken_by_name || 'Unknown'} – ${new Date(p.taken_at).toLocaleString()}`, { continued: true })
-            .text(` Score: ${p.compliance_score || 0}%`, { align: 'right' });
-          if (p.verification_hash) doc.text(`   ✅ Verified: ${p.verification_hash.slice(0, 8)}`);
-          doc.moveDown(0.3);
+      };
+
+      const divider = () => {
+        doc.moveDown(0.35);
+        doc.moveTo(46, doc.y).lineTo(566, doc.y).strokeColor(line).lineWidth(0.6).stroke();
+        doc.moveDown(0.55);
+      };
+
+      doc.rect(0, 0, 612, 160).fill(navy);
+      doc.fillColor(cyan).font('Helvetica-Bold').fontSize(10).text('FUTURE JOBS PRO AI  /  OPERATIONS INTELLIGENCE', 46, 34, { characterSpacing: 1.1 });
+      doc.fillColor('#FFFFFF').fontSize(27).text('Project Performance Report', 46, 61);
+      doc.fillColor('#B8CAD4').font('Helvetica').fontSize(13).text(data.project.name, 46, 99);
+      doc.fontSize(9).text(`${data.dateRange.start} through ${data.dateRange.end}  |  Generated ${dateTime(data.generatedAt)}`, 46, 126);
+
+      doc.y = 188;
+      doc.fillColor(ink).font('Helvetica-Bold').fontSize(16).text('Executive brief');
+      doc.moveDown(0.4);
+      const summary = data.summary || {};
+      const readiness = Number(summary.readinessScore || 0);
+      const narrative = data.workforce.length
+        ? `${summary.employees || 0} team member(s) recorded ${number(summary.totalHours)} hours across ${summary.timeEntries || 0} time entries. ${summary.approvedEntries || 0} completed entries are approved for downstream payroll review.`
+        : 'No workforce activity was recorded for this project during the selected reporting period.';
+      doc.fillColor(muted).font('Helvetica').fontSize(10.5).text(narrative, { lineGap: 3 });
+      doc.moveDown(1);
+
+      const metrics = [
+        ['REPORT READINESS', `${readiness}%`, readiness >= 80 ? green : amber],
+        ['RECORDED HOURS', number(summary.totalHours), cyan],
+        ['GROSS WAGES', money(summary.grossWages), ink],
+        ['GPS OBSERVATIONS', String(summary.gpsPoints || 0), ink],
+      ];
+      const metricTop = doc.y;
+      metrics.forEach((metric, index) => {
+        const x = 46 + index * 132;
+        doc.roundedRect(x, metricTop, 120, 65, 7).fillAndStroke('#F4F8FA', line);
+        doc.fillColor(muted).font('Helvetica-Bold').fontSize(7).text(metric[0], x + 10, metricTop + 12, { width: 100 });
+        doc.fillColor(metric[2]).fontSize(18).text(metric[1], x + 10, metricTop + 31, { width: 100 });
+      });
+      doc.y = metricTop + 76;
+
+      section('Project and client context');
+      const contextRows = [
+        ['Company', data.company.legal_name || data.company.name || 'Not supplied'],
+        ['Project', data.project.name],
+        ['Client', data.project.client_name || 'Not supplied'],
+        ['Job site', data.project.address || 'Not supplied'],
+        ['Project status', data.project.status || 'Not supplied'],
+        ['Reporting period', `${data.dateRange.start} to ${data.dateRange.end}`],
+      ];
+      contextRows.forEach(([label, value]) => {
+        doc.fillColor(muted).font('Helvetica-Bold').fontSize(8).text(label.toUpperCase(), 46, doc.y, { width: 120 });
+        doc.fillColor(ink).font('Helvetica').fontSize(10).text(String(value), 170, doc.y - 9, { width: 390 });
+        divider();
+      });
+
+      section('Workforce performance', 'Recorded time and payroll-facing values for this project');
+      if (!data.workforce.length) {
+        doc.fillColor(muted).font('Helvetica').fontSize(10).text('No time entries in this period.');
+      } else {
+        const grouped = new Map<string, { entries: number; regular: number; overtime: number; wages: number; approved: number }>();
+        data.workforce.forEach((entry) => {
+          const name = entry.employee_name || 'Unknown employee';
+          const current = grouped.get(name) || { entries: 0, regular: 0, overtime: 0, wages: 0, approved: 0 };
+          current.entries += 1;
+          current.regular += Number(entry.regular_hours || 0);
+          current.overtime += Number(entry.overtime_hours || 0);
+          current.wages += Number(entry.total_wage || 0);
+          if (entry.approval_status === 'approved') current.approved += 1;
+          grouped.set(name, current);
         });
-        doc.moveDown(1);
-      }
-
-      // ─── Videos ────────────────────────────────────────────
-      if (data.videos.length) {
-        doc.fontSize(14).font('Helvetica-Bold').text('🎬 Videos');
-        doc.moveDown(0.5);
-        data.videos.forEach((v, i) => {
-          doc.fontSize(10).font('Helvetica')
-            .text(`${i+1}. ${v.taken_by_name || 'Unknown'} – ${new Date(v.taken_at).toLocaleString()}`);
-          if (v.duration) doc.text(`   Duration: ${v.duration}s`);
-          doc.moveDown(0.3);
+        doc.fillColor(muted).font('Helvetica-Bold').fontSize(7.5);
+        doc.text('EMPLOYEE', 46, doc.y, { width: 190 });
+        doc.text('ENTRIES', 240, doc.y - 9, { width: 55, align: 'right' });
+        doc.text('REGULAR', 304, doc.y - 9, { width: 60, align: 'right' });
+        doc.text('OVERTIME', 376, doc.y - 9, { width: 60, align: 'right' });
+        doc.text('GROSS', 452, doc.y - 9, { width: 108, align: 'right' });
+        divider();
+        grouped.forEach((value, name) => {
+          if (doc.y > 700) doc.addPage();
+          doc.fillColor(ink).font('Helvetica').fontSize(9.5).text(name, 46, doc.y, { width: 190 });
+          doc.text(String(value.entries), 240, doc.y - 11, { width: 55, align: 'right' });
+          doc.text(number(value.regular), 304, doc.y - 11, { width: 60, align: 'right' });
+          doc.text(number(value.overtime), 376, doc.y - 11, { width: 60, align: 'right' });
+          doc.font('Helvetica-Bold').text(money(value.wages), 452, doc.y - 11, { width: 108, align: 'right' });
+          divider();
         });
-        doc.moveDown(1);
       }
 
-      // ─── Voice Notes ───────────────────────────────────────
-      if (data.voiceNotes.length) {
-        doc.fontSize(14).font('Helvetica-Bold').text('🎙️ Voice Notes');
-        doc.moveDown(0.5);
-        data.voiceNotes.forEach((vn, i) => {
-          doc.fontSize(10).font('Helvetica')
-            .text(`${i+1}. ${vn.taken_by_name || 'Unknown'} – ${new Date(vn.taken_at).toLocaleString()}`);
-          if (vn.transcript) doc.text(`   Transcript: ${vn.transcript.slice(0, 100)}${vn.transcript.length > 100 ? '...' : ''}`);
-          if (vn.duration) doc.text(`   Duration: ${vn.duration}s`);
-          doc.moveDown(0.3);
-        });
-        doc.moveDown(1);
-      }
+      section('Operational record inventory');
+      const inventory = [
+        ['Photo and video records', data.media.length, `${summary.verifiedMedia || 0} cryptographically marked`],
+        ['Voice notes', data.voiceNotes.length, 'Field context and transcripts'],
+        ['GPS observations', data.gpsPoints.length, 'Timestamped location records'],
+        ['Supporting documents', data.attachments.length, 'Project-linked files'],
+      ];
+      inventory.forEach(([label, count, detail]) => {
+        const top = doc.y;
+        doc.roundedRect(46, top, 520, 42, 6).fillAndStroke('#F7FAFB', line);
+        doc.fillColor(ink).font('Helvetica-Bold').fontSize(10).text(String(label), 58, top + 8, { width: 260 });
+        doc.fillColor(muted).font('Helvetica').fontSize(8).text(String(detail), 58, top + 23, { width: 300 });
+        doc.fillColor(cyan).font('Helvetica-Bold').fontSize(19).text(String(count), 490, top + 10, { width: 58, align: 'right' });
+        doc.y = top + 50;
+      });
 
-      // ─── GPS Trails ────────────────────────────────────────
-      if (data.gpsTrails.length) {
-        doc.fontSize(14).font('Helvetica-Bold').text('📍 GPS Trails');
-        doc.moveDown(0.5);
-        const grouped = data.gpsTrails.reduce((acc, g) => {
-          const key = g.time_entry_id;
-          if (!acc[key]) acc[key] = { entries: [], user: g.user_name };
-          acc[key].entries.push(g);
-          return acc;
-        }, {});
-        for (const key of Object.keys(grouped)) {
-          const g = grouped[key] as { entries: any[]; user: string };
-          doc.fontSize(10).font('Helvetica-Bold').text(`User: ${g.user}`);
-          const sorted = g.entries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-          doc.font('Helvetica').text(`   Points: ${sorted.length}`);
-          const start = new Date(sorted[0].timestamp);
-          const end = new Date(sorted[sorted.length-1].timestamp);
-          const duration = (end.getTime() - start.getTime()) / 60000;
-          doc.text(`   Duration: ${Math.round(duration)} min`);
-          doc.text(`   Distance: ~${(sorted.length * 0.01).toFixed(2)} km (approx)`);
-          doc.moveDown(0.3);
-        }
-        doc.moveDown(1);
-      }
+      section('Management review');
+      const reviewLines = [
+        `Time-entry completion: ${summary.completionRate || 0}%`,
+        `Completed-entry approval: ${summary.approvalRate || 0}%`,
+        `Regular hours: ${number(summary.regularHours)}  |  Overtime hours: ${number(summary.overtimeHours)}`,
+        `Gross recorded wages: ${money(summary.grossWages)}`,
+      ];
+      reviewLines.forEach((value) => doc.fillColor(ink).font('Helvetica').fontSize(10).text(`• ${value}`, { lineGap: 4 }));
+      doc.moveDown(0.7);
+      doc.fillColor(muted).fontSize(8.5).text('This operational report summarizes company records for management review. Evidence packages, signed media exports, GPS playback videos, and chain-of-custody artifacts remain available separately in Evidence Center.', { lineGap: 3 });
 
-      // ─── Timesheet ──────────────────────────────────────────
-      if (data.timesheet.length) {
-        doc.fontSize(14).font('Helvetica-Bold').text('⏱ Timesheet');
-        doc.moveDown(0.5);
-        const tableTop = doc.y;
-        doc.font('Helvetica-Bold').fontSize(10)
-          .text('Date', 50, tableTop, { width: 80 })
-          .text('Employee', 130, tableTop, { width: 120 })
-          .text('Clock In', 250, tableTop, { width: 80 })
-          .text('Clock Out', 330, tableTop, { width: 80 })
-          .text('Hours', 410, tableTop, { width: 50 });
-        doc.moveDown();
-        const lineY = doc.y;
-        doc.moveTo(50, lineY).lineTo(500, lineY).stroke('#DDD');
-        doc.moveDown(0.5);
-        data.timesheet.forEach((t) => {
-          const y = doc.y;
-          const clockIn = new Date(t.clock_in).toLocaleTimeString();
-          const clockOut = t.clock_out ? new Date(t.clock_out).toLocaleTimeString() : 'Active';
-          const hours = t.clock_out ? ((new Date(t.clock_out).getTime() - new Date(t.clock_in).getTime()) / 3600000).toFixed(1) : '—';
-          doc.font('Helvetica').fontSize(10)
-            .text(new Date(t.clock_in).toLocaleDateString(), 50, y, { width: 80 })
-            .text(t.employee_name || 'Unknown', 130, y, { width: 120 })
-            .text(clockIn, 250, y, { width: 80 })
-            .text(clockOut, 330, y, { width: 80 })
-            .text(hours, 410, y, { width: 50 });
-          doc.moveDown(0.3);
-        });
-        doc.moveDown(1);
-      }
-
-      // ─── Notes ──────────────────────────────────────────────
-      if (data.notes.length) {
-        doc.fontSize(14).font('Helvetica-Bold').text('📝 Notes');
-        doc.moveDown(0.5);
-        data.notes.forEach((n, i) => {
-          doc.fontSize(10).font('Helvetica')
-            .text(`${i+1}. ${n.created_by || 'Unknown'} – ${new Date(n.created_at).toLocaleString()}`);
-          doc.text(`   ${n.content || n.note || n.text || ''}`);
-          doc.moveDown(0.3);
-        });
-        doc.moveDown(1);
-      }
-
-      // ─── Footer ────────────────────────────────────────────
-      const pageCount = doc.bufferedPageRange().count;
-      for (let i = 0; i < pageCount; i++) {
-        doc.switchToPage(i);
-        doc.fontSize(10)
-          .text(
-            `Page ${i + 1} of ${pageCount} – ${new Date().toISOString().split('T')[0]}`,
-            50,
-            doc.page.height - 50,
-            { align: 'center', width: 500 }
-          );
+      const pageRange = doc.bufferedPageRange();
+      for (let pageIndex = 0; pageIndex < pageRange.count; pageIndex += 1) {
+        doc.switchToPage(pageIndex);
+        doc.moveTo(46, 746).lineTo(566, 746).strokeColor(line).lineWidth(0.6).stroke();
+        doc.fillColor(muted).font('Helvetica').fontSize(7.5).text(
+          `${data.company.name || 'Future Jobs Pro AI'}  •  Confidential management report`,
+          46,
+          756,
+          { width: 390 },
+        );
+        doc.text(`Page ${pageIndex + 1} of ${pageRange.count}`, 456, 756, { width: 110, align: 'right' });
       }
 
       doc.end();

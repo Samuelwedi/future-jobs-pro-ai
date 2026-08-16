@@ -1,553 +1,373 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Box, Container, Typography, Grid, Paper, Button, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Chip, CircularProgress, Alert, Tabs, Tab,
-  FormControl, InputLabel, Select, MenuItem, IconButton, Tooltip, TextField,
-  Dialog, DialogTitle, DialogContent, DialogActions, Stack,
+  Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Container,
+  FormControl,
+  Grid,
+  InputLabel,
+  LinearProgress,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Tooltip,
+  Typography,
 } from '@mui/material';
 import {
-  PictureAsPdf, Description, Assessment, Refresh, CheckCircle, Warning,
-  Schedule, AttachMoney, FilePresent, VerifiedUser, Gavel,
+  Assessment,
+  AttachMoney,
+  CheckCircle,
+  CloudDownload,
+  Description,
+  Groups,
+  Insights,
+  Refresh,
+  Schedule,
+  TrendingUp,
 } from '@mui/icons-material';
-
+import { useNavigate } from 'react-router-dom';
 import { API_BASE } from '../services/api';
-import EvidencePackageDialog from '../components/EvidencePackageDialog';
 
-interface Photo {
-  id: string;
-  s3_key: string;
-  taken_at: string;
-  taken_by?: string;
-  compliance_score?: number;
-  project_id: string;
-  project_name?: string;
-  verification_hash?: string;
-}
-
-interface Project {
-  id: string;
-  name: string;
-}
-
-interface EvidenceEntry {
+type Project = { id: string; name: string; client_name?: string; status?: string };
+type WorkforceRow = {
   id: string;
   employee_name: string;
-  project_name?: string;
   clock_in: string;
-  clock_out?: string;
-  gps_count: number;
-  media_count: number;
-  voice_count: number;
+  clock_out?: string | null;
+  regular_hours: number | string;
+  overtime_hours: number | string;
+  total_wage: number | string;
+  approval_status: string;
+};
+type Summary = {
+  totalHours: number;
+  grossWages: number;
+  regularHours: number;
+  overtimeHours: number;
+  employees: number;
+  timeEntries: number;
+  completedEntries: number;
+  approvedEntries: number;
+  mediaFiles: number;
+  verifiedMedia: number;
+  voiceNotes: number;
+  gpsPoints: number;
+  attachments: number;
+  completionRate: number;
+  approvalRate: number;
+  readinessScore: number;
+};
+
+const emptySummary: Summary = {
+  totalHours: 0, grossWages: 0, regularHours: 0, overtimeHours: 0,
+  employees: 0, timeEntries: 0, completedEntries: 0, approvedEntries: 0,
+  mediaFiles: 0, verifiedMedia: 0, voiceNotes: 0, gpsPoints: 0,
+  attachments: 0, completionRate: 0, approvalRate: 0, readinessScore: 0,
+};
+
+const card = {
+  bgcolor: 'background.paper',
+  border: '1px solid',
+  borderColor: 'divider',
+  borderRadius: 3,
+  boxShadow: '0 18px 50px rgba(0,0,0,.14)',
+};
+
+function monthStart() {
+  const date = new Date();
+  date.setDate(1);
+  return date.toISOString().slice(0, 10);
 }
 
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
+function today() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-  return (
-    <div role="tabpanel" hidden={value !== index} {...other}>
-      {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
-    </div>
-  );
+function money(value: number) {
+  return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(Number(value || 0));
+}
+
+function fileNameFrom(response: Response, fallback: string) {
+  const disposition = response.headers.get('content-disposition') || '';
+  return disposition.match(/filename="?([^";]+)"?/i)?.[1] || fallback;
 }
 
 export default function Reports() {
+  const navigate = useNavigate();
   const token = localStorage.getItem('token') || '';
-
-  // ─── State ─────────────────────────────────────────────────────
-  const [tabValue, setTabValue] = useState(0);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string>('');
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(false);
-  const [reportUrl, setReportUrl] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [reportTitle, setReportTitle] = useState('Job Evidence Report');
-  const [showTitleDialog, setShowTitleDialog] = useState(false);
-  const [evidenceEntries, setEvidenceEntries] = useState<EvidenceEntry[]>([]);
-  const [selectedEvidence, setSelectedEvidence] = useState('');
-  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [selectedProject, setSelectedProject] = useState('');
+  const [startDate, setStartDate] = useState(monthStart);
+  const [endDate, setEndDate] = useState(today);
+  const [summary, setSummary] = useState<Summary>(emptySummary);
+  const [workforce, setWorkforce] = useState<WorkforceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState<'pdf' | 'csv' | null>(null);
+  const [error, setError] = useState('');
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
-  // ─── Comprehensive Report State ──────────────────────────────
-  const [startDate, setStartDate] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString().split('T')[0];
-  });
-  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
-  const [loadingReport, setLoadingReport] = useState(false);
+  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
+  const selected = projects.find((project) => project.id === selectedProject);
 
-  // ─── Fetch Projects ────────────────────────────────────────────
-  const fetchProjects = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/projects`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.projects) {
-        setProjects(data.projects);
-        if (data.projects.length > 0) setSelectedProject(data.projects[0].id);
-      }
-    } catch (e) {
-      console.error(e);
-      setError('Could not load projects');
-    }
-  }, [token]);
+  const loadProjects = useCallback(async () => {
+    const response = await fetch(`${API_BASE}/api/projects`, { headers });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.message || 'Projects could not be loaded');
+    const rows = Array.isArray(body) ? body : body.projects || [];
+    setProjects(rows);
+    setSelectedProject((current) => current || rows[0]?.id || '');
+  }, [headers]);
 
-  useEffect(() => { fetchProjects(); }, [fetchProjects]);
-
-  // ─── Fetch Photos (for Evidence Report) ──────────────────────
-  const fetchPhotos = useCallback(async () => {
-    if (!selectedProject) return;
-    setFetching(true);
-    setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/photos/project/${selectedProject}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (data.photos) {
-        setPhotos(data.photos);
-        const autoSelected = data.photos
-          .filter((p: Photo) => (p.compliance_score || 0) >= 70)
-          .map((p: Photo) => p.id);
-        setSelectedIds(autoSelected);
-      } else {
-        setPhotos([]);
-        setSelectedIds([]);
-      }
-    } catch (e) {
-      setError('Could not load photos');
-    } finally {
-      setFetching(false);
-    }
-  }, [selectedProject, token]);
-
-  useEffect(() => { fetchPhotos(); }, [fetchPhotos]);
-
-  const fetchEvidenceEntries = useCallback(async () => {
-    setEvidenceLoading(true);
-    try {
-      const response = await fetch(`${API_BASE}/api/evidence-bundles/recent`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Could not load verified work records');
-      setEvidenceEntries(data.entries || []);
-    } catch (e: any) {
-      setError(e.message || 'Could not load verified work records');
-    } finally {
-      setEvidenceLoading(false);
-    }
-  }, [token]);
-
-  useEffect(() => { fetchEvidenceEntries(); }, [fetchEvidenceEntries]);
-
-  // ─── Handlers ──────────────────────────────────────────────────
-  const togglePhoto = (id: string) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const selectAll = () => {
-    if (selectedIds.length === photos.length) setSelectedIds([]);
-    else setSelectedIds(photos.map(p => p.id));
-  };
-
-  const clearSelection = () => setSelectedIds([]);
-
-  const handleGenerateEvidenceReport = async () => {
-    if (selectedIds.length === 0) {
-      setError('Please select at least one photo');
+  const loadSummary = useCallback(async (signal?: AbortSignal) => {
+    if (!selectedProject || !startDate || !endDate) return;
+    if (startDate > endDate) {
+      setError('Start date must be before or equal to end date.');
       return;
     }
     setLoading(true);
-    setError(null);
-    setSuccess(null);
+    setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/photos/report`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          photoIds: selectedIds,
-          reportTitle: reportTitle,
-          projectId: selectedProject,
-        }),
-      });
-      const data = await res.json();
-      if (data.reportUrl) {
-        setReportUrl(data.reportUrl);
-        setSuccess('Report generated successfully!');
-        setTimeout(() => window.open(data.reportUrl, '_blank'), 1000);
-      } else {
-        setError(data.message || 'Failed to generate report');
-      }
-    } catch (e: any) {
-      setError('Error: ' + e.message);
+      const query = new URLSearchParams({ projectId: selectedProject, startDate, endDate });
+      const response = await fetch(`${API_BASE}/api/reports/summary?${query}`, { headers, signal, cache: 'no-store' });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.message || 'Report data could not be loaded');
+      setSummary({ ...emptySummary, ...body.summary });
+      setWorkforce(body.workforce || []);
+      setUpdatedAt(new Date());
+    } catch (caught: any) {
+      if (caught.name !== 'AbortError') setError(caught.message || 'Report data could not be loaded');
     } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
+  }, [endDate, headers, selectedProject, startDate]);
+
+  useEffect(() => {
+    setLoading(true);
+    loadProjects().catch((caught) => {
+      setError(caught.message || 'Projects could not be loaded');
       setLoading(false);
-    }
-  };
+    });
+  }, [loadProjects]);
 
-  // ─── Comprehensive Report Handler ─────────────────────────────
-  const handleGenerateComprehensiveReport = async () => {
-    if (!selectedProject || !startDate || !endDate) {
-      setError('Please select a project and a date range.');
-      return;
-    }
-    setLoadingReport(true);
-    setError(null);
-    setSuccess(null);
+  useEffect(() => {
+    if (!selectedProject) return undefined;
+    const controller = new AbortController();
+    void loadSummary(controller.signal);
+    return () => controller.abort();
+  }, [loadSummary, selectedProject]);
+
+  const download = async (kind: 'pdf' | 'csv') => {
+    if (!selectedProject) return;
+    setDownloading(kind);
+    setError('');
     try {
-      const res = await fetch(`${API_BASE}/api/reports/comprehensive`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          projectId: selectedProject,
-          startDate,
-          endDate,
-        }),
+      const query = new URLSearchParams({ projectId: selectedProject, startDate, endDate });
+      const url = kind === 'pdf'
+        ? `${API_BASE}/api/reports/comprehensive`
+        : `${API_BASE}/api/reports/timesheet.csv?${query}`;
+      const response = await fetch(url, {
+        method: kind === 'pdf' ? 'POST' : 'GET',
+        headers: kind === 'pdf' ? { ...headers, 'Content-Type': 'application/json' } : headers,
+        ...(kind === 'pdf' ? { body: JSON.stringify({ projectId: selectedProject, startDate, endDate }) } : {}),
       });
-      const data = await res.json();
-      if (data.success && data.reportUrl) {
-        // Open PDF in new tab
-        window.open(data.reportUrl, '_blank');
-        setSuccess('Comprehensive report generated successfully!');
-      } else {
-        setError(data.message || 'Failed to generate comprehensive report');
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || `Report download failed with HTTP ${response.status}`);
       }
-    } catch (e: any) {
-      setError('Error: ' + e.message);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = fileNameFrom(response, kind === 'pdf' ? 'project-report.pdf' : 'timesheet.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (caught: any) {
+      setError(caught.message || 'The report could not be downloaded');
     } finally {
-      setLoadingReport(false);
+      setDownloading(null);
     }
   };
 
-  const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
-
-  // ─── Helpers ──────────────────────────────────────────────────
-  const getComplianceColor = (score: number) => {
-    if (score >= 80) return '#4CAF50';
-    if (score >= 60) return '#FF9800';
-    return '#F44336';
-  };
-
-  const formatDate = (dateStr: string) => {
-    try {
-      const date = new Date(dateStr);
-      if (isNaN(date.getTime())) return dateStr;
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-      });
-    } catch { return dateStr; }
-  };
-
-  // ─── Render ────────────────────────────────────────────────────
-  if (fetching && photos.length === 0) {
-    return (
-      <Container maxWidth="xl" sx={{ py: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', height: '70vh' }}>
-        <CircularProgress sx={{ color: '#00D4FF' }} />
-      </Container>
-    );
-  }
+  const signal = summary.readinessScore >= 85
+    ? { title: 'Ready for management review', text: 'Time completion and approvals are strong for this reporting period.', color: 'success' as const }
+    : summary.timeEntries === 0
+      ? { title: 'No activity in this period', text: 'Adjust the date range or confirm that employees used this project when clocking in.', color: 'info' as const }
+      : { title: 'Review recommended', text: `${summary.completedEntries - summary.approvedEntries} completed time entr${summary.completedEntries - summary.approvedEntries === 1 ? 'y is' : 'ies are'} awaiting approval.`, color: 'warning' as const };
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box>
-          <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold' }}>📄 Reports</Typography>
-          <Typography variant="body1" sx={{ color: '#888', mt: 0.5 }}>
-            Generate evidence reports, timesheets, payroll summaries, and comprehensive project reports.
-          </Typography>
+    <Container maxWidth="xl" sx={{ py: { xs: 2.5, md: 4 } }}>
+      <Paper sx={{ ...card, overflow: 'hidden', mb: 3 }}>
+        <Box sx={{ p: { xs: 2.5, md: 4 }, background: 'linear-gradient(135deg, rgba(0,205,234,.16), rgba(24,92,122,.04) 58%, transparent)' }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={2}>
+            <Box>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                <Insights sx={{ color: '#00CDEA' }} />
+                <Typography variant="overline" sx={{ color: '#00CDEA', letterSpacing: 1.5, fontWeight: 900 }}>Operations intelligence</Typography>
+              </Stack>
+              <Typography variant="h3" sx={{ fontWeight: 900, fontSize: { xs: 30, md: 43 }, letterSpacing: '-.035em' }}>Report Command Center</Typography>
+              <Typography color="text.secondary" sx={{ mt: 1, maxWidth: 760 }}>
+                Turn project, workforce, payroll-facing, and field activity into a clear management report. Evidence packages remain independently managed in Evidence Center.
+              </Typography>
+            </Box>
+            <Stack direction="row" spacing={1}>
+              <Tooltip title="Reload report data">
+                <Button variant="outlined" startIcon={<Refresh />} onClick={() => void loadSummary()} disabled={loading || !selectedProject}>Refresh</Button>
+              </Tooltip>
+              <Button variant="contained" startIcon={<CloudDownload />} onClick={() => void download('pdf')} disabled={!selectedProject || downloading !== null}>
+                {downloading === 'pdf' ? 'Building PDF…' : 'Download executive PDF'}
+              </Button>
+            </Stack>
+          </Stack>
         </Box>
-        <Tooltip title="Refresh">
-          <IconButton onClick={fetchPhotos} sx={{ color: '#00D4FF' }}><Refresh /></IconButton>
-        </Tooltip>
-      </Box>
+      </Paper>
 
-      <Grid container spacing={2} sx={{ mb: 3 }}>
+      {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 3 }}>{error}</Alert>}
+
+      <Paper sx={{ ...card, p: 2.5, mb: 3 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={5}>
+            <FormControl fullWidth>
+              <InputLabel>Project</InputLabel>
+              <Select value={selectedProject} label="Project" onChange={(event) => setSelectedProject(String(event.target.value))}>
+                {projects.map((project) => <MenuItem value={project.id} key={project.id}>{project.name}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={6} md={2.5}>
+            <TextField fullWidth type="date" label="Start date" value={startDate} onChange={(event) => setStartDate(event.target.value)} InputLabelProps={{ shrink: true }} />
+          </Grid>
+          <Grid item xs={12} sm={6} md={2.5}>
+            <TextField fullWidth type="date" label="End date" value={endDate} onChange={(event) => setEndDate(event.target.value)} InputLabelProps={{ shrink: true }} />
+          </Grid>
+          <Grid item xs={12} md={2}>
+            <Button fullWidth size="large" variant="outlined" onClick={() => void loadSummary()} disabled={!selectedProject || loading} sx={{ minHeight: 56 }}>Apply period</Button>
+          </Grid>
+        </Grid>
+        {updatedAt && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.25 }}>Updated {updatedAt.toLocaleTimeString()} • {selected?.name}</Typography>}
+      </Paper>
+
+      {loading ? <LinearProgress sx={{ mb: 3, borderRadius: 3 }} /> : null}
+
+      <Grid container spacing={2.5} sx={{ mb: 3 }}>
         {[
-          { label: 'Projects ready', value: projects.length, detail: 'Available for project reporting', color: '#00D4FF' },
-          { label: 'Verified work records', value: evidenceEntries.length, detail: 'Recent audit-ready time entries', color: '#36D399' },
-          { label: 'Evidence media', value: evidenceEntries.reduce((sum, entry) => sum + Number(entry.media_count || 0) + Number(entry.voice_count || 0), 0), detail: 'Photo, video and voice records', color: '#A78BFA' },
-          { label: 'GPS observations', value: evidenceEntries.reduce((sum, entry) => sum + Number(entry.gps_count || 0), 0), detail: 'Location points ready for playback', color: '#FFB020' },
+          { label: 'Recorded hours', value: summary.totalHours.toFixed(1), detail: `${summary.regularHours.toFixed(1)} regular • ${summary.overtimeHours.toFixed(1)} overtime`, icon: <Schedule />, color: '#00CDEA' },
+          { label: 'Gross recorded wages', value: money(summary.grossWages), detail: 'Payroll-facing project labour', icon: <AttachMoney />, color: '#31C48D' },
+          { label: 'Team participation', value: summary.employees, detail: `${summary.timeEntries} recorded time entries`, icon: <Groups />, color: '#A78BFA' },
+          { label: 'Approval rate', value: `${summary.approvalRate}%`, detail: `${summary.approvedEntries} approved completed entries`, icon: <CheckCircle />, color: '#FFB020' },
         ].map((metric) => (
           <Grid item xs={12} sm={6} lg={3} key={metric.label}>
-            <Paper sx={{ p: 2.25, bgcolor: '#111820', border: '1px solid #263846', borderRadius: 3 }}>
-              <Typography variant="overline" sx={{ color: '#8EA4B2', letterSpacing: 1 }}>{metric.label}</Typography>
-              <Typography variant="h4" sx={{ color: metric.color, fontWeight: 900 }}>{metric.value}</Typography>
-              <Typography variant="caption" sx={{ color: '#9FB2BE' }}>{metric.detail}</Typography>
+            <Paper sx={{ ...card, p: 2.5, height: '100%' }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                <Box>
+                  <Typography variant="overline" color="text.secondary" sx={{ letterSpacing: 1 }}>{metric.label}</Typography>
+                  <Typography variant="h4" sx={{ fontWeight: 900, color: metric.color, my: .4 }}>{metric.value}</Typography>
+                  <Typography variant="caption" color="text.secondary">{metric.detail}</Typography>
+                </Box>
+                <Box sx={{ color: metric.color, opacity: .9 }}>{metric.icon}</Box>
+              </Stack>
             </Paper>
           </Grid>
         ))}
       </Grid>
 
-      <Tabs value={tabValue} onChange={handleTabChange} sx={{ mb: 2, borderBottom: '1px solid #333' }}>
-        <Tab label="📷 Evidence Report" icon={<PictureAsPdf />} iconPosition="start" />
-        <Tab label="📋 Comprehensive Report" icon={<Description />} iconPosition="start" />
-        <Tab label="⏱ Timesheet" icon={<Schedule />} iconPosition="start" />
-        <Tab label="💰 Payroll" icon={<AttachMoney />} iconPosition="start" />
-        <Tab label="🛡 Verified Evidence" icon={<VerifiedUser />} iconPosition="start" />
-      </Tabs>
-
-      {/* ─── Tab 0: Evidence Report ────────────────────────────── */}
-      <TabPanel value={tabValue} index={0}>
-        {/* ... (same as before) ... */}
-        <Box sx={{ display: 'flex', gap: 2, mb: 3, alignItems: 'center', flexWrap: 'wrap' }}>
-          <FormControl sx={{ minWidth: 200 }}>
-            <InputLabel sx={{ color: '#888' }}>Project</InputLabel>
-            <Select
-              value={selectedProject}
-              onChange={(e) => setSelectedProject(e.target.value)}
-              sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
-            >
-              {projects.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
-            </Select>
-          </FormControl>
-          <Button variant="outlined" startIcon={<Refresh />} onClick={fetchPhotos} sx={{ color: '#00D4FF', borderColor: '#00D4FF' }}>
-            Load Photos
-          </Button>
-          <Box sx={{ flex: 1 }} />
-          <Chip label={`${photos.length} photos`} sx={{ bgcolor: '#1A1A1A', color: '#888' }} />
-          <Chip label={`${selectedIds.length} selected`} sx={{ bgcolor: '#00D4FF20', color: '#00D4FF' }} />
-        </Box>
-
-        {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
-        {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
-
-        <Paper sx={{ bgcolor: '#1A1A1A', borderRadius: 2, border: '1px solid #333', overflow: 'hidden' }}>
-          <Box sx={{ p: 2, borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6" sx={{ color: '#FFF' }}>Select Photos</Typography>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button size="small" onClick={selectAll} sx={{ color: '#00D4FF' }}>
-                {selectedIds.length === photos.length ? 'Deselect All' : 'Select All'}
-              </Button>
-              <Button size="small" onClick={clearSelection} sx={{ color: '#F44336' }}>Clear</Button>
-            </Box>
-          </Box>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ color: '#888', width: 50 }}>#</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Photo</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Date</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Taken By</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Compliance</TableCell>
-                  <TableCell sx={{ color: '#888' }}>Verified</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {photos.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} sx={{ color: '#888', textAlign: 'center', py: 4 }}>No photos found.</TableCell></TableRow>
-                ) : (
-                  photos.map((photo, idx) => {
-                    const score = photo.compliance_score || 0;
-                    const isSelected = selectedIds.includes(photo.id);
-                    return (
-                      <TableRow key={photo.id} hover selected={isSelected} sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' }, '&.Mui-selected': { bgcolor: 'rgba(0,212,255,0.1)' } }} onClick={() => togglePhoto(photo.id)}>
-                        <TableCell>
-                          <input type="checkbox" checked={isSelected} onChange={() => togglePhoto(photo.id)} onClick={(e) => e.stopPropagation()} style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#00D4FF' }} />
-                        </TableCell>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Box component="img" src={photo.s3_key} alt="Job photo" sx={{ width: 50, height: 50, borderRadius: 1, objectFit: 'cover', bgcolor: '#0A0A0A', border: '1px solid #333' }} onError={(e) => { (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="%23888" stroke-width="2"%3E%3Crect x="3" y="3" width="18" height="18" rx="2"/%3E%3Ccircle cx="9" cy="9" r="2"/%3E%3Cpath d="M21 15l-5-5-5 5-3-3-5 5"/%3E%3C/svg%3E'; }} />
-                            <Typography variant="body2" sx={{ color: '#FFF' }}>{photo.taken_by || 'Unknown'}</Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell sx={{ color: '#CCC' }}>{formatDate(photo.taken_at)}</TableCell>
-                        <TableCell sx={{ color: '#CCC' }}>{photo.taken_by || '—'}</TableCell>
-                        <TableCell>
-                          <Chip label={`${score}%`} size="small" sx={{ bgcolor: `${getComplianceColor(score)}20`, color: getComplianceColor(score) }} />
-                        </TableCell>
-                        <TableCell>
-                          {photo.verification_hash ? <CheckCircle sx={{ color: '#4CAF50', fontSize: 20 }} /> : <Warning sx={{ color: '#888', fontSize: 20 }} />}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          <Box sx={{ p: 2, borderTop: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-            <Typography variant="body2" sx={{ color: '#888' }}>{selectedIds.length} of {photos.length} photos selected</Typography>
-            <Button variant="contained" onClick={() => setShowTitleDialog(true)} disabled={selectedIds.length === 0} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
-              Generate Evidence Report
-            </Button>
-          </Box>
-        </Paper>
-        {reportUrl && <Alert severity="success" sx={{ mt: 3 }} onClose={() => setReportUrl('')}>Report ready! <a href={reportUrl} target="_blank" rel="noreferrer" style={{ color: '#00D4FF' }}>Open PDF</a></Alert>}
-      </TabPanel>
-
-      {/* ─── Tab 1: Comprehensive Report ─────────────────────────── */}
-      <TabPanel value={tabValue} index={1}>
-        <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
-          <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>📋 Comprehensive Project Report</Typography>
-          <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>
-            Generate a complete report for a project and date range, including photos, videos, voice notes, GPS trails, timesheet, and notes.
-          </Typography>
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth>
-                <InputLabel sx={{ color: '#888' }}>Project</InputLabel>
-                <Select
-                  value={selectedProject}
-                  onChange={(e) => setSelectedProject(e.target.value)}
-                  sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
-                >
-                  {projects.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} md={3}>
-              <TextField
-                fullWidth
-                label="Start Date"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
-              />
-            </Grid>
-            <Grid item xs={12} md={3}>
-              <TextField
-                fullWidth
-                label="End Date"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
-              />
-            </Grid>
-            <Grid item xs={12} md={2}>
-              <Button
-                fullWidth
-                variant="contained"
-                onClick={handleGenerateComprehensiveReport}
-                disabled={loadingReport || !selectedProject || !startDate || !endDate}
-                sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', height: '56px' }}
-              >
-                {loadingReport ? <CircularProgress size={24} sx={{ color: '#0A0A0A' }} /> : 'Generate Report'}
-              </Button>
-            </Grid>
-          </Grid>
-          {error && <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError(null)}>{error}</Alert>}
-          {success && <Alert severity="success" sx={{ mt: 2 }} onClose={() => setSuccess(null)}>{success}</Alert>}
-        </Paper>
-      </TabPanel>
-
-      {/* ─── Tab 2: Timesheet ────────────────────────────────────── */}
-      <TabPanel value={tabValue} index={2}>
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
-              <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Export Timesheet</Typography>
-              <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>Export timesheets as PDF or CSV.</Typography>
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <Button variant="outlined" startIcon={<PictureAsPdf />} sx={{ color: '#00D4FF', borderColor: '#00D4FF' }}>PDF</Button>
-                <Button variant="outlined" startIcon={<Description />} sx={{ color: '#00D4FF', borderColor: '#00D4FF' }}>CSV</Button>
+      <Grid container spacing={3} sx={{ mb: 3 }}>
+        <Grid item xs={12} lg={8}>
+          <Paper sx={{ ...card, p: 3, height: '100%' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={2} sx={{ mb: 2.5 }}>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 900 }}>Workforce performance</Typography>
+                <Typography variant="body2" color="text.secondary">A payroll-facing view of time recorded against this project.</Typography>
               </Box>
-            </Paper>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
-              <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Quick Actions</Typography>
-              <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>Generate a dispute evidence package.</Typography>
-              <Button variant="contained" startIcon={<FilePresent />} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>Generate Dispute Package</Button>
-            </Paper>
-          </Grid>
-        </Grid>
-      </TabPanel>
-
-      {/* ─── Tab 3: Payroll ──────────────────────────────────────── */}
-      <TabPanel value={tabValue} index={3}>
-        <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
-          <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Payroll Summary</Typography>
-          <Typography variant="body2" sx={{ color: '#888', mb: 3 }}>Export payroll summaries for selected periods.</Typography>
-          <Button variant="contained" startIcon={<AttachMoney />} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>Generate Payroll Report</Button>
-        </Paper>
-      </TabPanel>
-
-      {/* ─── Tab 4: Verified Evidence ───────────────────────────── */}
-      <TabPanel value={tabValue} index={4}>
-        <Paper sx={{ bgcolor: '#111820', border: '1px solid #263846', borderRadius: 3, overflow: 'hidden' }}>
-          <Box sx={{ p: 3, display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', borderBottom: '1px solid #263846' }}>
-            <Box>
-              <Typography variant="h5" sx={{ color: '#FFF', fontWeight: 800 }}>
-                <Gavel sx={{ mr: 1, verticalAlign: 'middle', color: '#00D4FF' }} />Evidence Report Studio
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#9FB2BE', mt: 1, maxWidth: 760 }}>
-                Turn one verified time entry into a portable case file containing its time-entry PDF, animated worldwide GPS reconstruction, original coordinates, selected media, voice notes, documents, manifest, and SHA-256 integrity records.
-              </Typography>
-            </Box>
-            <Button variant="outlined" startIcon={<Refresh />} onClick={fetchEvidenceEntries} disabled={evidenceLoading} sx={{ color: '#00D4FF', borderColor: '#00D4FF', alignSelf: 'center' }}>
-              Refresh records
-            </Button>
-          </Box>
-          {evidenceLoading ? (
-            <Box sx={{ p: 6, textAlign: 'center' }}><CircularProgress /></Box>
-          ) : (
-            <TableContainer>
-              <Table>
-                <TableHead><TableRow><TableCell>Employee and project</TableCell><TableCell>Recorded period</TableCell><TableCell>Evidence inventory</TableCell><TableCell align="right">Verified package</TableCell></TableRow></TableHead>
+              <Button startIcon={<Description />} variant="outlined" onClick={() => void download('csv')} disabled={!selectedProject || downloading !== null}>
+                {downloading === 'csv' ? 'Preparing CSV…' : 'Export CSV'}
+              </Button>
+            </Stack>
+            <TableContainer sx={{ maxHeight: 430 }}>
+              <Table stickyHeader size="small">
+                <TableHead><TableRow>
+                  <TableCell>Employee</TableCell><TableCell>Date</TableCell><TableCell align="right">Regular</TableCell><TableCell align="right">Overtime</TableCell><TableCell align="right">Gross</TableCell><TableCell>Status</TableCell>
+                </TableRow></TableHead>
                 <TableBody>
-                  {evidenceEntries.length === 0 ? (
-                    <TableRow><TableCell colSpan={4} align="center" sx={{ py: 6, color: '#9FB2BE' }}>No completed time records are currently available.</TableCell></TableRow>
-                  ) : evidenceEntries.map((entry) => (
+                  {workforce.length ? workforce.map((entry) => (
                     <TableRow key={entry.id} hover>
-                      <TableCell><Typography sx={{ color: '#FFF', fontWeight: 700 }}>{entry.employee_name}</Typography><Typography variant="caption" sx={{ color: '#9FB2BE' }}>{entry.project_name || 'Unassigned project'}</Typography></TableCell>
-                      <TableCell><Typography variant="body2" sx={{ color: '#DCE8EF' }}>{formatDate(entry.clock_in)}</Typography><Typography variant="caption" sx={{ color: '#9FB2BE' }}>{entry.clock_out ? `to ${formatDate(entry.clock_out)}` : 'Work session in progress'}</Typography></TableCell>
-                      <TableCell><Stack direction="row" gap={1} flexWrap="wrap"><Chip size="small" label={`${entry.gps_count || 0} GPS`} sx={{ color: '#FFCB66' }} /><Chip size="small" label={`${entry.media_count || 0} media`} sx={{ color: '#66E5FF' }} /><Chip size="small" label={`${entry.voice_count || 0} voice`} sx={{ color: '#C4A8FF' }} /></Stack></TableCell>
-                      <TableCell align="right"><Button variant="contained" startIcon={<VerifiedUser />} onClick={() => setSelectedEvidence(entry.id)} sx={{ bgcolor: '#00D4FF', color: '#061018', fontWeight: 800 }}>Build evidence</Button></TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>{entry.employee_name || 'Unknown employee'}</TableCell>
+                      <TableCell>{new Date(entry.clock_in).toLocaleDateString('en-CA')}</TableCell>
+                      <TableCell align="right">{Number(entry.regular_hours || 0).toFixed(2)}h</TableCell>
+                      <TableCell align="right">{Number(entry.overtime_hours || 0).toFixed(2)}h</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800 }}>{money(Number(entry.total_wage || 0))}</TableCell>
+                      <TableCell><Chip size="small" label={entry.approval_status || 'draft'} color={entry.approval_status === 'approved' ? 'success' : 'default'} /></TableCell>
                     </TableRow>
-                  ))}
+                  )) : <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6, color: 'text.secondary' }}>No workforce activity for this project and period.</TableCell></TableRow>}
                 </TableBody>
               </Table>
             </TableContainer>
-          )}
-        </Paper>
-      </TabPanel>
+          </Paper>
+        </Grid>
 
-      {/* ─── Report Title Dialog ────────────────────────────────── */}
-      <Dialog open={showTitleDialog} onClose={() => setShowTitleDialog(false)}>
-        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>Report Title</DialogTitle>
-        <DialogContent sx={{ bgcolor: '#0A0A0A' }}>
-          <TextField
-            fullWidth
-            label="Report Title"
-            value={reportTitle}
-            onChange={(e) => setReportTitle(e.target.value)}
-            sx={{ mt: 1, input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
-          />
-        </DialogContent>
-        <DialogActions sx={{ bgcolor: '#1A1A1A' }}>
-          <Button onClick={() => setShowTitleDialog(false)}>Cancel</Button>
-          <Button
-            onClick={() => {
-              setShowTitleDialog(false);
-              handleGenerateEvidenceReport();
-            }}
-            disabled={loading}
-            sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}
-          >
-            {loading ? <CircularProgress size={24} /> : 'Generate'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-      {selectedEvidence && <EvidencePackageDialog timeEntryId={selectedEvidence} onClose={() => setSelectedEvidence('')} />}
+        <Grid item xs={12} lg={4}>
+          <Stack spacing={3} sx={{ height: '100%' }}>
+            <Paper sx={{ ...card, p: 3 }}>
+              <Stack direction="row" spacing={2.5} alignItems="center">
+                <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+                  <CircularProgress variant="determinate" value={summary.readinessScore} size={86} thickness={5} sx={{ color: summary.readinessScore >= 85 ? '#31C48D' : '#FFB020' }} />
+                  <Box sx={{ inset: 0, position: 'absolute', display: 'grid', placeItems: 'center' }}><Typography fontWeight={900}>{summary.readinessScore}%</Typography></Box>
+                </Box>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 900 }}>Report readiness</Typography>
+                  <Typography variant="body2" color="text.secondary">Completion, approval, project context, and supporting documents.</Typography>
+                </Box>
+              </Stack>
+            </Paper>
+
+            <Alert severity={signal.color} icon={<TrendingUp />} sx={{ ...card, alignItems: 'flex-start' }}>
+              <Typography fontWeight={900}>{signal.title}</Typography>
+              <Typography variant="body2">{signal.text}</Typography>
+            </Alert>
+
+            <Paper sx={{ ...card, p: 3, flexGrow: 1 }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, mb: 2 }}>Operational inventory</Typography>
+              {[
+                ['Media records', summary.mediaFiles],
+                ['Verified media', summary.verifiedMedia],
+                ['Voice notes', summary.voiceNotes],
+                ['GPS observations', summary.gpsPoints],
+                ['Supporting files', summary.attachments],
+              ].map(([label, value]) => (
+                <Stack key={String(label)} direction="row" justifyContent="space-between" sx={{ py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+                  <Typography color="text.secondary">{label}</Typography><Typography fontWeight={900}>{value}</Typography>
+                </Stack>
+              ))}
+            </Paper>
+          </Stack>
+        </Grid>
+      </Grid>
+
+      <Paper sx={{ ...card, p: 3 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} spacing={2}>
+          <Box>
+            <Stack direction="row" spacing={1} alignItems="center"><Assessment color="primary" /><Typography variant="h6" sx={{ fontWeight: 900 }}>Specialist workspaces</Typography></Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: .5 }}>Use the dedicated pages for corrections, approvals, payroll processing, and audit-ready evidence.</Typography>
+          </Box>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <Button variant="outlined" onClick={() => navigate('/timesheet')}>Open Timesheet</Button>
+            <Button variant="outlined" onClick={() => navigate('/payroll')}>Open Payroll</Button>
+            <Button variant="outlined" onClick={() => navigate('/evidence')}>Open Evidence Center</Button>
+          </Stack>
+        </Stack>
+      </Paper>
     </Container>
   );
 }
