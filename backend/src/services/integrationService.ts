@@ -14,7 +14,9 @@ function integrationEnvironment(provider: Provider): 'sandbox' | 'production' {
   if (provider === 'quickbooks') {
     return process.env.QUICKBOOKS_ENVIRONMENT === 'production' ? 'production' : 'sandbox';
   }
-  return requireEnvironment('STRIPE_SECRET_KEY').startsWith('sk_live_') ? 'production' : 'sandbox';
+  return requireEnvironment('STRIPE_CONNECT_SECRET_KEY').startsWith('sk_live_')
+    ? 'production'
+    : 'sandbox';
 }
 
 const frontendUrl = (process.env.FRONTEND_URL || 'https://www.futurejobsproai.com').replace(/\/$/, '');
@@ -38,7 +40,9 @@ function quickBooksClient(): OAuthClient {
 }
 
 function stripeClient(): any {
-  return new Stripe(requireEnvironment('STRIPE_SECRET_KEY'));
+  // Customer-owned Stripe Connect data is deliberately isolated from
+  // Future Jobs Pro AI's own live subscription billing account.
+  return new Stripe(requireEnvironment('STRIPE_CONNECT_SECRET_KEY'));
 }
 
 function hashState(state: string): string {
