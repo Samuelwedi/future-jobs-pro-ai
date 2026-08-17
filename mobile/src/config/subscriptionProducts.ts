@@ -6,9 +6,9 @@ export type PlanKey = 'basic' | 'professional' | 'enterprise';
 // Create these exact IDs in App Store Connect and Google Play Console.
 // Prices shown in the app come from the store, never from this source file.
 export const STORE_PRODUCT_IDS: Record<PlanKey, string> = {
-  basic: 'com.samuel33.futurejobspro.basic.monthly',
-  professional: 'com.samuel33.futurejobspro.professional.monthly',
-  enterprise: 'com.samuel33.futurejobspro.enterprise.monthly',
+  basic: 'com.samuel33.futurejobspro.basic_monthly',
+  professional: 'com.samuel33.futurejobspro.professional_monthly',
+  enterprise: 'com.samuel33.futurejobspro.enterprise_monthly',
 };
 
 type PlanCopy = {

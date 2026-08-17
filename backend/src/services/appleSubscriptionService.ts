@@ -8,9 +8,9 @@ import {
 import { pool } from '../config/database';
 
 const PLAN_BY_PRODUCT = new Map<string, 'basic' | 'professional' | 'enterprise'>([
-  ['com.samuel33.futurejobspro.basic.monthly', 'basic'],
-  ['com.samuel33.futurejobspro.professional.monthly', 'professional'],
-  ['com.samuel33.futurejobspro.enterprise.monthly', 'enterprise'],
+  ['com.samuel33.futurejobspro.basic_monthly', 'basic'],
+  ['com.samuel33.futurejobspro.professional_monthly', 'professional'],
+  ['com.samuel33.futurejobspro.enterprise_monthly', 'enterprise'],
 ]);
 
 function required(name: string): string {
