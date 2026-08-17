@@ -22,12 +22,13 @@ export default function AIAssistantScreen() {
   const navigation = useNavigation();
   const route = useRoute<any>();
   const [messages, setMessages] = useState<Message[]>([
-    { text: "Hi! I'm Lucy. I can schedule, run payroll, and generate reports. Try me!", isUser: false },
+    { text: "Hi, I'm Lucy. I remember your workspace conversation and can help prepare actions, with approval before anything sensitive changes.", isUser: false },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [voiceReplies, setVoiceReplies] = useState(true);
   const flatListRef = useRef<FlatList>(null);
   const isSpeaking = useRef(false);
 
@@ -57,6 +58,7 @@ export default function AIAssistantScreen() {
 
   // Speak Lucy's response
   const speakText = (text: string) => {
+    if (!voiceReplies) return;
     if (isSpeaking.current) Speech.stop();
     isSpeaking.current = true;
     Speech.speak(text, {
@@ -201,8 +203,13 @@ export default function AIAssistantScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ask Lucy</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.titleWrap}>
+          <View style={styles.lucyOrb}><MaterialIcons name="auto-awesome" size={18} color="#07111F" /></View>
+          <View><Text style={styles.headerTitle}>Lucy</Text><Text style={styles.headerMeta}>Workspace copilot • Memory on</Text></View>
+        </View>
+        <TouchableOpacity onPress={() => setVoiceReplies(current => !current)} style={styles.voiceToggle}>
+          <MaterialIcons name={voiceReplies ? 'volume-up' : 'volume-off'} size={21} color={voiceReplies ? '#67E8F9' : '#64748B'} />
+        </TouchableOpacity>
       </View>
       <FlatList
         ref={flatListRef}
@@ -238,11 +245,23 @@ export default function AIAssistantScreen() {
         )}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
       />
-      {loading && <ActivityIndicator color="#00D4FF" style={{ padding: 8 }} />}
+      {messages.length <= 2 && !loading && (
+        <View style={styles.promptArea}>
+          <Text style={styles.promptLabel}>TRY A WORKSPACE COMMAND</Text>
+          <View style={styles.promptRow}>
+            {['What needs attention today?', 'Summarize my active job', 'Prepare a schedule update'].map(prompt => (
+              <TouchableOpacity key={prompt} style={styles.promptChip} onPress={() => sendMessage(prompt)}>
+                <Text style={styles.promptText}>{prompt}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+      {loading && <View style={styles.thinking}><ActivityIndicator color="#C4B5FD" size="small" /><Text style={styles.thinkingText}>Lucy is reasoning across your workspace…</Text></View>}
       <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
-          placeholder="Type a command..."
+          placeholder="Ask Lucy about your workspace…"
           placeholderTextColor="#888"
           value={input}
           onChangeText={setInput}
@@ -261,7 +280,7 @@ export default function AIAssistantScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
+  container: { flex: 1, backgroundColor: '#07111F' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -269,15 +288,19 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 16,
     paddingHorizontal: 16,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: '#07111F',
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: '#17283A',
   },
   backButton: { padding: 8, marginLeft: 4 },
-  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  titleWrap: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  lucyOrb: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#C4B5FD' },
+  headerTitle: { color: '#FFF', fontSize: 18, fontWeight: '900' },
+  headerMeta: { color: '#8FA0B5', fontSize: 10, marginTop: 2 },
+  voiceToggle: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111E2D' },
   bubble: { margin: 8, padding: 12, borderRadius: 12, maxWidth: '80%' },
-  bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#00D4FF' },
-  bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333', flexDirection: 'row', alignItems: 'center' },
+  bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#0E7490' },
+  bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#17112B', borderWidth: 1, borderColor: '#4C1D95', flexDirection: 'row', alignItems: 'center' },
   avatar: { marginRight: 8 },
   msgText: { color: '#FFF', fontSize: 15 },
   approvalRow: { flexDirection: 'row', marginTop: 4, marginLeft: 8, gap: 12 },
@@ -285,7 +308,14 @@ const styles = StyleSheet.create({
   approveBtn: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
   rejectBtn: { backgroundColor: '#F44336', borderColor: '#F44336' },
   approvalBtnText: { color: '#FFF', fontWeight: '600', fontSize: 13 },
-  inputBar: { flexDirection: 'row', alignItems: 'center', padding: 12, borderTopWidth: 1, borderTopColor: '#333' },
-  input: { flex: 1, backgroundColor: '#1A1A1A', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#FFF', fontSize: 16, marginRight: 12 },
+  promptArea: { paddingHorizontal: 12, paddingBottom: 10 },
+  promptLabel: { color: '#64748B', fontSize: 9, letterSpacing: 1.2, fontWeight: '900', marginBottom: 7 },
+  promptRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  promptChip: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 12, backgroundColor: '#111E2D', borderWidth: 1, borderColor: '#263A50' },
+  promptText: { color: '#C8D4E2', fontSize: 11, fontWeight: '600' },
+  thinking: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  thinkingText: { color: '#A99BC2', fontSize: 11 },
+  inputBar: { flexDirection: 'row', alignItems: 'center', padding: 12, paddingBottom: Platform.OS === 'ios' ? 22 : 12, borderTopWidth: 1, borderTopColor: '#17283A', backgroundColor: '#091421' },
+  input: { flex: 1, backgroundColor: '#111E2D', borderRadius: 18, borderWidth: 1, borderColor: '#263A50', paddingHorizontal: 16, paddingVertical: 11, color: '#FFF', fontSize: 15, marginRight: 10 },
   micBtn: { padding: 4, marginRight: 8 },
 });

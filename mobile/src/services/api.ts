@@ -14,8 +14,6 @@ const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 const PROD_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 export const API_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
 
-console.log('🚀 API_URL:', API_URL);
-
 class ApiService {
   private client: AxiosInstance;
   private token: string | null = null;
@@ -40,13 +38,7 @@ class ApiService {
 
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
-          console.log('🔑 Authorization header added for:', config.url, 'token first 10 chars:', token.substring(0, 10) + '...');
-        } else {
-          console.log('⚠️ No token available for request:', config.url);
         }
-
-        // Send test user header (for review)
-        config.headers['X-Test-User'] = 'samuel@test.com';
 
         return config;
       },
@@ -78,10 +70,8 @@ class ApiService {
   }
 
   async setToken(token: string): Promise<void> {
-    console.log('🔑 api.setToken called, token length:', token.length);
     this.token = token;
     await SecureStore.setItemAsync('authToken', token);
-    console.log('✅ Token stored in SecureStore');
   }
 
   async getToken(): Promise<string | null> {
@@ -94,7 +84,6 @@ class ApiService {
   async clearToken(): Promise<void> {
     this.token = null;
     await SecureStore.deleteItemAsync('authToken');
-    console.log('🗑️ Token cleared');
   }
 
   async get<T>(url: string): Promise<T> {

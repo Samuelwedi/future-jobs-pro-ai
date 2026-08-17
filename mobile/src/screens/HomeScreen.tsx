@@ -50,7 +50,7 @@ export default function HomeScreen() {
   const gpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
+  const [livePulse, setLivePulse] = useState({ activeWorkers: 0, activeProjects: 0, revenueToday: 0 });
 
   // ─── Derived clocked‑in status ───
   const isClockedIn = activeTimeEntry !== null;
@@ -345,6 +345,25 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
+        <LinearGradient colors={['#0E7490', '#155E75', '#101827']} style={styles.commandDeck}>
+          <View style={styles.commandDeckTop}>
+            <View>
+              <Text style={styles.commandEyebrow}>TODAY'S COMMAND DECK</Text>
+              <Text style={styles.commandTitle}>Stay ahead of the field</Text>
+            </View>
+            <View style={styles.commandLive}><View style={styles.commandLiveDot} /><Text style={styles.commandLiveText}>LIVE</Text></View>
+          </View>
+          <Text style={styles.commandText}>Lucy can summarize active work, surface exceptions, and prepare the next action for your approval.</Text>
+          <View style={styles.commandButtons}>
+            <TouchableOpacity style={styles.commandPrimary} onPress={() => navigation.navigate('AIAssistant')}>
+              <MaterialIcons name="auto-awesome" size={18} color="#07111F" /><Text style={styles.commandPrimaryText}>Brief me</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.commandSecondary} onPress={() => navigation.navigate('Support')}>
+              <MaterialIcons name="support-agent" size={18} color="#CFFAFE" /><Text style={styles.commandSecondaryText}>Customer care</Text>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+
         {aiSuggestions.length > 0 && (
           <TouchableOpacity style={styles.aiWhisper} onPress={() => dismissSuggestion(aiSuggestions[0].id)}>
             <MaterialIcons name="psychology" size={18} color="#00D4FF" />
@@ -516,6 +535,19 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 18, fontWeight: 'bold', color: '#FFF' },
   role: { fontSize: 12, color: '#00D4FF', marginTop: 2 },
   logoutBtn: { padding: 8 },
+  commandDeck: { marginHorizontal: 20, marginBottom: 16, borderRadius: 22, padding: 19, borderWidth: 1, borderColor: '#67E8F933' },
+  commandDeckTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  commandEyebrow: { color: '#A5F3FC', fontSize: 9, letterSpacing: 1.4, fontWeight: '900' },
+  commandTitle: { color: '#FFF', fontSize: 20, fontWeight: '900', marginTop: 5 },
+  commandLive: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#052E2B', borderRadius: 20, paddingHorizontal: 9, paddingVertical: 6 },
+  commandLiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#34D399' },
+  commandLiveText: { color: '#6EE7B7', fontSize: 9, letterSpacing: 1, fontWeight: '900' },
+  commandText: { color: '#C8E7EF', fontSize: 13, lineHeight: 19, marginTop: 11 },
+  commandButtons: { flexDirection: 'row', gap: 9, marginTop: 16 },
+  commandPrimary: { flex: 1, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: '#67E8F9', paddingVertical: 11, borderRadius: 12 },
+  commandPrimaryText: { color: '#07111F', fontWeight: '900', fontSize: 13 },
+  commandSecondary: { flex: 1, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', backgroundColor: '#083344', paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: '#0E7490' },
+  commandSecondaryText: { color: '#CFFAFE', fontWeight: '800', fontSize: 12 },
   aiWhisper: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 16, backgroundColor: '#1A1A2E', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, gap: 8, borderWidth: 1, borderColor: '#00D4FF20' },
   aiWhisperText: { color: '#CCC', fontSize: 13, flex: 1 },
   heroClock: { marginHorizontal: 20, marginBottom: 24, backgroundColor: '#1A1A1A', borderRadius: 24, padding: 28, alignItems: 'center', borderWidth: 1, borderColor: '#333' },
