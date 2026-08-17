@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, DeviceEventEmitter, Switch,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -29,27 +28,8 @@ export default function AIAssistantScreen() {
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const isSpeaking = useRef(false);
-
-  useEffect(() => {
-    AsyncStorage.getItem('lucyWakeWordEnabled')
-      .then(value => setWakeWordEnabled(value === 'true'))
-      .catch(() => setWakeWordEnabled(false));
-  }, []);
-
-  const changeWakeWordPreference = async (enabled: boolean) => {
-    setWakeWordEnabled(enabled);
-    await AsyncStorage.setItem('lucyWakeWordEnabled', String(enabled));
-    DeviceEventEmitter.emit('lucyWakeWordPreferenceChanged', enabled);
-    Alert.alert(
-      enabled ? 'Hey Lucy enabled' : 'Hey Lucy disabled',
-      enabled
-        ? 'Listening stays on this device only and requires a signed development or store build.'
-        : 'Background wake-word listening has stopped.',
-    );
-  };
 
   // Auto-record from Home screen
   useEffect(() => {
@@ -224,13 +204,6 @@ export default function AIAssistantScreen() {
         <Text style={styles.headerTitle}>Ask Lucy</Text>
         <View style={{ width: 40 }} />
       </View>
-      <View style={styles.wakeWordRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.wakeWordTitle}>Hey Lucy</Text>
-          <Text style={styles.wakeWordCaption}>Opt-in on-device wake word. Microphone use is always visible.</Text>
-        </View>
-        <Switch value={wakeWordEnabled} onValueChange={changeWakeWordPreference} />
-      </View>
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -302,9 +275,6 @@ const styles = StyleSheet.create({
   },
   backButton: { padding: 8, marginLeft: 4 },
   headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
-  wakeWordRow: { flexDirection: 'row', alignItems: 'center', gap: 12, margin: 12, padding: 14, borderRadius: 16, backgroundColor: '#121D24', borderWidth: 1, borderColor: '#214150' },
-  wakeWordTitle: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-  wakeWordCaption: { color: '#AFC3CD', fontSize: 12, marginTop: 3 },
   bubble: { margin: 8, padding: 12, borderRadius: 12, maxWidth: '80%' },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#00D4FF' },
   bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333', flexDirection: 'row', alignItems: 'center' },

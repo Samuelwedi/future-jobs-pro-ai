@@ -40,7 +40,13 @@ class ApiService {
 
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
+          console.log('🔑 Authorization header added for:', config.url, 'token first 10 chars:', token.substring(0, 10) + '...');
+        } else {
+          console.log('⚠️ No token available for request:', config.url);
         }
+
+        // Send test user header (for review)
+        config.headers['X-Test-User'] = 'samuel@test.com';
 
         return config;
       },
@@ -72,8 +78,10 @@ class ApiService {
   }
 
   async setToken(token: string): Promise<void> {
+    console.log('🔑 api.setToken called, token length:', token.length);
     this.token = token;
     await SecureStore.setItemAsync('authToken', token);
+    console.log('✅ Token stored in SecureStore');
   }
 
   async getToken(): Promise<string | null> {

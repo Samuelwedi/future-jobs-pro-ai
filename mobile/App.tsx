@@ -4,7 +4,6 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { LanguageProvider } from './src/context/LanguageContext';
 import LoginScreen from './src/screens/LoginScreen';
-import DemoScreen from './src/screens/DemoScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CameraView from './src/screens/CameraView';
 import VoiceNoteScreen from './src/screens/VoiceNoteScreen';
@@ -28,8 +27,7 @@ import TeamScreen from './src/screens/TeamScreen';
 import SubscriptionScreen from './src/screens/SubscriptionScreen';
 import { StatusBar } from 'expo-status-bar';
 import { listenToNetworkChanges, processQueue } from './src/services/offlineService';
-import { DeviceEventEmitter, View, Text, TouchableOpacity } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, Text, TouchableOpacity } from 'react-native';
 import ContactScreen from './src/screens/ContactScreen';
 import PrivacyScreen from './src/screens/PrivacyScreen';
 import TermsScreen from './src/screens/TermsScreen';
@@ -45,9 +43,6 @@ import WebViewScreen from './src/screens/WebViewScreen';
 import SelectEmployeesScreen from './src/screens/SelectEmployeesScreen';
 import CreateShiftScreen from './src/screens/CreateShiftScreen';
 import CompanySettingsScreen from './src/screens/CompanySettingsScreen';
-
-// 👇 NEW: Import the wake word service
-import { WakeWordService } from './src/services/wakeWordService';
 
 const Stack = createStackNavigator();
 
@@ -79,15 +74,12 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 }
 
 function AppNavigator() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const isProcessing = useRef(false);
   const navigationRef = useRef<any>(null);
 
-  // 👇 NEW: Ref for the wake word service
-  const wakeWordRef = useRef<WakeWordService | null>(null);
-
-  // Set the 401 handler to navigate to Login
   useEffect(() => {
+    // Set the 401 handler to navigate to Login
     api.setUnauthorizedHandler(() => {
       if (navigationRef.current) {
         navigationRef.current.navigate('Login');
@@ -95,7 +87,6 @@ function AppNavigator() {
     });
   }, []);
 
-  // Offline queue processing
   useEffect(() => {
     const cleanup = listenToNetworkChanges(async (online) => {
       if (online && !isProcessing.current) {
@@ -107,45 +98,13 @@ function AppNavigator() {
     return cleanup;
   }, []);
 
-  // Wake-word listening is privacy-sensitive and remains off until the user opts in.
-  useEffect(() => {
-    let cancelled = false;
-    const configure = async (enabled?: boolean) => {
-      const optedIn = enabled ?? (await AsyncStorage.getItem('lucyWakeWordEnabled')) === 'true';
-      await wakeWordRef.current?.stop();
-      wakeWordRef.current = null;
-      if (cancelled || !isAuthenticated || !user || !optedIn) return;
-
-      const service = new WakeWordService(() => {
-        navigationRef.current?.navigate('AIAssistant', { autoRecord: true });
-      });
-      wakeWordRef.current = service;
-      try {
-        await service.start();
-      } catch (error) {
-        console.warn('Wake word is unavailable:', error);
-      }
-    };
-    configure();
-    const listener = DeviceEventEmitter.addListener('lucyWakeWordPreferenceChanged', configure);
-    return () => {
-      cancelled = true;
-      listener.remove();
-      wakeWordRef.current?.stop();
-      wakeWordRef.current = null;
-    };
-  }, [isAuthenticated, user]);
-
   if (isLoading) return null;
 
   return (
     <ErrorBoundary>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
-          <>
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Demo" component={DemoScreen} />
-          </>
+          <Stack.Screen name="Login" component={LoginScreen} />
         ) : (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
