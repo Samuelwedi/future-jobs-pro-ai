@@ -5,7 +5,8 @@ import {
   AppBar, Toolbar, Chip, Link,
 } from '@mui/material';
 import {
-  CheckCircle, LocationOn, PhotoCamera, Mic, Security, Speed,
+  ArrowForward, AutoAwesome, CheckCircle, LocationOn, PhotoCamera, Mic,
+  PlayCircleOutline, Security, Speed,
 } from '@mui/icons-material';
 
 export default function Landing() {
@@ -18,6 +19,7 @@ export default function Landing() {
             🚀 Future Jobs Pro AI
           </Typography>
           <Box>
+            <Button component={RouterLink} to="/demo" startIcon={<PlayCircleOutline />} sx={{ color: '#CBEAF0', mr: 1 }}>Live Demo</Button>
             <Button component={RouterLink} to="/login" sx={{ color: '#FFF', mr: 2 }}>Sign In</Button>
             <Button component={RouterLink} to="/pricing" variant="contained" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
               Start Free Trial
@@ -39,9 +41,10 @@ export default function Landing() {
               Bring scheduling, time tracking, projects, payroll preparation and field evidence into one secure workspace.
               Give your team clearer operations while keeping every important decision under human review.
             </Typography>
-            <Button component={RouterLink} to="/pricing" variant="contained" size="large" sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 6, py: 1.5, fontSize: 18 }}>
-              Start Your Free Trial →
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+              <Button component={RouterLink} to="/demo" variant="outlined" size="large" startIcon={<PlayCircleOutline />} sx={{ borderColor: '#00D4FF66', color: '#DDFBFF', px: 3.5, py: 1.5 }}>Explore live demo</Button>
+              <Button component={RouterLink} to="/pricing" variant="contained" size="large" endIcon={<ArrowForward />} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', px: 4, py: 1.5, fontSize: 17 }}>Start free trial</Button>
+            </Box>
             <Typography variant="body2" sx={{ color: '#888', mt: 2 }}>
               No credit card required • 14‑day trial • Cancel anytime
             </Typography>
@@ -66,6 +69,24 @@ export default function Landing() {
             </Box>
           </Grid>
         </Grid>
+      </Container>
+
+      {/* ---- Interactive demo invitation ---- */}
+      <Container maxWidth="lg" sx={{ pb: 10 }}>
+        <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: 5, p: { xs: 3, md: 5 }, bgcolor: '#0E1E32', border: '1px solid #29435F', boxShadow: '0 28px 80px rgba(0,0,0,.3)' }}>
+          <Box sx={{ position: 'absolute', width: 360, height: 360, borderRadius: '50%', bgcolor: '#00D4FF13', filter: 'blur(8px)', right: -120, top: -170 }} />
+          <Grid container spacing={4} alignItems="center">
+            <Grid item xs={12} md={7}>
+              <Chip icon={<AutoAwesome />} label="INTERACTIVE PRODUCT TOUR" sx={{ color: '#8EF5C8', bgcolor: '#42E8A714', border: '1px solid #42E8A733', fontWeight: 900 }} />
+              <Typography variant="h3" sx={{ color: '#FFF', fontWeight: 900, letterSpacing: -1, mt: 2 }}>Don’t take our word for it. Run the sample workspace.</Typography>
+              <Typography sx={{ color: '#9BAEC2', fontSize: 16, lineHeight: 1.75, mt: 1.5 }}>Switch between field operations, evidence and Lucy AI. It is read-only, requires no account, and never touches production data.</Typography>
+            </Grid>
+            <Grid item xs={12} md={5} sx={{ textAlign: { md: 'right' } }}>
+              <Button component={RouterLink} to="/demo" variant="contained" size="large" startIcon={<PlayCircleOutline />} sx={{ bgcolor: '#6FE7FF', color: '#06101D', px: 4, py: 1.6, fontWeight: 900, '&:hover': { bgcolor: '#A1F1FF' } }}>Open interactive demo</Button>
+              <Typography sx={{ color: '#687D93', fontSize: 11, mt: 1.2 }}>No login · No API calls · Sample data only</Typography>
+            </Grid>
+          </Grid>
+        </Box>
       </Container>
 
       {/* ---- Trusted By ---- */}
