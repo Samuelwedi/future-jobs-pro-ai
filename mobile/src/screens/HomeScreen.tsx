@@ -50,7 +50,7 @@ export default function HomeScreen() {
   const gpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  const [livePulse, setLivePulse] = useState({ activeWorkers: 1, activeProjects: 1, revenueToday: 0 });
+  const [livePulse, setLivePulse] = useState({ activeProjects: 0 });
 
   // ─── Derived clocked‑in status ───
   const isClockedIn = activeTimeEntry !== null;
@@ -291,7 +291,10 @@ export default function HomeScreen() {
     return <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /></View>;
   }
 
-  const greeting = t('greeting', { firstName: user?.firstName || '' });
+  const firstName = user?.firstName || user?.first_name || '';
+  const lastName = user?.lastName || user?.last_name || '';
+  const greeting = t('greeting', { firstName });
+  const todayLabel = format(new Date(), 'EEEE, MMMM d');
 
   const quickActions = [
     { icon: 'photo-camera', color: '#00D4FF', gradient: ['#00D4FF', '#007AFF'], label: 'Photo', screen: 'Camera', needsProject: true },
@@ -310,21 +313,32 @@ export default function HomeScreen() {
         refreshControl={<RefreshControl refreshing={false} onRefresh={loadData} tintColor="#00D4FF" />}
         showsVerticalScrollIndicator={false}
       >
-        <LinearGradient colors={['#1A1A2E', '#0A0A0A']} style={styles.pulseBar}>
+        <View style={styles.commandHeader}>
+          <View>
+            <Text style={styles.commandEyebrow}>FIELD COMMAND CENTER</Text>
+            <Text style={styles.commandDate}>{todayLabel}</Text>
+          </View>
+          <View style={[styles.connectionBadge, isClockedIn && styles.connectionBadgeLive]}>
+            <View style={[styles.connectionDot, isClockedIn && styles.connectionDotLive]} />
+            <Text style={[styles.connectionText, isClockedIn && styles.connectionTextLive]}>{isClockedIn ? 'ON SHIFT' : 'READY'}</Text>
+          </View>
+        </View>
+
+        <LinearGradient colors={['#132B46', '#0C1C30']} style={styles.pulseBar}>
           <View style={styles.pulseItem}>
-            <View style={styles.pulseDot} />
-            <Text style={styles.pulseValue}>{livePulse.activeWorkers}</Text>
-            <Text style={styles.pulseLabel}>Active</Text>
+            <Ionicons name="radio-outline" size={17} color={isClockedIn ? '#42E8A7' : '#6F8298'} />
+            <Text style={styles.pulseValue}>{isClockedIn ? 1 : 0}</Text>
+            <Text style={styles.pulseLabel}>Your live shift</Text>
           </View>
           <View style={styles.pulseDivider} />
           <View style={styles.pulseItem}>
             <Text style={styles.pulseValue}>{livePulse.activeProjects}</Text>
-            <Text style={styles.pulseLabel}>Projects</Text>
+            <Text style={styles.pulseLabel}>Available jobs</Text>
           </View>
           <View style={styles.pulseDivider} />
           <View style={styles.pulseItem}>
-            <Text style={styles.pulseValue}>${livePulse.revenueToday}</Text>
-            <Text style={styles.pulseLabel}>Today</Text>
+            <Text style={styles.pulseValue}>{schedules.length}</Text>
+            <Text style={styles.pulseLabel}>Today's shifts</Text>
           </View>
         </LinearGradient>
 
@@ -332,7 +346,7 @@ export default function HomeScreen() {
           <View style={styles.headerLeft}>
             <LinearGradient colors={['#00D4FF', '#007AFF']} style={styles.avatarGradient}>
               <Text style={styles.avatarText}>
-                {user?.firstName?.charAt(0).toUpperCase()}{user?.lastName?.charAt(0).toUpperCase()}
+                {firstName.charAt(0).toUpperCase()}{lastName.charAt(0).toUpperCase()}
               </Text>
             </LinearGradient>
             <View>
@@ -356,8 +370,9 @@ export default function HomeScreen() {
         <View style={[styles.heroClock, isClockedIn && styles.heroClockActive]}>
           {!isClockedIn ? (
             <>
-              <Text style={styles.heroTitle}>Start Your Day</Text>
-              <Text style={styles.heroSubtitle}>Select project or schedule</Text>
+              <View style={styles.heroIcon}><Ionicons name="navigate" size={24} color="#6FE7FF" /></View>
+              <Text style={styles.heroTitle}>Start your field session</Text>
+              <Text style={styles.heroSubtitle}>Choose a project or today’s scheduled assignment.</Text>
 
               <View style={styles.segmentedControl}>
                 <TouchableOpacity
@@ -436,7 +451,13 @@ export default function HomeScreen() {
           )}
         </View>
 
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.sectionHeadingRow}>
+          <View>
+            <Text style={styles.sectionEyebrow}>CAPTURE & COORDINATE</Text>
+            <Text style={styles.sectionTitle}>Field tools</Text>
+          </View>
+          <Ionicons name="shield-checkmark-outline" size={22} color="#42E8A7" />
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionsScroll}>
           {quickActions.map((action, index) => {
             const IconComponent = action.IconSet || MaterialIcons;
@@ -500,61 +521,72 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  wrapper: { flex: 1, backgroundColor: '#0A0A0A' },
+  wrapper: { flex: 1, backgroundColor: '#06101D' },
   container: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
-  pulseBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 20, marginTop: 60, borderRadius: 16, marginHorizontal: 20, marginBottom: 16, borderWidth: 1, borderColor: '#1A1A2E' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#06101D' },
+  commandHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 58, paddingHorizontal: 20, marginBottom: 14 },
+  commandEyebrow: { color: '#6FE7FF', fontSize: 9, fontWeight: '900', letterSpacing: 1.45 },
+  commandDate: { color: '#FFFFFF', fontSize: 17, fontWeight: '900', marginTop: 5 },
+  connectionBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 18, backgroundColor: 'rgba(111,130,152,0.11)', borderWidth: 1, borderColor: 'rgba(111,130,152,0.24)' },
+  connectionBadgeLive: { backgroundColor: 'rgba(66,232,167,0.10)', borderColor: 'rgba(66,232,167,0.25)' },
+  connectionDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#6F8298' },
+  connectionDotLive: { backgroundColor: '#42E8A7' },
+  connectionText: { color: '#8B9DB0', fontSize: 8, fontWeight: '900', letterSpacing: 0.9 },
+  connectionTextLive: { color: '#8EF5C8' },
+  pulseBar: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingVertical: 15, paddingHorizontal: 14, borderRadius: 20, marginHorizontal: 20, marginBottom: 18, borderWidth: 1, borderColor: '#24435F' },
   pulseItem: { alignItems: 'center' },
-  pulseDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4CAF50', marginBottom: 4 },
-  pulseValue: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
-  pulseLabel: { color: '#888', fontSize: 11, marginTop: 2 },
-  pulseDivider: { width: 1, height: 30, backgroundColor: '#333' },
+  pulseValue: { color: '#FFF', fontSize: 19, fontWeight: '900', marginTop: 2 },
+  pulseLabel: { color: '#8396AA', fontSize: 9, marginTop: 2, fontWeight: '600' },
+  pulseDivider: { width: 1, height: 38, backgroundColor: '#29445F' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatarGradient: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  avatarText: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
-  greeting: { fontSize: 18, fontWeight: 'bold', color: '#FFF' },
-  role: { fontSize: 12, color: '#00D4FF', marginTop: 2 },
-  logoutBtn: { padding: 8 },
-  aiWhisper: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 16, backgroundColor: '#1A1A2E', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, gap: 8, borderWidth: 1, borderColor: '#00D4FF20' },
-  aiWhisperText: { color: '#CCC', fontSize: 13, flex: 1 },
-  heroClock: { marginHorizontal: 20, marginBottom: 24, backgroundColor: '#1A1A1A', borderRadius: 24, padding: 28, alignItems: 'center', borderWidth: 1, borderColor: '#333' },
-  heroClockActive: { borderColor: '#4CAF50', borderWidth: 2, backgroundColor: '#0A1A0A' },
-  heroTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold', marginBottom: 6 },
-  heroSubtitle: { color: '#888', fontSize: 14, marginBottom: 20 },
-  segmentedControl: { flexDirection: 'row', backgroundColor: '#0A0A0A', borderRadius: 20, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: '#333' },
+  avatarGradient: { width: 47, height: 47, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: '#06101D', fontSize: 17, fontWeight: '900' },
+  greeting: { fontSize: 18, fontWeight: '900', color: '#FFF' },
+  role: { fontSize: 10, color: '#6FE7FF', marginTop: 3, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase' },
+  logoutBtn: { padding: 10, borderRadius: 13, backgroundColor: '#10243A', borderWidth: 1, borderColor: '#223D58' },
+  aiWhisper: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 16, backgroundColor: 'rgba(196,155,255,0.10)', borderRadius: 15, paddingHorizontal: 14, paddingVertical: 12, gap: 8, borderWidth: 1, borderColor: 'rgba(196,155,255,0.23)' },
+  aiWhisperText: { color: '#C7B8D8', fontSize: 12, flex: 1, lineHeight: 17 },
+  heroClock: { marginHorizontal: 20, marginBottom: 25, backgroundColor: '#0E1E32', borderRadius: 26, padding: 22, alignItems: 'center', borderWidth: 1, borderColor: '#26445F', shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 5 },
+  heroClockActive: { borderColor: 'rgba(66,232,167,0.55)', backgroundColor: '#0B241F' },
+  heroIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: 'rgba(111,231,255,0.10)', borderWidth: 1, borderColor: 'rgba(111,231,255,0.20)', alignItems: 'center', justifyContent: 'center', marginBottom: 13 },
+  heroTitle: { color: '#FFF', fontSize: 21, fontWeight: '900', marginBottom: 6 },
+  heroSubtitle: { color: '#8EA1B5', fontSize: 12, lineHeight: 18, textAlign: 'center', marginBottom: 19 },
+  segmentedControl: { flexDirection: 'row', backgroundColor: '#071421', borderRadius: 18, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: '#263F59' },
   segment: { flex: 1, paddingVertical: 8, borderRadius: 16, alignItems: 'center' },
-  segmentActive: { backgroundColor: '#00D4FF' },
-  segmentText: { color: '#888', fontSize: 14, fontWeight: '500' },
-  segmentTextActive: { color: '#0A0A0A', fontWeight: '600' },
+  segmentActive: { backgroundColor: '#6FE7FF' },
+  segmentText: { color: '#7F93A8', fontSize: 13, fontWeight: '700' },
+  segmentTextActive: { color: '#06101D', fontWeight: '900' },
   projectScroll: { maxHeight: 80, marginBottom: 12 },
-  projectCard: { backgroundColor: '#0A0A0A', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 120 },
-  projectCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
+  projectCard: { backgroundColor: '#091726', borderRadius: 14, paddingHorizontal: 18, paddingVertical: 12, marginRight: 10, borderWidth: 1, borderColor: '#29445F', minWidth: 120 },
+  projectCardActive: { borderColor: '#6FE7FF', backgroundColor: 'rgba(111,231,255,0.08)' },
   projectCardName: { color: '#CCC', fontSize: 14, fontWeight: '500' },
   projectCardNameActive: { color: '#00D4FF', fontWeight: '600' },
   projectCardClient: { color: '#888', fontSize: 11, marginTop: 2 },
   scheduleScroll: { maxHeight: 70, marginBottom: 12 },
-  scheduleCard: { backgroundColor: '#0A0A0A', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginRight: 10, borderWidth: 1, borderColor: '#444', minWidth: 100 },
-  scheduleCardActive: { borderColor: '#00D4FF', backgroundColor: '#00D4FF10' },
+  scheduleCard: { backgroundColor: '#091726', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginRight: 10, borderWidth: 1, borderColor: '#29445F', minWidth: 100 },
+  scheduleCardActive: { borderColor: '#6FE7FF', backgroundColor: 'rgba(111,231,255,0.08)' },
   scheduleName: { color: '#FFF', fontSize: 13, fontWeight: '500' },
   scheduleDate: { color: '#00D4FF', fontSize: 11, marginTop: 2 },
   scheduleProject: { color: '#888', fontSize: 10, marginTop: 2 },
   noSchedules: { color: '#666', fontSize: 13, paddingVertical: 6 },
-  clockInBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#00D4FF', paddingVertical: 12, borderRadius: 10, gap: 8, width: '100%' },
+  clockInBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#6FE7FF', paddingVertical: 14, borderRadius: 14, gap: 8, width: '100%', marginTop: 3 },
   clockOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF5722', paddingVertical: 12, borderRadius: 10, gap: 8, width: '100%' },
   clockBtnText: { color: '#0A0A0A', fontWeight: 'bold', fontSize: 16 },
   timerRing: { width: 160, height: 160, borderRadius: 80, borderWidth: 4, borderColor: '#4CAF50', justifyContent: 'center', alignItems: 'center', marginBottom: 24 },
   timerRingInner: { alignItems: 'center' },
   timerText: { color: '#FFF', fontSize: 28, fontWeight: 'bold', fontVariant: ['tabular-nums'] },
   timerProject: { color: '#4CAF50', fontSize: 13, marginTop: 4 },
-  sectionTitle: { color: '#FFF', fontSize: 18, fontWeight: '600', paddingHorizontal: 20, marginBottom: 14 },
+  sectionHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 14 },
+  sectionEyebrow: { color: '#6F8298', fontSize: 8, fontWeight: '900', letterSpacing: 1.2, marginBottom: 4 },
+  sectionTitle: { color: '#FFF', fontSize: 18, fontWeight: '900' },
   actionsScroll: { paddingHorizontal: 16, marginBottom: 24 },
   actionCard: { alignItems: 'center', marginRight: 16, width: 80 },
-  actionCardGradient: { width: 64, height: 64, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-  actionCardLabel: { color: '#AAA', fontSize: 11, textAlign: 'center' },
+  actionCardGradient: { width: 64, height: 64, borderRadius: 19, justifyContent: 'center', alignItems: 'center', marginBottom: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.17)' },
+  actionCardLabel: { color: '#B9C8D7', fontSize: 11, fontWeight: '700', textAlign: 'center' },
   moreActions: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20, gap: 12 },
-  moreActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, gap: 10, borderWidth: 1, borderColor: '#333' },
-  moreActionLabel: { color: '#CCC', fontSize: 13 },
+  moreActionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0E1E32', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 13, gap: 10, borderWidth: 1, borderColor: '#223D58' },
+  moreActionLabel: { color: '#C7D4E1', fontSize: 12, fontWeight: '700' },
   floatingContainer: { position: 'absolute', bottom: 40, right: 20, zIndex: 10 },
   fab: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#00D4FF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12 },
 });

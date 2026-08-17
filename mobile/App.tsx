@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { LanguageProvider } from './src/context/LanguageContext';
 import LoginScreen from './src/screens/LoginScreen';
+import DemoScreen from './src/screens/DemoScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CameraView from './src/screens/CameraView';
 import VoiceNoteScreen from './src/screens/VoiceNoteScreen';
@@ -141,7 +142,10 @@ function AppNavigator() {
     <ErrorBoundary>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
-          <Stack.Screen name="Login" component={LoginScreen} />
+          <>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Demo" component={DemoScreen} />
+          </>
         ) : (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
