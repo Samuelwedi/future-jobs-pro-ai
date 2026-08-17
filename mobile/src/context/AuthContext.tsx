@@ -1,11 +1,6 @@
-// ============================================
-// AUTH CONTEXT
-// Future Jobs Pro AI – Created by Samuel B.
-// ============================================
-
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { api } from '../services/api';
+import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
+import { api } from '../services/api';
 
 interface User {
   first_name: string;
@@ -23,11 +18,11 @@ interface User {
 
 interface AuthContextType {
   user: User | null;
-  isLoading: boolean;
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 interface RegisterData {
@@ -38,43 +33,91 @@ interface RegisterData {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const SESSION_RESTORE_TIMEOUT_MS = 2500;
+
+async function withTimeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Session restore timed out')),
+          milliseconds,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
+    let mounted = true;
+
     const loadSession = async () => {
       try {
-        const token = await api.getToken();
-        const userData = await SecureStore.getItemAsync('userData');
+        const [token, userData] = await withTimeout(
+          Promise.all([
+            api.getToken(),
+            SecureStore.getItemAsync('userData'),
+          ]),
+          SESSION_RESTORE_TIMEOUT_MS,
+        );
+
+        if (!mounted) return;
+
         if (token && userData) {
           setUser(JSON.parse(userData));
+          return;
         }
-      } catch (e) {
-        console.error('Session load error:', e);
+
+        // A partial session cannot be trusted. Remove it without blocking launch.
+        void Promise.allSettled([
+          api.clearToken(),
+          SecureStore.deleteItemAsync('userData'),
+        ]);
+      } catch (error) {
+        console.warn('Session restore skipped:', error);
+        if (mounted) setUser(null);
       } finally {
-        setIsLoading(false);
+        if (mounted) setIsLoading(false);
       }
     };
-    loadSession();
+
+    void loadSession();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
-    try {
-      const response = await api.post<{ success: boolean; token: string; user: User }>('/auth/login', { email, password });
-      if (response.success && response.token) {
-        await api.setToken(response.token);
-        await SecureStore.setItemAsync('userData', JSON.stringify(response.user));
-        setUser(response.user);
-      } else {
-        throw new Error('Login failed');
-      }
-    } catch (error) {
-      console.error('❌ AuthContext.login error:', error);
-      throw error;
-    }
+    const response = await api.post<{ success: boolean; token: string; user: User }>(
+      '/auth/login',
+      { email, password },
+    );
+    if (!response.success || !response.token) throw new Error('Login failed');
+
+    await api.setToken(response.token);
+    await SecureStore.setItemAsync('userData', JSON.stringify(response.user));
+    setUser(response.user);
+  };
+
+  const register = async (data: RegisterData) => {
+    const response = await api.post<{ success: boolean; token: string; user: User }>(
+      '/auth/register',
+      data,
+    );
+    if (!response.success || !response.token) throw new Error('Registration failed');
+
+    await api.setToken(response.token);
+    await SecureStore.setItemAsync('userData', JSON.stringify(response.user));
+    setUser(response.user);
   };
 
   const logout = async () => {
@@ -83,28 +126,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
   };
 
-  const register = async (data: RegisterData) => {
-    const response = await api.post<{ success: boolean; token: string; user: User }>('/auth/register', data);
-    if (response.success && response.token) {
-      await api.setToken(response.token);
-      await SecureStore.setItemAsync('userData', JSON.stringify(response.user));
-      setUser(response.user);
-    } else {
-      throw new Error('Registration failed');
-    }
-  };
-
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout, register }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: Boolean(user),
+        isLoading,
+        login,
+        register,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
+export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
-};
+}
