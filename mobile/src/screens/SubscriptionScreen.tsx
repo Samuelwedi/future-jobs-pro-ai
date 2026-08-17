@@ -49,7 +49,7 @@ type VerificationResponse = {
   subscription?: SubscriptionState;
 };
 
-const ACTIVE_STATUSES = new Set(['active', 'trialing', 'in_trial', 'grace_period']);
+const ACTIVE_STATUSES = new Set(['active', 'trialing', 'in_trial', 'grace_period', 'billing_retry']);
 
 function friendlyError(error: unknown): string {
   const candidate = error as { response?: { data?: { message?: string } }; message?: string };
