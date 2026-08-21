@@ -1,10 +1,57 @@
-import { EventSubscription, requireNativeModule } from 'expo-modules-core';
+import {
+  requireOptionalNativeModule,
+  type EventSubscription,
+} from 'expo-modules-core';
 
-type AudioEvent = { pcm16Base64: string; sampleRate: 16000 };
-const Native = requireNativeModule('LucyWakeAudio');
+type AudioEvent = {
+  pcm16Base64: string;
+  sampleRate: number;
+};
+
+type LucyWakeAudioNativeModule = {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  addListener(
+    eventName: 'onAudioFrame',
+    listener: (event: AudioEvent) => void
+  ): EventSubscription;
+};
+
+const Native =
+  requireOptionalNativeModule<LucyWakeAudioNativeModule>(
+    'LucyWakeAudio'
+  );
+
+export const isLucyWakeAudioAvailable = Boolean(Native);
 
 export const LucyWakeAudio = {
-  start: (): Promise<void> => Native.start(),
-  stop: (): Promise<void> => Native.stop(),
-  onAudio: (listener: (event: AudioEvent) => void): EventSubscription => Native.addListener('onAudioFrame', listener),
+  isAvailable: isLucyWakeAudioAvailable,
+
+  async start(): Promise<void> {
+    if (!Native) {
+      throw new Error(
+        'Lucy wake-word audio is not included in this app build.'
+      );
+    }
+
+    await Native.start();
+  },
+
+  async stop(): Promise<void> {
+    if (!Native) {
+      return;
+    }
+
+    await Native.stop();
+  },
+
+  onAudio(
+    listener: (event: AudioEvent) => void
+  ): EventSubscription | undefined {
+    if (!Native) {
+      return undefined;
+    }
+
+    return Native.addListener('onAudioFrame', listener);
+  },
 };
