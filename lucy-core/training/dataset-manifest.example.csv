@@ -1,0 +1,3 @@
+path,label,phrase,speaker_id,source,license,consent_record
+positive/example-001.wav,1,hey lucy,speaker-001,recorded,owned,consent/speaker-001.txt
+negative/example-001.wav,0,,corpus-001,licensed-dataset,Apache-2.0,LICENSE.txt

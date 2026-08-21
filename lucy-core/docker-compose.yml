@@ -1,0 +1,11 @@
+services:
+  lucy-wake:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      LUCY_WAKE_MODEL: /app/models/lucy.onnx
+      LUCY_WAKE_THRESHOLD: "0.58"
+      LUCY_WAKE_COOLDOWN_MS: "2500"
+      LUCY_WAKE_JWT_SECRET: ${LUCY_WAKE_JWT_SECRET:-}
+    restart: unless-stopped

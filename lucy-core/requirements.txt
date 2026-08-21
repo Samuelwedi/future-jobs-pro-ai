@@ -1,0 +1,5 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+openwakeword==0.6.0
+numpy==2.2.6
+PyJWT==2.10.1
