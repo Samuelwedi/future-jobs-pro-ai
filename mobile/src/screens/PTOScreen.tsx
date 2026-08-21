@@ -24,8 +24,8 @@ export default function PTOScreen() {
   const fetchData = async () => {
     try {
       const [reqRes, balRes] = await Promise.all([
-        api.get<{ success: boolean; requests: PTORequest[] }>(`/pto/user/${user?.id}`),
-        api.get<{ success: boolean; balance: PTOBalance }>(`/pto/balance/${user?.id}`),
+        api.get<{ success: boolean; requests: PTORequest[] }>('/pto/mine'),
+        api.get<{ success: boolean; balance: PTOBalance }>('/pto/balance'),
       ]);
       setRequests(reqRes.requests || []);
       setBalance(balRes.balance || { vacation_days: 10, sick_days: 5, personal_days: 3 });
@@ -38,7 +38,7 @@ export default function PTOScreen() {
   const handleSubmitRequest = async () => {
     if (!startDate || !endDate) { Alert.alert('Missing dates'); return; }
     try {
-      await api.post('/pto/request', { userId: user?.id, companyId: user?.companyId, startDate, endDate, type: leaveType, reason });
+      await api.post('/pto', { start_date: startDate, end_date: endDate, type: leaveType, reason });
       Alert.alert('Success', 'PTO request submitted!');
       setModalVisible(false);
       setStartDate(''); setEndDate(''); setReason('');

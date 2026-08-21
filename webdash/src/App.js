@@ -19,6 +19,21 @@ function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const expireAgentSession = useCallback(() => {
+    localStorage.removeItem('supportAgentToken');
+    setToken('');
+    setAgent(null);
+    setTickets([]);
+    setSelected(null);
+    setMessages([]);
+  }, []);
+
+  const handlePollingError = useCallback((requestError) => {
+    if (requestError?.response?.status === 401) {
+      expireAgentSession();
+    }
+  }, [expireAgentSession]);
+
   const client = useCallback(() => axios.create({
     baseURL: API_BASE,
     headers: { Authorization: `Bearer ${token}` },
@@ -47,17 +62,17 @@ function App() {
       setToken('');
       setAgent(null);
     }
-  }, [client, loadTickets, token]);
+  }, [client, expireAgentSession, loadTickets, token]);
 
   useEffect(() => { void restore(); }, [restore]);
   useEffect(() => {
     if (!agent) return undefined;
     const timer = setInterval(() => {
-      void loadTickets().catch(() => {});
-      if (selected) void loadMessages(selected.ticketId).catch(() => {});
-    }, 5000);
+      void loadTickets().catch(handlePollingError);
+      if (selected) void loadMessages(selected.ticketId).catch(handlePollingError);
+    }, 15000);
     return () => clearInterval(timer);
-  }, [agent, loadMessages, loadTickets, selected]);
+  }, [agent, handlePollingError, loadMessages, loadTickets, selected]);
 
   const login = async (event) => {
     event.preventDefault(); setBusy(true); setError('');
