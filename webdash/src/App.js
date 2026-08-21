@@ -62,7 +62,7 @@ function App() {
       setToken('');
       setAgent(null);
     }
-  }, [client, expireAgentSession, loadTickets, token]);
+  }, [client, loadTickets, token]);
 
   useEffect(() => { void restore(); }, [restore]);
   useEffect(() => {

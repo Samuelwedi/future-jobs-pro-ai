@@ -290,7 +290,7 @@ export default function HomeScreen() {
   };
 
   if (isLoading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /></View>;
+    return <View style={[investorStyles.screen, investorStyles.loadingCenter]}><ActivityIndicator size="large" color="#67E8F9" /></View>;
   }
 
   const greeting = t('greeting', { firstName: user?.firstName || '' });
@@ -476,7 +476,10 @@ export default function HomeScreen() {
     </View>
   );
 
+}
+
 const investorStyles = StyleSheet.create({
+  loadingCenter: { justifyContent: 'center', alignItems: 'center' },
   screen: { flex: 1, backgroundColor: '#03070C' },
   scrollContent: { paddingTop: 58, paddingHorizontal: 18, paddingBottom: 54 },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
