@@ -23,7 +23,7 @@
         "NSCameraUsageDescription": "Allow Future Jobs Pro AI to use your camera for job site photos",
         "NSLocationWhenInUseUsageDescription": "Future Jobs Pro AI uses your location to record where you clock in and out, verify your presence at a job site (e.g., when you start work at 123 Main Street), and show nearby crew members on the map.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Future Jobs Pro AI uses your location in the background to continue tracking your work site arrival/departure, even when the app is not open, so you can automatically clock in when you reach a job site.",
-        "NSMicrophoneUsageDescription": "Allow Future Jobs Pro AI to use your microphone for voice notes",
+        "NSMicrophoneUsageDescription": "Future Jobs Pro AI uses the microphone for voice notes and to detect ‘Hey Lucy’ locally while the app is open and listening is enabled.",
         "NSSpeechRecognitionUsageDescription": "Future Jobs Pro AI uses speech recognition to allow you to control the app with your voice."
       }
     },

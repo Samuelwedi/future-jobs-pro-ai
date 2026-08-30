@@ -47,9 +47,9 @@ export const LucyWakeAudio = {
 
   onAudio(
     listener: (event: AudioEvent) => void
-  ): EventSubscription | undefined {
+  ): EventSubscription | null {
     if (!Native) {
-      return undefined;
+      return null;
     }
 
     return Native.addListener('onAudioFrame', listener);

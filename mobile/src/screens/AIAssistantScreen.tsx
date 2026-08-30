@@ -32,14 +32,25 @@ export default function AIAssistantScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [voiceReplies, setVoiceReplies] = useState(true);
   const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
-  const [wakeStatus, setWakeStatus] = useState<'off' | 'starting' | 'listening' | 'unavailable' | 'error'>('off');
+  const [wakeStatus, setWakeStatus] = useState<'off' | 'starting' | 'listening' | 'detected' | 'error'>('off');
+  const [wakeError, setWakeError] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const isSpeaking = useRef(false);
   const lastAutoRecordEvent = useRef<string>('');
+  const wakeCommandActive = useRef(false);
+
+  const resumeWakeListening = () => {
+    if (!wakeCommandActive.current) return;
+    wakeCommandActive.current = false;
+    if (wakeWordEnabled) DeviceEventEmitter.emit('lucyWakeWordPreferenceChanged', true);
+  };
 
   useEffect(() => {
     AsyncStorage.getItem('lucyWakeWordEnabled').then(value => setWakeWordEnabled(value === 'true'));
-    const listener = DeviceEventEmitter.addListener('lucyWakeWordStatusChanged', event => setWakeStatus(event?.status || 'off'));
+    const listener = DeviceEventEmitter.addListener('lucyWakeWordStatusChanged', event => {
+      setWakeStatus(event?.status || 'off');
+      setWakeError(event?.status === 'error' ? event?.message || 'Hey Lucy could not start.' : null);
+    });
     return () => listener.remove();
   }, []);
 
@@ -61,6 +72,7 @@ export default function AIAssistantScreen() {
     const eventKey = route.params?.wakeEvent ? String(route.params.wakeEvent) : (route.params?.autoRecord ? 'manual' : '');
     if (eventKey && eventKey !== lastAutoRecordEvent.current) {
       lastAutoRecordEvent.current = eventKey;
+      wakeCommandActive.current = Boolean(route.params?.wakeEvent);
       const timer = setTimeout(() => startRecording(), 500);
       return () => clearTimeout(timer);
     }
@@ -84,15 +96,18 @@ export default function AIAssistantScreen() {
 
   // Speak Lucy's response
   const speakText = (text: string) => {
-    if (!voiceReplies) return;
+    if (!voiceReplies) {
+      resumeWakeListening();
+      return;
+    }
     if (isSpeaking.current) Speech.stop();
     isSpeaking.current = true;
     Speech.speak(text, {
       language: 'en-US',
       pitch: 1.0,
       rate: 0.9,
-      onDone: () => { isSpeaking.current = false; },
-      onError: () => { isSpeaking.current = false; },
+      onDone: () => { isSpeaking.current = false; resumeWakeListening(); },
+      onError: () => { isSpeaking.current = false; resumeWakeListening(); },
     });
   };
 
@@ -231,7 +246,7 @@ export default function AIAssistantScreen() {
         </TouchableOpacity>
         <View style={styles.titleWrap}>
           <View style={styles.lucyOrb}><MaterialIcons name="auto-awesome" size={18} color="#07111F" /></View>
-          <View><Text style={styles.headerTitle}>Lucy</Text><Text style={styles.headerMeta}>Memory on • {wakeStatus === 'listening' ? 'Hey Lucy listening' : wakeWordEnabled ? 'Hey Lucy starting' : 'Hey Lucy off'}</Text></View>
+          <View><Text style={styles.headerTitle}>Lucy</Text><Text style={styles.headerMeta}>Memory on • {wakeStatus === 'listening' ? 'Hey Lucy listening' : wakeStatus === 'detected' ? 'Wake phrase detected' : wakeStatus === 'error' ? 'Hey Lucy needs attention' : wakeWordEnabled ? 'Hey Lucy starting' : 'Hey Lucy off'}</Text></View>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity accessibilityLabel="Toggle Hey Lucy" onPress={toggleWakeWord} style={[styles.voiceToggle, wakeWordEnabled && styles.wakeToggleActive]}>
@@ -242,6 +257,12 @@ export default function AIAssistantScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      {wakeError ? (
+        <TouchableOpacity style={styles.wakeError} onPress={toggleWakeWord}>
+          <MaterialIcons name="error-outline" size={18} color="#FCA5A5" />
+          <Text style={styles.wakeErrorText}>{wakeError} Tap to turn off and try again.</Text>
+        </TouchableOpacity>
+      ) : null}
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -331,6 +352,8 @@ const styles = StyleSheet.create({
   voiceToggle: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111E2D' },
   headerActions: { flexDirection: 'row', gap: 7 },
   wakeToggleActive: { backgroundColor: '#113A32', borderWidth: 1, borderColor: '#256B59' },
+  wakeError: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#3B1118', borderBottomWidth: 1, borderBottomColor: '#7F1D1D' },
+  wakeErrorText: { color: '#FECACA', fontSize: 11, flex: 1 },
   bubble: { margin: 8, padding: 12, borderRadius: 12, maxWidth: '80%' },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#0E7490' },
   bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#17112B', borderWidth: 1, borderColor: '#4C1D95', flexDirection: 'row', alignItems: 'center' },

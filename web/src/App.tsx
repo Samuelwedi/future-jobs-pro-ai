@@ -20,6 +20,7 @@ import ChatList from './pages/ChatList';
 import Tasks from './pages/Tasks';
 import PTO from './pages/PTO';
 import Kiosk from './pages/Kiosk';
+import KioskClock from './pages/KioskClock';
 import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
 import Register from './pages/Register';
@@ -44,7 +45,7 @@ import MonthMedia from './pages/MonthMedia';
 import MonthMediaType from './pages/MonthMediaType';
 import Layout from './components/Layout';
 
-// ✅ NEW PAGES
+// âœ… NEW PAGES
 import CompanySettings from './pages/CompanySettings';
 import CrewClock from './pages/CrewClock';
 import CrewTracking from './pages/CrewTracking';
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/features" element={<Features />} />
         <Route path="/demo" element={<Demo />} />
+        <Route path="/kiosk-clock" element={<KioskClock />} />
         <Route path="/about" element={<About />} />
         <Route path="/blog" element={<Blog />} />
         <Route path="/faq" element={<FAQ />} />
@@ -103,7 +105,7 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="security" element={<Security />} />
 
-          {/* ✅ NEW ROUTES */}
+          {/* âœ… NEW ROUTES */}
           <Route path="company-settings" element={<CompanySettings />} />
           <Route path="crew-clock" element={<CrewClock />} />
           <Route path="crew-tracking" element={<CrewTracking />} />

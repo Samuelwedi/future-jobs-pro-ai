@@ -35,14 +35,25 @@ interface GPSPoint {
 }
 
 interface RouteParams {
-  timeEntryId: string;
+  timeEntryId?: string;
+}
+
+interface GPSHistoryItem {
+  time_entry_id: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  project_name?: string;
+  clock_in: string;
+  clock_out?: string;
+  point_count: number;
 }
 
 export default function GPSPlaybackScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { user } = useAuth();
-  const { timeEntryId } = route.params as RouteParams;
+  const initialTimeEntryId = (route.params as RouteParams | undefined)?.timeEntryId;
 
   const [points, setPoints] = useState<GPSPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +62,9 @@ export default function GPSPlaybackScreen() {
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [mapRegion, setMapRegion] = useState<any>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [selectedTimeEntryId, setSelectedTimeEntryId] = useState<string | undefined>(initialTimeEntryId);
+  const [history, setHistory] = useState<GPSHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(!initialTimeEntryId);
 
   const playbackInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const mapRef = useRef<MapView>(null);
@@ -59,13 +73,32 @@ export default function GPSPlaybackScreen() {
   const speedOptions = [0.5, 1, 2, 4];
 
   useEffect(() => {
-    fetchGPSTrail();
+    if (selectedTimeEntryId) fetchGPSTrail(selectedTimeEntryId);
+    else fetchHistory();
     return () => {
       if (playbackInterval.current) clearInterval(playbackInterval.current);
     };
-  }, []);
+  }, [selectedTimeEntryId]);
 
-  const fetchGPSTrail = async () => {
+  const fetchHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const end = new Date();
+      const start = new Date(end.getTime() - 30 * 86400000);
+      const response = await api.get<{ history: GPSHistoryItem[] }>(
+        `/gps/history?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`
+      );
+      setHistory(response.history || []);
+    } catch (cause: any) {
+      Alert.alert('GPS history unavailable', cause?.response?.data?.message || cause?.message || 'Could not load GPS history.');
+    } finally {
+      setHistoryLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const fetchGPSTrail = async (timeEntryId: string) => {
+    setLoading(true);
     try {
       const res = await api.get<{ trail?: { points: GPSPoint[] } }>(`/gps/trail/${timeEntryId}`);
       const trailPoints = res?.trail?.points || [];
@@ -218,6 +251,33 @@ export default function GPSPlaybackScreen() {
 
   const totalDistance = points.length > 0 ? calculateTotalDistance(points) : 0;
 
+  if (!selectedTimeEntryId) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
+          <View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.headerTitle}>GPS Trail History</Text><Text style={styles.historySubtitle}>Verified routes from the last 30 days</Text></View>
+          {historyLoading ? <ActivityIndicator color="#00D4FF" /> : <TouchableOpacity onPress={fetchHistory}><MaterialIcons name="refresh" size={23} color="#67E8F9" /></TouchableOpacity>}
+        </View>
+        <ScrollView contentContainerStyle={styles.historyList}>
+          {history.length === 0 && !historyLoading ? <View style={styles.historyEmpty}><MaterialIcons name="route" size={52} color="#476079" /><Text style={styles.emptyText}>No recorded GPS trails in the last 30 days.</Text><Text style={styles.historyHint}>Trails appear after an employee clocks in and location points are recorded.</Text></View> : null}
+          {history.map(item => (
+            <TouchableOpacity key={item.time_entry_id} style={styles.historyCard} onPress={() => { setPoints([]); setCurrentIndex(0); setSelectedTimeEntryId(item.time_entry_id); }}>
+              <View style={styles.historyIcon}><MaterialIcons name="route" size={24} color="#67E8F9" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.historyName}>{item.first_name} {item.last_name}</Text>
+                <Text style={styles.historyProject}>{item.project_name || 'Unassigned project'}</Text>
+                <Text style={styles.historyTime}>{format(new Date(item.clock_in), 'MMM d, yyyy • h:mm a')} {item.clock_out ? `– ${format(new Date(item.clock_out), 'h:mm a')}` : '• Active'}</Text>
+              </View>
+              <View style={styles.pointBadge}><Text style={styles.pointBadgeText}>{item.point_count} pts</Text></View>
+              <MaterialIcons name="chevron-right" size={22} color="#64748B" />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+    );
+  }
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -244,7 +304,7 @@ export default function GPSPlaybackScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => initialTimeEntryId ? navigation.goBack() : setSelectedTimeEntryId(undefined)} style={styles.backBtn}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>GPS Playback</Text>
@@ -417,6 +477,17 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 4 },
   headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  historySubtitle: { color: '#8FA0B5', fontSize: 11, marginTop: 2 },
+  historyList: { padding: 14, paddingBottom: 50 },
+  historyCard: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, marginBottom: 10, borderRadius: 16, backgroundColor: '#101E2D', borderWidth: 1, borderColor: '#263B50' },
+  historyIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#123243' },
+  historyName: { color: '#F8FAFC', fontSize: 14, fontWeight: '800' },
+  historyProject: { color: '#67E8F9', fontSize: 11, fontWeight: '700', marginTop: 3 },
+  historyTime: { color: '#8FA0B5', fontSize: 10, marginTop: 4 },
+  pointBadge: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 12, backgroundColor: '#172C3E' },
+  pointBadgeText: { color: '#C8D4E2', fontSize: 9, fontWeight: '900' },
+  historyEmpty: { alignItems: 'center', paddingHorizontal: 25, paddingTop: 90 },
+  historyHint: { color: '#64748B', fontSize: 11, lineHeight: 17, textAlign: 'center', marginTop: 8 },
   statsBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',

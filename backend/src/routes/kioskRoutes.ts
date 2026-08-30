@@ -5,6 +5,45 @@ import { recordUserEvent } from '../services/adaptiveAIService';
 
 const router = express.Router();
 
+const managerRoles = new Set(['boss', 'manager', 'admin']);
+
+async function requireManager(req: Request, res: Response) {
+  const decoded = verifyToken(req);
+  const result = await pool.query(
+    'SELECT id, company_id, role FROM users WHERE id = $1 AND is_active = true',
+    [decoded.id]
+  );
+  const actor = result.rows[0];
+  if (!actor?.company_id) {
+    res.status(401).json({ success: false, message: 'Not authenticated' });
+    return null;
+  }
+  if (!managerRoles.has(String(actor.role || '').toLowerCase())) {
+    res.status(403).json({ success: false, message: 'Boss or manager access is required' });
+    return null;
+  }
+  return actor;
+}
+
+// GET /api/kiosk/users – manager-safe employee list. PIN values are never returned.
+router.get('/users', async (req: Request, res: Response) => {
+  try {
+    const actor = await requireManager(req, res);
+    if (!actor) return;
+    const result = await pool.query(
+      `SELECT id, first_name, last_name, role, is_active,
+              CASE WHEN pin IS NULL OR pin = '' THEN false ELSE true END AS has_pin
+       FROM users
+       WHERE company_id = $1 AND is_active = true
+       ORDER BY first_name, last_name`,
+      [actor.company_id]
+    );
+    res.json({ success: true, users: result.rows });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // GET /api/kiosk/status/:companyId – check if kiosk is enabled
 router.get('/status/:companyId', async (req: Request, res: Response) => {
   try {
@@ -121,11 +160,23 @@ router.post('/clock-out', async (req: Request, res: Response) => {
 // POST /api/kiosk/set-pin – Admin sets a PIN for a user
 router.post('/set-pin', async (req: Request, res: Response) => {
   try {
+    const actor = await requireManager(req, res);
+    if (!actor) return;
     const { userId, pin } = req.body;
     if (!userId || !pin) {
       return res.status(400).json({ success: false, message: 'userId and pin are required' });
     }
 
+    if (!/^\d{4,6}$/.test(String(pin))) {
+      return res.status(400).json({ success: false, message: 'PIN must contain 4 to 6 digits' });
+    }
+    const target = await pool.query(
+      'SELECT id FROM users WHERE id = $1 AND company_id = $2 AND is_active = true',
+      [userId, actor.company_id]
+    );
+    if (!target.rowCount) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
     const existing = await pool.query('SELECT id FROM users WHERE pin = $1 AND id != $2', [pin, userId]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ success: false, message: 'PIN already in use' });
@@ -142,11 +193,10 @@ router.post('/set-pin', async (req: Request, res: Response) => {
 // POST /api/kiosk/toggle – Admin enables/disables Kiosk for a company
 router.post('/toggle', async (req: Request, res: Response) => {
   try {
-    const { companyId, enabled } = req.body;
-    if (!companyId) {
-      return res.status(400).json({ success: false, message: 'companyId is required' });
-    }
-    await pool.query('UPDATE companies SET kiosk_enabled = $1 WHERE id = $2', [!!enabled, companyId]);
+    const actor = await requireManager(req, res);
+    if (!actor) return;
+    const { enabled } = req.body;
+    await pool.query('UPDATE companies SET kiosk_enabled = $1 WHERE id = $2', [!!enabled, actor.company_id]);
     res.json({ success: true, message: `Kiosk ${enabled ? 'enabled' : 'disabled'}` });
   } catch (error: any) {
     console.error('Toggle kiosk error:', error);

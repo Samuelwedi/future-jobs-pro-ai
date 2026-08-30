@@ -418,8 +418,7 @@ export default function HomeScreen() {
             <TouchableOpacity key={action.label} style={investorStyles.captureCard} onPress={() => {
               if (action.screen === 'Camera' || action.screen === 'VoiceNote') return handleQuickAction({ ...action, needsProject: true });
               if (action.screen === 'GPSPlayback') {
-                if (!activeTimeEntry?.id) return Alert.alert('No active trail', 'Clock in first, then GPS playback will be available for that shift.');
-                return navigation.navigate('GPSPlayback', { timeEntryId: activeTimeEntry.id });
+                return navigation.navigate('GPSPlayback');
               }
               return navigation.navigate(action.screen);
             }}>
