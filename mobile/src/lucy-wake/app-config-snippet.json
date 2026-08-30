@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "ios": {
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Lucy listens locally for the wake phrases ‘Lucy’ and ‘Hey Lucy’ only while the app is open, active, and listening is enabled."
+      }
+    },
+    "android": {
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    }
+  }
+}

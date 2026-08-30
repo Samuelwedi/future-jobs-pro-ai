@@ -15,6 +15,49 @@ import {
 
 const router = express.Router();
 
+// GET /api/gps/history?start=&end=&userId= – shifts that contain GPS breadcrumbs
+router.get('/history', async (req: Request, res: Response) => {
+  try {
+    const decoded = verifyToken(req);
+    const actorResult = await pool.query(
+      'SELECT company_id, role FROM users WHERE id = $1',
+      [decoded.id]
+    );
+    const actor = actorResult.rows[0];
+    if (!actor?.company_id) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const isManager = ['boss', 'manager', 'admin'].includes(String(actor.role || '').toLowerCase());
+    const requestedUserId = req.query.userId ? String(req.query.userId) : undefined;
+    const targetUserId = isManager ? requestedUserId : decoded.id;
+    const start = req.query.start ? String(req.query.start) : new Date(Date.now() - 30 * 86400000).toISOString();
+    const end = req.query.end ? String(req.query.end) : new Date().toISOString();
+
+    const result = await pool.query(
+      `SELECT te.id AS time_entry_id, te.user_id, te.project_id, te.clock_in, te.clock_out,
+              u.first_name, u.last_name, p.name AS project_name,
+              COUNT(g.id)::integer AS point_count,
+              MIN(g.timestamp) AS first_gps_at, MAX(g.timestamp) AS last_gps_at
+       FROM time_entries te
+       JOIN users u ON u.id = te.user_id
+       LEFT JOIN projects p ON p.id = te.project_id
+       JOIN gps_tracking g ON g.time_entry_id = te.id
+       WHERE u.company_id = $1
+         AND te.clock_in >= $2::timestamptz
+         AND te.clock_in <= $3::timestamptz
+         AND ($4::uuid IS NULL OR te.user_id = $4::uuid)
+       GROUP BY te.id, te.user_id, te.project_id, te.clock_in, te.clock_out,
+                u.first_name, u.last_name, p.name
+       ORDER BY te.clock_in DESC
+       LIMIT 200`,
+      [actor.company_id, start, end, targetUserId || null]
+    );
+    res.json({ success: true, history: result.rows, start, end });
+  } catch (error: any) {
+    console.error('GPS history error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // POST /api/gps/update
 router.post('/update', async (req: Request, res: Response) => {
   try {

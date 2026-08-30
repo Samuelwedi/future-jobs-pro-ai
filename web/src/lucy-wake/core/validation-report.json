@@ -1,0 +1,30 @@
+{
+  "validation_accuracy": 0.9694444444444444,
+  "confusion_matrix_rows_actual_columns_predicted": [
+    [
+      240,
+      0,
+      0
+    ],
+    [
+      0,
+      218,
+      22
+    ],
+    [
+      0,
+      0,
+      240
+    ]
+  ],
+  "labels": [
+    "background",
+    "lucy",
+    "hey_lucy"
+  ],
+  "validation_examples": 720,
+  "training_examples": 3600,
+  "local_tts_hard_negatives": 0,
+  "median_correct_class_probability": 0.9989152498408725,
+  "warning": "Synthetic same-speaker bootstrap validation; not a production field benchmark."
+}

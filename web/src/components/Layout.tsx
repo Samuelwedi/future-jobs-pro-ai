@@ -48,7 +48,6 @@ import {
   PrivacyTip as PrivacyTipIcon,
   ContactSupport as ContactSupportIcon,
   Star as StarIcon,
-  PlayArrow as PlayArrowIcon,
   Person,
   Brightness4,
   Brightness7,
@@ -66,7 +65,7 @@ import {
 import NotificationCenter from './NotificationCenter';
 import { useAppTheme } from './AppThemeProvider';
 
-// ─── Navigation Configuration ──────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Navigation Configuration Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const navConfig = [
   {
     category: 'Main',
@@ -98,7 +97,6 @@ const navConfig = [
       { label: 'Chat', icon: <Chat />, path: '/chat' },
       { label: 'Support', icon: <SupportAgent />, path: '/support' },
       { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
-      { label: 'Voice Assistant', icon: <Mic />, path: '/voice-assistant' },
     ],
   },
   {
@@ -106,7 +104,7 @@ const navConfig = [
     items: [
       { label: 'Payroll', icon: <AttachMoney />, path: '/payroll' },
       { label: 'Direct Deposit', icon: <AccountBalance />, path: '/direct-deposit' },
-      { label: 'Year‑End', icon: <Receipt />, path: '/year-end' },
+      { label: 'YearÃ¢â‚¬â€˜End', icon: <Receipt />, path: '/year-end' },
       { label: 'Invoices', icon: <ReceiptLong />, path: '/invoices' },
       { label: 'Estimates', icon: <Description />, path: '/estimates' },
     ],
@@ -138,7 +136,6 @@ const navConfig = [
       { label: 'Contact', icon: <ContactSupportIcon />, path: '/contact' },
       { label: 'Pricing', icon: <AttachMoney />, path: '/pricing' },
       { label: 'Features', icon: <StarIcon />, path: '/features' },
-      { label: 'Demo', icon: <PlayArrowIcon />, path: '/demo' },
     ],
   },
   // Optional: Media Folders (already included under 'Work'? Or separate)

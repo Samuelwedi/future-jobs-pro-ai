@@ -119,6 +119,15 @@ class ApiService {
     return response.data;
   }
 
+  async patch<T>(url: string, data?: any): Promise<T> {
+    const online = getOnlineStatus();
+    if (!online) {
+      throw new Error('Task updates require a connection. Please try again when online.');
+    }
+    const response = await this.client.patch<T>(url, data);
+    return response.data;
+  }
+
   async delete<T>(url: string): Promise<T> {
     const online = getOnlineStatus();
     if (!online) {

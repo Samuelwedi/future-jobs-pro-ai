@@ -1,14 +1,14 @@
-import { AppState, DeviceEventEmitter } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
+import { Audio } from 'expo-av';
 import { LucyWakeAudio } from './LucyWakeAudio';
+import { LucyMobileWakeService } from '../lucy-wake/mobile/LucyMobileWakeService';
+import model from '../lucy-wake/core/lucy-bootstrap-model.json';
 
-type WakeStatus = 'off' | 'connecting' | 'listening' | 'detected' | 'error';
+type WakeStatus = 'off' | 'starting' | 'listening' | 'detected' | 'error';
 
 export class WakeWordService {
-  private socket?: WebSocket;
-  private audioSubscription?: { remove(): void };
-  private appSubscription?: { remove(): void };
-  private lastDetectionAt = 0;
+  private service?: LucyMobileWakeService;
+  private starting?: Promise<void>;
 
   constructor(private readonly onWakeWord: () => void) {}
 
@@ -16,48 +16,56 @@ export class WakeWordService {
     DeviceEventEmitter.emit('lucyWakeWordStatusChanged', { status, message });
   }
 
-  async start() {
-    if (this.socket) return;
-    const endpoint = process.env.EXPO_PUBLIC_LUCY_WAKE_URL?.trim();
-    if (!endpoint) throw new Error('EXPO_PUBLIC_LUCY_WAKE_URL is not configured');
-    const token = await AsyncStorage.getItem('token');
-    const url = `${endpoint}${endpoint.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`;
-    this.status('connecting');
-    this.socket = new WebSocket(url);
-    await new Promise<void>((resolve, reject) => {
-      const socket = this.socket!;
-      socket.onopen = () => resolve();
-      socket.onerror = () => reject(new Error('Lucy wake service connection failed'));
-    });
-    this.socket.onmessage = event => {
-      const message = JSON.parse(String(event.data));
-      if (message.type !== 'wake') return;
-      const now = Date.now();
-      if (now - this.lastDetectionAt < 2500) return;
-      this.lastDetectionAt = now;
-      this.status('detected');
-      this.onWakeWord();
-    };
-    this.audioSubscription = LucyWakeAudio.onAudio(frame => {
-      if (this.socket?.readyState === WebSocket.OPEN) {
-        this.socket.send(JSON.stringify({ type: 'audio', ...frame }));
-      }
-    });
-    await LucyWakeAudio.start();
-    this.appSubscription = AppState.addEventListener('change', state => {
-      if (state !== 'active') this.stop();
-    });
-    this.status('listening');
+  async start(): Promise<void> {
+    if (this.service) return;
+    if (this.starting) return this.starting;
+    this.starting = this.startLocalDetector();
+    try {
+      await this.starting;
+    } finally {
+      this.starting = undefined;
+    }
   }
 
-  async stop() {
-    this.audioSubscription?.remove();
-    this.appSubscription?.remove();
-    this.audioSubscription = undefined;
-    this.appSubscription = undefined;
-    await LucyWakeAudio.stop().catch(() => undefined);
-    this.socket?.close();
-    this.socket = undefined;
+  private async startLocalDetector(): Promise<void> {
+    this.status('starting');
+    if (!LucyWakeAudio.isAvailable) {
+      const message = 'The Lucy iOS/Android microphone module is missing from this build.';
+      this.status('error', message);
+      throw new Error(message);
+    }
+
+    const permission = await Audio.requestPermissionsAsync();
+    if (!permission.granted) {
+      const message = 'Microphone permission is required for Hey Lucy.';
+      this.status('error', message);
+      throw new Error(message);
+    }
+
+    const service = new LucyMobileWakeService(LucyWakeAudio, model, () => {
+      this.status('detected');
+      this.onWakeWord();
+      setTimeout(() => {
+        if (this.service) this.status('listening');
+      }, 1200);
+    });
+
+    try {
+      await service.start();
+      this.service = service;
+      this.status('listening');
+    } catch (cause) {
+      await service.stop().catch(() => undefined);
+      const message = cause instanceof Error ? cause.message : 'Hey Lucy could not start.';
+      this.status('error', message);
+      throw cause;
+    }
+  }
+
+  async stop(): Promise<void> {
+    const service = this.service;
+    this.service = undefined;
+    if (service) await service.stop().catch(() => undefined);
     this.status('off');
   }
 }

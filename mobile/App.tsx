@@ -104,7 +104,10 @@ function AppNavigator() {
       if (disposed || !enabled || !isAuthenticated || !user || AppState.currentState !== 'active') return;
 
       const service = new WakeWordService(() => {
-        if (navigationRef.isReady()) navigationRef.navigate('AIAssistant', { autoRecord: true, wakeEvent: Date.now() });
+        // Release the wake microphone before Lucy starts command recording on iOS.
+        void service.stop().finally(() => {
+          if (navigationRef.isReady()) navigationRef.navigate('AIAssistant', { autoRecord: true, wakeEvent: Date.now() });
+        });
       });
       wakeWordRef.current = service;
       try {

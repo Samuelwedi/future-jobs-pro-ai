@@ -13,8 +13,8 @@ export default function Kiosk() {
     } catch {}
   }, []);
 
-  const companyId = user?.companyId || '';
-  const kioskUrl = `https://future-jobs-pro-ai.vercel.app/kiosk-clock?companyId=${companyId}`;
+  const companyId = user?.companyId || user?.company_id || '';
+  const kioskUrl = `${window.location.origin}/kiosk-clock?companyId=${encodeURIComponent(companyId)}`;
 
   return (
     <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', py: 4 }}>
