@@ -14,6 +14,8 @@ const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 const PROD_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 export const API_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
 
+console.log('🚀 API_URL:', API_URL);
+
 class ApiService {
   private client: AxiosInstance;
   private token: string | null = null;
@@ -38,7 +40,13 @@ class ApiService {
 
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
+          console.log('🔑 Authorization header added for:', config.url, 'token first 10 chars:', token.substring(0, 10) + '...');
+        } else {
+          console.log('⚠️ No token available for request:', config.url);
         }
+
+        // Send test user header (for review)
+        config.headers['X-Test-User'] = 'samuel@test.com';
 
         return config;
       },
@@ -70,8 +78,10 @@ class ApiService {
   }
 
   async setToken(token: string): Promise<void> {
+    console.log('🔑 api.setToken called, token length:', token.length);
     this.token = token;
     await SecureStore.setItemAsync('authToken', token);
+    console.log('✅ Token stored in SecureStore');
   }
 
   async getToken(): Promise<string | null> {
@@ -84,6 +94,7 @@ class ApiService {
   async clearToken(): Promise<void> {
     this.token = null;
     await SecureStore.deleteItemAsync('authToken');
+    console.log('🗑️ Token cleared');
   }
 
   async get<T>(url: string): Promise<T> {
@@ -122,9 +133,13 @@ class ApiService {
   async patch<T>(url: string, data?: any): Promise<T> {
     const online = getOnlineStatus();
     if (!online) {
-      throw new Error('Task updates require a connection. Please try again when online.');
+      console.log('📴 Offline – queuing action:', url);
+      await queueAction({ method: 'PATCH', url, data });
+      throw new Error('Offline – action queued for later');
     }
+    console.log('📤 PATCH', this.client.defaults.baseURL + url, data);
     const response = await this.client.patch<T>(url, data);
+    console.log('✅ PATCH /' + url + ' success', response.data);
     return response.data;
   }
 
@@ -159,7 +174,13 @@ class ApiService {
     const formData = new FormData();
     const filename = fileUri.split('/').pop() || 'photo.jpg';
     const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1]}` : 'image/jpeg';
+    const extension = match?.[1]?.toLowerCase();
+    const type = fieldName === 'audio'
+      ? extension === 'wav' ? 'audio/wav'
+        : extension === 'mp3' ? 'audio/mpeg'
+        : extension === 'caf' ? 'audio/x-caf'
+        : 'audio/mp4'
+      : extension ? `image/${extension}` : 'image/jpeg';
     formData.append(fieldName, { uri: fileUri, name: filename, type } as any);
     Object.entries(extraFields).forEach(([key, value]) => formData.append(key, value));
 

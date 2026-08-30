@@ -9,8 +9,6 @@ import { api } from '../services/api';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DeviceEventEmitter } from 'react-native';
 
 interface Message {
   text: string;
@@ -24,59 +22,26 @@ export default function AIAssistantScreen() {
   const navigation = useNavigation();
   const route = useRoute<any>();
   const [messages, setMessages] = useState<Message[]>([
-    { text: "Hi, I'm Lucy. I remember your workspace conversation and can help prepare actions, with approval before anything sensitive changes.", isUser: false },
+    { text: "Hi! I'm Lucy. I can schedule, run payroll, and generate reports. Try me!", isUser: false },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [voiceReplies, setVoiceReplies] = useState(true);
-  const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
-  const [wakeStatus, setWakeStatus] = useState<'off' | 'starting' | 'listening' | 'detected' | 'error'>('off');
-  const [wakeError, setWakeError] = useState<string | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const isSpeaking = useRef(false);
-  const lastAutoRecordEvent = useRef<string>('');
-  const wakeCommandActive = useRef(false);
-
-  const resumeWakeListening = () => {
-    if (!wakeCommandActive.current) return;
-    wakeCommandActive.current = false;
-    if (wakeWordEnabled) DeviceEventEmitter.emit('lucyWakeWordPreferenceChanged', true);
-  };
-
-  useEffect(() => {
-    AsyncStorage.getItem('lucyWakeWordEnabled').then(value => setWakeWordEnabled(value === 'true'));
-    const listener = DeviceEventEmitter.addListener('lucyWakeWordStatusChanged', event => {
-      setWakeStatus(event?.status || 'off');
-      setWakeError(event?.status === 'error' ? event?.message || 'Hey Lucy could not start.' : null);
-    });
-    return () => listener.remove();
-  }, []);
-
-  const toggleWakeWord = async () => {
-    const next = !wakeWordEnabled;
-    setWakeWordEnabled(next);
-    await AsyncStorage.setItem('lucyWakeWordEnabled', String(next));
-    DeviceEventEmitter.emit('lucyWakeWordPreferenceChanged', next);
-    Alert.alert(
-      next ? 'Hey Lucy enabled' : 'Hey Lucy paused',
-      next
-        ? 'Lucy will listen for your wake phrase while Future Jobs Pro AI is open. Your audio stays on-device until the phrase is detected.'
-        : 'Wake-word listening has been turned off.',
-    );
-  };
+  const finishingRecording = useRef(false);
+  const heardSpeech = useRef(false);
+  const silenceStartedAt = useRef<number | null>(null);
+  const maximumRecordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-record from Home screen
   useEffect(() => {
-    const eventKey = route.params?.wakeEvent ? String(route.params.wakeEvent) : (route.params?.autoRecord ? 'manual' : '');
-    if (eventKey && eventKey !== lastAutoRecordEvent.current) {
-      lastAutoRecordEvent.current = eventKey;
-      wakeCommandActive.current = Boolean(route.params?.wakeEvent);
+    if (route.params?.autoRecord) {
       const timer = setTimeout(() => startRecording(), 500);
       return () => clearTimeout(timer);
     }
-  }, [route.params?.autoRecord, route.params?.wakeEvent]);
+  }, [route.params?.autoRecord]);
 
   // Load conversation history
   useEffect(() => {
@@ -95,19 +60,26 @@ export default function AIAssistantScreen() {
   }, [user]);
 
   // Speak Lucy's response
-  const speakText = (text: string) => {
-    if (!voiceReplies) {
-      resumeWakeListening();
-      return;
-    }
+  const speakText = async (text: string) => {
     if (isSpeaking.current) Speech.stop();
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+    });
+    const voices = await Speech.getAvailableVoicesAsync().catch(() => []);
+    const preferred = voices.find(voice =>
+      /samantha|zira|ava|victoria|female|serena|karen/i.test(`${voice.name} ${voice.identifier}`)
+      && /^en/i.test(voice.language)
+    ) || voices.find(voice => /^en/i.test(voice.language));
     isSpeaking.current = true;
     Speech.speak(text, {
       language: 'en-US',
+      voice: preferred?.identifier,
       pitch: 1.0,
       rate: 0.9,
-      onDone: () => { isSpeaking.current = false; resumeWakeListening(); },
-      onError: () => { isSpeaking.current = false; resumeWakeListening(); },
+      onDone: () => { isSpeaking.current = false; },
+      onError: () => { isSpeaking.current = false; },
     });
   };
 
@@ -140,6 +112,29 @@ export default function AIAssistantScreen() {
   };
 
   // ----- Voice Recording with higher gain -----
+  const finishRecording = async (activeRecording: Audio.Recording | null) => {
+    if (!activeRecording || finishingRecording.current) return;
+    finishingRecording.current = true;
+    if (maximumRecordingTimer.current) clearTimeout(maximumRecordingTimer.current);
+    setIsRecording(false);
+    try {
+      activeRecording.setOnRecordingStatusUpdate(null);
+      await activeRecording.stopAndUnloadAsync();
+      const uri = activeRecording.getURI();
+      setRecording(null);
+      if (!uri) throw new Error('Recording file was not created');
+      const transcript = await transcribeAudio(uri);
+      if (transcript) await sendMessage(transcript);
+      else Alert.alert('No speech detected', 'Please try again.');
+    } catch (err) {
+      Alert.alert('Error', 'Failed to process recording.');
+    } finally {
+      finishingRecording.current = false;
+      heardSpeech.current = false;
+      silenceStartedAt.current = null;
+    }
+  };
+
   const startRecording = async () => {
     try {
       const permission = await Audio.requestPermissionsAsync();
@@ -155,6 +150,7 @@ export default function AIAssistantScreen() {
       // Higher gain for better sensitivity
       const recordingOptions = {
         ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        isMeteringEnabled: true,
         android: {
           ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
           inputGain: 25,  // louder
@@ -167,29 +163,27 @@ export default function AIAssistantScreen() {
       const { recording } = await Audio.Recording.createAsync(recordingOptions);
       setRecording(recording);
       setIsRecording(true);
+      heardSpeech.current = false;
+      silenceStartedAt.current = null;
+      recording.setProgressUpdateInterval(150);
+      recording.setOnRecordingStatusUpdate(status => {
+        if (!status.isRecording || typeof status.metering !== 'number') return;
+        if (status.metering > -42) {
+          heardSpeech.current = true;
+          silenceStartedAt.current = null;
+        } else if (heardSpeech.current) {
+          silenceStartedAt.current ??= Date.now();
+          if (Date.now() - silenceStartedAt.current > 1200) void finishRecording(recording);
+        }
+      });
+      maximumRecordingTimer.current = setTimeout(() => void finishRecording(recording), 15000);
     } catch (err) {
       Alert.alert('Error', 'Could not start recording. Please check microphone permissions.');
     }
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
-    setIsRecording(false);
-    try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
-      if (uri) {
-        const transcript = await transcribeAudio(uri);
-        if (transcript) {
-          sendMessage(transcript);
-        } else {
-          Alert.alert('No speech detected', 'Please try again.');
-        }
-      }
-    } catch (err) {
-      Alert.alert('Error', 'Failed to process recording.');
-    }
+    await finishRecording(recording);
   };
 
   const transcribeAudio = async (uri: string): Promise<string> => {
@@ -197,7 +191,7 @@ export default function AIAssistantScreen() {
       const response = await api.uploadFileWithData<{ transcript: string }>(
         '/voice/assistant-transcribe',
         uri,
-        {},
+        { userId: user?.id || '', projectId: '00000000-0000-0000-0000-000000000000' },
         'audio'
       );
       return response.transcript || '';
@@ -244,25 +238,9 @@ export default function AIAssistantScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <View style={styles.titleWrap}>
-          <View style={styles.lucyOrb}><MaterialIcons name="auto-awesome" size={18} color="#07111F" /></View>
-          <View><Text style={styles.headerTitle}>Lucy</Text><Text style={styles.headerMeta}>Memory on • {wakeStatus === 'listening' ? 'Hey Lucy listening' : wakeStatus === 'detected' ? 'Wake phrase detected' : wakeStatus === 'error' ? 'Hey Lucy needs attention' : wakeWordEnabled ? 'Hey Lucy starting' : 'Hey Lucy off'}</Text></View>
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity accessibilityLabel="Toggle Hey Lucy" onPress={toggleWakeWord} style={[styles.voiceToggle, wakeWordEnabled && styles.wakeToggleActive]}>
-            <MaterialIcons name="hearing" size={20} color={wakeWordEnabled ? '#A7F3D0' : '#64748B'} />
-          </TouchableOpacity>
-          <TouchableOpacity accessibilityLabel="Toggle spoken replies" onPress={() => setVoiceReplies(current => !current)} style={styles.voiceToggle}>
-            <MaterialIcons name={voiceReplies ? 'volume-up' : 'volume-off'} size={21} color={voiceReplies ? '#67E8F9' : '#64748B'} />
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.headerTitle}>Ask Lucy</Text>
+        <View style={{ width: 40 }} />
       </View>
-      {wakeError ? (
-        <TouchableOpacity style={styles.wakeError} onPress={toggleWakeWord}>
-          <MaterialIcons name="error-outline" size={18} color="#FCA5A5" />
-          <Text style={styles.wakeErrorText}>{wakeError} Tap to turn off and try again.</Text>
-        </TouchableOpacity>
-      ) : null}
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -297,23 +275,11 @@ export default function AIAssistantScreen() {
         )}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
       />
-      {messages.length <= 2 && !loading && (
-        <View style={styles.promptArea}>
-          <Text style={styles.promptLabel}>TRY A WORKSPACE COMMAND</Text>
-          <View style={styles.promptRow}>
-            {['What needs attention today?', 'Summarize my active job', 'Prepare a schedule update'].map(prompt => (
-              <TouchableOpacity key={prompt} style={styles.promptChip} onPress={() => sendMessage(prompt)}>
-                <Text style={styles.promptText}>{prompt}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
-      {loading && <View style={styles.thinking}><ActivityIndicator color="#C4B5FD" size="small" /><Text style={styles.thinkingText}>Lucy is reasoning across your workspace…</Text></View>}
+      {loading && <ActivityIndicator color="#00D4FF" style={{ padding: 8 }} />}
       <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
-          placeholder="Ask Lucy about your workspace…"
+          placeholder="Type a command..."
           placeholderTextColor="#888"
           value={input}
           onChangeText={setInput}
@@ -332,7 +298,7 @@ export default function AIAssistantScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#07111F' },
+  container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -340,23 +306,15 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 16,
     paddingHorizontal: 16,
-    backgroundColor: '#07111F',
+    backgroundColor: '#0A0A0A',
     borderBottomWidth: 1,
-    borderBottomColor: '#17283A',
+    borderBottomColor: '#333',
   },
   backButton: { padding: 8, marginLeft: 4 },
-  titleWrap: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  lucyOrb: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#C4B5FD' },
-  headerTitle: { color: '#FFF', fontSize: 18, fontWeight: '900' },
-  headerMeta: { color: '#8FA0B5', fontSize: 10, marginTop: 2 },
-  voiceToggle: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111E2D' },
-  headerActions: { flexDirection: 'row', gap: 7 },
-  wakeToggleActive: { backgroundColor: '#113A32', borderWidth: 1, borderColor: '#256B59' },
-  wakeError: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#3B1118', borderBottomWidth: 1, borderBottomColor: '#7F1D1D' },
-  wakeErrorText: { color: '#FECACA', fontSize: 11, flex: 1 },
+  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   bubble: { margin: 8, padding: 12, borderRadius: 12, maxWidth: '80%' },
-  bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#0E7490' },
-  bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#17112B', borderWidth: 1, borderColor: '#4C1D95', flexDirection: 'row', alignItems: 'center' },
+  bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#00D4FF' },
+  bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333', flexDirection: 'row', alignItems: 'center' },
   avatar: { marginRight: 8 },
   msgText: { color: '#FFF', fontSize: 15 },
   approvalRow: { flexDirection: 'row', marginTop: 4, marginLeft: 8, gap: 12 },
@@ -364,14 +322,7 @@ const styles = StyleSheet.create({
   approveBtn: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
   rejectBtn: { backgroundColor: '#F44336', borderColor: '#F44336' },
   approvalBtnText: { color: '#FFF', fontWeight: '600', fontSize: 13 },
-  promptArea: { paddingHorizontal: 12, paddingBottom: 10 },
-  promptLabel: { color: '#64748B', fontSize: 9, letterSpacing: 1.2, fontWeight: '900', marginBottom: 7 },
-  promptRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  promptChip: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 12, backgroundColor: '#111E2D', borderWidth: 1, borderColor: '#263A50' },
-  promptText: { color: '#C8D4E2', fontSize: 11, fontWeight: '600' },
-  thinking: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8 },
-  thinkingText: { color: '#A99BC2', fontSize: 11 },
-  inputBar: { flexDirection: 'row', alignItems: 'center', padding: 12, paddingBottom: Platform.OS === 'ios' ? 22 : 12, borderTopWidth: 1, borderTopColor: '#17283A', backgroundColor: '#091421' },
-  input: { flex: 1, backgroundColor: '#111E2D', borderRadius: 18, borderWidth: 1, borderColor: '#263A50', paddingHorizontal: 16, paddingVertical: 11, color: '#FFF', fontSize: 15, marginRight: 10 },
+  inputBar: { flexDirection: 'row', alignItems: 'center', padding: 12, borderTopWidth: 1, borderTopColor: '#333' },
+  input: { flex: 1, backgroundColor: '#1A1A1A', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#FFF', fontSize: 16, marginRight: 12 },
   micBtn: { padding: 4, marginRight: 8 },
 });

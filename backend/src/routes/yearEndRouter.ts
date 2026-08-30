@@ -32,6 +32,80 @@ const requirePayrollManager = async (req: Request): Promise<{ companyId: string;
   return { companyId: String(result.rows[0].company_id), userId: String(decoded.id) };
 };
 
+const finalizedTables: Record<string, string> = {
+  T4: 'generated_t4_slips',
+  T4A: 'generated_t4a_slips',
+  RL1: 'generated_rl1_slips',
+};
+
+// GET /api/year-end/finalized – company-scoped finalized slip archive
+router.get('/finalized', async (req: Request, res: Response) => {
+  try {
+    const { companyId } = await requirePayrollManager(req);
+    const taxYear = req.query.taxYear ? Number(req.query.taxYear) : null;
+    const employeeId = req.query.employeeId ? String(req.query.employeeId) : null;
+    const formType = req.query.formType ? String(req.query.formType).toUpperCase() : null;
+    if (taxYear !== null && (!Number.isInteger(taxYear) || taxYear < 2000 || taxYear > new Date().getFullYear() + 1)) {
+      return res.status(400).json({ success: false, message: 'Invalid tax year' });
+    }
+    if (formType && !finalizedTables[formType]) {
+      return res.status(400).json({ success: false, message: 'Invalid form type' });
+    }
+
+    const result = await pool.query(
+      `SELECT archive.*, u.first_name, u.last_name FROM (
+         SELECT id::text, employee_id, tax_year, generated_at, 'T4'::text AS form_type
+         FROM generated_t4_slips
+         UNION ALL
+         SELECT id::text, employee_id, tax_year, generated_at, 'T4A'::text AS form_type
+         FROM generated_t4a_slips
+         UNION ALL
+         SELECT id::text, employee_id, tax_year, generated_at, 'RL1'::text AS form_type
+         FROM generated_rl1_slips
+       ) archive
+       JOIN users u ON u.id = archive.employee_id
+       WHERE u.company_id = $1
+         AND ($2::integer IS NULL OR archive.tax_year = $2)
+         AND ($3::uuid IS NULL OR archive.employee_id = $3)
+         AND ($4::text IS NULL OR archive.form_type = $4)
+       ORDER BY archive.generated_at DESC`,
+      [companyId, taxYear, employeeId, formType]
+    );
+    const slips = result.rows.map(row => ({
+      ...row,
+      employee_name: `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+    }));
+    res.json({ success: true, slips });
+  } catch (error: any) {
+    console.error('Finalized year-end archive error:', error);
+    res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/year-end/finalized/:formType/:id – reopen one stored slip
+router.get('/finalized/:formType/:id', async (req: Request, res: Response) => {
+  try {
+    const { companyId } = await requirePayrollManager(req);
+    const formType = String(req.params.formType || '').toUpperCase();
+    const table = finalizedTables[formType];
+    if (!table) return res.status(400).json({ success: false, message: 'Invalid form type' });
+    const result = await pool.query(
+      `SELECT s.*, u.first_name, u.last_name, u.email, c.name AS company_name,
+              c.legal_name, c.business_number, c.payroll_account_number
+       FROM ${table} s
+       JOIN users u ON u.id = s.employee_id
+       JOIN companies c ON c.id = u.company_id
+       WHERE s.id::text = $1 AND u.company_id = $2`,
+      [String(req.params.id), companyId]
+    );
+    if (!result.rowCount) return res.status(404).json({ success: false, message: 'Finalized slip not found' });
+    res.json({ success: true, formType, slip: result.rows[0] });
+  } catch (error: any) {
+    console.error('Finalized year-end slip error:', error);
+    res.status(error.status || 500).json({ success: false, message: error.message });
+  }
+});
+
 // ─── GET /api/year-end/employee/:employeeId/forms ────────────────
 router.get('/employee/:employeeId/forms', async (req: Request, res: Response) => {
   try {

@@ -377,7 +377,7 @@ router.post('/bulk-clock-in', async (req: Request, res: Response) => {
     }
     const decoded = verifyToken(req);
 
-    const userCheck = await pool.query('SELECT role FROM users WHERE id = $1', [decoded.id]);
+    const userCheck = await pool.query('SELECT role, company_id FROM users WHERE id = $1', [decoded.id]);
     if (userCheck.rows.length === 0 || !['boss', 'manager'].includes(userCheck.rows[0].role)) {
       return res.status(403).json({ success: false, message: 'Permission denied' });
     }
@@ -396,6 +396,9 @@ router.post('/bulk-clock-in', async (req: Request, res: Response) => {
     );
     if (companyCheck.rows.length !== 1) {
       return res.status(400).json({ success: false, message: 'All users must belong to the same company' });
+    }
+    if (companyCheck.rows[0].company_id !== userCheck.rows[0].company_id) {
+      return res.status(403).json({ success: false, message: 'Employees must belong to your company' });
     }
 
     const results = [];
@@ -439,7 +442,7 @@ router.post('/bulk-clock-out', async (req: Request, res: Response) => {
     }
     const decoded = verifyToken(req);
 
-    const userCheck = await pool.query('SELECT role FROM users WHERE id = $1', [decoded.id]);
+    const userCheck = await pool.query('SELECT role, company_id FROM users WHERE id = $1', [decoded.id]);
     if (userCheck.rows.length === 0 || !['boss', 'manager'].includes(userCheck.rows[0].role)) {
       return res.status(403).json({ success: false, message: 'Permission denied' });
     }
@@ -454,8 +457,8 @@ router.post('/bulk-clock-out', async (req: Request, res: Response) => {
       const active = await pool.query(
         `SELECT te.*, u.company_id FROM time_entries te
          JOIN users u ON te.user_id = u.id
-         WHERE te.user_id = $1 AND te.clock_out IS NULL`,
-        [userId]
+         WHERE te.user_id = $1 AND u.company_id = $2 AND te.clock_out IS NULL`,
+        [userId, userCheck.rows[0].company_id]
       );
       if (active.rows.length === 0) {
         results.push({ userId, success: false, message: 'No active clock-in found' });

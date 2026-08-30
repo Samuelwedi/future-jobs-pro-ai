@@ -1,5 +1,5 @@
 // ============================================
-// OFFLINE QUEUE SERVICE (supports POST, PUT, DELETE)
+// OFFLINE QUEUE SERVICE (supports POST, PUT, PATCH, DELETE)
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
@@ -37,7 +37,7 @@ export function listenToNetworkChanges(callback: (online: boolean) => void): () 
 }
 
 export async function queueAction(action: {
-  method: 'POST' | 'PUT' | 'DELETE';   // <-- expanded type
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   url: string;
   data?: any;
   fileUri?: string;
@@ -70,6 +70,8 @@ export async function processQueue(): Promise<void> {
         );
       } else if (action.method === 'PUT') {
         await api.put(action.url, action.data);
+      } else if (action.method === 'PATCH') {
+        await api.patch(action.url, action.data);
       } else if (action.method === 'DELETE') {
         // api.delete not implemented yet, but we'll handle it later
         console.warn('DELETE not yet supported in offline queue');

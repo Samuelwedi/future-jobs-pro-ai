@@ -44,17 +44,28 @@ router.post('/generate', async (req: Request, res: Response) => {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { periodStart, periodEnd, employeeRates } = req.body;
+    const { periodStart, periodEnd, employeeRates, employeeIds } = req.body;
     if (!periodStart || !periodEnd) {
       return res.status(400).json({ success: false, message: 'periodStart and periodEnd required' });
     }
 
-    const userId = (req as any).user?.id || null;
-    const result = await generatePayroll(companyId, periodStart, periodEnd, userId, employeeRates || []);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(periodStart)) || !/^\d{4}-\d{2}-\d{2}$/.test(String(periodEnd)) || periodEnd < periodStart) {
+      return res.status(400).json({ success: false, message: 'Enter a valid pay period; the end date must be on or after the start date' });
+    }
+    const selectedIds = Array.isArray(employeeIds) ? employeeIds.map(String) : [];
+    if (selectedIds.length) {
+      const permitted = await pool.query('SELECT COUNT(*)::integer count FROM users WHERE company_id=$1 AND id=ANY($2::uuid[])', [companyId, selectedIds]);
+      if (Number(permitted.rows[0]?.count) !== selectedIds.length) return res.status(403).json({ success: false, message: 'One or more employees do not belong to your company' });
+    }
+    const decoded = verifyToken(req);
+    const result = await generatePayroll(companyId, periodStart, periodEnd, decoded.id, employeeRates || [], selectedIds);
 
     res.status(201).json({
       success: true,
       payrollId: result.payrollId,
+      employeeCount: result.employeeCount,
+      totalHours: result.totalHours,
+      totalPay: result.totalPay,
       message: `Payroll generated for ${result.employeeCount} employees`,
     });
   } catch (error: any) {
@@ -115,7 +126,13 @@ router.get('/settings', async (req: Request, res: Response) => {
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const result = await pool.query(
-      `SELECT payroll_schedule, payroll_day, payroll_time, default_hourly_rate, overtime_multiplier, tax_rate
+      `SELECT
+         COALESCE(NULLIF(to_jsonb(companies)->>'payroll_schedule',''),'weekly') payroll_schedule,
+         COALESCE(NULLIF(to_jsonb(companies)->>'payroll_day','')::integer,5) payroll_day,
+         COALESCE(NULLIF(to_jsonb(companies)->>'payroll_time',''),'09:00') payroll_time,
+         COALESCE(NULLIF(to_jsonb(companies)->>'default_hourly_rate','')::numeric,20) default_hourly_rate,
+         COALESCE(NULLIF(to_jsonb(companies)->>'overtime_multiplier','')::numeric,1.5) overtime_multiplier,
+         COALESCE(NULLIF(to_jsonb(companies)->>'tax_rate','')::numeric,15) tax_rate
        FROM companies WHERE id = $1`,
       [companyId]
     );

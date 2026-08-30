@@ -7,11 +7,11 @@ interface VacationPolicy { rate:number; method:'accrue'|'each_pay'; }
 // Transitional estimates only. Replace with the CRA calculation engine before claiming filing compliance.
 const CPP_RATE=0.0595, EI_RATE=0.0163, FEDERAL_TAX_RATE=0.15;
 
-export async function generatePayroll(companyId:string,periodStart:string,periodEnd:string,createdBy:string|null=null,employeeRates:EmployeeRateOverride[]=[]):Promise<PayrollGenerationResult>{
+export async function generatePayroll(companyId:string,periodStart:string,periodEnd:string,createdBy:string|null=null,employeeRates:EmployeeRateOverride[]=[],selectedEmployeeIds:string[]=[]):Promise<PayrollGenerationResult>{
  const client=await pool.connect();
  try{
   await client.query('BEGIN');
-  const timeEntries=await client.query(`SELECT te.user_id,te.regular_hours,te.overtime_hours,te.id FROM time_entries te JOIN users u ON te.user_id=u.id WHERE u.company_id=$1 AND te.clock_in >= $2::date AND te.clock_in < ($3::date + INTERVAL '1 day') AND te.status='completed' AND te.approval_status='approved' AND te.payroll_locked_at IS NULL`,[companyId,periodStart,periodEnd]);
+  const timeEntries=await client.query(`SELECT te.user_id,te.regular_hours,te.overtime_hours,te.id FROM time_entries te JOIN users u ON te.user_id=u.id WHERE u.company_id=$1 AND te.clock_in >= $2::date AND te.clock_in < ($3::date + INTERVAL '1 day') AND te.status='completed' AND te.approval_status='approved' AND te.payroll_locked_at IS NULL AND (cardinality($4::uuid[])=0 OR te.user_id=ANY($4::uuid[]))`,[companyId,periodStart,periodEnd,selectedEmployeeIds]);
   if(!timeEntries.rowCount)throw new Error('No approved, unlocked time entries found in this period');
   const overrides=new Map(employeeRates.map(r=>[r.employeeId,Number(r.hourlyRate)]));
   const employeeIds=[...new Set<string>(timeEntries.rows.map((r:any)=>String(r.user_id)))];

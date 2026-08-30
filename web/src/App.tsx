@@ -37,6 +37,7 @@ import Invoices from './pages/Invoices';
 import Estimates from './pages/Estimates';
 import EmployeePortal from './pages/EmployeePortal';
 import YearEnd from './pages/YearEnd';
+import FinalizedSlips from './pages/FinalizedSlips';
 import DirectDeposit from './pages/DirectDeposit';
 import MediaFolders from './pages/MediaFolders';
 import Support from './pages/Support';
@@ -45,7 +46,7 @@ import MonthMedia from './pages/MonthMedia';
 import MonthMediaType from './pages/MonthMediaType';
 import Layout from './components/Layout';
 
-// âœ… NEW PAGES
+// ✅ NEW PAGES
 import CompanySettings from './pages/CompanySettings';
 import CrewClock from './pages/CrewClock';
 import CrewTracking from './pages/CrewTracking';
@@ -94,6 +95,7 @@ export default function App() {
           <Route path="payroll" element={<Payroll />} />
           <Route path="direct-deposit" element={<DirectDeposit />} />
           <Route path="year-end" element={<YearEnd />} />
+          <Route path="year-end/finalized" element={<FinalizedSlips />} />
           <Route path="invoices" element={<Invoices />} />
           <Route path="estimates" element={<Estimates />} />
           <Route path="reports" element={<Reports />} />
@@ -105,7 +107,7 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="security" element={<Security />} />
 
-          {/* âœ… NEW ROUTES */}
+          {/* ✅ NEW ROUTES */}
           <Route path="company-settings" element={<CompanySettings />} />
           <Route path="crew-clock" element={<CrewClock />} />
           <Route path="crew-tracking" element={<CrewTracking />} />

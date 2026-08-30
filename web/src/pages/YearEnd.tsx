@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Paper, Grid, Button, CircularProgress,
   Alert, Chip, Stack, Select, MenuItem, FormControl, InputLabel, TextField,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Divider,
 } from '@mui/material';
-import { Receipt, Save, Visibility } from '@mui/icons-material';
+import { Receipt, Save, Visibility, Refresh, Print } from '@mui/icons-material';
 
 import { API_BASE } from '../services/api';
 import YearEndCompanyProfile from '../components/YearEndCompanyProfile';
@@ -14,6 +15,15 @@ interface Employee {
   last_name: string;
   employment_type: string;
   province: string;
+}
+
+interface FinalizedSlip {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  form_type: 'T4' | 'T4A' | 'RL1';
+  tax_year: number;
+  generated_at: string;
 }
 
 export default function YearEnd() {
@@ -27,6 +37,43 @@ export default function YearEnd() {
   const [preview, setPreview] = useState<any | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [finalizedSlips, setFinalizedSlips] = useState<FinalizedSlip[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [storedSlip, setStoredSlip] = useState<any | null>(null);
+
+  const fetchFinalized = async () => {
+    setArchiveLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/year-end/finalized?taxYear=${taxYear}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Could not load finalized slips');
+      setFinalizedSlips(data.slips || []);
+    } catch (cause: any) {
+      setError(cause.message || 'Could not load finalized slips');
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
+  const openFinalized = async (slip: FinalizedSlip) => {
+    setArchiveLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/year-end/finalized/${slip.form_type}/${slip.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Could not open finalized slip');
+      setStoredSlip({ ...data.slip, form_type: data.formType });
+    } catch (cause: any) {
+      setError(cause.message || 'Could not open finalized slip');
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
 
   const darkInputStyle = {
     input: { color: '#FFF' },
@@ -59,6 +106,10 @@ export default function YearEnd() {
     };
     fetchEmployees();
   }, [token]);
+
+  useEffect(() => {
+    void fetchFinalized();
+  }, [taxYear, token]);
 
   const fetchAvailableForms = async (employeeId: string) => {
     try {
@@ -117,6 +168,7 @@ export default function YearEnd() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Save failed');
       setSaved(true);
+      await fetchFinalized();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -270,6 +322,44 @@ export default function YearEnd() {
           </Paper>
         </Grid>
       </Grid>
+
+      <Paper sx={{ mt: 3, p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2} sx={{ mb: 2 }}>
+          <Box>
+            <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 800 }}>Finalized slips archive</Typography>
+            <Typography variant="body2" sx={{ color: '#888' }}>Stored T4, T4A, and RL‑1 records for {taxYear}. Finalizing again updates the stored employee/year record.</Typography>
+          </Box>
+          <Button startIcon={<Refresh />} onClick={fetchFinalized} disabled={archiveLoading} variant="outlined">Refresh archive</Button>
+        </Stack>
+        {archiveLoading && <CircularProgress size={24} sx={{ color: '#00D4FF', mb: 2 }} />}
+        <TableContainer>
+          <Table size="small">
+            <TableHead><TableRow><TableCell sx={{ color: '#888' }}>Employee</TableCell><TableCell sx={{ color: '#888' }}>Form</TableCell><TableCell sx={{ color: '#888' }}>Tax year</TableCell><TableCell sx={{ color: '#888' }}>Finalized</TableCell><TableCell /></TableRow></TableHead>
+            <TableBody>
+              {finalizedSlips.length === 0 ? <TableRow><TableCell colSpan={5} sx={{ color: '#888', textAlign: 'center', py: 4 }}>No finalized slips stored for {taxYear}.</TableCell></TableRow> : finalizedSlips.map(slip => (
+                <TableRow key={`${slip.form_type}-${slip.id}`} hover>
+                  <TableCell sx={{ color: '#FFF' }}>{slip.employee_name}</TableCell>
+                  <TableCell><Chip size="small" label={slip.form_type} sx={{ bgcolor: '#00D4FF20', color: '#67E8F9' }} /></TableCell>
+                  <TableCell sx={{ color: '#CCC' }}>{slip.tax_year}</TableCell>
+                  <TableCell sx={{ color: '#CCC' }}>{new Date(slip.generated_at).toLocaleString()}</TableCell>
+                  <TableCell align="right"><Button size="small" startIcon={<Visibility />} onClick={() => openFinalized(slip)}>Open</Button></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {storedSlip && <Paper sx={{ mt: 3, p: 3, bgcolor: '#10151c', border: '1px solid #334155' }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Box><Typography variant="h6" sx={{ color: '#67E8F9', fontWeight: 900 }}>{storedSlip.form_type} • {storedSlip.tax_year}</Typography><Typography sx={{ color: '#FFF' }}>{storedSlip.first_name} {storedSlip.last_name}</Typography><Typography variant="body2" sx={{ color: '#888' }}>{storedSlip.legal_name || storedSlip.company_name}</Typography></Box>
+            <Button startIcon={<Print />} onClick={() => window.print()} variant="outlined">Print</Button>
+          </Stack>
+          <Divider sx={{ my: 2, borderColor: '#334155' }} />
+          <Grid container spacing={2}>
+            {Object.entries(storedSlip).filter(([key]) => key.startsWith('box_') || key.startsWith('employer_')).map(([key, value]) => <Grid item xs={12} sm={6} md={4} key={key}><Typography variant="caption" sx={{ color: '#888' }}>{key.replace(/_/g, ' ').toUpperCase()}</Typography><Typography sx={{ color: '#FFF', fontWeight: 800 }}>${Number(value || 0).toFixed(2)}</Typography></Grid>)}
+          </Grid>
+        </Paper>}
+      </Paper>
     </Container>
   );
 }

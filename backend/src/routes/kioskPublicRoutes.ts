@@ -15,13 +15,16 @@ router.get('/setup/:companyId', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Invalid kiosk link' });
     }
     const company = await pool.query(
-      'SELECT id, name, kiosk_enabled FROM companies WHERE id = $1',
+      `SELECT id, name,
+              COALESCE(NULLIF(to_jsonb(companies)->>'kiosk_enabled', '')::boolean, false) AS kiosk_enabled
+       FROM companies WHERE id = $1`,
       [companyId]
     );
     if (!company.rowCount) return res.status(404).json({ success: false, message: 'Company not found' });
     const projects = await pool.query(
       `SELECT id, name FROM projects
-       WHERE company_id = $1 AND COALESCE(status, 'active') = 'active'
+       WHERE company_id = $1
+         AND COALESCE(NULLIF(to_jsonb(projects)->>'status', ''), 'active') = 'active'
        ORDER BY name`,
       [companyId]
     );
@@ -45,11 +48,16 @@ router.post('/clock-in', async (req: Request, res: Response) => {
     );
     if (!userResult.rowCount) return res.status(404).json({ success: false, message: 'Invalid PIN' });
     const project = await pool.query(
-      "SELECT id FROM projects WHERE id = $1 AND company_id = $2 AND COALESCE(status, 'active') = 'active'",
+      `SELECT id FROM projects WHERE id = $1 AND company_id = $2
+       AND COALESCE(NULLIF(to_jsonb(projects)->>'status', ''), 'active') = 'active'`,
       [projectId, companyId]
     );
     if (!project.rowCount) return res.status(400).json({ success: false, message: 'Invalid project' });
-    const company = await pool.query('SELECT kiosk_enabled FROM companies WHERE id = $1', [companyId]);
+    const company = await pool.query(
+      `SELECT COALESCE(NULLIF(to_jsonb(companies)->>'kiosk_enabled', '')::boolean, false) AS kiosk_enabled
+       FROM companies WHERE id = $1`,
+      [companyId]
+    );
     if (!company.rows[0]?.kiosk_enabled) return res.status(403).json({ success: false, message: 'Kiosk is disabled' });
     const active = await pool.query(
       'SELECT id FROM time_entries WHERE user_id = $1 AND clock_out IS NULL LIMIT 1',

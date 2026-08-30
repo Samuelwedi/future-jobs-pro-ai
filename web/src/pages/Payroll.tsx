@@ -63,17 +63,15 @@ interface CompanySettings {
 }
 
 interface EmployeeSimple {
-  id: number;
+  id: string;
   first_name: string;
   last_name: string;
 }
 
 interface RunPayrollResult {
-  netPayout: string;
-  breakdown: {
-    employeeWithholdings: Record<string, string>;
-    employerContributions: Record<string, string>;
-  };
+  payrollId: string;
+  employeeCount: number;
+  message: string;
 }
 
 // ─── Main Component ──────────────────────────────────────────────
@@ -118,9 +116,10 @@ export default function PayrollPage() {
 
   // ── Run Payroll State ──
   const [runEmployees, setRunEmployees] = useState<EmployeeSimple[]>([]);
-  const [runEmployeeId, setRunEmployeeId] = useState<number>(0);
-  const [runGrossPay, setRunGrossPay] = useState<number>(3000);
+  const [runEmployeeId, setRunEmployeeId] = useState<string>('all');
   const [runTaxYear, setRunTaxYear] = useState<number>(2026);
+  const [runPeriodStart, setRunPeriodStart] = useState<string>('');
+  const [runPeriodEnd, setRunPeriodEnd] = useState<string>('');
   const [runLoading, setRunLoading] = useState(false);
   const [runResult, setRunResult] = useState<RunPayrollResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
@@ -164,7 +163,7 @@ export default function PayrollPage() {
       if (data.success) {
         const users = data.users || [];
         setEmployees(users.map((u: any) => ({ id: u.id, name: `${u.first_name} ${u.last_name}` })));
-        setRunEmployees(users.map((u: any) => ({ id: parseInt(u.id) || 0, first_name: u.first_name, last_name: u.last_name })));
+        setRunEmployees(users.map((u: any) => ({ id: String(u.id), first_name: u.first_name, last_name: u.last_name })));
       }
     } catch (e) { console.error(e); }
   };
@@ -323,17 +322,23 @@ export default function PayrollPage() {
   // ── Run Payroll Handler ──
   const handleRunPayroll = async (e: React.FormEvent) => {
     e.preventDefault();
-    setRunLoading(true);
     setRunError(null);
+    setRunResult(null);
+    if (!runPeriodStart || !runPeriodEnd) return setRunError('Select both pay-period start and end dates.');
+    if (runPeriodEnd < runPeriodStart) return setRunError('Pay-period end must be on or after the start date.');
+    if (Number(runPeriodEnd.slice(0, 4)) !== runTaxYear) return setRunError('Tax year must match the pay-period end date.');
+    setRunLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/payroll/process`, {
+      const employeeIds = runEmployeeId === 'all' ? [] : [runEmployeeId];
+      const res = await fetch(`${API_BASE}/api/payroll/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ employeeId: runEmployeeId, grossEarnings: runGrossPay, taxYear: runTaxYear }),
+        body: JSON.stringify({ periodStart: runPeriodStart, periodEnd: runPeriodEnd, employeeIds }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Processing failed');
-      setRunResult(data.calculations);
+      if (!res.ok) throw new Error(data.message || data.error || 'Processing failed');
+      setRunResult({ payrollId: data.payrollId, employeeCount: data.employeeCount || 0, message: data.message || 'Payroll generated' });
+      await fetchPayrolls();
     } catch (err: any) {
       setRunError(err.message);
     } finally {
@@ -964,9 +969,10 @@ export default function PayrollPage() {
                 <InputLabel sx={{ color: '#888' }}>Employee</InputLabel>
                 <Select
                   value={runEmployeeId}
-                  onChange={(e) => setRunEmployeeId(Number(e.target.value))}
+                  onChange={(e) => setRunEmployeeId(String(e.target.value))}
                   sx={darkSelectStyle}
                 >
+                  <MenuItem value="all">All eligible employees</MenuItem>
                   {runEmployees.map((emp) => (
                     <MenuItem key={emp.id} value={emp.id}>
                       {emp.first_name} {emp.last_name}
@@ -974,14 +980,11 @@ export default function PayrollPage() {
                   ))}
                 </Select>
               </FormControl>
-              <TextField
-                label="Gross Pay This Period ($)"
-                type="number"
-                fullWidth
-                value={runGrossPay}
-                onChange={(e) => setRunGrossPay(Number(e.target.value))}
-                sx={{ mb: 2, ...darkInputStyle }}
-              />
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid item xs={12} sm={6}><TextField label="Pay Period Start" type="date" fullWidth value={runPeriodStart} onChange={(e) => setRunPeriodStart(e.target.value)} InputLabelProps={{ shrink: true }} sx={darkInputStyle} /></Grid>
+                <Grid item xs={12} sm={6}><TextField label="Pay Period End" type="date" fullWidth value={runPeriodEnd} onChange={(e) => { setRunPeriodEnd(e.target.value); if (e.target.value) setRunTaxYear(Number(e.target.value.slice(0, 4))); }} InputLabelProps={{ shrink: true }} sx={darkInputStyle} /></Grid>
+              </Grid>
+              <Alert severity="info" sx={{ mb: 2 }}>Gross pay is calculated from completed, approved, unlocked time entries and each employee’s effective compensation rate.</Alert>
               <TextField
                 label="Tax Year"
                 type="number"
@@ -1008,30 +1011,10 @@ export default function PayrollPage() {
           <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333', minHeight: 350 }}>
             {runResult ? (
               <>
-                <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Payslip Summary</Typography>
-                <Typography variant="subtitle1" sx={{ color: '#00D4FF', mb: 1 }}>Employee Withholdings</Typography>
-                {Object.entries(runResult.breakdown.employeeWithholdings).map(([key, value]) => (
-                  <Box key={key} sx={{ display: 'flex', justifyContent: 'space-between', py: 1, borderBottom: '1px solid #333' }}>
-                    <Typography sx={{ color: '#FFF', textTransform: 'capitalize' }}>
-                      {key.replace(/([A-Z])/g, ' $1')}
-                    </Typography>
-                    <Typography sx={{ color: '#FFF', fontWeight: 'bold' }}>${value}</Typography>
-                  </Box>
-                ))}
-                <Divider sx={{ my: 2, borderColor: '#333' }} />
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1, bgcolor: '#0A0A0A', px: 2, borderRadius: 1, border: '1px solid #4CAF50' }}>
-                  <Typography sx={{ color: '#FFF', fontWeight: 'bold' }}>Net Take‑Home Pay</Typography>
-                  <Typography sx={{ color: '#4CAF50', fontWeight: 'bold', fontSize: '1.2rem' }}>${runResult.netPayout}</Typography>
-                </Box>
-                <Typography variant="subtitle1" sx={{ color: '#00D4FF', mt: 2, mb: 1 }}>Employer Contributions</Typography>
-                {Object.entries(runResult.breakdown.employerContributions).map(([key, value]) => (
-                  <Box key={key} sx={{ display: 'flex', justifyContent: 'space-between', py: 1, borderBottom: '1px solid #333' }}>
-                    <Typography sx={{ color: '#FFF', textTransform: 'capitalize' }}>
-                      {key.replace(/([A-Z])/g, ' $1')}
-                    </Typography>
-                    <Typography sx={{ color: '#FFF', fontWeight: 'bold' }}>${value}</Typography>
-                  </Box>
-                ))}
+                <Typography variant="h6" sx={{ color: '#FFF', mb: 2 }}>Payroll Run Created</Typography>
+                <Alert severity="success" sx={{ mb: 2 }}>{runResult.message}</Alert>
+                <Stack spacing={1.5}><Typography color="white"><strong>Pay period:</strong> {runPeriodStart} → {runPeriodEnd}</Typography><Typography color="white"><strong>Tax year:</strong> {runTaxYear}</Typography><Typography color="white"><strong>Employees processed:</strong> {runResult.employeeCount}</Typography><Typography color="text.secondary"><strong>Payroll ID:</strong> {runResult.payrollId}</Typography></Stack>
+                <Button sx={{ mt: 3 }} variant="outlined" onClick={() => { setActiveTab(0); void fetchPayrollDetail(runResult.payrollId); }}>Open detailed payroll results</Button>
               </>
             ) : (
               <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: '#888' }}>

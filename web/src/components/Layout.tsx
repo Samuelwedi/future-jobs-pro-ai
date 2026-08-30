@@ -65,7 +65,7 @@ import {
 import NotificationCenter from './NotificationCenter';
 import { useAppTheme } from './AppThemeProvider';
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Navigation Configuration Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Navigation Configuration ──────────────────────────────────
 const navConfig = [
   {
     category: 'Main',
@@ -97,6 +97,7 @@ const navConfig = [
       { label: 'Chat', icon: <Chat />, path: '/chat' },
       { label: 'Support', icon: <SupportAgent />, path: '/support' },
       { label: 'Ask Lucy', icon: <SmartToy />, path: '/ask-lucy' },
+      { label: 'Voice Assistant', icon: <Mic />, path: '/voice-assistant' },
     ],
   },
   {
@@ -104,7 +105,8 @@ const navConfig = [
     items: [
       { label: 'Payroll', icon: <AttachMoney />, path: '/payroll' },
       { label: 'Direct Deposit', icon: <AccountBalance />, path: '/direct-deposit' },
-      { label: 'YearÃ¢â‚¬â€˜End', icon: <Receipt />, path: '/year-end' },
+      { label: 'Year‑End', icon: <Receipt />, path: '/year-end' },
+      { label: 'Finalized T4 Slips', icon: <ArticleIcon />, path: '/year-end/finalized' },
       { label: 'Invoices', icon: <ReceiptLong />, path: '/invoices' },
       { label: 'Estimates', icon: <Description />, path: '/estimates' },
     ],
