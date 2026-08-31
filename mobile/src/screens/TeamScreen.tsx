@@ -77,6 +77,43 @@ export default function TeamScreen() {
     ]);
   };
 
+  const handleTransferOwnership = (member: Member) => {
+    Alert.alert(
+      'Make this manager the Boss?',
+      `${member.first_name} ${member.last_name} will become the company owner. Your account will become a manager.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => Alert.alert(
+            'Final confirmation',
+            'This transfers company-wide Boss permissions. You will need to sign in again so your permissions refresh.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Transfer ownership',
+                style: 'destructive',
+                onPress: async () => {
+                  try {
+                    const response = await api.post<{ success: boolean; message: string }>(
+                      `/team/${member.id}/transfer-ownership`,
+                      { confirmation: 'TRANSFER OWNERSHIP' },
+                    );
+                    await fetchMembers();
+                    Alert.alert('Ownership transferred', `${response.message}. Sign out and back in to refresh your access.`);
+                  } catch (error: any) {
+                    Alert.alert('Transfer failed', error?.response?.data?.message || error.message || 'Please try again');
+                  }
+                },
+              },
+            ],
+          ),
+        },
+      ],
+    );
+  };
+
   const handleRemove = (member: Member) => {
     Alert.alert('Remove Employee', `Are you sure you want to remove ${member.first_name}?`, [
       { text: 'Cancel' },
@@ -98,12 +135,18 @@ export default function TeamScreen() {
         </View>
       </View>
       <View style={styles.actions}>
-        <TouchableOpacity onPress={() => handleChangeRole(item)}>
+        {item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity onPress={() => handleChangeRole(item)}>
           <MaterialIcons name="swap-horiz" size={24} color="#00D4FF" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => handleRemove(item)}>
+        </TouchableOpacity>}
+        {user?.role === 'boss' && item.role === 'manager' && <TouchableOpacity
+          accessibilityLabel={`Make ${item.first_name} the company Boss`}
+          onPress={() => handleTransferOwnership(item)}
+        >
+          <MaterialIcons name="workspace-premium" size={24} color="#FFD54F" />
+        </TouchableOpacity>}
+        {item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity onPress={() => handleRemove(item)}>
           <MaterialIcons name="delete" size={24} color="#F44336" />
-        </TouchableOpacity>
+        </TouchableOpacity>}
       </View>
     </View>
   );
