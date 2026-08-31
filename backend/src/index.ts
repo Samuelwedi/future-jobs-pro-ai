@@ -1,3 +1,4 @@
+import lucyJarvisRoutes from './routes/lucyJarvisRoutes';
 // ============================================
 // FUTURE JOBS PRO AI â€“ MAIN SERVER
 // Created by: Samuel B.
@@ -95,6 +96,7 @@ import teamRoutes from './routes/teamRoutes'; app.use('/api/team', teamRoutes);
 import mediaRoutes from './routes/mediaRoutes'; app.use('/api/media', mediaRoutes);
 import uploadRoutes from './routes/uploadRoutes'; app.use('/api/upload', uploadRoutes);
 import approvalRoutes from './routes/approvalRoutes'; app.use('/api/approvals', approvalRoutes);
+app.use('/api/lucy-v2', lucyJarvisRoutes);
 import subscriptionRoutes from './routes/subscriptionRoutes'; app.use('/api/subscriptions', subscriptionRoutes);
 import chatbotRoutes from './routes/chatbotRoutes'; app.use('/api/chatbot', chatbotRoutes);
 import recurringShiftRouter from './routes/recurringShiftRouter'; app.use('/api/recurring-shifts', recurringShiftRouter);

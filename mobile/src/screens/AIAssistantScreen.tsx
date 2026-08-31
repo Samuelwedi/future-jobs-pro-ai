@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  DeviceEventEmitter,
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -15,6 +16,15 @@ interface Message {
   isUser: boolean;
   approvalId?: string;
   actionType?: string;
+  actions?: ActionReceipt[];
+}
+
+interface ActionReceipt {
+  type: string;
+  title: string;
+  status: 'completed' | 'information' | 'pending' | 'failed';
+  summary: string;
+  details: Array<{ label: string; value: string | number }>;
 }
 
 export default function AIAssistantScreen() {
@@ -29,26 +39,60 @@ export default function AIAssistantScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState('');
+  const [conversationActive, setConversationActive] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const isSpeaking = useRef(false);
   const finishingRecording = useRef(false);
   const heardSpeech = useRef(false);
   const silenceStartedAt = useRef<number | null>(null);
   const maximumRecordingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const followUpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const conversationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const conversationActiveRef = useRef(false);
+  const consecutiveMisses = useRef(0);
+
+  const setConversation = (active: boolean) => {
+    conversationActiveRef.current = active;
+    setConversationActive(active);
+    if (conversationTimer.current) clearTimeout(conversationTimer.current);
+    if (active) conversationTimer.current = setTimeout(() => {
+      conversationActiveRef.current = false;
+      setConversationActive(false);
+      setVoiceStatus('Conversation ended • Say “Hey Lucy” to begin again');
+    }, 60000);
+  };
+
+  const queueFollowUp = (delay = 550) => {
+    if (!conversationActiveRef.current) return;
+    if (followUpTimer.current) clearTimeout(followUpTimer.current);
+    followUpTimer.current = setTimeout(() => {
+      if (conversationActiveRef.current && !isSpeaking.current && !finishingRecording.current) void startRecording();
+    }, delay);
+  };
 
   // Auto-record from Home screen
   useEffect(() => {
     if (route.params?.autoRecord) {
       let cancelled = false;
       const beginWakeConversation = async () => {
-        setMessages(prev => [...prev, { text: "I'm listening. What can I do for you?", isUser: false }]);
-        await speakText("I'm listening. What can I do for you?");
-        if (!cancelled) setTimeout(() => { if (!cancelled) void startRecording(); }, 350);
+        setConversation(true);
+        const greeting = "I'm here. What would you like me to take care of?";
+        setMessages(prev => [...prev, { text: greeting, isUser: false }]);
+        await speakText(greeting);
+        if (!cancelled) queueFollowUp(350);
       };
       const timer = setTimeout(() => void beginWakeConversation(), 900);
       return () => { cancelled = true; clearTimeout(timer); };
     }
   }, [route.params?.autoRecord, route.params?.wakeEvent]);
+
+  useEffect(() => () => {
+    if (followUpTimer.current) clearTimeout(followUpTimer.current);
+    if (conversationTimer.current) clearTimeout(conversationTimer.current);
+    if (maximumRecordingTimer.current) clearTimeout(maximumRecordingTimer.current);
+    Speech.stop();
+    DeviceEventEmitter.emit('lucyConversationEnded');
+  }, []);
 
   // Load conversation history
   useEffect(() => {
@@ -92,20 +136,26 @@ export default function AIAssistantScreen() {
     }));
   };
 
-  const sendMessage = async (text: string) => {
+  const sendMessage = async (text: string, fromVoice = false) => {
     if (!text.trim()) return;
     setMessages(prev => [...prev, { text: text.trim(), isUser: true }]);
     setLoading(true);
     try {
-      const data = await api.post<any>('/lucy', { message: text.trim() });
+      const data = await api.post<any>('/lucy-v2', { message: text.trim(), conversationMode: conversationActiveRef.current });
       const botText = data?.text || data?.[0]?.text || "I'm not sure how to respond to that.";
       const approvalId = data?.approvalId || null;
-      setMessages(prev => [...prev, { text: botText, isUser: false, approvalId }]);
-      await speakText(approvalId ? `${botText} Please approve or reject the action on screen.` : botText);
+      const actions: ActionReceipt[] = Array.isArray(data?.actions) ? data.actions : [];
+      if (!data?.ignored) setMessages(prev => [...prev, { text: botText, isUser: false, approvalId, actions }]);
+      consecutiveMisses.current = 0;
+      if (conversationActiveRef.current) setConversation(true);
+      if (!data?.ignored && botText) await speakText(approvalId ? `${botText} Please approve or reject the protected action on screen.` : botText);
+      if (fromVoice && data?.continueListening !== false && !approvalId && conversationActiveRef.current) queueFollowUp();
+      else if (approvalId) setVoiceStatus('Waiting for your approval');
     } catch (err: any) {
       const errorMsg = 'Sorry, Lucy is taking a break.';
       setMessages(prev => [...prev, { text: errorMsg, isUser: false }]);
-      speakText(errorMsg);
+      await speakText(errorMsg);
+      if (fromVoice && conversationActiveRef.current) queueFollowUp(900);
     } finally {
       setLoading(false);
     }
@@ -131,8 +181,25 @@ export default function AIAssistantScreen() {
       setRecording(null);
       if (!uri) throw new Error('Recording file was not created');
       const transcript = await transcribeAudio(uri);
-      if (transcript) await sendMessage(transcript);
-      else setMessages(prev => [...prev, { text: "I didn't catch that. Tap the microphone and try again.", isUser: false }]);
+      const endConversation = /^(thanks|thank you|that's all|that is all|goodbye|stop listening|cancel)$/i.test(transcript.trim());
+      if (endConversation) {
+        setConversation(false);
+        const closing = 'Of course. I’ll be here when you need me.';
+        setMessages(prev => [...prev, { text: closing, isUser: false }]);
+        await speakText(closing);
+      } else if (transcript) {
+        setConversation(true);
+        await sendMessage(transcript, true);
+      } else if (conversationActiveRef.current) {
+        consecutiveMisses.current += 1;
+        if (consecutiveMisses.current < 2) {
+          setVoiceStatus('Still listening…');
+          queueFollowUp(500);
+        } else {
+          setConversation(false);
+          setVoiceStatus('Conversation paused • Say “Hey Lucy” when ready');
+        }
+      }
     } catch (err) {
       Alert.alert('Error', 'Failed to process recording.');
     } finally {
@@ -219,12 +286,12 @@ export default function AIAssistantScreen() {
 
   const handleApprove = async (approvalId: string) => {
     try {
-      await api.post(`/approvals/${approvalId}/approve`);
-      Alert.alert('Approved', 'Action executed.');
-      speakText('Action approved.');
-      setMessages(prev => prev.map(msg =>
-        msg.approvalId === approvalId ? { ...msg, approvalId: undefined } : msg
-      ));
+      const response = await api.post<any>(`/approvals/${approvalId}/approve`);
+      const action = response?.action as ActionReceipt | undefined;
+      const confirmation = action?.summary || 'The approved action was completed.';
+      setMessages(prev => [...prev.map(msg => msg.approvalId === approvalId ? { ...msg, approvalId: undefined } : msg), { text: confirmation, isUser: false, actions: action ? [action] : [] }]);
+      await speakText(confirmation);
+      if (conversationActiveRef.current) queueFollowUp();
     } catch (err) {
       Alert.alert('Error', 'Could not approve.');
     }
@@ -249,7 +316,7 @@ export default function AIAssistantScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ask Lucy</Text>
+        <View style={styles.headerIdentity}><Text style={styles.headerTitle}>Lucy</Text><Text style={[styles.sessionStatus, conversationActive && styles.sessionStatusLive]}>{conversationActive ? 'CONVERSATION LIVE' : 'READY'}</Text></View>
         <View style={{ width: 40 }} />
       </View>
       <FlatList
@@ -282,6 +349,13 @@ export default function AIAssistantScreen() {
                 </TouchableOpacity>
               </View>
             )}
+            {!item.isUser && item.actions?.map((action: ActionReceipt, actionIndex: number) => (
+              <View key={`${action.type}-${actionIndex}`} style={[styles.actionCard, action.status === 'failed' && styles.actionFailed]}>
+                <View style={styles.actionHeader}><MaterialIcons name={action.status === 'completed' ? 'check-circle' : action.status === 'pending' ? 'schedule' : action.status === 'failed' ? 'error' : 'insights'} size={19} color={action.status === 'failed' ? '#FF6B6B' : '#67E8F9'} /><Text style={styles.actionTitle}>{action.title}</Text><Text style={styles.actionStatus}>{action.status}</Text></View>
+                <Text style={styles.actionSummary}>{action.summary}</Text>
+                {action.details?.map((detail: { label: string; value: string | number }, detailIndex: number) => <View key={detailIndex} style={styles.detailRow}><Text style={styles.detailLabel}>{detail.label}</Text><Text style={styles.detailValue}>{String(detail.value)}</Text></View>)}
+              </View>
+            ))}
           </View>
         )}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
@@ -324,6 +398,9 @@ const styles = StyleSheet.create({
   },
   backButton: { padding: 8, marginLeft: 4 },
   headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  headerIdentity: { alignItems: 'center' },
+  sessionStatus: { color: '#64748B', fontSize: 8, fontWeight: '900', letterSpacing: 1.2, marginTop: 2 },
+  sessionStatusLive: { color: '#67E8F9' },
   bubble: { margin: 8, padding: 12, borderRadius: 12, maxWidth: '80%' },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#00D4FF' },
   bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333', flexDirection: 'row', alignItems: 'center' },
@@ -338,4 +415,13 @@ const styles = StyleSheet.create({
   input: { flex: 1, backgroundColor: '#1A1A1A', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#FFF', fontSize: 16, marginRight: 12 },
   micBtn: { padding: 4, marginRight: 8 },
   voiceStatus: { color: '#67E8F9', textAlign: 'center', paddingVertical: 6, fontWeight: '700' },
+  actionCard: { marginHorizontal: 12, marginBottom: 10, padding: 13, borderRadius: 14, backgroundColor: '#0D1B27', borderWidth: 1, borderColor: '#21445A' },
+  actionFailed: { borderColor: '#6D3030', backgroundColor: '#231315' },
+  actionHeader: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  actionTitle: { color: '#EAF5FA', fontSize: 13, fontWeight: '800', flex: 1 },
+  actionStatus: { color: '#7DD3FC', fontSize: 8, fontWeight: '900', textTransform: 'uppercase' },
+  actionSummary: { color: '#A9BBC8', fontSize: 11, lineHeight: 16, marginTop: 8, marginBottom: 6 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 4, borderTopWidth: 1, borderTopColor: '#193142' },
+  detailLabel: { color: '#6F8798', fontSize: 10 },
+  detailValue: { color: '#DCE8EF', fontSize: 10, fontWeight: '700', flex: 1, textAlign: 'right' },
 });

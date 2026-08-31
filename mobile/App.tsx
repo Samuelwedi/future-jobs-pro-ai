@@ -119,6 +119,7 @@ function AppNavigator() {
 
     syncWakeWord();
     const preferenceListener = DeviceEventEmitter.addListener('lucyWakeWordPreferenceChanged', (enabled: boolean) => syncWakeWord(Boolean(enabled)));
+    const conversationListener = DeviceEventEmitter.addListener('lucyConversationEnded', () => syncWakeWord());
     const appStateListener = AppState.addEventListener('change', state => {
       if (state === 'active') syncWakeWord();
       else stopWakeWord();
@@ -127,6 +128,7 @@ function AppNavigator() {
     return () => {
       disposed = true;
       preferenceListener.remove();
+      conversationListener.remove();
       appStateListener.remove();
       stopWakeWord();
     };
