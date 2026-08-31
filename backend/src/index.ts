@@ -86,6 +86,7 @@ import taskRoutes from './routes/taskRoutes'; app.use('/api/tasks', taskRoutes);
 import webhookRoutes from './routes/webhookRoutes'; app.use('/api/webhooks', webhookRoutes);
 import ptoRoutes from './routes/ptoRoutes'; app.use('/api/pto', ptoRoutes);
 import kioskPublicRoutes from './routes/kioskPublicRoutes'; app.use('/api/kiosk-public', kioskPublicRoutes);
+import kioskRoutes from './routes/kioskRoutes'; app.use('/api/kiosk', kioskRoutes);
 import ptoHistoryRoutes from './routes/ptoHistoryRoutes'; app.use('/api/pto-history', ptoHistoryRoutes);
 import formRoutes from './routes/formRoutes'; app.use('/api/forms', formRoutes);
 import attachmentRoutes from './routes/attachmentRoutes'; app.use('/api/attachments', attachmentRoutes);

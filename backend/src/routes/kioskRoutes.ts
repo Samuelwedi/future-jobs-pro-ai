@@ -5,11 +5,41 @@ import { recordUserEvent } from '../services/adaptiveAIService';
 
 const router = express.Router();
 
+async function kioskManager(req: Request) {
+  const token = verifyToken(req);
+  const result = await pool.query(
+    `SELECT id, company_id, LOWER(COALESCE(role,'employee')) role
+     FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE`,
+    [token.id]
+  );
+  const actor = result.rows[0];
+  if (!actor || !['boss','manager','admin'].includes(actor.role)) {
+    const error: any = new Error('Boss or manager access is required'); error.status = 403; throw error;
+  }
+  return actor;
+}
+
+// GET /api/kiosk/users – company-scoped PIN readiness list for managers
+router.get('/users', async (req: Request, res: Response) => {
+  try {
+    const actor = await kioskManager(req);
+    const result = await pool.query(
+      `SELECT id, first_name, last_name, role, (pin IS NOT NULL AND pin <> '') has_pin
+       FROM users WHERE company_id=$1 AND COALESCE(is_active,TRUE)=TRUE
+         AND LOWER(COALESCE(role,'employee')) <> 'boss'
+       ORDER BY first_name,last_name`,
+      [actor.company_id]
+    );
+    res.json({ success: true, users: result.rows });
+  } catch (error: any) { res.status(error.status || 401).json({ success: false, message: error.message }); }
+});
+
 // GET /api/kiosk/status/:companyId – check if kiosk is enabled
 router.get('/status/:companyId', async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
-      'SELECT kiosk_enabled FROM companies WHERE id = $1',
+      `SELECT COALESCE(NULLIF(to_jsonb(companies)->>'kiosk_enabled','')::boolean,FALSE) kiosk_enabled
+       FROM companies WHERE id = $1`,
       [req.params.companyId as string]
     );
     if (result.rows.length === 0) {
@@ -41,7 +71,8 @@ router.post('/clock-in', async (req: Request, res: Response) => {
     const user = userResult.rows[0];
 
     const companyResult = await pool.query(
-      'SELECT kiosk_enabled FROM companies WHERE id = $1',
+      `SELECT COALESCE(NULLIF(to_jsonb(companies)->>'kiosk_enabled','')::boolean,FALSE) kiosk_enabled
+       FROM companies WHERE id = $1`,
       [user.company_id]
     );
     if (!companyResult.rows[0]?.kiosk_enabled) {
@@ -87,7 +118,8 @@ router.post('/clock-out', async (req: Request, res: Response) => {
     const user = userResult.rows[0];
 
     const companyResult = await pool.query(
-      'SELECT kiosk_enabled FROM companies WHERE id = $1',
+      `SELECT COALESCE(NULLIF(to_jsonb(companies)->>'kiosk_enabled','')::boolean,FALSE) kiosk_enabled
+       FROM companies WHERE id = $1`,
       [user.company_id]
     );
     if (!companyResult.rows[0]?.kiosk_enabled) {
@@ -163,11 +195,9 @@ router.post('/set-pin', async (req: Request, res: Response) => {
 // POST /api/kiosk/toggle – Admin enables/disables Kiosk for a company
 router.post('/toggle', async (req: Request, res: Response) => {
   try {
-    const { companyId, enabled } = req.body;
-    if (!companyId) {
-      return res.status(400).json({ success: false, message: 'companyId is required' });
-    }
-    await pool.query('UPDATE companies SET kiosk_enabled = $1 WHERE id = $2', [!!enabled, companyId]);
+    const actor = await kioskManager(req);
+    const { enabled } = req.body;
+    await pool.query('UPDATE companies SET kiosk_enabled = $1 WHERE id = $2', [!!enabled, actor.company_id]);
     res.json({ success: true, message: `Kiosk ${enabled ? 'enabled' : 'disabled'}` });
   } catch (error: any) {
     console.error('Toggle kiosk error:', error);

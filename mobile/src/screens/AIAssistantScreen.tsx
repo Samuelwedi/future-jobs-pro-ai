@@ -28,6 +28,7 @@ export default function AIAssistantScreen() {
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState('');
   const flatListRef = useRef<FlatList>(null);
   const isSpeaking = useRef(false);
   const finishingRecording = useRef(false);
@@ -38,10 +39,16 @@ export default function AIAssistantScreen() {
   // Auto-record from Home screen
   useEffect(() => {
     if (route.params?.autoRecord) {
-      const timer = setTimeout(() => startRecording(), 500);
-      return () => clearTimeout(timer);
+      let cancelled = false;
+      const beginWakeConversation = async () => {
+        setMessages(prev => [...prev, { text: "I'm listening. What can I do for you?", isUser: false }]);
+        await speakText("I'm listening. What can I do for you?");
+        if (!cancelled) setTimeout(() => { if (!cancelled) void startRecording(); }, 350);
+      };
+      const timer = setTimeout(() => void beginWakeConversation(), 900);
+      return () => { cancelled = true; clearTimeout(timer); };
     }
-  }, [route.params?.autoRecord]);
+  }, [route.params?.autoRecord, route.params?.wakeEvent]);
 
   // Load conversation history
   useEffect(() => {
@@ -60,7 +67,7 @@ export default function AIAssistantScreen() {
   }, [user]);
 
   // Speak Lucy's response
-  const speakText = async (text: string) => {
+  const speakText = async (text: string): Promise<void> => {
     if (isSpeaking.current) Speech.stop();
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,
@@ -73,14 +80,16 @@ export default function AIAssistantScreen() {
       && /^en/i.test(voice.language)
     ) || voices.find(voice => /^en/i.test(voice.language));
     isSpeaking.current = true;
-    Speech.speak(text, {
+    const spokenText = text.replace(/[*_#`>-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1800);
+    await new Promise<void>(resolve => Speech.speak(spokenText, {
       language: 'en-US',
       voice: preferred?.identifier,
       pitch: 1.0,
       rate: 0.9,
-      onDone: () => { isSpeaking.current = false; },
-      onError: () => { isSpeaking.current = false; },
-    });
+      onDone: () => { isSpeaking.current = false; resolve(); },
+      onStopped: () => { isSpeaking.current = false; resolve(); },
+      onError: () => { isSpeaking.current = false; resolve(); },
+    }));
   };
 
   const sendMessage = async (text: string) => {
@@ -92,10 +101,7 @@ export default function AIAssistantScreen() {
       const botText = data?.text || data?.[0]?.text || "I'm not sure how to respond to that.";
       const approvalId = data?.approvalId || null;
       setMessages(prev => [...prev, { text: botText, isUser: false, approvalId }]);
-      speakText(botText);
-      if (approvalId) {
-        setTimeout(() => speakText('Please check your phone to approve or reject.'), 1500);
-      }
+      await speakText(approvalId ? `${botText} Please approve or reject the action on screen.` : botText);
     } catch (err: any) {
       const errorMsg = 'Sorry, Lucy is taking a break.';
       setMessages(prev => [...prev, { text: errorMsg, isUser: false }]);
@@ -117,6 +123,7 @@ export default function AIAssistantScreen() {
     finishingRecording.current = true;
     if (maximumRecordingTimer.current) clearTimeout(maximumRecordingTimer.current);
     setIsRecording(false);
+    setVoiceStatus('Processing your request…');
     try {
       activeRecording.setOnRecordingStatusUpdate(null);
       await activeRecording.stopAndUnloadAsync();
@@ -125,13 +132,14 @@ export default function AIAssistantScreen() {
       if (!uri) throw new Error('Recording file was not created');
       const transcript = await transcribeAudio(uri);
       if (transcript) await sendMessage(transcript);
-      else Alert.alert('No speech detected', 'Please try again.');
+      else setMessages(prev => [...prev, { text: "I didn't catch that. Tap the microphone and try again.", isUser: false }]);
     } catch (err) {
       Alert.alert('Error', 'Failed to process recording.');
     } finally {
       finishingRecording.current = false;
       heardSpeech.current = false;
       silenceStartedAt.current = null;
+      setVoiceStatus('');
     }
   };
 
@@ -163,6 +171,7 @@ export default function AIAssistantScreen() {
       const { recording } = await Audio.Recording.createAsync(recordingOptions);
       setRecording(recording);
       setIsRecording(true);
+      setVoiceStatus('Listening… speak now');
       heardSpeech.current = false;
       silenceStartedAt.current = null;
       recording.setProgressUpdateInterval(150);
@@ -173,7 +182,7 @@ export default function AIAssistantScreen() {
           silenceStartedAt.current = null;
         } else if (heardSpeech.current) {
           silenceStartedAt.current ??= Date.now();
-          if (Date.now() - silenceStartedAt.current > 1200) void finishRecording(recording);
+          if (Date.now() - silenceStartedAt.current > 1800) void finishRecording(recording);
         }
       });
       maximumRecordingTimer.current = setTimeout(() => void finishRecording(recording), 15000);
@@ -197,7 +206,9 @@ export default function AIAssistantScreen() {
       return response.transcript || '';
     } catch (err: any) {
       console.error('Transcription error:', err);
-      if (err.response?.status === 500) {
+      if (err.response?.status === 422) {
+        return '';
+      } else if (err.response?.status === 500) {
         Alert.alert('Server Error', 'Voice processing failed. Please try again later.');
       } else {
         Alert.alert('Error', 'Failed to transcribe audio.');
@@ -276,6 +287,7 @@ export default function AIAssistantScreen() {
         onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
       />
       {loading && <ActivityIndicator color="#00D4FF" style={{ padding: 8 }} />}
+      {!!voiceStatus && <Text style={styles.voiceStatus}>{voiceStatus}</Text>}
       <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
@@ -325,4 +337,5 @@ const styles = StyleSheet.create({
   inputBar: { flexDirection: 'row', alignItems: 'center', padding: 12, borderTopWidth: 1, borderTopColor: '#333' },
   input: { flex: 1, backgroundColor: '#1A1A1A', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, color: '#FFF', fontSize: 16, marginRight: 12 },
   micBtn: { padding: 4, marginRight: 8 },
+  voiceStatus: { color: '#67E8F9', textAlign: 'center', paddingVertical: 6, fontWeight: '700' },
 });
