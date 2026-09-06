@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.vite
+.cache
+*.zip
+*.7z
+*.tar
+*.gz
+*.log
+.env
+.env.*
