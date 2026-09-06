@@ -19,3 +19,4 @@ lucy-2050-backup-*
 **/*.log
 **/.env
 **/.env.*
+future-jobs-current-mobile*
