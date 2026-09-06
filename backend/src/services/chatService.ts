@@ -63,8 +63,15 @@ export async function saveMessage(
   companyId: string
 ) {
   const result = await pool.query(
-    `INSERT INTO chat_messages (sender_id, company_id, message, room_id)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
+    `WITH inserted AS (
+       INSERT INTO chat_messages (sender_id, company_id, message, room_id)
+       VALUES ($1, $2, $3, $4) RETURNING *
+     ), touched AS (
+       UPDATE chat_rooms SET updated_at = NOW() WHERE id = $4
+     )
+     SELECT inserted.*,
+            TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS sender_name
+     FROM inserted JOIN users u ON u.id = inserted.sender_id`,
     [senderId, companyId, message, roomId]
   );
   return result.rows[0];

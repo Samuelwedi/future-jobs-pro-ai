@@ -5,7 +5,7 @@ import { saveMessage } from '../services/chatService';
 
 const router = express.Router();
 
-async function roomAccess(userId: string, roomId: string): Promise<{ allowed: boolean; companyId: string }> {
+export async function roomAccess(userId: string, roomId: string): Promise<{ allowed: boolean; companyId: string }> {
   const userResult = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [userId]);
   if (!userResult.rowCount) return { allowed: false, companyId: '' };
   const user = userResult.rows[0];
@@ -79,6 +79,8 @@ router.post('/message', async (req: Request, res: Response) => {
     const access = await roomAccess(decoded.id, roomId);
     if (!access.allowed) return res.status(403).json({ success: false, message: 'Forbidden' });
     const saved = await saveMessage(decoded.id, roomId, message, access.companyId);
+    const io = req.app.get('io');
+    io?.to(`room-${roomId}`).emit('new-message', saved);
     res.json({ success: true, message: saved });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

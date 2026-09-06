@@ -19,7 +19,7 @@ router.get('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'userId, start, and end required' });
     }
 
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    const userRes = await pool.query('SELECT company_id,LOWER(COALESCE(role,\'employee\')) role FROM users WHERE id = $1 AND COALESCE(is_active,TRUE)=TRUE', [decoded.id]);
     if (userRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -29,6 +29,9 @@ router.get('/', async (req: Request, res: Response) => {
     }
     if (userRes.rows[0].company_id !== targetRes.rows[0].company_id) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    if (String(userId) !== String(decoded.id) && !['boss','manager','admin'].includes(userRes.rows[0].role)) {
+      return res.status(403).json({ success:false, message:'Manager access is required to view another employee timesheet' });
     }
 
     const result = await pool.query(
@@ -88,6 +91,11 @@ router.get('/active', async (req: Request, res: Response) => {
     if (!userId) {
       return res.status(400).json({ success: false, message: 'userId required' });
     }
+    const actorResult=await pool.query("SELECT company_id,LOWER(COALESCE(role,'employee')) role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE",[decoded.id]);
+    const targetResult=await pool.query('SELECT company_id FROM users WHERE id=$1',[userId]);
+    const actor=actorResult.rows[0],target=targetResult.rows[0];
+    if(!actor||!target||String(actor.company_id)!==String(target.company_id))return res.status(403).json({success:false,message:'Forbidden'});
+    if(String(userId)!==String(decoded.id)&&!['boss','manager','admin'].includes(actor.role))return res.status(403).json({success:false,message:'Manager access is required'});
 
     const result = await pool.query(
       `SELECT te.*, p.name as project_name
@@ -306,7 +314,7 @@ router.get('/export', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'userId, start, and end required' });
     }
 
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    const userRes = await pool.query('SELECT company_id,LOWER(COALESCE(role,\'employee\')) role FROM users WHERE id = $1 AND COALESCE(is_active,TRUE)=TRUE', [decoded.id]);
     if (userRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -316,6 +324,9 @@ router.get('/export', async (req: Request, res: Response) => {
     }
     if (userRes.rows[0].company_id !== targetRes.rows[0].company_id) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    if (String(userId) !== String(decoded.id) && !['boss','manager','admin'].includes(userRes.rows[0].role)) {
+      return res.status(403).json({ success:false, message:'Manager access is required to export another employee timesheet' });
     }
 
     const result = await pool.query(

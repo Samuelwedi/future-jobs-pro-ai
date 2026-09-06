@@ -64,6 +64,7 @@ import {
 } from '@mui/icons-material';
 import NotificationCenter from './NotificationCenter';
 import { useAppTheme } from './AppThemeProvider';
+import { API_BASE } from '../services/api';
 
 // ─── Navigation Configuration ──────────────────────────────────
 const navConfig = [
@@ -147,6 +148,7 @@ const navConfig = [
 
 // Flatten all items for the sidebar
 const allNavItems = navConfig.flatMap(group => group.items);
+const managerOnlyPaths=new Set(['/admin-dashboard','/payroll','/direct-deposit','/year-end','/year-end/finalized','/reports','/kiosk']);
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -167,6 +169,16 @@ export default function Layout() {
     } catch {}
   }, []);
 
+  useEffect(()=>{
+    let mounted=true;
+    const refresh=async()=>{
+      const token=localStorage.getItem('token');if(!token)return;
+      try{const response=await fetch(`${API_BASE}/api/auth/session`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});if(response.status===401){handleLogout();return;}const data=await response.json();if(response.ok&&mounted){localStorage.setItem('user',JSON.stringify(data.user));setUser(data.user);window.dispatchEvent(new CustomEvent('auth-user-updated',{detail:data.user}));}}catch{}
+    };
+    void refresh();const timer=window.setInterval(refresh,60000);window.addEventListener('focus',refresh);
+    return()=>{mounted=false;window.clearInterval(timer);window.removeEventListener('focus',refresh);};
+  },[]);
+
   const toggleDrawer = () => setDrawerOpen(!drawerOpen);
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget);
   const handleCloseMenu = () => setAnchorEl(null);
@@ -185,6 +197,7 @@ export default function Layout() {
   const initials = user
     ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
     : 'U';
+  const canManage=['boss','manager','admin'].includes(String(user?.role||'').toLowerCase());
 
   const drawerContent = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
@@ -205,7 +218,7 @@ export default function Layout() {
               </ListItemButton>
               <Collapse in={isOpen} timeout="auto" unmountOnExit>
                 <List component="div" disablePadding>
-                  {group.items.map((item) => {
+                  {group.items.filter(item=>canManage||!managerOnlyPaths.has(item.path)).map((item) => {
                     const isActive = location.pathname === item.path;
                     return (
                       <ListItemButton

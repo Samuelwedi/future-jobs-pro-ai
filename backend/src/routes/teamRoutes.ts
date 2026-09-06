@@ -114,7 +114,11 @@ router.post('/set-password', async (req: Request, res: Response) => {
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ success: false, message: 'Not authenticated' });
       }
-      verifyToken(req);
+      const decoded=verifyToken(req);
+      const actor=await pool.query("SELECT company_id,LOWER(COALESCE(role,'employee')) role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE",[decoded.id]);
+      const target=await pool.query('SELECT company_id,role FROM users WHERE id=$1',[userId]);
+      if(!actor.rowCount||!target.rowCount||String(actor.rows[0].company_id)!==String(target.rows[0].company_id)||!['boss','manager','admin'].includes(actor.rows[0].role))return res.status(403).json({success:false,message:'Manager access is required'});
+      if(String(target.rows[0].role).toLowerCase()==='boss'&&String(userId)!==String(decoded.id))return res.status(403).json({success:false,message:'The owner password cannot be reset here'});
     }
 
     await setPassword(userId, newPassword);
@@ -157,8 +161,11 @@ router.put('/:userId/role', async (req: Request, res: Response) => {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
-    verifyToken(req);
-    const user = await updateMemberRole(userId, role, companyId);
+    const decoded=verifyToken(req);
+    const actor=await pool.query("SELECT company_id,LOWER(COALESCE(role,'employee')) role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE",[decoded.id]);
+    if(!actor.rowCount||!['boss','manager','admin'].includes(actor.rows[0].role)||String(actor.rows[0].company_id)!==String(companyId))return res.status(403).json({success:false,message:'Manager access is required'});
+    if(!['employee','manager'].includes(String(role).toLowerCase()))return res.status(400).json({success:false,message:'Role must be employee or manager'});
+    const user = await updateMemberRole(userId, role, actor.rows[0].company_id);
     res.json({ success: true, user });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

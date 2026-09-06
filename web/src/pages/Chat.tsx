@@ -62,7 +62,7 @@ export default function Chat() {
     socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', (socketError) => setError(socketError.message));
     socket.on('new-message', (msg: Message) => {
-      setMessages(prev => [...prev, msg]);
+      setMessages(prev => prev.some(item => item.id === msg.id) ? prev : [...prev, msg]);
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     });
 
@@ -72,13 +72,13 @@ export default function Chat() {
     };
   }, [roomId, token]);
 
-  const sendMessage = () => {
-    if (!input.trim() || !socketRef.current || !roomId || !connected) return;
-    socketRef.current.emit('chat-message', {
-      roomId,
-      message: input.trim(),
-    });
-    setInput('');
+  const sendMessage = async () => {
+    const message=input.trim();if(!message||!roomId)return;
+    try{
+      const response=await fetch(`${API_BASE}/api/chat/message`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({roomId,message})});
+      const data=await response.json();if(!response.ok)throw new Error(data.message||'Message was not delivered');
+      setMessages(prev=>prev.some(item=>item.id===data.message.id)?prev:[...prev,data.message]);setInput('');
+    }catch(cause:any){setError(cause.message||'Message was not delivered');}
   };
 
   const renderMessage = (msg: Message) => {
@@ -156,7 +156,7 @@ export default function Chat() {
             },
           }}
         />
-        <IconButton onClick={sendMessage} disabled={!connected || !input.trim()} sx={{ bgcolor: '#00D4FF', borderRadius: '50%', p: 1.25, '&:hover': { bgcolor: '#5CE6FF' } }}>
+        <IconButton onClick={sendMessage} disabled={!input.trim()} sx={{ bgcolor: '#00D4FF', borderRadius: '50%', p: 1.25, '&:hover': { bgcolor: '#5CE6FF' } }}>
           <Send sx={{ color: '#0A0A0A' }} />
         </IconButton>
       </Box>

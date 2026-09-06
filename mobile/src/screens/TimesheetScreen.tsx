@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, SectionList, ActivityIndicator, RefreshControl,
-  TouchableOpacity, Modal, ScrollView, Alert,
+  TouchableOpacity, Modal, ScrollView, Alert, TextInput,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -25,6 +25,9 @@ interface TimeEntry {
   alerts: string[];
   is_manual: boolean;
   attachments?: any[];
+  approval_status?: string;
+  correction_reason?: string;
+  payroll_locked?: boolean;
 }
 
 interface DaySection {
@@ -62,6 +65,8 @@ export default function TimesheetScreen() {
   const [selectedUserId, setSelectedUserId] = useState<string>(user?.id || '');
   const [showUserPicker, setShowUserPicker] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [editForm,setEditForm]=useState({clockIn:'',clockOut:'',breakMinutes:'0',reason:''});
+  const [editing,setEditing]=useState(false);
 
   const isBossOrManager = user?.role === 'boss' || user?.role === 'manager';
 
@@ -198,6 +203,10 @@ export default function TimesheetScreen() {
       Alert.alert('Upload failed', e.message);
     }
   };
+
+  const beginEdit=(entry:TimeEntry)=>{setEditForm({clockIn:new Date(entry.clock_in).toISOString(),clockOut:entry.clock_out?new Date(entry.clock_out).toISOString():'',breakMinutes:String(entry.break_minutes||0),reason:''});setEditing(true);};
+  const saveEdit=async()=>{if(!selectedEntry)return;try{await api.patch(`/workforce-operations/time-entries/${selectedEntry.id}`,{clockIn:editForm.clockIn,clockOut:editForm.clockOut||null,breakMinutes:Number(editForm.breakMinutes),reason:editForm.reason});Alert.alert('Saved','The correction was recorded in the audit trail and returned for approval.');setEditing(false);setSelectedEntry(null);await fetchEntries();}catch(cause:any){Alert.alert('Correction failed',cause?.response?.data?.message||cause?.message||'Could not update the time entry');}};
+  const approveEntry=async()=>{if(!selectedEntry)return;try{await api.post(`/workforce-operations/time-entries/${selectedEntry.id}/approve`,{});Alert.alert('Approved','The time entry is approved for payroll.');setSelectedEntry(null);await fetchEntries();}catch(cause:any){Alert.alert('Approval failed',cause?.response?.data?.message||cause?.message||'Could not approve the entry');}};
 
   const renderSectionHeader = ({ section }: { section: DaySection }) => (
     <View style={styles.sectionHeader}>
@@ -340,6 +349,7 @@ export default function TimesheetScreen() {
                     <Text style={styles.detailValue}>{selectedEntry.break_minutes}m</Text>
                   </>
                 )}
+                {editing?<View style={{gap:10,marginTop:16}}><TextInput style={styles.editInput} value={editForm.clockIn} onChangeText={value=>setEditForm({...editForm,clockIn:value})} placeholder="Clock in ISO date/time" placeholderTextColor="#778"/><TextInput style={styles.editInput} value={editForm.clockOut} onChangeText={value=>setEditForm({...editForm,clockOut:value})} placeholder="Clock out ISO date/time" placeholderTextColor="#778"/><TextInput keyboardType="number-pad" style={styles.editInput} value={editForm.breakMinutes} onChangeText={value=>setEditForm({...editForm,breakMinutes:value})} placeholder="Break minutes" placeholderTextColor="#778"/><TextInput multiline style={styles.editInput} value={editForm.reason} onChangeText={value=>setEditForm({...editForm,reason:value})} placeholder="Required correction reason" placeholderTextColor="#778"/><TouchableOpacity style={styles.gpsBtn} onPress={saveEdit}><Text style={styles.gpsBtnText}>Save audited correction</Text></TouchableOpacity></View>:null}
                 {selectedEntry.alerts.length > 0 && (
                   <>
                     <Text style={styles.detailLabel}>Alerts</Text>
@@ -359,6 +369,7 @@ export default function TimesheetScreen() {
                   <MaterialIcons name="play-circle" size={20} color="#0A0A0A" />
                   <Text style={styles.gpsBtnText}>Replay GPS Trail</Text>
                 </TouchableOpacity>
+                {isBossOrManager&&!selectedEntry.payroll_locked?<><TouchableOpacity style={styles.managerBtn} onPress={()=>beginEdit(selectedEntry)}><MaterialIcons name="edit" size={20} color="#071018"/><Text style={styles.managerBtnText}>Correct time entry</Text></TouchableOpacity>{selectedEntry.clock_out&&selectedEntry.approval_status!=='approved'?<TouchableOpacity style={[styles.managerBtn,{backgroundColor:'#55D66B'}]} onPress={approveEntry}><MaterialIcons name="check-circle" size={20} color="#071018"/><Text style={styles.managerBtnText}>Approve for payroll</Text></TouchableOpacity>:null}</>:null}
               </ScrollView>
             )}
           </View>
@@ -461,4 +472,7 @@ const styles = StyleSheet.create({
   employeeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#222' },
   employeeRowActive: { backgroundColor: '#1A3A4A' },
   employeeName: { color: '#FFF', fontSize: 16 },
+  editInput:{backgroundColor:'#0B1118',borderWidth:1,borderColor:'#334155',borderRadius:10,padding:12,color:'#FFF'},
+  managerBtn:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:8,backgroundColor:'#FFB020',paddingVertical:12,borderRadius:10,marginTop:10},
+  managerBtnText:{color:'#071018',fontWeight:'800'},
 });

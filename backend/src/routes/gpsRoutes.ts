@@ -15,6 +15,23 @@ import {
 
 const router = express.Router();
 
+// GET /api/gps/employees - manager-safe employee picker for trail history.
+router.get('/employees', async (req: Request, res: Response) => {
+  try {
+    const decoded = verifyToken(req);
+    const actorResult = await pool.query('SELECT company_id,LOWER(COALESCE(role,\'employee\')) role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE',[decoded.id]);
+    const actor = actorResult.rows[0];
+    if (!actor) return res.status(401).json({success:false,message:'Not authenticated'});
+    const canManage = ['boss','manager','admin'].includes(actor.role);
+    const result = await pool.query(
+      `SELECT id,first_name,last_name,role FROM users
+       WHERE company_id=$1 AND COALESCE(is_active,TRUE)=TRUE AND ($2::boolean OR id=$3)
+       ORDER BY first_name,last_name`, [actor.company_id,canManage,decoded.id],
+    );
+    res.set('Cache-Control','no-store').json({success:true,employees:result.rows});
+  } catch (error:any) { res.status(500).json({success:false,message:error.message}); }
+});
+
 // GET /api/gps/history?start=&end=&userId= – shifts that contain GPS breadcrumbs
 router.get('/history', async (req: Request, res: Response) => {
   try {
@@ -102,21 +119,16 @@ router.get('/trail/:timeEntryId', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Missing timeEntryId' });
     }
 
-    const userId = req.query.userId ? String(req.query.userId) : undefined;
-
-    if (userId) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer '))
-        return res.status(401).json({ success: false, message: 'Not authenticated' });
-      const decoded = verifyToken(req);
-      const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
-      const targetRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
-      if (targetRes.rows.length === 0 || targetRes.rows[0].company_id !== userRes.rows[0].company_id) {
-        return res.status(403).json({ success: false, message: 'Forbidden' });
-      }
-    }
-
-    const trail = await generateBreadcrumbTrail(timeEntryId, userId);
+    const decoded = verifyToken(req);
+    const access = await pool.query(
+      `SELECT te.user_id,u.company_id target_company,a.company_id actor_company,LOWER(COALESCE(a.role,'employee')) actor_role
+       FROM time_entries te JOIN users u ON u.id=te.user_id JOIN users a ON a.id=$2 WHERE te.id=$1`,
+      [timeEntryId,decoded.id],
+    );
+    const row=access.rows[0];
+    if(!row || String(row.target_company)!==String(row.actor_company)) return res.status(403).json({success:false,message:'GPS trail access denied'});
+    if(String(row.user_id)!==String(decoded.id) && !['boss','manager','admin'].includes(row.actor_role)) return res.status(403).json({success:false,message:'Manager access is required'});
+    const trail = await generateBreadcrumbTrail(timeEntryId, String(row.user_id));
     res.json({ success: true, trail });
   } catch (error: any) {
     console.error('GPS trail error:', error);

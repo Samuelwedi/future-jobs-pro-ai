@@ -34,7 +34,7 @@ router.get('/company', async (req: Request, res: Response) => {
       `SELECT id, first_name, last_name, email, role
        FROM users
        WHERE company_id = $1
-         AND role NOT IN ('boss', 'manager')
+         AND COALESCE(is_active,TRUE)=TRUE
        ORDER BY first_name`,
       [companyId]
     );

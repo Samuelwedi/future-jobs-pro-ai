@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 
-interface PTORequest { id: string; start_date: string; end_date: string; type: string; status: string; reason?: string; created_at: string; }
+interface PTORequest { id: string; start_date: string; end_date: string; type: string; status: string; reason?: string; created_at: string; user_name?:string; manager_note?:string; }
 interface PTOBalance { vacation_days: number; sick_days: number; personal_days: number; }
 
 export default function PTOScreen() {
@@ -20,11 +20,12 @@ export default function PTOScreen() {
   const [endDate, setEndDate] = useState('');
   const [leaveType, setLeaveType] = useState('vacation');
   const [reason, setReason] = useState('');
+  const manager=['boss','manager','admin'].includes(String(user?.role||'').toLowerCase());
 
   const fetchData = async () => {
     try {
       const [reqRes, balRes] = await Promise.all([
-        api.get<{ success: boolean; requests: PTORequest[] }>('/pto/mine'),
+        api.get<{ success: boolean; requests: PTORequest[] }>(manager?'/pto-history':'/pto/mine'),
         api.get<{ success: boolean; balance: PTOBalance }>('/pto/balance'),
       ]);
       setRequests(reqRes.requests || []);
@@ -47,6 +48,7 @@ export default function PTOScreen() {
   };
 
   const getStatusColor = (status: string) => status === 'approved' ? '#4CAF50' : status === 'rejected' ? '#F44336' : '#FF9800';
+  const decide=async(request:PTORequest,status:'approved'|'rejected')=>{let managerNote='';if(status==='rejected')managerNote='Rejected by manager';try{await api.patch(`/pto-history/${request.id}/status`,{status,managerNote});Alert.alert('Updated',`PTO request ${status}.`);await fetchData();}catch(cause:any){Alert.alert('Update failed',cause?.response?.data?.message||cause?.message||'Could not update PTO');}};
 
   if (loading) return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
 
@@ -73,8 +75,12 @@ export default function PTOScreen() {
           <View key={r.id} style={styles.requestCard}>
             <View style={{ flex: 1 }}>
               <Text style={styles.requestType}>{r.type.toUpperCase()}</Text>
+              {r.user_name?<Text style={{color:'#00D4FF',fontWeight:'800',marginTop:3}}>{r.user_name}</Text>:null}
               <Text style={styles.requestDates}>{r.start_date} → {r.end_date}</Text>
               {r.reason ? <Text style={styles.requestReason}>{r.reason}</Text> : null}
+              <Text style={styles.requestReason}>Submitted {new Date(r.created_at).toLocaleString()}</Text>
+              {r.manager_note?<Text style={styles.requestReason}>Manager note: {r.manager_note}</Text>:null}
+              {manager&&r.status==='pending'?<View style={{flexDirection:'row',gap:8,marginTop:10}}><TouchableOpacity onPress={()=>decide(r,'approved')} style={{backgroundColor:'#4CAF50',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>Approve</Text></TouchableOpacity><TouchableOpacity onPress={()=>decide(r,'rejected')} style={{backgroundColor:'#F44336',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>Reject</Text></TouchableOpacity></View>:null}
             </View>
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor(r.status) }]}><Text style={styles.statusText}>{r.status}</Text></View>
           </View>

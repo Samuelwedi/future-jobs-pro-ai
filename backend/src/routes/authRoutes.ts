@@ -136,6 +136,29 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/auth/session - authoritative account state for live role changes.
+router.get('/session', async (req: Request, res: Response) => {
+  try {
+    const decoded = verifyToken(req);
+    const result = await pool.query(
+      `SELECT id,email,first_name,last_name,full_name,role,company_id,trial_ends_at,
+              COALESCE(is_active,TRUE) AS is_active, stripe_payment_method_id
+       FROM users WHERE id=$1`,
+      [decoded.id],
+    );
+    const row = result.rows[0];
+    if (!row?.is_active) return res.status(401).json({ success:false, message:'This account is inactive' });
+    res.set('Cache-Control','no-store').json({ success:true, user:{
+      id:row.id,email:row.email,firstName:row.first_name,lastName:row.last_name,
+      fullName:row.full_name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+      role:row.role,companyId:row.company_id,trialEndsAt:row.trial_ends_at,
+      hasPaymentMethod:Boolean(row.stripe_payment_method_id),
+    }});
+  } catch (error:any) {
+    res.status(401).json({ success:false, message:error.message || 'Session is not valid' });
+  }
+});
+
 // ----- CHANGE PASSWORD -----
 router.post('/change-password', async (req: Request, res: Response) => {
   try {

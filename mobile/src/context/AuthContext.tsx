@@ -6,12 +6,15 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { api } from '../services/api';
 import * as SecureStore from 'expo-secure-store';
+import { AppState } from 'react-native';
 
 interface User {
   id: string;
   email: string;
   firstName: string;
   lastName: string;
+  first_name?: string;
+  last_name?: string;
   role: string;
   fullName: string;
   trialEndsAt: string;
@@ -26,6 +29,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
+  refreshUser: () => Promise<User | null>;
 }
 
 interface RegisterData {
@@ -41,15 +45,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const refreshUser = async (): Promise<User | null> => {
+    const token=await api.getToken();
+    if(!token)return null;
+    try{
+      const response=await api.get<{success:boolean;user:User}>('/auth/session');
+      await SecureStore.setItemAsync('userData',JSON.stringify(response.user));
+      setUser(response.user);return response.user;
+    }catch(error:any){
+      if(error?.response?.status===401){await api.clearToken();await SecureStore.deleteItemAsync('userData');setUser(null);}
+      throw error;
+    }
+  };
+
   useEffect(() => {
     // Check for existing session
     const loadSession = async () => {
       try {
         const token = await api.getToken();
         const userData = await SecureStore.getItemAsync('userData');
-        if (token && userData) {
-          setUser(JSON.parse(userData));
-        }
+        if (token && userData) setUser(JSON.parse(userData));
+        if (token) await refreshUser();
       } catch (e) {
         console.error('Session load error:', e);
       } finally {
@@ -58,6 +74,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
     loadSession();
   }, []);
+
+  useEffect(()=>{
+    const subscription=AppState.addEventListener('change',state=>{if(state==='active'&&user)void refreshUser().catch(()=>{});});
+    const timer=setInterval(()=>{if(user)void refreshUser().catch(()=>{});},60000);
+    return()=>{subscription.remove();clearInterval(timer);};
+  },[user?.id]);
 
   const login = async (email: string, password: string) => {
     try {
@@ -93,7 +115,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout, register }}>
+    <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user, login, logout, register, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

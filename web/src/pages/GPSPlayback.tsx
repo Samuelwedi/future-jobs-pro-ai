@@ -3,6 +3,7 @@ import {
   Box, Container, Typography, Paper, Slider, IconButton, Button,
   CircularProgress, Alert, Card, CardContent, Grid,
   Chip,
+  FormControl, InputLabel, Select, MenuItem, Stack,
 } from '@mui/material';
 import {
   PlayArrow, Pause, SkipPrevious, SkipNext, Speed, Close,
@@ -49,6 +50,10 @@ export default function GPSPlayback() {
   const [mapCenter, setMapCenter] = useState<[number, number]>([45.4215, -75.6972]);
   const [mapZoom, setMapZoom] = useState(15);
   const [showDetails, setShowDetails] = useState(false);
+  const [selectedTimeEntryId,setSelectedTimeEntryId]=useState<string>(timeEntryId||'');
+  const [employees,setEmployees]=useState<any[]>([]);
+  const [selectedUserId,setSelectedUserId]=useState('');
+  const [history,setHistory]=useState<any[]>([]);
 
   const playbackInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const mapRef = useRef<any>(null);
@@ -56,20 +61,29 @@ export default function GPSPlayback() {
   const speedOptions = [0.5, 1, 2, 4];
 
   useEffect(() => {
-    if (!timeEntryId) {
-      alert('No time entry selected');
-      setLoading(false);
-      return;
-    }
-    fetchGPSTrail();
+    if (selectedTimeEntryId) fetchGPSTrail(); else void loadHistory();
     return () => {
       if (playbackInterval.current) clearInterval(playbackInterval.current);
     };
-  }, [timeEntryId]);
+  }, [selectedTimeEntryId]);
+
+  const loadHistory=async(userId=selectedUserId)=>{
+    setLoading(true);try{
+      const end=new Date(),start=new Date(end.getTime()-30*86400000);
+      const [peopleResponse,historyResponse]=await Promise.all([
+        fetch(`${API_BASE}/api/gps/employees`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'}),
+        fetch(`${API_BASE}/api/gps/history?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}${userId?`&userId=${encodeURIComponent(userId)}`:''}`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'}),
+      ]);
+      const people=await peopleResponse.json(),items=await historyResponse.json();
+      if(!peopleResponse.ok)throw new Error(people.message||'Employees could not be loaded');
+      if(!historyResponse.ok)throw new Error(items.message||'GPS history could not be loaded');
+      setEmployees(people.employees||[]);setHistory(items.history||[]);
+    }catch(cause:any){alert(cause.message||'Could not load GPS history');}finally{setLoading(false);}
+  };
 
   const fetchGPSTrail = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/gps/trail/${timeEntryId}`, {
+      const res = await fetch(`${API_BASE}/api/gps/trail/${selectedTimeEntryId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -167,12 +181,18 @@ export default function GPSPlayback() {
     );
   }
 
+  if (!selectedTimeEntryId) {
+    return <Container maxWidth="lg" sx={{py:4}}><Typography variant="h4" color="white" fontWeight={900}>GPS trail history</Typography><Typography color="text.secondary" sx={{mb:3}}>Select an employee, then choose a recorded shift.</Typography>
+      <FormControl fullWidth sx={{mb:2}}><InputLabel>Employee</InputLabel><Select value={selectedUserId} label="Employee" onChange={e=>{const id=String(e.target.value);setSelectedUserId(id);void loadHistory(id);}}><MenuItem value="">All employees</MenuItem>{employees.map(employee=><MenuItem key={employee.id} value={employee.id}>{employee.first_name} {employee.last_name}</MenuItem>)}</Select></FormControl>
+      <Stack spacing={1}>{history.map(item=><Paper key={item.time_entry_id} onClick={()=>setSelectedTimeEntryId(item.time_entry_id)} sx={{p:2,bgcolor:'#151B23',border:'1px solid #303846',cursor:'pointer'}}><Typography color="white" fontWeight={800}>{item.first_name} {item.last_name}</Typography><Typography color="#00D4FF">{item.project_name||'Unassigned project'}</Typography><Typography color="text.secondary">{new Date(item.clock_in).toLocaleString()} · {item.point_count} GPS points</Typography></Paper>)}{!history.length&&<Alert severity="info">No GPS trails match this employee in the last 30 days.</Alert>}</Stack></Container>;
+  }
+
   if (points.length === 0) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
         <Alert severity="info">No GPS data available for this shift.</Alert>
-        <Button variant="contained" onClick={() => navigate(-1)} sx={{ mt: 2, bgcolor: '#00D4FF', color: '#0A0A0A' }}>
-          Go Back
+        <Button variant="contained" onClick={() => setSelectedTimeEntryId('')} sx={{ mt: 2, bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+          Choose another shift
         </Button>
       </Container>
     );
@@ -183,7 +203,7 @@ export default function GPSPlayback() {
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <IconButton onClick={() => navigate(-1)} sx={{ color: '#FFF' }}>
+        <IconButton onClick={() => timeEntryId?navigate(-1):setSelectedTimeEntryId('')} sx={{ color: '#FFF' }}>
           <Close />
         </IconButton>
         <Typography variant="h5" sx={{ color: '#FFF', fontWeight: 'bold', ml: 1 }}>

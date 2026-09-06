@@ -65,6 +65,8 @@ export default function GPSPlaybackScreen() {
   const [selectedTimeEntryId, setSelectedTimeEntryId] = useState<string | undefined>(initialTimeEntryId);
   const [history, setHistory] = useState<GPSHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(!initialTimeEntryId);
+  const [employees,setEmployees]=useState<any[]>([]);
+  const [selectedUserId,setSelectedUserId]=useState('');
 
   const playbackInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const mapRef = useRef<MapView>(null);
@@ -80,15 +82,16 @@ export default function GPSPlaybackScreen() {
     };
   }, [selectedTimeEntryId]);
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (userId=selectedUserId) => {
     setHistoryLoading(true);
     try {
       const end = new Date();
       const start = new Date(end.getTime() - 30 * 86400000);
-      const response = await api.get<{ history: GPSHistoryItem[] }>(
-        `/gps/history?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`
-      );
+      const [response,people]=await Promise.all([api.get<{ history: GPSHistoryItem[] }>(
+        `/gps/history?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}${userId?`&userId=${encodeURIComponent(userId)}`:''}`
+      ),api.get<{employees:any[]}>('/gps/employees')]);
       setHistory(response.history || []);
+      setEmployees(people.employees||[]);
     } catch (cause: any) {
       Alert.alert('GPS history unavailable', cause?.response?.data?.message || cause?.message || 'Could not load GPS history.');
     } finally {
@@ -257,9 +260,10 @@ export default function GPSPlaybackScreen() {
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
           <View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.headerTitle}>GPS Trail History</Text><Text style={styles.historySubtitle}>Verified routes from the last 30 days</Text></View>
-          {historyLoading ? <ActivityIndicator color="#00D4FF" /> : <TouchableOpacity onPress={fetchHistory}><MaterialIcons name="refresh" size={23} color="#67E8F9" /></TouchableOpacity>}
+          {historyLoading ? <ActivityIndicator color="#00D4FF" /> : <TouchableOpacity onPress={()=>void fetchHistory()}><MaterialIcons name="refresh" size={23} color="#67E8F9" /></TouchableOpacity>}
         </View>
         <ScrollView contentContainerStyle={styles.historyList}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:12}}>{[{id:'',first_name:'All',last_name:'employees'},...employees].map(employee=><TouchableOpacity key={employee.id||'all'} onPress={()=>{setSelectedUserId(employee.id);void fetchHistory(employee.id);}} style={{paddingHorizontal:14,paddingVertical:9,borderRadius:18,marginRight:8,backgroundColor:selectedUserId===employee.id?'#00D4FF':'#172C3E'}}><Text style={{color:selectedUserId===employee.id?'#071018':'#C8D4E2',fontWeight:'800'}}>{employee.first_name} {employee.last_name}</Text></TouchableOpacity>)}</ScrollView>
           {history.length === 0 && !historyLoading ? <View style={styles.historyEmpty}><MaterialIcons name="route" size={52} color="#476079" /><Text style={styles.emptyText}>No recorded GPS trails in the last 30 days.</Text><Text style={styles.historyHint}>Trails appear after an employee clocks in and location points are recorded.</Text></View> : null}
           {history.map(item => (
             <TouchableOpacity key={item.time_entry_id} style={styles.historyCard} onPress={() => { setPoints([]); setCurrentIndex(0); setSelectedTimeEntryId(item.time_entry_id); }}>
