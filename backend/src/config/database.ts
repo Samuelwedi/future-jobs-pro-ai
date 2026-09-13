@@ -18,15 +18,17 @@ const poolConfig = process.env.DATABASE_URL
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT || '5432'),
       user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'SamuelDB2024!',
+      password: process.env.DB_PASSWORD || '',
       database: process.env.DB_NAME || 'futurejobspro_samuel',
     };
 
 export const pool = new Pool({
   ...poolConfig,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  max: Math.max(2, parseInt(process.env.DB_POOL_MAX || '20', 10)),
+  idleTimeoutMillis: Math.max(1000, parseInt(process.env.DB_IDLE_TIMEOUT_MS || '30000', 10)),
+  connectionTimeoutMillis: Math.max(500, parseInt(process.env.DB_CONNECT_TIMEOUT_MS || '5000', 10)),
+  statement_timeout: Math.max(1000, parseInt(process.env.DB_STATEMENT_TIMEOUT_MS || '30000', 10)),
+  query_timeout: Math.max(1000, parseInt(process.env.DB_QUERY_TIMEOUT_MS || '35000', 10)),
 });
 
 pool.on('connect', () => {
@@ -35,7 +37,8 @@ pool.on('connect', () => {
 
 pool.on('error', (err) => {
   console.error('❌ Database error:', err);
-  process.exit(-1);
+  // pg evicts a failed idle client. Keep the healthy process available while
+  // readiness reports database failure to the platform load balancer.
 });
 
 export const query = async (text: string, params?: any[]) => {
@@ -61,3 +64,10 @@ export const checkDatabaseHealth = async (): Promise<boolean> => {
     return false;
   }
 };
+
+export const databasePoolStats = () => ({
+  total: pool.totalCount,
+  idle: pool.idleCount,
+  waiting: pool.waitingCount,
+  max: Math.max(2, parseInt(process.env.DB_POOL_MAX || '20', 10)),
+});
