@@ -15,7 +15,9 @@ import http from 'http';
 import jwt from 'jsonwebtoken';
 import { Server as SocketIOServer } from 'socket.io';
 import OpenAI from 'openai';
-import { pool, checkDatabaseHealth } from './config/database';
+import { pool, checkDatabaseHealth, databasePoolStats } from './config/database';
+import { apiRateLimit, authRateLimit, lucyRateLimit } from './middleware/trafficControl';
+import { runtimeMetrics } from './observability/runtimeMetrics';
 import { saveMessage } from './services/chatService';
 import { trialCheck } from './middleware/trialMiddleware';
 import { verifyToken } from './utils/auth';
@@ -27,6 +29,7 @@ import connectedStripeWebhook from './routes/connectedStripeWebhook';
 dotenv.config();
 
 const app: Express = express();
+app.disable('x-powered-by');
 console.log(`ðŸ” PORT environment variable: "${process.env.PORT}"`);
 const PORT = parseInt(process.env.PORT || '8080', 10);
 console.log(`ðŸš€ Using PORT: ${PORT}`);
@@ -55,7 +58,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime
 
 app.get('/api/health', async (req: Request, res: Response) => {
   const dbHealthy = await checkDatabaseHealth();
-  res.json({ status: dbHealthy ? 'healthy' : 'unhealthy', timestamp: new Date().toISOString(), owner: 'Samuel B.', app: 'Future Jobs Pro AI', version: '1.0.0' });
+  res.status(dbHealthy ? 200 : 503).json({ status: dbHealthy ? 'healthy' : 'unhealthy', timestamp: new Date().toISOString(), owner: 'Samuel B.', app: 'Future Jobs Pro AI', version: '1.0.0', databasePool: databasePoolStats(), runtime: runtimeMetrics() });
 });
 
 app.get('/', (req, res) => res.send('<h1>ðŸš€ Future Jobs Pro AI</h1>'));
@@ -63,6 +66,11 @@ app.get('/', (req, res) => res.send('<h1>ðŸš€ Future Jobs Pro AI</h1>'));
 // â”€â”€â”€ Year-End Routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // ===== REST ROUTES =====
+app.use('/api/auth/login', authRateLimit);
+app.use('/api/auth/forgot-password', authRateLimit);
+app.use('/api/lucy', lucyRateLimit);
+app.use('/api/lucy-v2', lucyRateLimit);
+app.use('/api', apiRateLimit);
 import authRoutes from './routes/authRoutes'; app.use('/api/auth', authRoutes);
 import aiRoutes from './routes/aiRoutes'; app.use('/api/ai', aiRoutes);
 import photoRoutes from './routes/photoRoutes'; app.use('/api/photos', photoRoutes);
@@ -684,6 +692,14 @@ const io = new SocketIOServer(server, {
     methods: ['GET', 'POST'],
     credentials: true,
   },
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60_000,
+    skipMiddlewares: false,
+  },
+  maxHttpBufferSize: 100_000,
+  pingInterval: 25_000,
+  pingTimeout: 20_000,
+  perMessageDeflate: false,
 });
 
 // Customer JWTs never grant access to the platform support-agent dashboard.
@@ -792,8 +808,13 @@ io.on('connection', (socket) => {
     }
     acknowledge?.({ success: true });
   });
-  socket.on('chat-message', async (data) => {
+  const messageTimes: number[] = [];
+  socket.on('chat-message', async (data, acknowledge) => {
     try {
+      const now = Date.now();
+      while (messageTimes.length && messageTimes[0] < now - 10_000) messageTimes.shift();
+      if (messageTimes.length >= 20) throw new Error('Message rate limit exceeded');
+      messageTimes.push(now);
       const roomId = String(data?.roomId || '');
       const message = String(data?.message || '').trim();
       if (!roomId || !message || message.length > 5000) throw new Error('Invalid message');
@@ -804,8 +825,10 @@ io.on('connection', (socket) => {
         ...saved,
         sender_name: socket.data.actor.name,
       });
-    } catch (error) {
+      acknowledge?.({ success: true, id: saved?.id });
+    } catch (error: any) {
       console.error('Chat message error:', error);
+      acknowledge?.({ success: false, message: error.message || 'Message failed' });
     }
   });
 });
