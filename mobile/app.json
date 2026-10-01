@@ -2,7 +2,7 @@
   "expo": {
     "name": "Future Jobs Pro AI",
     "slug": "future-jobs-pro-ai",
-    "version": "1.0.1",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -17,14 +17,17 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.samuel33.futurejobspro",
-      "buildNumber": "1",
+      "buildNumber": "48",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Allow Future Jobs Pro AI to use your camera for job site photos",
         "NSLocationWhenInUseUsageDescription": "Future Jobs Pro AI uses your location to record where you clock in and out, verify your presence at a job site (e.g., when you start work at 123 Main Street), and show nearby crew members on the map.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Future Jobs Pro AI uses your location in the background to continue tracking your work site arrival/departure, even when the app is not open, so you can automatically clock in when you reach a job site.",
-        "NSMicrophoneUsageDescription": "Future Jobs Pro AI uses the microphone for voice notes and to detect ‘Hey Lucy’ locally while the app is open and listening is enabled.",
-        "NSSpeechRecognitionUsageDescription": "Future Jobs Pro AI uses speech recognition to allow you to control the app with your voice."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Your location is shared with your company during an active work shift, including when the app is in the background.",
+        "NSMicrophoneUsageDescription": "Future Jobs Pro AI uses the microphone for voice notes and to detect \u2018Hey Lucy\u2019 locally while the app is open and listening is enabled.",
+        "NSSpeechRecognitionUsageDescription": "Future Jobs Pro AI uses speech recognition to allow you to control the app with your voice.",
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
     "android": {
@@ -33,7 +36,7 @@
         "backgroundColor": "#0A0A0A"
       },
       "package": "com.samuel33.futurejobspro",
-      "versionCode": 1,
+      "versionCode": 3,
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -49,8 +52,7 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
             "minSdkVersion": 26,
-            "buildToolsVersion": "36.0.0",
-            "kotlinVersion": "2.0.21"
+            "buildToolsVersion": "36.0.0"
           },
           "ios": {
             "deploymentTarget": "16.0"
@@ -59,7 +61,18 @@
       ],
       "expo-audio",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-location",
+        {
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "isIosBackgroundLocationEnabled": true,
+          "locationAlwaysAndWhenInUsePermission": "Allow Future Jobs Pro AI to record your location during an active work shift, including when the app is in the background."
+        }
+      ],
+      "expo-sharing",
+      "expo-video"
     ],
     "extra": {
       "eas": {

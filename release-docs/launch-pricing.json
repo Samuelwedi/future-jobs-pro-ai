@@ -1,0 +1,53 @@
+{
+  "release": "1.2.1",
+  "launchMode": "new_business_no_paying_subscribers",
+  "currency": "CAD",
+  "interval": "month",
+  "providerChangesApplied": false,
+  "plans": [
+    {
+      "key": "team_10",
+      "activeAccountLimit": 10,
+      "monthlyCad": 79,
+      "storeProductId": "com.samuel33.futurejobspro.team_10_monthly"
+    },
+    {
+      "key": "team_35",
+      "activeAccountLimit": 35,
+      "monthlyCad": 199,
+      "storeProductId": "com.samuel33.futurejobspro.team_35_monthly"
+    },
+    {
+      "key": "team_50",
+      "activeAccountLimit": 50,
+      "monthlyCad": 299,
+      "storeProductId": "com.samuel33.futurejobspro.team_50_monthly"
+    },
+    {
+      "key": "team_65",
+      "activeAccountLimit": 65,
+      "monthlyCad": 399,
+      "storeProductId": "com.samuel33.futurejobspro.team_65_monthly"
+    },
+    {
+      "key": "team_80",
+      "activeAccountLimit": 80,
+      "monthlyCad": 499,
+      "storeProductId": "com.samuel33.futurejobspro.team_80_monthly"
+    },
+    {
+      "key": "team_95",
+      "activeAccountLimit": 95,
+      "monthlyCad": 599,
+      "storeProductId": "com.samuel33.futurejobspro.team_95_monthly"
+    },
+    {
+      "key": "team_110",
+      "activeAccountLimit": 110,
+      "monthlyCad": 699,
+      "storeProductId": "com.samuel33.futurejobspro.team_110_monthly"
+    }
+  ],
+  "existingPaidSubscriberMigrationRequired": false,
+  "testerAccess": "Explicit company allowlists and verified sandbox purchases; no global authentication or billing bypass"
+}

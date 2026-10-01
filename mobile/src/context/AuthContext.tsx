@@ -1,3 +1,4 @@
+import {stopBackgroundLocation} from '../services/backgroundLocation';
 // ============================================
 // AUTH CONTEXT
 // Future Jobs Pro AI – Created by Samuel B.
@@ -98,6 +99,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const logout = async () => {
+    await stopBackgroundLocation().catch(()=>undefined);
     await api.clearToken();
     await SecureStore.deleteItemAsync('userData');
     setUser(null);

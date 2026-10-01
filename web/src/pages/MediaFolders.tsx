@@ -5,8 +5,7 @@ import {
 } from '@mui/material';
 import { Folder, ChevronRight, ErrorOutline, ArrowBack } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 interface Project {
   project_id: string;

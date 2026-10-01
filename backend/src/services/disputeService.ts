@@ -6,6 +6,7 @@
 
 import { pool } from '../config/database';
 import * as crypto from 'crypto';
+import PDFDocument from 'pdfkit';
 import { generateBreadcrumbTrail, getArrivalConfidence } from './gpsService';
 
 interface DisputeEvidencePackage {
@@ -44,21 +45,25 @@ export async function buildDisputeEvidencePackage(
   const voiceNotes = await gatherVoiceNoteEvidence(timeEntryId);
   const externalData = await gatherExternalData(timeEntryId);
 
-  // 3. Create tamper‑proof hash
+  const packageId = crypto.randomUUID();
+  const generatedAt = new Date();
+
+  // 3. Create a reproducible integrity hash over the stored evidence snapshot.
   const verificationHash = generatePackageHash({
+    packageId,
+    generatedAt: generatedAt.toISOString(),
     timeEntryId,
     timeCard,
     gpsTrail,
     photos,
     voiceNotes,
     externalData,
-    owner: 'Samuel B.',
   });
 
   // 4. Build the package
   const evidencePackage: DisputeEvidencePackage = {
-    packageId: crypto.randomUUID(),
-    generatedAt: new Date(),
+    packageId,
+    generatedAt,
     projectId: timeCard.projectId,
     timeEntryId,
     riskScore,
@@ -184,8 +189,9 @@ async function gatherVoiceNoteEvidence(timeEntryId: string): Promise<any[]> {
 
 async function gatherExternalData(timeEntryId: string): Promise<any> {
   return {
-    weather: { condition: 'Clear', temperature: 72, timestamp: new Date() },
-    trafficIncidents: ['No major incidents reported in area'],
+    weather: null,
+    trafficIncidents: [],
+    note: 'No independently verified weather or traffic provider data was attached.',
   };
 }
 
@@ -195,8 +201,6 @@ async function gatherExternalData(timeEntryId: string): Promise<any> {
 function generatePackageHash(data: any): string {
   const hash = crypto.createHash('sha256');
   hash.update(JSON.stringify(data));
-  hash.update(new Date().toISOString());
-  hash.update('Samuel B. Future Jobs Pro AI');
   return hash.digest('hex');
 }
 
@@ -214,9 +218,56 @@ async function saveEvidencePackage(pkg: DisputeEvidencePackage): Promise<void> {
 // ============================================
 // Public helpers
 // ============================================
-export async function generateDisputePDF(packageId: string): Promise<string> {
-  // In production, generate a real PDF; now returns a URL stub
-  return `https://reports.futurejobspro.com/dispute/${packageId}.pdf`;
+export async function generateDisputePDF(packageId: string, companyId: string): Promise<Buffer> {
+  const result = await pool.query(
+    `SELECT de.evidence_package, de.verification_hash, de.risk_score, de.created_at
+       FROM dispute_evidence de
+       JOIN time_entries te ON te.id=de.time_entry_id
+       JOIN users u ON u.id=te.user_id
+      WHERE u.company_id=$2
+        AND (de.id::text=$1 OR de.evidence_package->>'packageId'=$1)
+      ORDER BY de.created_at DESC
+      LIMIT 1`,
+    [packageId, companyId],
+  );
+  if (!result.rowCount) throw Object.assign(new Error('Evidence package not found'), { status: 404 });
+  const row = result.rows[0];
+  const evidence = typeof row.evidence_package === 'string'
+    ? JSON.parse(row.evidence_package)
+    : row.evidence_package;
+
+  return new Promise<Buffer>((resolve, reject) => {
+    const document = new PDFDocument({ size: 'LETTER', margin: 54, info: { Title: `Evidence package ${packageId}` } });
+    const chunks: Buffer[] = [];
+    document.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+    document.on('error', reject);
+    document.on('end', () => resolve(Buffer.concat(chunks)));
+
+    document.fontSize(20).text('Future Jobs Pro AI', { align: 'center' });
+    document.fontSize(15).text('Dispute Evidence Snapshot', { align: 'center' });
+    document.moveDown();
+    document.fontSize(10).text(`Package ID: ${evidence.packageId || packageId}`);
+    document.text(`Generated: ${evidence.generatedAt || row.created_at}`);
+    document.text(`Time entry: ${evidence.timeEntryId || 'Unavailable'}`);
+    document.text(`Project: ${evidence.projectId || 'Unavailable'}`);
+    document.text(`Risk indicator: ${Number(row.risk_score || evidence.riskScore || 0)}/100`);
+    document.moveDown();
+    document.fontSize(12).text('Recorded time');
+    document.fontSize(10).text(`Clock in: ${evidence.evidence?.timeCard?.clockIn || 'Unavailable'}`);
+    document.text(`Clock out: ${evidence.evidence?.timeCard?.clockOut || 'Unavailable'}`);
+    document.text(`Recorded hours: ${Number(evidence.evidence?.timeCard?.totalHours || 0).toFixed(2)}`);
+    document.moveDown();
+    document.fontSize(12).text('Attached evidence');
+    document.fontSize(10).text(`GPS points: ${Number(evidence.evidence?.gpsTrail?.totalPoints || 0)}`);
+    document.text(`Photos: ${Array.isArray(evidence.evidence?.photos) ? evidence.evidence.photos.length : 0}`);
+    document.text(`Voice notes: ${Array.isArray(evidence.evidence?.voiceNotes) ? evidence.evidence.voiceNotes.length : 0}`);
+    document.moveDown();
+    document.fontSize(12).text('Integrity');
+    document.fontSize(8).text(String(row.verification_hash || evidence.verificationHash || ''), { width: 500 });
+    document.moveDown();
+    document.fontSize(9).text('This report is an application-generated snapshot of stored records. It does not replace legal review, and no unverified weather or traffic facts are represented as evidence.');
+    document.end();
+  });
 }
 
 export async function checkHighRiskEntries(companyId: string): Promise<any[]> {

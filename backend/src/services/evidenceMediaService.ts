@@ -1,6 +1,6 @@
 import { pool } from '../config/database';
 import PDFDocument from 'pdfkit';
-import sharp from 'sharp';
+import sharp, { OverlayOptions } from 'sharp';
 import ffmpeg from 'fluent-ffmpeg';
 import fs from 'fs';
 import path from 'path';
@@ -144,7 +144,7 @@ async function renderWorldwideRasterMap(
   const rows = Math.ceil(height / TILE_SIZE) + 2;
   const firstTileX = Math.floor(center.x / TILE_SIZE) - Math.floor(columns / 2);
   const firstTileY = Math.floor(center.y / TILE_SIZE) - Math.floor(rows / 2);
-  const composites: sharp.OverlayOptions[] = [];
+  const composites: OverlayOptions[] = [];
 
   for (let row = 0; row < rows; row++) {
     for (let column = 0; column < columns; column++) {

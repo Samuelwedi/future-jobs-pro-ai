@@ -58,8 +58,11 @@ export async function getCompanyFormTemplates(companyId: string): Promise<FormTe
 }
 
 // Get a single form template by ID
-export async function getFormTemplateById(templateId: string): Promise<FormTemplate> {
-  const result = await pool.query('SELECT * FROM form_templates WHERE id = $1', [templateId]);
+export async function getFormTemplateById(templateId: string, companyId: string): Promise<FormTemplate> {
+  const result = await pool.query(
+    'SELECT * FROM form_templates WHERE id = $1 AND company_id = $2',
+    [templateId, companyId],
+  );
   return result.rows[0];
 }
 
@@ -73,20 +76,24 @@ export async function submitForm(
 ): Promise<FormSubmission> {
   const result = await pool.query(
     `INSERT INTO form_submissions (template_id, user_id, company_id, answers, time_entry_id)
-     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+     SELECT ft.id,$2,$3,$4,$5
+       FROM form_templates ft
+      WHERE ft.id=$1 AND ft.company_id=$3
+     RETURNING *`,
     [templateId, userId, companyId, JSON.stringify(answers), timeEntryId || null]
   );
+  if (!result.rowCount) throw new Error('Form template was not found in your company');
   return result.rows[0];
 }
 
 // Get form submissions for a time entry
-export async function getTimeEntryForms(timeEntryId: string): Promise<FormSubmission[]> {
+export async function getTimeEntryForms(timeEntryId: string, companyId: string): Promise<FormSubmission[]> {
   const result = await pool.query(
     `SELECT fs.*, ft.name as template_name
      FROM form_submissions fs
      JOIN form_templates ft ON fs.template_id = ft.id
-     WHERE fs.time_entry_id = $1`,
-    [timeEntryId]
+     WHERE fs.time_entry_id = $1 AND fs.company_id = $2`,
+    [timeEntryId, companyId]
   );
   return result.rows;
 }

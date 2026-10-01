@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import nodemailer, { Transporter } from 'nodemailer';
 import { Buffer } from 'buffer';
 
 // ─── SMTP Configuration ───
@@ -6,7 +6,7 @@ const isSMTPConfigured = (): boolean => {
   return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 };
 
-let transporter: nodemailer.Transporter | null = null;
+let transporter: Transporter | null = null;
 if (isSMTPConfigured()) {
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -40,6 +40,18 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
   } catch (error) {
     console.error(`❌ Failed to send email to ${to}:`, error);
   }
+}
+
+export async function sendPasswordResetEmail(to: string, resetLink: string): Promise<void> {
+  if (!transporter) {
+    throw new Error('Password reset email is unavailable because SMTP is not configured');
+  }
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com',
+    to,
+    subject: 'Reset your Future Jobs Pro AI password',
+    html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#172033"><h2>Reset your password</h2><p>We received a request to reset your Future Jobs Pro AI password.</p><p><a href="${resetLink}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#00bfe8;color:#07111f;text-decoration:none;font-weight:700">Reset password</a></p><p>This link expires in one hour. If you did not request it, you can safely ignore this email.</p></div>`,
+  });
 }
 
 // ─── Send email with attachment ─────────────────────────────────

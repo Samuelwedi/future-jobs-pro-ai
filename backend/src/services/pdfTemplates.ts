@@ -104,6 +104,7 @@ export interface PayStubData {
   finalPay: number;
   companyName: string;
   companyAddress?: string;
+  calculation?: {cpp:string;cpp2:string;ei:string;incomeTax:string;payDate:string;currency:string;revision:number;decimals?:number;lines?:{label:string;category:string;amount:string}[]};
 }
 
 export interface InvoiceData {
@@ -135,7 +136,7 @@ export const PayStubPDF: React.FC<{ data: PayStubData }> = ({ data }) => el(Docu
       el(View, { style: styles.headerRight }, text(styles.companyName, data.employeeName), text(styles.subtitle, data.employeeEmail), text(styles.subtitle, `Period: ${data.periodStart} – ${data.periodEnd}`))
     ),
     el(View, { style: styles.summaryGrid },
-      ...([['Total Hours', data.hours.toFixed(2)], ['Hourly Rate', `$${data.rate.toFixed(2)}`], ['Gross Pay', `$${data.pay.toFixed(2)}`], ['Final Pay', `$${data.finalPay.toFixed(2)}`]].map(([label, value], i) => el(View, { key: i, style: styles.summaryItem }, text(styles.summaryLabel, label), text(i === 3 ? [styles.summaryValue, { color: '#00D4FF' }] : styles.summaryValue, value)))
+      ...([['Total Hours', data.hours.toFixed(2)], ['Hourly Rate', `${data.calculation?.currency||'CAD'} ${data.rate.toFixed(data.calculation?.decimals??2)}`], ['Gross Pay', `${data.calculation?.currency||'CAD'} ${data.pay.toFixed(data.calculation?.decimals??2)}`], ['Final Pay', `${data.calculation?.currency||'CAD'} ${data.finalPay.toFixed(data.calculation?.decimals??2)}`]].map(([label, value], i) => el(View, { key: i, style: styles.summaryItem }, text(styles.summaryLabel, label), text(i === 3 ? [styles.summaryValue, { color: '#00D4FF' }] : styles.summaryValue, value)))
     ),
     el(View, { style: styles.table },
       el(View, { style: styles.tableHeader }, ...([
@@ -149,14 +150,15 @@ export const PayStubPDF: React.FC<{ data: PayStubData }> = ({ data }) => el(Docu
         text([styles.tableHeaderCell, style] as React.ComponentProps<typeof Text>['style'], label)
       )),
       el(View, { style: styles.tableRow }, ...([
-        ['Regular Hours', styles.flex3],
+        ['Hours (regular + overtime)', styles.flex3],
         [data.hours.toFixed(2), [styles.flex1, styles.textRight]],
-        [`$${data.rate.toFixed(2)}`, [styles.flex1, styles.textRight]],
-        [`$${data.pay.toFixed(2)}`, [styles.flex15, styles.textRight]],
-        [`$${data.adjustments.toFixed(2)}`, [styles.flex15, styles.textRight]],
-        [`$${data.finalPay.toFixed(2)}`, [styles.flex15, styles.textRight, { fontWeight: 'bold' }]],
+        [`${data.calculation?.currency||'CAD'} ${data.rate.toFixed(data.calculation?.decimals??2)}`, [styles.flex1, styles.textRight]],
+        [`${data.calculation?.currency||'CAD'} ${data.pay.toFixed(data.calculation?.decimals??2)}`, [styles.flex15, styles.textRight]],
+        [`${data.calculation?.currency||'CAD'} ${data.adjustments.toFixed(data.calculation?.decimals??2)}`, [styles.flex15, styles.textRight]],
+        [`${data.calculation?.currency||'CAD'} ${data.finalPay.toFixed(data.calculation?.decimals??2)}`, [styles.flex15, styles.textRight, { fontWeight: 'bold' }]],
       ] as [string, React.ComponentProps<typeof Text>['style']][]).map(([value, style]) => text([styles.tableCell, style] as React.ComponentProps<typeof Text>['style'], value))))
     ),
+    data.calculation && el(View, null, text(styles.subtitle, `Pay date: ${data.calculation.payDate} | Currency: ${data.calculation.currency} | Rules revision: ${data.calculation.revision}`), data.calculation.lines ? el(View,null,...data.calculation.lines.map((line,i)=>el(PdfText,{key:i,style:styles.subtitle},`${line.label} (${line.category}): ${line.amount} ${data.calculation.currency}`))) : text(styles.subtitle, `CPP: ${data.calculation.cpp} | CPP2: ${data.calculation.cpp2} | EI: ${data.calculation.ei} | Income tax: ${data.calculation.incomeTax}`), text(styles.subtitle, 'Company-reviewed payroll statement. This document is not evidence of bank settlement.')),
     el(View, { style: styles.footer }, text(styles.footerText, `Generated on ${new Date().toLocaleDateString()}`), text(styles.footerText, `© ${new Date().getFullYear()} ${data.companyName}`))
   )
 );

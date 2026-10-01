@@ -15,6 +15,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [reply, setReply] = useState('');
   const [agents, setAgents] = useState([]);
+  const [incidents, setIncidents] = useState([]);
   const [newAgent, setNewAgent] = useState({ firstName: '', lastName: '', email: '', password: '', role: 'agent' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -117,6 +118,18 @@ function App() {
     catch (requestError) { setError(requestError.response?.data?.message || 'Could not load agents'); }
   };
 
+  const loadIncidents = useCallback(async () => {
+    try {
+      const response = await client().get('/api/system-reliability/incidents?status=open');
+      setIncidents(response.data.incidents || []); setView('reliability');
+    } catch (requestError) { setError(requestError.response?.data?.message || 'Could not load system incidents'); }
+  }, [client]);
+
+  const updateIncident = async (id, status) => {
+    try { await client().patch(`/api/system-reliability/incidents/${id}`, { status }); await loadIncidents(); }
+    catch (requestError) { setError(requestError.response?.data?.message || 'Could not update incident'); }
+  };
+
   const createAgent = async (event) => {
     event.preventDefault(); setBusy(true); setError('');
     try {
@@ -154,6 +167,7 @@ function App() {
       <nav className="portal-nav">
         <button className={view === 'queue' ? 'selected' : ''} onClick={() => setView('queue')}>Support queue</button>
         {manager && <button className={view === 'agents' ? 'selected' : ''} onClick={() => void loadAgents()}>Agent management</button>}
+        <button className={view === 'reliability' ? 'selected' : ''} onClick={() => void loadIncidents()}>System health</button>
         <button onClick={logout}>Sign out</button>
       </nav>
       {view === 'queue' && <><div className="queue-count">{tickets.length} active tickets</div><div className="ticket-list">
@@ -164,7 +178,10 @@ function App() {
     </aside>
     <section className="conversation-panel">
       {error && <div className="error-banner portal-error">{error}<button onClick={() => setError('')}>×</button></div>}
-      {view === 'agents' ? <section className="management-panel"><h2>Agent management</h2><p>Create credentials for Future Jobs Pro AI support staff. These accounts cannot enter customer companies.</p>
+      {view === 'reliability' ? <section className="management-panel"><h2>System health</h2><p>Lucy groups repeated failures into incidents. Automated actions are limited to approved, reversible playbooks.</p>
+        <button className="secondary-button" onClick={() => void client().post('/api/system-reliability/diagnostics').then(loadIncidents)}>Run diagnostics</button>
+        <div className="agent-list">{incidents.length === 0 ? <article><div><strong>No open incidents</strong><span>The monitored services are quiet.</span></div></article> : incidents.map((item) => <article key={item.id}><div><strong>{item.severity.toUpperCase()} · {item.component}</strong><span>{item.summary} · {item.occurrences} occurrence(s) · {new Date(item.lastSeenAt).toLocaleString()}</span></div><div><button className="secondary-button" onClick={() => void updateIncident(item.id, 'acknowledged')}>Acknowledge</button><button className="resolve-button" onClick={() => void updateIncident(item.id, 'resolved')}>Resolve</button></div></article>)}</div>
+      </section> : view === 'agents' ? <section className="management-panel"><h2>Agent management</h2><p>Create credentials for Future Jobs Pro AI support staff. These accounts cannot enter customer companies.</p>
         <form className="agent-form" onSubmit={createAgent}>
           <input placeholder="First name" value={newAgent.firstName} onChange={(e) => setNewAgent({ ...newAgent, firstName: e.target.value })} required />
           <input placeholder="Last name" value={newAgent.lastName} onChange={(e) => setNewAgent({ ...newAgent, lastName: e.target.value })} required />

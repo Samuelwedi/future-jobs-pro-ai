@@ -1,0 +1,84 @@
+{
+  "release": "1.2.1",
+  "validatedAt": "2026-09-30",
+  "backendTests": {
+    "passed": 102,
+    "failed": 0,
+    "execution": "101 full-suite tests plus 1 additional focused HTTP entitlement test"
+  },
+  "webBuild": "passed",
+  "mobileTypeScript": "passed",
+  "androidJsExport": "passed",
+  "iosJsExport": "passed",
+  "expoDoctor": {
+    "passed": 20,
+    "total": 20
+  },
+  "productionAudits": {
+    "backend": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "web": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "mobile": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "externalValidationPending": [
+    "Windows script execution",
+    "Docker image build",
+    "Production SQL dry run",
+    "Provider account setup and live API credential checks",
+    "Signed EAS native builds",
+    "Real-device store tests",
+    "Closed-track rollout and TestFlight assignment"
+  ],
+  "migrationCount": 20,
+  "payrollRules": {
+    "webEditor": "built",
+    "mobileEditor": "typechecked and exported",
+    "immutableRevisions": "tested",
+    "manualPaymentWorkflow": "API tested; web UI built",
+    "governmentCertified": false,
+    "worldwideVerified": false,
+    "implementedScope": "Limited Alberta 2026 reference engine plus company-configured worldwide arithmetic and reviewed manual inputs; no other statutory country engine",
+    "directDepositEnabled": false,
+    "worldwideCompanyConfiguredMode": {
+      "countryTerritoryCodes": 249,
+      "currencyUnits": 165,
+      "currencyMetadataSource": "SIX ISO 4217 List One 2026-09-17",
+      "statutoryTaxTablesProvided": false,
+      "methods": [
+        "manual",
+        "fixed",
+        "percentage",
+        "progressive"
+      ],
+      "localIndependentReviewRequired": true,
+      "canadianTaxFormGeneration": "blocked for company-configured worldwide payroll"
+    }
+  },
+  "complimentaryTester": {
+    "accountEmail": "samuel@test.com",
+    "identityBinding": "existing user UUID plus company UUID",
+    "expiry": null,
+    "liveActivated": false,
+    "tests": "default disabled, exact identity, anonymous denial, wrong-company denial, revocation"
+  }
+}

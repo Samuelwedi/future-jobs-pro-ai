@@ -4,6 +4,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { LanguageProvider } from './src/context/LanguageContext';
 import LoginScreen from './src/screens/LoginScreen';
+import RegisterScreen from './src/screens/RegisterScreen';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import DemoScreen from './src/screens/DemoScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CameraView from './src/screens/CameraView';
@@ -45,6 +47,8 @@ import WebViewScreen from './src/screens/WebViewScreen';
 import SelectEmployeesScreen from './src/screens/SelectEmployeesScreen';
 import CreateShiftScreen from './src/screens/CreateShiftScreen';
 import CompanySettingsScreen from './src/screens/CompanySettingsScreen';
+import WorkerToolsScreen from './src/screens/WorkerToolsScreen';
+import PayrollRulesScreen from './src/screens/PayrollRulesScreen';
 import { WakeWordService } from './src/services/wakeWordService';
 
 const Stack = createStackNavigator();
@@ -59,14 +63,21 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   static getDerivedStateFromError(error: Error) {
     return { hasError: true, error };
   }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    void api.post('/system-reliability/client-events', {
+      component: 'mobile-ui',
+      severity: 'critical',
+      summary: error.message || 'Unhandled mobile interface error',
+      context: { componentStack: info.componentStack?.slice(0, 4000) },
+    }).catch(() => undefined);
+  }
   render() {
     if (this.state.hasError && this.state.error) {
       const err = this.state.error;
       return (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A', padding: 20 }}>
-          <Text style={{ color: '#F44336', fontSize: 16, fontWeight: 'bold', marginBottom: 10 }}>Error</Text>
-          <Text style={{ color: '#FFF', textAlign: 'center' }}>{err.message}</Text>
-          <Text style={{ color: '#888', marginTop: 10 }}>File: {err.stack?.split('\n')[1]?.trim()}</Text>
+          <Text style={{ color: '#F44336', fontSize: 16, fontWeight: 'bold', marginBottom: 10 }}>Something went wrong</Text>
+          <Text style={{ color: '#FFF', textAlign: 'center' }}>Lucy recorded the problem for support. You can safely retry this screen.</Text>
           <TouchableOpacity style={{ marginTop: 20, backgroundColor: '#00D4FF', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 }} onPress={() => this.setState({ hasError: false, error: null })}>
             <Text style={{ color: '#0A0A0A', fontWeight: '600' }}>Retry</Text>
           </TouchableOpacity>
@@ -153,6 +164,8 @@ function AppNavigator() {
         {!isAuthenticated ? (
           <>
             <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
             <Stack.Screen name="Demo" component={DemoScreen} />
           </>
         ) : (
@@ -192,6 +205,8 @@ function AppNavigator() {
             <Stack.Screen name="SelectEmployees" component={SelectEmployeesScreen} />
             <Stack.Screen name="CreateShift" component={CreateShiftScreen} />
             <Stack.Screen name="CompanySettings" component={CompanySettingsScreen as React.ComponentType<any>} />
+            <Stack.Screen name="WorkerTools" component={WorkerToolsScreen} />
+            <Stack.Screen name="PayrollRules" component={PayrollRulesScreen} />
           </>
         )}
       </Stack.Navigator>

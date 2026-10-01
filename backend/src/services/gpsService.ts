@@ -16,6 +16,7 @@ export interface GPSPoint {
   speed?: number;
   heading?: number;
   batteryLevel?: number;
+  capturedAt?: string;
 }
 
 interface GeofenceStatus {
@@ -66,10 +67,10 @@ export async function recordGPSPoint(point: GPSPoint): Promise<GeofenceStatus & 
 
   const result = await pool.query(
     `INSERT INTO gps_tracking
-     (user_id, time_entry_id, project_id, latitude, longitude, accuracy, altitude, speed, heading, battery_level, geofence_status, is_moving)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     (user_id, time_entry_id, project_id, latitude, longitude, accuracy, altitude, speed, heading, battery_level, geofence_status, is_moving, timestamp)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING id`,
-    [userId, timeEntryId, projectId, latitude, longitude, accuracy || null, altitude || null, speed || null, heading || null, batteryLevel || null, geofenceStatus, isMoving]
+    [userId, timeEntryId, projectId, latitude, longitude, accuracy || null, altitude || null, speed || null, heading || null, batteryLevel || null, geofenceStatus, isMoving, point.capturedAt || new Date().toISOString()]
   );
 
   return {

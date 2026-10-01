@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Linking,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -20,7 +21,7 @@ import {
   useIAP,
 } from 'expo-iap';
 import { useNavigation } from '@react-navigation/native';
-import { api } from '../services/api';
+import { api, API_URL } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
   FALLBACK_PLAN_COPY,
@@ -49,7 +50,7 @@ type VerificationResponse = {
   subscription?: SubscriptionState;
 };
 
-const ACTIVE_STATUSES = new Set(['active', 'trialing', 'in_trial', 'grace_period', 'billing_retry']);
+const ACTIVE_STATUSES = new Set(['active', 'trialing', 'in_trial', 'grace_period']);
 
 function friendlyError(error: unknown): string {
   const candidate = error as { response?: { data?: { message?: string } }; message?: string };
@@ -68,6 +69,8 @@ export default function SubscriptionScreen() {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [processingProductId, setProcessingProductId] = useState<string | null>(null);
+  const [billing, setBilling] = useState<{google:boolean;apple:boolean;canPurchase:boolean;googleAccountId:string}|null>(null);
+  const storeReady = Boolean(billing?.canPurchase && (Platform.OS === 'android' ? billing.google : billing.apple));
 
   const verifyAndFinish = useCallback(async (purchase: Purchase) => {
     try {
@@ -116,6 +119,8 @@ export default function SubscriptionScreen() {
     try {
       const response = await api.get<StatusResponse>('/subscriptions/status');
       if (response.success) setStatus(response.subscription || {});
+      const capabilities=await api.get<any>('/subscriptions/capabilities');
+      setBilling(capabilities.success ? capabilities : null);
     } catch (error) {
       Alert.alert('Could not load subscription', friendlyError(error));
     } finally {
@@ -156,6 +161,14 @@ export default function SubscriptionScreen() {
   }, [subscriptions]);
 
   const startPurchase = async (plan: PlanKey) => {
+    if (!storeReady) {
+      Alert.alert('Purchases unavailable', 'Store billing must be configured and you must be a company owner or administrator.');
+      return;
+    }
+    if (status.status === 'active' && status.provider) {
+      Alert.alert('Existing subscription', 'Manage your existing subscription in its billing provider before starting another subscription.');
+      return;
+    }
     const product = productsByPlan.get(plan);
     if (!connected || !product) {
       Alert.alert(
@@ -176,6 +189,7 @@ export default function SubscriptionScreen() {
           apple: { sku: product.id, appAccountToken: user?.id },
           google: {
             skus: [product.id],
+            obfuscatedAccountId: billing!.googleAccountId,
             ...(androidOffer?.offerTokenAndroid
               ? { subscriptionOffers: [{ sku: product.id, offerToken: androidOffer.offerTokenAndroid }] }
               : {}),
@@ -197,9 +211,17 @@ export default function SubscriptionScreen() {
     } catch (error) {
       setProcessingProductId(null);
       Alert.alert('Restore failed', friendlyError(error));
+    } finally {
+      setProcessingProductId(null);
     }
   };
 
+  const manageSubscription = async () => {
+    const url = status.provider === 'apple' ? 'https://apps.apple.com/account/subscriptions'
+      : status.provider === 'google' ? 'https://play.google.com/store/account/subscriptions?package=com.samuel33.futurejobspro' : null;
+    if (!url) return Alert.alert('Web subscription', 'Manage your existing subscription from Billing in the web workspace.');
+    try { await Linking.openURL(url); } catch { Alert.alert('Unable to open store', 'Open your app store subscription settings.'); }
+  };
   const active = ACTIVE_STATUSES.has((status.status || '').toLowerCase());
   const renewalDate = status.currentPeriodEnd || status.expiresAt;
 
@@ -225,6 +247,7 @@ export default function SubscriptionScreen() {
           <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>FUTURE JOBS PRO AI</Text>
             <Text style={styles.title}>Choose your workspace plan</Text>
+            {status.provider && <TouchableOpacity onPress={manageSubscription} accessibilityRole="button"><Text style={styles.restoreText}>Manage existing subscription</Text></TouchableOpacity>}
           </View>
           <View style={styles.secureBadge}>
             <Ionicons name="shield-checkmark" size={15} color="#6FE7FF" />
@@ -246,7 +269,7 @@ export default function SubscriptionScreen() {
         </View>
 
         <View style={styles.promiseRow}>
-          <Promise icon="sparkles" text="14-day trial when eligible" />
+          <Promise icon="sparkles" text="Store offers shown at checkout" />
           <Promise icon="lock-closed" text="Verified by your app store" />
           <Promise icon="refresh" text="Restore on any signed-in device" />
         </View>
@@ -277,7 +300,7 @@ export default function SubscriptionScreen() {
                   </View>
                 </View>
                 <View style={styles.priceBox}>
-                  <Text style={styles.price}>{product?.displayPrice || copy.fallbackPrice}</Text>
+                  <Text style={styles.price}>{product?.displayPrice || 'Unavailable'}</Text>
                   <Text style={styles.interval}>/ month</Text>
                 </View>
               </View>
@@ -293,7 +316,7 @@ export default function SubscriptionScreen() {
               ))}
 
               <TouchableOpacity
-                disabled={selected || busy}
+                disabled={selected || busy || !storeReady || !product}
                 onPress={() => void startPurchase(plan)}
                 style={[styles.purchaseButton, copy.featured && styles.featuredButton, selected && styles.selectedButton]}
               >
@@ -301,7 +324,7 @@ export default function SubscriptionScreen() {
                   <ActivityIndicator color="#07111F" />
                 ) : (
                   <Text style={[styles.purchaseText, !copy.featured && !selected && styles.secondaryPurchaseText]}>
-                    {selected ? 'Current plan' : index === 0 ? 'Start with Basic' : `Choose ${copy.name}`}
+                    {selected ? 'Current plan' : !storeReady || !product ? 'Purchases unavailable' : `Choose ${copy.name}`}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -320,7 +343,12 @@ export default function SubscriptionScreen() {
           )}
         </TouchableOpacity>
 
+        <View style={{flexDirection:'row',justifyContent:'center',gap:24,marginTop:12}}>
+          {['privacy','terms'].map(page=><TouchableOpacity key={page} accessibilityRole="link" onPress={()=>Linking.openURL(API_URL.replace(/\/api\/?$/,'')+'/'+page).catch(()=>Alert.alert('Unable to open page','Please open '+page+' from the website.'))}><Text style={styles.restoreText}>{page==='privacy'?'Privacy policy':'Terms of use'}</Text></TouchableOpacity>)}
+        </View>
         <Text style={styles.legal}>
+          More than 110 active accounts? Contact support for a company plan.
+          {'\n'}
           Payment is charged by {Platform.OS === 'ios' ? 'Apple' : Platform.OS === 'android' ? 'Google Play' : 'your app store'}.
           Subscriptions renew automatically unless cancelled in your store account. Purchases are activated only after secure server verification.
         </Text>

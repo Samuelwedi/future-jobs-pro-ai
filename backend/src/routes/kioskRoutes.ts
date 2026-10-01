@@ -37,6 +37,10 @@ router.get('/users', async (req: Request, res: Response) => {
 // GET /api/kiosk/status/:companyId – check if kiosk is enabled
 router.get('/status/:companyId', async (req: Request, res: Response) => {
   try {
+    const actor = await kioskManager(req);
+    if (String(req.params.companyId) !== String(actor.company_id)) {
+      return res.status(403).json({ success: false, message: 'Company access denied' });
+    }
     const result = await pool.query(
       `SELECT COALESCE(NULLIF(to_jsonb(companies)->>'kiosk_enabled','')::boolean,FALSE) kiosk_enabled
        FROM companies WHERE id = $1`,
@@ -55,20 +59,27 @@ router.get('/status/:companyId', async (req: Request, res: Response) => {
 // POST /api/kiosk/clock-in
 router.post('/clock-in', async (req: Request, res: Response) => {
   try {
+    const actor = await kioskManager(req);
     const { pin, projectId, latitude, longitude } = req.body;
     if (!pin || !projectId) {
       return res.status(400).json({ success: false, message: 'PIN and projectId are required' });
     }
 
     const userResult = await pool.query(
-      'SELECT u.id, u.first_name, u.last_name, u.company_id FROM users u WHERE u.pin = $1 AND u.is_active = true',
-      [pin]
+      'SELECT u.id, u.first_name, u.last_name, u.company_id FROM users u WHERE u.pin = $1 AND u.company_id=$2 AND u.is_active = true',
+      [pin, actor.company_id]
     );
     if (userResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Invalid PIN' });
     }
 
     const user = userResult.rows[0];
+
+    const project = await pool.query(
+      'SELECT id FROM projects WHERE id=$1 AND company_id=$2',
+      [projectId, actor.company_id],
+    );
+    if (!project.rowCount) return res.status(400).json({ success: false, message: 'Invalid project' });
 
     const companyResult = await pool.query(
       `SELECT COALESCE(NULLIF(to_jsonb(companies)->>'kiosk_enabled','')::boolean,FALSE) kiosk_enabled
@@ -102,14 +113,15 @@ router.post('/clock-in', async (req: Request, res: Response) => {
 // POST /api/kiosk/clock-out
 router.post('/clock-out', async (req: Request, res: Response) => {
   try {
+    const actor = await kioskManager(req);
     const { pin, latitude, longitude } = req.body;
     if (!pin) {
       return res.status(400).json({ success: false, message: 'PIN is required' });
     }
 
     const userResult = await pool.query(
-      'SELECT u.id, u.first_name, u.last_name, u.company_id FROM users u WHERE u.pin = $1 AND u.is_active = true',
-      [pin]
+      'SELECT u.id, u.first_name, u.last_name, u.company_id FROM users u WHERE u.pin = $1 AND u.company_id=$2 AND u.is_active = true',
+      [pin, actor.company_id]
     );
     if (userResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Invalid PIN' });

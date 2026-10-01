@@ -1,0 +1,23 @@
+Future Jobs Pro AI 1.2.1 — source validation, 2026-09-30
+
+Backend release tests: 100 passed, 0 failed (embedded PostgreSQL; provider API mocks).
+Web TypeScript + Vite production build: passed.
+Mobile TypeScript: passed.
+Android and iOS Expo JavaScript/Hermes exports: passed.
+Expo Doctor: 20/20 checks passed.
+Production dependency audits: backend 0, web 0, mobile 0 vulnerabilities at validation time.
+Release JavaScript utilities: syntax checked; missing configuration correctly fails closed.
+
+Not executed here: Windows PowerShell scripts, Docker image build, actual production migration,
+Railway deployment, signed EAS native builds, store submissions or device purchase tests.
+No account credentials or environment files are included. No live money was moved.
+Direct-deposit mutations and adapter registration are disabled.
+Editable company rules and manual-payment recording are included.
+Reference engine: limited Alberta/CAD regular-wage 2026 calculations; independent review required.
+Worldwide company-configured formulas and reviewed manual inputs: 249 country/territory codes, 165 currency units.
+No prefilled worldwide tax rules, automated filings, remittances or live payments.
+Worldwide payroll validation is incomplete.
+
+Read RELEASE-1.2.1.md and begin with scripts/Release-1.2.1.ps1 -Stage Validate, then -Stage Check.
+Account configuration and the production dry run are required before deployment.
+This is not a claim of public-store approval or unlimited capacity/profitability.

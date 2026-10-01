@@ -18,9 +18,7 @@ import {
   Grid,
   Typography,
 } from '@mui/material';
-
-const API_BASE = ((import.meta.env as any).VITE_API_URL ||
-  'https://future-jobs-pro-ai-production.up.railway.app').replace(/\/$/, '');
+import { API_BASE } from '../services/api';
 
 type Provider = 'quickbooks' | 'stripe';
 type ProviderStatus = { connected: boolean; accountId?: string; updatedAt?: string };

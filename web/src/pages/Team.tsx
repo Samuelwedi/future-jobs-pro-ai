@@ -7,8 +7,7 @@ import {
 } from '@mui/material';
 import { Groups, Edit } from '@mui/icons-material';
 import ResourceAttachments from '../components/ResourceAttachments';
-
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 export default function Team() {
   const [members, setMembers] = useState<any[]>([]);

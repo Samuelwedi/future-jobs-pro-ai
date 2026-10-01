@@ -1,6 +1,9 @@
-import OAuthClient from 'intuit-oauth';
 import { pool } from '../config/database';
 import { decrypt, encrypt } from './encryptionService';
+import {
+  callQuickBooksApi,
+  refreshQuickBooksAccessToken,
+} from './quickbooksOAuth';
 
 type QuickBooksTokens = {
   accessToken: string;
@@ -37,18 +40,6 @@ function environment(): 'sandbox' | 'production' {
   return process.env.QUICKBOOKS_ENVIRONMENT === 'production'
     ? 'production'
     : 'sandbox';
-}
-
-function oauthClient(
-  token?: Record<string, unknown>,
-): OAuthClient {
-  return new OAuthClient({
-    clientId: required('QUICKBOOKS_CLIENT_ID'),
-    clientSecret: required('QUICKBOOKS_CLIENT_SECRET'),
-    environment: environment() as any,
-    redirectUri: required('QUICKBOOKS_REDIRECT_URI'),
-    ...(token ? { token } : {}),
-  });
 }
 
 async function getValidToken(
@@ -107,12 +98,10 @@ async function getValidToken(
       );
     }
 
-    const response =
-      await oauthClient().refreshUsingToken(
+    const refreshed =
+      await refreshQuickBooksAccessToken(
         refreshToken,
       );
-
-    const refreshed = response.getJson();
 
     accessToken = refreshed.access_token;
     refreshToken =
@@ -147,12 +136,6 @@ async function getValidToken(
   };
 }
 
-function apiBase(): string {
-  return environment() === 'production'
-    ? 'https://quickbooks.api.intuit.com'
-    : 'https://sandbox-quickbooks.api.intuit.com';
-}
-
 async function makeApiCall(
   companyId: string,
   path: string | ((realmId: string) => string),
@@ -167,35 +150,13 @@ async function makeApiCall(
       ? path(realmId)
       : path;
 
-  const client = oauthClient({
-    access_token: accessToken,
+  return callQuickBooksApi(
+    accessToken,
     realmId,
-  });
-
-  const response: any =
-    await client.makeApiCall({
-      url:
-        `${apiBase()}/v3/company/` +
-        `${realmId}/${resolvedPath}`,
-      method,
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      ...(body === undefined
-        ? {}
-        : {
-            body: JSON.stringify(body),
-          }),
-    });
-
-  if (
-    typeof response.getJson === 'function'
-  ) {
-    return response.getJson();
-  }
-
-  return response.json || response;
+    resolvedPath,
+    method,
+    body,
+  );
 }
 
 function escapeQuickBooksQuery(

@@ -22,11 +22,18 @@
         "autoIncrement": true
       },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "autoIncrement": true
       }
     }
   },
   "submit": {
+    "closed-test": {
+      "android": {
+        "track": "alpha",
+        "releaseStatus": "draft"
+      }
+    },
     "production": {}
   }
 }

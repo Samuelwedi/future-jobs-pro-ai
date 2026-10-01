@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
+import {companyActor,manages} from '../middleware/companyActor';
 import {
   compileT4Slip,
   compileT4ASlip,
@@ -8,6 +9,17 @@ import {
 } from '../services/yearEndService';
 
 const router = express.Router();
+// Global company-defined deductions are not mapped to Canadian statutory form boxes.
+router.use(['/preview','/finalize'],companyActor,async(req,res,next)=>{
+ if(!manages(res.locals.actor))return res.status(403).json({success:false,message:'Payroll manager access required'});
+ try{
+  const company=res.locals.actor.company_id;
+  const rules=await pool.query('SELECT rules FROM company_payroll_rule_versions WHERE company_id=$1 ORDER BY revision DESC LIMIT 1',[company]);
+  const globalRecords=await pool.query("SELECT pi.id FROM payroll_items pi JOIN payrolls p ON p.id=pi.payroll_id WHERE p.company_id=$1 AND pi.calculation_snapshot->>'engine'='company_rules_v1' LIMIT 1",[company]);
+  if(rules.rows[0]?.rules?.engine==='company_rules_v1'||globalRecords.rowCount)return res.status(409).json({success:false,message:'Statutory year-end form generation is not implemented for company-configured worldwide payroll. Use your local filing process.'});
+  next();
+ }catch{return res.status(503).json({success:false,message:'Could not verify payroll jurisdiction before generating tax forms'});}
+});
 
 // ─── Helper: get company ID ──────────────────────────────────────
 const getCompanyId = async (req: Request): Promise<string | null> => {

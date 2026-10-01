@@ -3,30 +3,41 @@
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
-import { Pool } from 'pg';
+import { Pool, PoolConfig } from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 // On Railway, use the DATABASE_URL with SSL; locally, use individual env vars
-const poolConfig = process.env.DATABASE_URL
+const integerEnv = (name: string, fallback: number): number => {
+  const parsed = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const sslEnabled = process.env.DB_SSL
+  ? process.env.DB_SSL.toLowerCase() !== 'false'
+  : Boolean(process.env.DATABASE_URL);
+
+const poolConfig: PoolConfig = process.env.DATABASE_URL
   ? {
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
+      ssl: sslEnabled ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED === 'true' } : false,
     }
   : {
       host: process.env.DB_HOST || 'localhost',
       port: parseInt(process.env.DB_PORT || '5432'),
       user: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'SamuelDB2024!',
+      password: process.env.DB_PASSWORD || '',
       database: process.env.DB_NAME || 'futurejobspro_samuel',
     };
 
 export const pool = new Pool({
   ...poolConfig,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  max: integerEnv('DB_POOL_MAX', 20),
+  idleTimeoutMillis: integerEnv('DB_IDLE_TIMEOUT_MS', 30000),
+  connectionTimeoutMillis: integerEnv('DB_CONNECT_TIMEOUT_MS', 5000),
+  query_timeout: integerEnv('DB_QUERY_TIMEOUT_MS', 15000),
+  statement_timeout: integerEnv('DB_STATEMENT_TIMEOUT_MS', 15000),
 });
 
 pool.on('connect', () => {
@@ -35,7 +46,13 @@ pool.on('connect', () => {
 
 pool.on('error', (err) => {
   console.error('❌ Database error:', err);
-  process.exit(-1);
+});
+
+export const databasePoolStats = () => ({
+  total: pool.totalCount,
+  idle: pool.idleCount,
+  waiting: pool.waitingCount,
+  max: integerEnv('DB_POOL_MAX', 20),
 });
 
 export const query = async (text: string, params?: any[]) => {

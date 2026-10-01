@@ -5,8 +5,7 @@ import {
   Avatar, Checkbox, Button, CircularProgress,
 } from '@mui/material';
 import { Search } from '@mui/icons-material';
-
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 interface Employee {
   id: string;

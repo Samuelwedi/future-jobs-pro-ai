@@ -1,8 +1,11 @@
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
+import { companyActor,manages } from '../middleware/companyActor';
 
 const router = express.Router();
+router.use(companyActor);
+router.use((_req,res,next)=>{if(!manages(res.locals.actor))return res.status(403).json({message:'Manager access required'});next();});
 
 // ─── Helper ───────────────────────────────────────────────────────
 const getCompanyId = async (req: Request): Promise<string | null> => {
@@ -52,6 +55,43 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 // ─── GET /api/invoices/:id ──────────────────────────────────────
+router.get('/unbilled', async (req: Request, res: Response) => {
+  try {
+    const companyId = await getCompanyId(req);
+    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+
+    const { projectId } = req.query;
+    if (!projectId) {
+      return res.status(400).json({ success: false, message: 'projectId required' });
+    }
+
+    const result = await pool.query(
+      `SELECT te.id, te.project_id, te.user_id,
+              u.first_name || ' ' || u.last_name as employee_name,
+              te.clock_in, te.clock_out,
+              te.regular_hours, te.overtime_hours,
+              (te.regular_hours + te.overtime_hours) as total_hours,
+              te.total_wage as amount
+       FROM time_entries te
+       JOIN users u ON te.user_id = u.id
+       WHERE te.project_id = $1 AND u.company_id=$2
+         AND te.status = 'completed'
+         AND NOT EXISTS (
+           SELECT 1 FROM invoice_items ii
+           WHERE ii.time_entry_ids @> ARRAY[te.id]
+         )
+       ORDER BY te.clock_in`,
+      [projectId,companyId]
+    );
+
+    res.json({ success: true, unbilled: result.rows });
+  } catch (error) {
+    console.error('Error fetching unbilled:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
@@ -95,42 +135,6 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // ─── GET /api/invoices/unbilled ─────────────────────────────────
-router.get('/unbilled', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { projectId } = req.query;
-    if (!projectId) {
-      return res.status(400).json({ success: false, message: 'projectId required' });
-    }
-
-    const result = await pool.query(
-      `SELECT te.id, te.project_id, te.user_id,
-              u.first_name || ' ' || u.last_name as employee_name,
-              te.clock_in, te.clock_out,
-              te.regular_hours, te.overtime_hours,
-              (te.regular_hours + te.overtime_hours) as total_hours,
-              te.total_wage as amount
-       FROM time_entries te
-       JOIN users u ON te.user_id = u.id
-       WHERE te.project_id = $1
-         AND te.status = 'completed'
-         AND NOT EXISTS (
-           SELECT 1 FROM invoice_items ii
-           WHERE ii.time_entry_ids @> ARRAY[te.id]
-         )
-       ORDER BY te.clock_in`,
-      [projectId]
-    );
-
-    res.json({ success: true, unbilled: result.rows });
-  } catch (error) {
-    console.error('Error fetching unbilled:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-});
-
 // ─── POST /api/invoices ─────────────────────────────────────────
 router.post('/', async (req: Request, res: Response) => {
   const client = await pool.connect();
@@ -157,6 +161,10 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'issueDate, dueDate, and items required' });
     }
 
+    await client.query('BEGIN');
+    if(projectId){const own=await client.query('SELECT id FROM projects WHERE id=$1 AND company_id=$2',[projectId,companyId]);if(!own.rowCount)throw new Error('Project outside company');}
+    if(clientId){const own=await client.query('SELECT id FROM users WHERE id=$1 AND company_id=$2',[clientId,companyId]);if(!own.rowCount)throw new Error('Client outside company');}
+    for(const item of items){if(!Number.isFinite(Number(item.unit_price))||Number(item.unit_price)<0||!Number.isFinite(Number(item.quantity??1))||Number(item.quantity??1)<=0)throw new Error('Invalid invoice line');const ids=item.timeEntryIds||[];if(ids.length){const own=await client.query('SELECT t.id FROM time_entries t JOIN users u ON u.id=t.user_id WHERE t.id=ANY($1::uuid[]) AND u.company_id=$2',[ids,companyId]);if(own.rowCount!==new Set(ids).size)throw new Error('Time entry outside company');}}
     // If clientId not provided, try to get from project
     let finalClientId = clientId || null;
     if (!finalClientId && projectId) {

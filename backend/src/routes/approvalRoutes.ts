@@ -1,6 +1,7 @@
 import { verifyToken } from '../utils/auth';
 import express, { Request } from 'express';
 import { pool } from '../config/database';
+import { resolveCompanyPayPeriod } from '../services/lucyPayrollService';
 import { generatePayroll } from '../services/payrollGenerator';
 
 const router = express.Router();
@@ -36,7 +37,8 @@ async function executeApprovedAction(approval: any, actor: { id: string; company
   if (!managerRoles.has(actor.role)) throw new Error('Manager access is required');
   if (payload.companyId && String(payload.companyId) !== actor.companyId) throw new Error('Approval belongs to another company');
   if (approval.action_type !== 'run_payroll') throw new Error(`Approved action ${approval.action_type} does not yet have a safe executor`);
-  const range = payrollRange(String(payload.period || ''));
+  const range = await resolveCompanyPayPeriod(actor.companyId, typeof payload.period === 'object' ? `${payload.period.start} through ${payload.period.end}` : String(payload.period || 'this pay period'));
+  if(Date.now()-new Date(approval.created_at).getTime()>15*60*1000) throw new Error('Proposal expired; ask Lucy to prepare it again');
   const result = await generatePayroll(actor.companyId, range.start, range.end, actor.id);
   return { type: 'run_payroll', title: 'Payroll generated', status: 'completed', summary: `Payroll for ${range.label} was generated for ${result.employeeCount} employees.`, details: [
     { label: 'Payroll ID', value: result.payrollId }, { label: 'Period start', value: range.start }, { label: 'Period end', value: range.end },

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import {
   Alert, Avatar, Box, Button, Container, Typography, TextField, IconButton, Paper, CircularProgress, Stack,
@@ -32,52 +32,84 @@ export default function Chat() {
   const socketRef = useRef<Socket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const mergeMessages = useCallback((incoming: Message[]) => {
+    setMessages(current => {
+      const byId = new Map(current.map(message => [message.id, message]));
+      incoming.forEach(message => byId.set(message.id, { ...byId.get(message.id), ...message }));
+      return [...byId.values()].sort((left, right) =>
+        new Date(left.created_at).getTime() - new Date(right.created_at).getTime());
+    });
+  }, []);
+
   useEffect(() => {
     if (!roomId) { setLoading(false); setError('No conversation was selected.'); return; }
 
-    const fetchMessages = async () => {
+    let active = true;
+    const fetchMessages = async (quiet = false) => {
       try {
         const res = await fetch(`${API_BASE}/api/chat/room/${roomId}`, {
           headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || 'Conversation could not be loaded');
-        if (data.messages) setMessages(data.messages);
-      } catch (e: any) { setError(e.message || 'Conversation could not be loaded'); }
-      finally { setLoading(false); }
+        if (active && Array.isArray(data.messages)) mergeMessages(data.messages);
+      } catch (e: any) {
+        if (active && !quiet) setError(e.message || 'Conversation could not be loaded');
+      } finally { if (active && !quiet) setLoading(false); }
     };
-    fetchMessages();
+    void fetchMessages();
 
     const socket = io(WS_URL, {
-      transports: ['websocket'],
+      // Allow Socket.IO to fall back to HTTP polling on browsers or networks
+      // that block a direct WebSocket upgrade.
+      transports: ['websocket', 'polling'],
       auth: { token },
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 5000,
     });
     socketRef.current = socket;
     socket.on('connect', () => {
       setConnected(true);
       socket.emit('join-room', roomId, (result: any) => {
         if (result && !result.success) setError(result.message || 'Could not join this conversation');
+        else void fetchMessages(true);
       });
     });
     socket.on('disconnect', () => setConnected(false));
     socket.on('connect_error', (socketError) => setError(socketError.message));
     socket.on('new-message', (msg: Message) => {
-      setMessages(prev => prev.some(item => item.id === msg.id) ? prev : [...prev, msg]);
+      mergeMessages([msg]);
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     });
 
+    // Reconcile missed events without requiring a page refresh. This also
+    // covers laptop sleep, mobile hotspot changes, and proxy idle timeouts.
+    const poll = window.setInterval(() => void fetchMessages(true), 5000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void fetchMessages(true);
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshWhenVisible);
+
     return () => {
+      active = false;
+      window.clearInterval(poll);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('focus', refreshWhenVisible);
       socket.emit('leave-room', roomId);
       socket.disconnect();
     };
-  }, [roomId, token]);
+  }, [roomId, token, mergeMessages]);
 
   const sendMessage = async () => {
     const message=input.trim();if(!message||!roomId)return;
     try{
       const response=await fetch(`${API_BASE}/api/chat/message`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({roomId,message})});
       const data=await response.json();if(!response.ok)throw new Error(data.message||'Message was not delivered');
-      setMessages(prev=>prev.some(item=>item.id===data.message.id)?prev:[...prev,data.message]);setInput('');
+      mergeMessages([data.message]);setInput('');
     }catch(cause:any){setError(cause.message||'Message was not delivered');}
   };
 

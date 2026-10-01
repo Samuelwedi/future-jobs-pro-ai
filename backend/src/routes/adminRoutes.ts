@@ -1,21 +1,25 @@
-import { verifyToken } from '../utils/auth';
 // ============================================
 // ADMIN PANEL ROUTES
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
 import express, { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { pool } from '../config/database';
 import { recordSyncCorrection } from '../services/adaptiveAIService';
 
 const router = express.Router();
 
 // ----- Simple admin key middleware -----
-const ADMIN_KEY = process.env.ADMIN_API_KEY || 'admin-secret-key-change-me';
-
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const key = req.headers['x-admin-key'];
-  if (key !== ADMIN_KEY) {
+  const ADMIN_KEY = process.env.ADMIN_API_KEY?.trim();
+  if (!ADMIN_KEY || ADMIN_KEY.length < 32) {
+    return res.status(503).json({ success: false, message: 'Admin API is not configured' });
+  }
+  const key = typeof req.headers['x-admin-key'] === 'string' ? req.headers['x-admin-key'] : '';
+  const expected = Buffer.from(ADMIN_KEY);
+  const received = Buffer.from(key);
+  if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
     return res.status(403).json({ success: false, message: 'Forbidden: invalid admin key' });
   }
   next();
@@ -30,7 +34,8 @@ router.use(requireAdmin);
 router.get('/companies', async (req: Request, res: Response) => {
   try {
     const result = await pool.query(`
-      SELECT c.*,
+      SELECT c.id, c.name, c.created_at, c.subscription_tier, c.subscription_status,
+             c.subscription_provider, c.subscription_current_period_end,
         (SELECT COUNT(*) FROM users WHERE company_id = c.id) as user_count
       FROM companies c
       ORDER BY c.created_at DESC
@@ -48,7 +53,9 @@ router.get('/companies', async (req: Request, res: Response) => {
 router.get('/users', async (req: Request, res: Response) => {
   try {
     const result = await pool.query(`
-      SELECT u.*, c.name as company_name
+      SELECT u.id, u.email, u.first_name, u.last_name, u.full_name, u.role,
+             u.company_id, u.is_active, u.created_at, u.last_login,
+             c.name as company_name
       FROM users u
       LEFT JOIN companies c ON u.company_id = c.id
       ORDER BY u.created_at DESC
@@ -111,7 +118,8 @@ router.get('/sync-logs', async (req: Request, res: Response) => {
       query += ` AND sl.status = $${params.length}`;
     }
     query += ` ORDER BY sl.created_at DESC LIMIT $${params.length + 1}`;
-    params.push(parseInt(limit as string));
+    const parsedLimit = Number.parseInt(String(limit), 10);
+    params.push(Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 200) : 50);
 
     const result = await pool.query(query, params);
     res.json({ success: true, logs: result.rows });

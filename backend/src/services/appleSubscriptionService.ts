@@ -3,15 +3,17 @@ import {
   AutoRenewStatus,
   NotificationTypeV2,
   SignedDataVerifier,
+  AppStoreServerAPIClient,
   type JWSTransactionDecodedPayload,
 } from '@apple/app-store-server-library';
 import { pool } from '../config/database';
+import { STORE_PLANS, applyPlanAllowance } from '../config/billingPlans';
 
-const PLAN_BY_PRODUCT = new Map<string, 'basic' | 'professional' | 'enterprise'>([
-  ['com.samuel33.futurejobspro.basic_monthly', 'basic'],
-  ['com.samuel33.futurejobspro.professional_monthly', 'professional'],
-  ['com.samuel33.futurejobspro.enterprise_monthly', 'enterprise'],
-]);
+const PLAN_BY_PRODUCT = STORE_PLANS;
+export function appleBillingReady():boolean {
+ return Boolean((process.env.APPLE_ROOT_CA_G2_BASE64 || process.env.APPLE_ROOT_CA_G3_BASE64) &&
+  process.env.APPLE_APP_ID && process.env.APPLE_IAP_PRIVATE_KEY && process.env.APPLE_IAP_KEY_ID && process.env.APPLE_IAP_ISSUER_ID);
+}
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -116,16 +118,45 @@ async function persistAppleEntitlement(args: {
   cancelAtPeriodEnd?: boolean;
   notificationUpdate?: boolean;
 }) {
-  const {
+  let {
     companyId, userId, environment, transaction, status, notificationUUID,
     cancelAtPeriodEnd = false, notificationUpdate = false,
   } = args;
-  const productId = String(transaction.productId);
-  const plan = PLAN_BY_PRODUCT.get(productId)!;
-  const expiresAt = transaction.expiresDate ? new Date(transaction.expiresDate) : null;
+  let productId = String(transaction.productId);
+  let plan = PLAN_BY_PRODUCT.get(productId)!;
+  let expiresAt = transaction.expiresDate ? new Date(transaction.expiresDate) : null;
   const client = await pool.connect();
   try {
+    if(environment===Environment.SANDBOX && !(process.env.APPLE_IAP_SANDBOX_COMPANY_IDS || '').split(',').map(s=>s.trim()).includes(companyId))
+      throw new Error('Apple sandbox purchases are not allowed for this company');
     await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['apple:'+transaction.originalTransactionId]);
+    const company=await client.query('SELECT * FROM companies WHERE id=$1 FOR UPDATE',[companyId]);
+    if (!company.rowCount) throw new Error('Company was not found');
+    const api=new AppStoreServerAPIClient(required('APPLE_IAP_PRIVATE_KEY').replace(/\\n/g,'\n'),required('APPLE_IAP_KEY_ID'),
+      required('APPLE_IAP_ISSUER_ID'),process.env.APPLE_IAP_BUNDLE_ID?.trim() || 'com.samuel33.futurejobspro',environment);
+    const current=await api.getAllSubscriptionStatuses(String(transaction.originalTransactionId));
+    const item=current.data?.flatMap(group=>group.lastTransactions || []).find(item=>item.originalTransactionId===transaction.originalTransactionId);
+    if (!item?.signedTransactionInfo) throw new Error('Apple current subscription was not found');
+    const latest=await verifier(environment).verifyAndDecodeTransaction(item.signedTransactionInfo);
+    validateTransaction(latest,notificationUpdate ? undefined : productId,notificationUpdate ? undefined : userId || undefined);
+    if(latest.originalTransactionId!==transaction.originalTransactionId) throw new Error('Apple subscription identity mismatch');
+    const renewal=item.signedRenewalInfo ? await verifier(environment).verifyAndDecodeRenewalInfo(item.signedRenewalInfo) : null;
+    transaction=latest;productId=String(latest.productId);plan=PLAN_BY_PRODUCT.get(productId)!;
+    status=statusFromAppleStatus(item.status,latest);
+    expiresAt=new Date(status==='grace_period' && renewal?.gracePeriodExpiresDate ? renewal.gracePeriodExpiresDate : latest.expiresDate || 0);
+    if (latest.revocationDate) status='revoked';
+    else if (!Number.isFinite(expiresAt.getTime()) || expiresAt.getTime()<=Date.now()) status='expired';
+    else if (status==='grace_period') status='active';
+    cancelAtPeriodEnd=renewal?.autoRenewStatus===AutoRenewStatus.OFF;
+    if (!notificationUpdate) {
+      if(status!=='active') throw new Error(`Apple subscription is ${status}`);
+      const c=company.rows[0],end=c.subscription_current_period_end || c.subscription_expires_at;
+      if(c.subscription_provider && !['apple','internal'].includes(c.subscription_provider) && ['active','trialing'].includes(c.subscription_status) && (!end || new Date(end).getTime()>Date.now()))
+        throw new Error('Manage the existing subscription before changing billing provider');
+      if(c.subscription_provider==='apple' && c.apple_original_transaction_id && c.apple_original_transaction_id!==latest.originalTransactionId && c.subscription_status==='active' && (!end || new Date(end).getTime()>Date.now()))
+        throw new Error('Restore the current Apple subscription before starting another');
+    }
     const owner = await client.query(
       `SELECT company_id FROM mobile_subscription_transactions
        WHERE provider = 'apple' AND original_transaction_id = $1
@@ -164,11 +195,18 @@ async function persistAppleEntitlement(args: {
          subscription_current_period_end = $3,
          subscription_expires_at = $3,
          subscription_cancel_at_period_end = $4,
+         apple_original_transaction_id = $7,
          subscription_updated_at = NOW()
        WHERE id = $5
-         AND ($6::boolean = FALSE OR subscription_provider IS NULL OR subscription_provider = 'apple')`,
-      [plan, status, expiresAt, cancelAtPeriodEnd, companyId, notificationUpdate],
+         AND ($6::boolean = FALSE OR (subscription_provider = 'apple' AND
+           (apple_original_transaction_id IS NULL OR apple_original_transaction_id=$7)))`,
+      [plan, status, expiresAt, cancelAtPeriodEnd, companyId, notificationUpdate,transaction.originalTransactionId],
     );
+    if (!notificationUpdate) await applyPlanAllowance(client,companyId,plan);
+    else {
+      const current=await client.query('SELECT subscription_provider,subscription_tier,apple_original_transaction_id FROM companies WHERE id=$1',[companyId]);
+      if (current.rows[0]?.subscription_provider==='apple' && current.rows[0]?.subscription_tier===plan && current.rows[0]?.apple_original_transaction_id===transaction.originalTransactionId) await applyPlanAllowance(client,companyId,plan);
+    }
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -198,7 +236,6 @@ export async function verifyApplePurchase(args: {
   const transaction = await verifier(environment).verifyAndDecodeTransaction(args.signedTransaction);
   validateTransaction(transaction, args.productId, args.userId);
   const status = statusFromTransaction(transaction);
-  if (status !== 'active') throw new Error(`Apple subscription is ${status}`);
   return persistAppleEntitlement({ companyId: args.companyId, userId: args.userId, environment, transaction, status });
 }
 

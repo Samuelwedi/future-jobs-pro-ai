@@ -11,8 +11,7 @@ import {
   CheckCircle, Cancel, TrendingUp, Description,
   PictureAsPdf, TableChart, FilePresent,
 } from '@mui/icons-material';
-
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 // ─── Types ────────────────────────────────────────────────────────
 interface EstimateItem {

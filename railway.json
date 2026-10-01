@@ -1,6 +1,6 @@
 {
   "build": {
-    "builder": "RAILPACK",
-    "rootDirectory": "backend"
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
   }
 }

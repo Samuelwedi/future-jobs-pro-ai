@@ -14,6 +14,11 @@ import {
 } from '../services/gpsService';
 
 const router = express.Router();
+router.use(async (req, res, next) => {
+ try { const token=verifyToken(req); const found=await pool.query("SELECT id,company_id,LOWER(role) role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE",[token.id]);
+ if (!found.rows[0]?.company_id) return res.status(401).json({success:false,message:'Not authenticated'});
+ (req as any).actor=found.rows[0]; next(); } catch {res.status(401).json({success:false,message:'Not authenticated'});}
+});
 
 // GET /api/gps/employees - manager-safe employee picker for trail history.
 router.get('/employees', async (req: Request, res: Response) => {
@@ -81,14 +86,18 @@ router.post('/update', async (req: Request, res: Response) => {
     const { userId, timeEntryId, projectId, latitude, longitude,
             accuracy, altitude, speed, heading, batteryLevel } = req.body;
 
-    if (!userId || !timeEntryId || !projectId || !latitude || !longitude) {
+    if (!userId || !timeEntryId || !projectId || latitude == null || longitude == null || !Number.isFinite(Number(latitude)) || !Number.isFinite(Number(longitude)) || Math.abs(Number(latitude)) > 90 || Math.abs(Number(longitude)) > 180) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
+    const current=(req as any).actor;
+    const entry=await pool.query('SELECT te.id FROM time_entries te JOIN projects p ON p.id=te.project_id WHERE te.id=$1 AND te.user_id=$2 AND te.project_id=$3 AND te.clock_out IS NULL AND p.company_id=$4',[timeEntryId,current.id,projectId,current.company_id]);
+    if(String(userId)!==String(current.id)||!entry.rowCount)return res.status(403).json({success:false,message:'GPS must belong to your active shift'});
     const point = await recordGPSPoint({
       userId, timeEntryId, projectId,
       latitude: parseFloat(latitude), longitude: parseFloat(longitude),
-      accuracy: accuracy ? parseFloat(accuracy) : 10,
+      accuracy: accuracy != null ? Math.max(0,Number(accuracy)) : undefined,
+      capturedAt: req.body.capturedAt && Number.isFinite(Date.parse(req.body.capturedAt)) && Math.abs(Date.now()-Date.parse(req.body.capturedAt)) < 86400000 ? new Date(req.body.capturedAt).toISOString() : undefined,
       altitude: altitude ? parseFloat(altitude) : undefined,
       speed: speed ? parseFloat(speed) : undefined,
       heading: heading ? parseInt(heading) : undefined,
@@ -139,6 +148,9 @@ router.get('/trail/:timeEntryId', async (req: Request, res: Response) => {
 // GET /api/gps/confidence/:timeEntryId
 router.get('/confidence/:timeEntryId', async (req: Request, res: Response) => {
   try {
+    const current=(req as any).actor;
+    const found=await pool.query('SELECT te.user_id FROM time_entries te JOIN users u ON u.id=te.user_id WHERE te.id=$1 AND u.company_id=$2',[req.params.timeEntryId,current.company_id]);
+    if(!found.rowCount || (String(found.rows[0].user_id)!==String(current.id) && !['boss','manager','admin'].includes(current.role))) return res.status(403).json({success:false,message:'GPS access denied'});
     const confidence = await getArrivalConfidence(req.params.timeEntryId as string);
     res.json({ success: true, ...confidence });
   } catch (error: any) {
@@ -150,6 +162,8 @@ router.get('/confidence/:timeEntryId', async (req: Request, res: Response) => {
 router.get('/active/:companyId', async (req: Request, res: Response) => {
   try {
     const companyId = req.params.companyId as string;
+    const current=(req as any).actor;
+    if(String(current.company_id)!==companyId || !['boss','manager','admin'].includes(current.role)) return res.status(403).json({success:false,message:'Manager access to your company is required'});
 
     // Fetch active employees (with clock_out IS NULL) and their latest GPS point
     const result = await pool.query(
@@ -193,7 +207,7 @@ router.get('/active/:companyId', async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('GPS active error:', error.message);
     // Fallback – return empty list
-    res.json({ success: true, count: 0, employees: [] });
+    res.status(503).json({ success: false, message: 'Crew locations are temporarily unavailable' });
   }
 });
 
@@ -205,7 +219,7 @@ router.get('/tracking/:userId', async (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer '))
       return res.status(401).json({ success: false, message: 'Not authenticated' });
-    
+
     const decoded = verifyToken(req);
     if (decoded.id !== userId) {
       const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
@@ -224,7 +238,7 @@ router.get('/tracking/:userId', async (req: Request, res: Response) => {
     let query = 'SELECT * FROM gps_tracking WHERE user_id = $1';
     const params: any[] = [userId];
     if (start) { query += ' AND timestamp >= $2'; params.push(start); }
-    if (end)   { query += ' AND timestamp <= $3'; params.push(end); }
+    if (end) { params.push(end); query += ` AND timestamp <= $${params.length}`; }
     query += ' ORDER BY timestamp ASC';
     const result = await pool.query(query, params);
     res.json({ success: true, tracking: result.rows });

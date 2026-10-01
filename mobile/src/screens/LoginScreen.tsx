@@ -26,6 +26,7 @@ export default function LoginScreen() {
   const navigation = useNavigation<any>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -66,17 +67,33 @@ export default function LoginScreen() {
           autoCapitalize="none"
           keyboardType="email-address"
         />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          placeholderTextColor="#888"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+        <View style={styles.passwordField}>
+          <TextInput
+            style={[styles.input, styles.passwordInput]}
+            placeholder="Password"
+            placeholderTextColor="#888"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+            textContentType="password"
+            onSubmitEditing={handleLogin}
+          />
+          <TouchableOpacity
+            style={styles.passwordToggle}
+            onPress={() => setShowPassword(value => !value)}
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+            accessibilityState={{ checked: showPassword }}
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <MaterialIcons name={showPassword ? 'visibility-off' : 'visibility'} size={22} color="#A8B5C7" />
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity style={styles.forgotLink} onPress={() => navigation.navigate('ForgotPassword')} disabled={isLoading}><Text style={styles.forgotText}>Forgot password?</Text></TouchableOpacity>
         <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={isLoading}>
           {isLoading ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.buttonText}>Sign In</Text>}
         </TouchableOpacity>
+        <TouchableOpacity style={styles.signupButton} onPress={() => navigation.navigate('Register')} disabled={isLoading}><Text style={styles.signupText}>New to Future Jobs Pro AI? <Text style={styles.signupAccent}>Sign Up</Text></Text></TouchableOpacity>
         <TouchableOpacity style={styles.demoButton} onPress={() => navigation.navigate('Demo')} disabled={isLoading}>
           <MaterialIcons name="play-circle-outline" size={22} color="#67E8F9" />
           <Text style={styles.demoButtonText}>Explore the interactive demo</Text>
@@ -104,11 +121,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#1A1A1A', borderRadius: 12, padding: 16, fontSize: 16,
     color: '#FFF', borderWidth: 1, borderColor: '#333', marginBottom: 12,
   },
+  passwordField: { position: 'relative' },
+  passwordInput: { paddingRight: 58 },
+  passwordToggle: { position: 'absolute', right: 4, top: 4, width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   button: {
     backgroundColor: '#00D4FF', borderRadius: 12, padding: 16,
     alignItems: 'center', marginTop: 8,
   },
   buttonText: { color: '#0A0A0A', fontSize: 16, fontWeight: '600' },
+  forgotLink: { alignSelf: 'flex-end', paddingVertical: 4, marginBottom: 4 },
+  forgotText: { color: '#67E8F9', fontSize: 14, fontWeight: '700' },
+  signupButton: { paddingVertical: 16, alignItems: 'center' },
+  signupText: { color: '#A8B5C7', fontSize: 14 },
+  signupAccent: { color: '#67E8F9', fontWeight: '800' },
   demoButton: { borderRadius: 12, padding: 15, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9, marginTop: 12, borderWidth: 1, borderColor: '#164E63', backgroundColor: '#082F49' },
   demoButtonText: { color: '#CFFAFE', fontSize: 15, fontWeight: '700' },
   trustRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: 24, gap: 7 },

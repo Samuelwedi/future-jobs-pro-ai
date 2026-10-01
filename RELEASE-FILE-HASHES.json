@@ -1,0 +1,2273 @@
+{
+    "release":  "1.2.1",
+    "files":  [
+                  {
+                      "path":  ".dockerignore",
+                      "sha256":  "40b7828e5540f26c5865749d8d280ca1b3e364ea27c31d45c50c64bad4ba74af"
+                  },
+                  {
+                      "path":  ".gitignore",
+                      "sha256":  "9482f326335db6862e234c65b52813c621212f80bedb25fa1326d5b073b24da9"
+                  },
+                  {
+                      "path":  ".railwayignore",
+                      "sha256":  "4f055078ba07089a1a40f0e698e7ad9c68018cd9abcad0990bd480115857c37b"
+                  },
+                  {
+                      "path":  "Dockerfile",
+                      "sha256":  "4ad0c12f40b7852ba4132a7eac4cad268e8b38ef51c01f9f211120c5b1223141"
+                  },
+                  {
+                      "path":  "RELEASE-1.2.1-STATUS.txt",
+                      "sha256":  "8f8098d9e9cb6db8ba81ffb5ee5d0b395adf74e636d0333fab9ee3a46ab8060c"
+                  },
+                  {
+                      "path":  "RELEASE-1.2.1.md",
+                      "sha256":  "05a94bbfa7a72c3416666bd806f9514ccfbdfbfd106a62428676ab0b7c9ff0c4"
+                  },
+                  {
+                      "path":  "backend/Dockerfile",
+                      "sha256":  "b830b81f65fddd6b0c74a4da8a5d2101d21b89f653ab50087b050e050d346967"
+                  },
+                  {
+                      "path":  "backend/add-address-column.js",
+                      "sha256":  "db959e4fa5e57b00b401a0c1bb779ddb9e0f3a16f9231910f7f42b543d97fbfe"
+                  },
+                  {
+                      "path":  "backend/add-address-to-projects.js",
+                      "sha256":  "1875fe258f5351ed80f80c415421bb8b36fce839702ce4ab837effbc99874072"
+                  },
+                  {
+                      "path":  "backend/add-approvals-table.js",
+                      "sha256":  "b83dc68c1a182feef611f95817906768838060f9ad4598fff741f90959ca9959"
+                  },
+                  {
+                      "path":  "backend/add-attachment-to-shifts.js",
+                      "sha256":  "e002e63bec5cd099faaaa453814d4fca16f3aa18695805b8514e86b59feb3d30"
+                  },
+                  {
+                      "path":  "backend/add-audio-url-to-voice-notes.js",
+                      "sha256":  "1eda267079af31229bfe25a42b77903fa2fc08d4fbf0a8e972c3b4ed9c51eea8"
+                  },
+                  {
+                      "path":  "backend/add-behavior-table.js",
+                      "sha256":  "221872229babcfdcd2dd8f2369271a0e2d20389e6cadc336c2bbe8491558e93a"
+                  },
+                  {
+                      "path":  "backend/add-column-now.js",
+                      "sha256":  "7506a2fff4cb636c91bb7f67737ae5bc76ddc77218a8785afc3111b754db0637"
+                  },
+                  {
+                      "path":  "backend/add-company-column-timeentries.js",
+                      "sha256":  "15a5894e2296d2482be64064368153717fd73dabfd3a9111e7ef465cbfebc9ff"
+                  },
+                  {
+                      "path":  "backend/add-company-id-to-voice-notes.js",
+                      "sha256":  "1eda267079af31229bfe25a42b77903fa2fc08d4fbf0a8e972c3b4ed9c51eea8"
+                  },
+                  {
+                      "path":  "backend/add-file-type-column.js",
+                      "sha256":  "6e276f6666c8d470b20a73ca23e36181403ace80873c0c7d309d3ed4454704f0"
+                  },
+                  {
+                      "path":  "backend/add-folder-path-to-photos.js",
+                      "sha256":  "f1959fe4c3f707186f662d9b6b6a102b8869991403b4d55f03a69c629e85109b"
+                  },
+                  {
+                      "path":  "backend/add-fullname-final.js",
+                      "sha256":  "9381e37d4d24b37b6a77ab04d86a03a728548ed30a1ff186056f8e7c3c1bee8d"
+                  },
+                  {
+                      "path":  "backend/add-fullname.js",
+                      "sha256":  "cec7e5ac14e4c54bbd4dbb0c2dd950a4860f4a94c0975981aed5fb16a867adbb"
+                  },
+                  {
+                      "path":  "backend/add-last-updated-column.js",
+                      "sha256":  "978ee687b8edab87fc88f6d8a96c8364de4e552a858946f6eff9a3e10f0cea95"
+                  },
+                  {
+                      "path":  "backend/add-media-indexes.js",
+                      "sha256":  "7f45b521e0fb7fa99f19c20778fdb58e40da49c72d00e7b2a6552c80334a6549"
+                  },
+                  {
+                      "path":  "backend/add-missing-columns.js",
+                      "sha256":  "76eaf6983650de1bf543fa0efcc25925d172adef6614fc09a8f23952ac6763e0"
+                  },
+                  {
+                      "path":  "backend/add-missing-patterns-column.js",
+                      "sha256":  "521c47e58bf4a1c72528cb28d43c43f26e64455350cbab517c17efa35bae6320"
+                  },
+                  {
+                      "path":  "backend/add-missing-profile-columns.js",
+                      "sha256":  "02155bbbaffea8bad9a9e7480b3058abe84d7ed1df0b231690d8d2a9fc902305"
+                  },
+                  {
+                      "path":  "backend/add-photos-file-type-column.js",
+                      "sha256":  "6e276f6666c8d470b20a73ca23e36181403ace80873c0c7d309d3ed4454704f0"
+                  },
+                  {
+                      "path":  "backend/add-profile-columns.js",
+                      "sha256":  "3f6e6fab6e725ed3890d6aa20624d70bc1d862e63d410ea76c02d95ac7bfad3a"
+                  },
+                  {
+                      "path":  "backend/add-pto-company.js",
+                      "sha256":  "80ceca6366aab6e44b358fc223a66dab6fb8f6a0fe7773ef3441cd1efd657917"
+                  },
+                  {
+                      "path":  "backend/add-push-token-column.js",
+                      "sha256":  "e08d0b671acc4fb49ee1045f12bc12dbcc3b9037258023b09897319fb665a54c"
+                  },
+                  {
+                      "path":  "backend/add-room-id.js",
+                      "sha256":  "29c20fcd8eb19dadfc17c53adef0786cbe64b0be6d02454f65806deee59a5b27"
+                  },
+                  {
+                      "path":  "backend/add-stripe-columns.js",
+                      "sha256":  "12cbe1ccd5985c7d7a4f462f3bbe6131520b68cb5b7b853877cc36f28b4fc37e"
+                  },
+                  {
+                      "path":  "backend/add-taken-at-to-voice-notes.js",
+                      "sha256":  "64cd1bc7d75c97e851f30e7617e05d142fd83c05379732eec6bfdbf8b5f07f1f"
+                  },
+                  {
+                      "path":  "backend/add-tasks-company.js",
+                      "sha256":  "957a95df70894002fb317fb027c9a75286710f9364f242f06a209185432b7d12"
+                  },
+                  {
+                      "path":  "backend/add-trial-column.js",
+                      "sha256":  "92bb77db8135a9a7cc8ef063f645a8c1775d53912d9b3d9fac1b690d886934d9"
+                  },
+                  {
+                      "path":  "backend/add-trial-fields.js",
+                      "sha256":  "330f37ef1a3cc9520428d23b25f91256e36e542e71a0fb65c95f8ff7c8e54be9"
+                  },
+                  {
+                      "path":  "backend/add-user-rules-table.js",
+                      "sha256":  "77a7ecd4e11b9b78ca0a58bb736130981bdd04ee79f239b055ca2c26bc3f1d60"
+                  },
+                  {
+                      "path":  "backend/add-verification-hash.js",
+                      "sha256":  "380a67a76b00ce36a2e2d2e4034ac70d7d4e4d3acaab156ad82782884a168ef9"
+                  },
+                  {
+                      "path":  "backend/addGpsColumns.js",
+                      "sha256":  "264f579eb3dbab2a1407cdd80b474e8fb0bfc0763561f1f4772e8428fb7fd440"
+                  },
+                  {
+                      "path":  "backend/allow-null-company-id.js",
+                      "sha256":  "b16471a70a02ce97e8fa9a7d458ff58f139ab0e1658d7ffa53a570c10f562579"
+                  },
+                  {
+                      "path":  "backend/assign-company.js",
+                      "sha256":  "ae9947f2b01d1b4ee147e4d64cb86eb79f67afc7368151e1bd93d548153f1137"
+                  },
+                  {
+                      "path":  "backend/cd",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  {
+                      "path":  "backend/check-column.js",
+                      "sha256":  "c9dadaf0f96fc0756e3847aa4d9e96560da825ae7a28ff3933da5231509fcde3"
+                  },
+                  {
+                      "path":  "backend/check-customer.js",
+                      "sha256":  "8ad69d75530a3a67e2e9ef5b27b9055905e2c35f6e7ad9a21b1b26d9e40fe81b"
+                  },
+                  {
+                      "path":  "backend/check-fullname.js",
+                      "sha256":  "ef59477ff5f8ca87340d2bee0139f4de84a7919f5d5a846fe6c76d9b291bdb5b"
+                  },
+                  {
+                      "path":  "backend/check-payroll.js",
+                      "sha256":  "5d226bd6d44d4c9fd1d0388ba5c85bf6b3fddc4148adb7ff372b2a62d2cbe502"
+                  },
+                  {
+                      "path":  "backend/create-ai-table.js",
+                      "sha256":  "78a55a2c2c5ad40aabfef79586cb264fecabcc09177216b6dae432fa4eedf811"
+                  },
+                  {
+                      "path":  "backend/create-chat-table.js",
+                      "sha256":  "8ad5273d85e639630e2123d7912905244d405451ea068dccd11596e8390cb190"
+                  },
+                  {
+                      "path":  "backend/create-gps-table.js",
+                      "sha256":  "a5077512e95d65281c93835902dafb2ff972a2975f11b875660567c81532dc16"
+                  },
+                  {
+                      "path":  "backend/create-lucy-table.js",
+                      "sha256":  "f464910cdf5d10311ddb794020ef99f4a9366c8a0177b3b48dd807cbe0790351"
+                  },
+                  {
+                      "path":  "backend/create-payroll-table.js",
+                      "sha256":  "4ce755329d197c65701cd81d20b12f33ed3ab7baaf352339a236a476a561c6b0"
+                  },
+                  {
+                      "path":  "backend/create-photos-table.js",
+                      "sha256":  "2857632ca48580aa7b6f0e88fc0a89fce31299191a5da0e9592f4023df9a59f9"
+                  },
+                  {
+                      "path":  "backend/create-pto-table.js",
+                      "sha256":  "debc37a4e43ce5e4b1fe21d57320e32c466530945df13fc9c189d68cd7140da4"
+                  },
+                  {
+                      "path":  "backend/create-push-tokens-table.js",
+                      "sha256":  "c7d0a6d75ed942e96fbdc4609d4d27fcf66616683adb51629c95e5d73d6e466c"
+                  },
+                  {
+                      "path":  "backend/create-shift-assignments-table.js",
+                      "sha256":  "6eb926de7dd0e9aa1acc744843756181c7307fe278b7542215b4e63f174d9cae"
+                  },
+                  {
+                      "path":  "backend/create-voice-notes-table.js",
+                      "sha256":  "6995e9258854d85e47a1b81049f9f402062dd4458cdd399cee3181f64970395b"
+                  },
+                  {
+                      "path":  "backend/dd-missing-columns-final.js",
+                      "sha256":  "e78b0998d7b66444dfbc014cbe70700cdba7a7bbd6cf6e80411fe567bb045ba3"
+                  },
+                  {
+                      "path":  "backend/extend-trial.js",
+                      "sha256":  "4d5ffab06e4223662e2add8b630e4c7cff1bf1d7f5ff6e00b0320c40454324d7"
+                  },
+                  {
+                      "path":  "backend/fix-adaptive-ai-table.js",
+                      "sha256":  "1a908cc43a423a547e68e631d25ad85b05508fb14b8a03607a322d5b4064b971"
+                  },
+                  {
+                      "path":  "backend/fix-column.js",
+                      "sha256":  "e79ab480fef35d675e583118d9105cb0fd1cc15c3fd6897340c9c56570946eb5"
+                  },
+                  {
+                      "path":  "backend/fix-events.js",
+                      "sha256":  "067d9b8d53a2d9bca86bce55330b3a8315b9bacf0c3705e7a58d4b2e9b010ea2"
+                  },
+                  {
+                      "path":  "backend/fix-fullname.js",
+                      "sha256":  "d4b53d8dc115fd4ff8cf84204cd3905db71d2643f5924401041c5f14bbcf6a5f"
+                  },
+                  {
+                      "path":  "backend/fix-team-column.js",
+                      "sha256":  "beb76236614f0a6c7b3f1485c5dbb7aa4b4357719a2280eb4cf1193a08cac85e"
+                  },
+                  {
+                      "path":  "backend/fix-user-events-all.js",
+                      "sha256":  "7b58be86ea9870b16c301ceb98ac7e647132feb86925cf2ac1366d560cc860c5"
+                  },
+                  {
+                      "path":  "backend/fix-user-events.js",
+                      "sha256":  "28a7d2b99f8ebdf7d1b2bdb561e5e3737f56da6a00f0a8e7ba0af17b1fe6df47"
+                  },
+                  {
+                      "path":  "backend/force-add-column.js",
+                      "sha256":  "4ec0a72340b052174e1219fb01714f5383cab4618d48294049578ba5bd511028"
+                  },
+                  {
+                      "path":  "backend/inspect-schema.js",
+                      "sha256":  "51e0c45f39f3be75fa01dfb526756bbbd2d75e20d2a669eeae52e757d0693737"
+                  },
+                  {
+                      "path":  "backend/migrations/20260810_secure_integrations.sql",
+                      "sha256":  "45eceed1436324b229a8ca22ece26a02bcde600b3556a55dbf651680cf0088da"
+                  },
+                  {
+                      "path":  "backend/migrations/20260813_company_admin_operations.sql",
+                      "sha256":  "1a8e2859d95b6d4d4906a858897eb5aedb63fc8b6e37c19a50b31ebaf08cb5e4"
+                  },
+                  {
+                      "path":  "backend/migrations/20260813_platform_support_agents.sql",
+                      "sha256":  "5274ded24476f24e4207146a58615fcd52032e28b271d249afdeea652539adcb"
+                  },
+                  {
+                      "path":  "backend/migrations/20260814_evidence_notifications_attachments.sql",
+                      "sha256":  "2674f3cfe8d3d887a25164a4a589e68685d1c61a91a5f11ce0314490985f6424"
+                  },
+                  {
+                      "path":  "backend/migrations/20260814_workforce_payroll_year_end.sql",
+                      "sha256":  "d614f8d0ef44d68f65ed3b66a7ea5fd063e0e38f77e727853531a3aa641cd450"
+                  },
+                  {
+                      "path":  "backend/migrations/20260816_integration_environments.sql",
+                      "sha256":  "ab029c584147d9243c5422ed48f6c59efea78ee4e89688b5d342d88d4f55e459"
+                  },
+                  {
+                      "path":  "backend/migrations/20260816_photo_compliance.sql",
+                      "sha256":  "db9c3697c50e418b856c83ccc0f928076d7e920c79eb618641df0cd82ed71702"
+                  },
+                  {
+                      "path":  "backend/migrations/20260816_secure_web_billing.sql",
+                      "sha256":  "cc886ad39832fc008d65b2ff6b627194422e6008009345f157f86134fc908963"
+                  },
+                  {
+                      "path":  "backend/migrations/20260817_apple_iap.sql",
+                      "sha256":  "bd791112d4fd971b95dff98e7673e51e5df56412370dc49e36292b0b34fa9e25"
+                  },
+                  {
+                      "path":  "backend/migrations/20260906_company_workflows.sql",
+                      "sha256":  "def2250caa3108d469e4468cdb3c0b286fa47ae1a7137449be8f894458c56131"
+                  },
+                  {
+                      "path":  "backend/migrations/20260915_lucy_reliability_core.sql",
+                      "sha256":  "790753c61ef4e690b0f7ffcb505e73944d33ff01b9915c5b7a382ed3b98ba3bf"
+                  },
+                  {
+                      "path":  "backend/migrations/20260922_shift_assignment_identity.sql",
+                      "sha256":  "cb7bb44474dcc8aa20c71e990384a3656abfc03bff8ab2d697b4ecf42ba73a6b"
+                  },
+                  {
+                      "path":  "backend/migrations/20260923_command_center.sql",
+                      "sha256":  "cf5742bdb4df806eb1e847143b76a268df23ed5881d4f74e1f07b32fa1b24f95"
+                  },
+                  {
+                      "path":  "backend/migrations/20260924_operations.sql",
+                      "sha256":  "eacfb1c974270791f0ea996812942baf606ba2233e595ef2c063a9b38b5bc492"
+                  },
+                  {
+                      "path":  "backend/migrations/20260925_subscription_enforcement.sql",
+                      "sha256":  "619076bf0ab7c014115d7b01195d024bf7c6d260dcb90ec00aba564f69e1bbba"
+                  },
+                  {
+                      "path":  "backend/migrations/20260926_native_payroll_payouts.sql",
+                      "sha256":  "a9d0adf591a3308e10cf040258c614ba2682cb5771eef16f92eaffd2549324f0"
+                  },
+                  {
+                      "path":  "backend/migrations/20260930_billing_catalog.sql",
+                      "sha256":  "f5b323fbc04b27c8f69847d536114e41805c6b4127e9f97f0e1a2fdfebc224cc"
+                  },
+                  {
+                      "path":  "backend/migrations/20260930_google_play_billing.sql",
+                      "sha256":  "b23dfbd9d58391f75c85ee85c19731425c08de083427db0b51b8200b9565f9b9"
+                  },
+                  {
+                      "path":  "backend/migrations/20260930_payroll_rules.sql",
+                      "sha256":  "cfa4582e6750999bbd45838b35d85be5aec3e58610d7cb04a139d92669d6067e"
+                  },
+                  {
+                      "path":  "backend/migrations/20261001_worldwide_payroll_records.sql",
+                      "sha256":  "1db4d38563d7a8e189ffdb4b0e753ff0dd9ff8eea347f2abacd3a900daa04d5e"
+                  },
+                  {
+                      "path":  "backend/nixpacks.toml",
+                      "sha256":  "b79d5165abb0568f38026e19d9f8f0cacb8811998c8e608753cf1f541a1f3b86"
+                  },
+                  {
+                      "path":  "backend/node",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  {
+                      "path":  "backend/package-lock.json",
+                      "sha256":  "5e457379b8a0bb8f8035a4d758241957b4a092d0792eae6d126e7d925327e9f1"
+                  },
+                  {
+                      "path":  "backend/package.json",
+                      "sha256":  "62ade98f7b8e56da84e92e197f93ce4da1a4d360c90071d9ae9d464546ad211b"
+                  },
+                  {
+                      "path":  "backend/pdfs",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  {
+                      "path":  "backend/run-migration.js",
+                      "sha256":  "67fe349dbf97918caffbf2238f6333f3f5480f77cb7ec266e3305838fc5d6f83"
+                  },
+                  {
+                      "path":  "backend/scripts/add-all-missing-features.js",
+                      "sha256":  "ba3d0f1084ca9149712099a1878e6d2031ac89fae9bd0acf33fd8ae7372993cd"
+                  },
+                  {
+                      "path":  "backend/scripts/add-bank-details.js",
+                      "sha256":  "159c2ca274f02c585927774c1a094d74e5ae4c436541675bfe91b5f0c4602f88"
+                  },
+                  {
+                      "path":  "backend/scripts/add-chat-rooms-tables.js",
+                      "sha256":  "8e9e26a5e049bac84b512072e9960a6fb5070c36571fd9c7a81bccb7fd1bfab8"
+                  },
+                  {
+                      "path":  "backend/scripts/add-created-by-to-tax-forms.js",
+                      "sha256":  "0a93add2f7e79ac37ba322f2dc9999e47e663e1410a9d2aaede88c433781ce5e"
+                  },
+                  {
+                      "path":  "backend/scripts/add-currency.js",
+                      "sha256":  "f09f1e8bbcd5fe254c3569cec6a4e444dfe7f26afbf5229815ced6d1493cbd4f"
+                  },
+                  {
+                      "path":  "backend/scripts/add-employee-tax-fields.js",
+                      "sha256":  "2832da7961e70d825f2301cb36d935ff51a6e6b3c1bc1fe4d8d0885eb11ccb46"
+                  },
+                  {
+                      "path":  "backend/scripts/add-geofence-columns.js",
+                      "sha256":  "3f6381d3e64f06ba17091da1f9a3f7deff96ca0af57096e09997823f87959dee"
+                  },
+                  {
+                      "path":  "backend/scripts/add-hourly-rate-used.js",
+                      "sha256":  "87629cf9f9c700d014968c1ab2eb2908671f4a7a67154c2c87b7e95ae5d49872"
+                  },
+                  {
+                      "path":  "backend/scripts/add-invoicing-advanced-features.js",
+                      "sha256":  "cdbcd758e1b6dfb487ef9e696f66593cf0c8c662e5b6863851b6b2b9d11aba44"
+                  },
+                  {
+                      "path":  "backend/scripts/add-knowledge-base.js",
+                      "sha256":  "2180922d04f865aa9cc46c4875dfeea1a47be194696b9493531bf39aa4a8573a"
+                  },
+                  {
+                      "path":  "backend/scripts/add-pay-stubs.js",
+                      "sha256":  "33cb90d318c55f6f50e1d07213f583d1913a1a401b4c9c5589ee94ee09aa391e"
+                  },
+                  {
+                      "path":  "backend/scripts/add-payroll-advanced-features.js",
+                      "sha256":  "7ec2a736db3a6148251b31079f295bdedd092ffff899913a99ef82f3260fa970"
+                  },
+                  {
+                      "path":  "backend/scripts/add-payroll-deductions.js",
+                      "sha256":  "1ca08b89fc2c6b76b35e8c5ed3a17980b51f26f9f2973dbc6723f48d53713261"
+                  },
+                  {
+                      "path":  "backend/scripts/add-payroll-invoicing-tables.js",
+                      "sha256":  "f58c3ab7509b548dc9271178a3b94a6ce8ce2b2e3dae117814046ad71c27d5ca"
+                  },
+                  {
+                      "path":  "backend/scripts/add-payroll-tables.js",
+                      "sha256":  "c25221dcb3a243464a2460adf0135631f795cf5fe3b0f9d43b8ffaef76663aba"
+                  },
+                  {
+                      "path":  "backend/scripts/add-payroll-vacation-banked.js",
+                      "sha256":  "e5ab983b6e124e5a37d74feab3c551c67514f780cdd01bab6310930f673dd0d1"
+                  },
+                  {
+                      "path":  "backend/scripts/add-paystub-sent-at.js",
+                      "sha256":  "3ca78ea456ff9ed454c9a633f5ddebbff01b461df6a2828cbbf664e5b93865c8"
+                  },
+                  {
+                      "path":  "backend/scripts/add-progress-invoicing.js",
+                      "sha256":  "b34f89da09a0a6d163e4be5d2409afdb9f7883b2409dde4d97dd283a268b6687"
+                  },
+                  {
+                      "path":  "backend/scripts/add-recurring-shifts.js",
+                      "sha256":  "9a570000dfe4e69e83d36a80d6077b39fe9c15f74fdf8c60bca1c074a2d72af7"
+                  },
+                  {
+                      "path":  "backend/scripts/add-room-id-to-chat-messages.js",
+                      "sha256":  "767846348534d6f6e5879fc98379a8003948510606ca0c3cee3cc11db8e31140"
+                  },
+                  {
+                      "path":  "backend/scripts/add-sin-column.js",
+                      "sha256":  "7d8585ff937529bbd3cf92f6410601b1404888e8d275a847e0d46a474de92044"
+                  },
+                  {
+                      "path":  "backend/scripts/add-support-tickets.js",
+                      "sha256":  "423a902377821f8e6db2937d1ee2ec7d4d99ed8027643370b7b062736d86ca76"
+                  },
+                  {
+                      "path":  "backend/scripts/add-tax-forms.js",
+                      "sha256":  "96c1901f23e829fb1f25e3eb2b86d35eb07a983433114525ab0d4646c3345b75"
+                  },
+                  {
+                      "path":  "backend/scripts/add-user-columns.js",
+                      "sha256":  "d595682c375655baa32af7a3e1e991935aeba971d62ca7f07e939d176cbad6c2"
+                  },
+                  {
+                      "path":  "backend/scripts/add-year-end-tables.js",
+                      "sha256":  "cddbb80647a6beaf8610fd525ceb639ad5e8d73b43caf10c78c89a0b36f16418"
+                  },
+                  {
+                      "path":  "backend/scripts/addCompanySettings.js",
+                      "sha256":  "15df52388b650e168a50c2b399651005916c80ccc1c9b290d19b16b3e0967e03"
+                  },
+                  {
+                      "path":  "backend/scripts/addGpsColumns.js",
+                      "sha256":  "6a4be3c4599109cd01ab4be5d7be0e7beaa928778486fd423515793ad20cac71"
+                  },
+                  {
+                      "path":  "backend/scripts/addIsActiveColumn.js",
+                      "sha256":  "c474d403357401f63bee5cbafa245a01cf11895a4a771fd6f8c8d0de888fc756"
+                  },
+                  {
+                      "path":  "backend/scripts/addMissingColumns.js",
+                      "sha256":  "1c17516652c6c31e0de49e564a726e7b6c1a880f1cc45b23de9964c3663fbcf0"
+                  },
+                  {
+                      "path":  "backend/scripts/addProjectIdToGps.js",
+                      "sha256":  "f2ce358a1903fd6907483239ec5953b7e2f4e95b96378b2ce089f8390820afdc"
+                  },
+                  {
+                      "path":  "backend/scripts/addShiftColumns.js",
+                      "sha256":  "5a72c0b028944b4c27df930420097c97c211dc6bdcb2d2591029d8d5faab5c22"
+                  },
+                  {
+                      "path":  "backend/scripts/addTimeEntriesIndex.js",
+                      "sha256":  "ac82b914e1ebb3ec80a5431065071e0b15c452220ae510912c9f858639622c61"
+                  },
+                  {
+                      "path":  "backend/scripts/addTimeEntryColumns.js",
+                      "sha256":  "d3e426c37dd2a839a905ecaf581dd72a42d6101277a4e4e8e9c58b7c2ce21cd6"
+                  },
+                  {
+                      "path":  "backend/scripts/command-release-db.cjs",
+                      "sha256":  "1424ccff2db92cb8ddee1e445d3f174bdd291ba0b4c031fd0e0410f3314468de"
+                  },
+                  {
+                      "path":  "backend/scripts/computeOfficeCity.js",
+                      "sha256":  "088e3a754f1be32dc89ebf08069370fe7f33db65e217a17073092fff7b26ac41"
+                  },
+                  {
+                      "path":  "backend/scripts/configure-operations-limits.cjs",
+                      "sha256":  "3a393e5b3d651d821ede7ccbfe4e19f4c64fb75a3ac1b281512417c6cd750b5f"
+                  },
+                  {
+                      "path":  "backend/scripts/createSubscriptionsTable.js",
+                      "sha256":  "2eef20065eed4b7e95b0cdcb52216a06bb52c1b7fa1fd4f97722dafe9934e04a"
+                  },
+                  {
+                      "path":  "backend/scripts/debugOvertimeColumns.js",
+                      "sha256":  "843729ee8fcf856acb758c489b7f35ae3c0b2f16dfe9d40d7f7bddd6fbba0923"
+                  },
+                  {
+                      "path":  "backend/scripts/ensure-company-operational-columns.js",
+                      "sha256":  "0b536cb2a2f0e431793c46c245306c272ba552d3ea6da79641711c84102af3f3"
+                  },
+                  {
+                      "path":  "backend/scripts/ensure-kiosk-pin-schema.js",
+                      "sha256":  "e729a46e4189d7707ccb13a3554a4ebf6610b36134b1993de531da831e665c62"
+                  },
+                  {
+                      "path":  "backend/scripts/fix-payroll-items.js",
+                      "sha256":  "c84edab39ea4925a0d35fcb27c3a470fa8501ddc375df4700f539e3daee2c57f"
+                  },
+                  {
+                      "path":  "backend/scripts/fix-year-end-uuid-schema.js",
+                      "sha256":  "54ecb9fdd4d12a5b70394ecc8349a5ddcf5f9b3a6df9daf9483f5fac6b1576db"
+                  },
+                  {
+                      "path":  "backend/scripts/fixOvertimeColumns.js",
+                      "sha256":  "4d26aed91afe4fd57e3032f3c9f11f05be4c2395bef402aefa8f0c14656d40e7"
+                  },
+                  {
+                      "path":  "backend/scripts/provision-billing.cjs",
+                      "sha256":  "350fc79cf7a7e3aa9dd4d00b27605a056124330b69a7776abc131cdfa539209c"
+                  },
+                  {
+                      "path":  "backend/scripts/release-database.cjs",
+                      "sha256":  "d99ba907b3fb558764b69110584d261f24410bf216388514b0f41db845141117"
+                  },
+                  {
+                      "path":  "backend/scripts/release-fingerprint.cjs",
+                      "sha256":  "61de569b0ddba7939708b3b0676d12425d92ebc506d05ba43b928d21a2671471"
+                  },
+                  {
+                      "path":  "backend/scripts/release-readiness.cjs",
+                      "sha256":  "c1a99efd2e6ba55cec29ead727312e0a8cb5a28b1b3883cd927650402792d3f6"
+                  },
+                  {
+                      "path":  "backend/scripts/resolve-tester-access.cjs",
+                      "sha256":  "b0a2a9a78f31e0ea6fdafd4f656803f7fc78555df3feb08904d41cf204ea4a4e"
+                  },
+                  {
+                      "path":  "backend/scripts/run-all-migrations.js",
+                      "sha256":  "8f6654013c18fb57ef4d55243b7df77290b51569d041335112110704fa0197d7"
+                  },
+                  {
+                      "path":  "backend/scripts/run-all-production-migrations.js",
+                      "sha256":  "4a016e342a797698de09b02f056521aa8138aa08765427a82d41ac02f14c6bd9"
+                  },
+                  {
+                      "path":  "backend/scripts/run-company-workflows-migration.js",
+                      "sha256":  "cf413aa2378e8a3029e72e36c62d76fcc5f13b1a9e595ebc4a4d6f02dfc1b195"
+                  },
+                  {
+                      "path":  "backend/scripts/run-lucy-reliability-migration.js",
+                      "sha256":  "de3092f0677ddf056e4194df82b19f9829beba4ecdf30b0b02aa248bbbcd953f"
+                  },
+                  {
+                      "path":  "backend/scripts/run-migration.js",
+                      "sha256":  "902187ff50d1c1fe07f62f9fed4386c59b5064cf958d2fa45f7dcb9e216c1802"
+                  },
+                  {
+                      "path":  "backend/scripts/run-production-migration.js",
+                      "sha256":  "973f3e624965a180a6f405a2827ade8c6032cecc45d1b69a99b7d79b90b1b9b6"
+                  },
+                  {
+                      "path":  "backend/scripts/run-railway-migration.js",
+                      "sha256":  "c2d478c6cbeb3d7f363374ef36cfa539fafed9ddf95565dc6e16f604403f6c77"
+                  },
+                  {
+                      "path":  "backend/scripts/runAppleIapMigration.js",
+                      "sha256":  "303a79cc5d928ea62b1659864a1aecf0939c55b341ba089d7b5cd6b02f7f091f"
+                  },
+                  {
+                      "path":  "backend/scripts/runCompanyAdminMigration.js",
+                      "sha256":  "cce5ba179654e4e4cb8a3ae5a58b57a5bd86304af206d784f53461d8d2cec186"
+                  },
+                  {
+                      "path":  "backend/scripts/runEvidenceWorkspaceMigration.js",
+                      "sha256":  "98b96ad47aa2089de7e7be8192f02a765b276866d75b49c7b95605ad38e58408"
+                  },
+                  {
+                      "path":  "backend/scripts/runIntegrationEnvironmentMigration.js",
+                      "sha256":  "098673912f7136e6819953a80621b006eb4df203b8be824597b094d1cd10cef7"
+                  },
+                  {
+                      "path":  "backend/scripts/runIntegrationMigration.js",
+                      "sha256":  "ccea03b0db872836019c6d3470c0db614c6a2165b9b6d7ffb4b5cb1249058f6e"
+                  },
+                  {
+                      "path":  "backend/scripts/runPhotoComplianceMigration.js",
+                      "sha256":  "610a4997f15fc0311121d4de601ea4faedcda7c34a436f532870b63b561d67c1"
+                  },
+                  {
+                      "path":  "backend/scripts/runSecureWebBillingMigration.js",
+                      "sha256":  "a05ab4863c9c8355b995fee0d84db65075fbdfa276083b8de34c197e7b755a07"
+                  },
+                  {
+                      "path":  "backend/scripts/runSupportAgentMigration.js",
+                      "sha256":  "6da860067fed6616a894d22fb519f11c83963f19e536811219094e45f012869a"
+                  },
+                  {
+                      "path":  "backend/scripts/runWorkforcePayrollMigration.js",
+                      "sha256":  "2feaf17d5622818e6f25bb788294c7a9d304ee90f9855f715e3b7bfcf50eb515"
+                  },
+                  {
+                      "path":  "backend/scripts/testOvertimeUpdate.js",
+                      "sha256":  "96087bf24e5c0fc97adba96d47a3cc4016e441f8793d81afb4557d2f9a2ab722"
+                  },
+                  {
+                      "path":  "backend/scripts/testPutDecimal.js",
+                      "sha256":  "ea57874e30e7826a4190bbd867c0e8494e549d50db4247ff3dac8095434a17cd"
+                  },
+                  {
+                      "path":  "backend/seed-demo-data.js",
+                      "sha256":  "085bbd9b1bdea37eb544aac7379e60c7f5cc631fd759b676b8325ab4e2b85ec1"
+                  },
+                  {
+                      "path":  "backend/setup-db.js",
+                      "sha256":  "093f202e5f3cd84c0602c774b5425894a24f18d914bfcfdac84b413b1552e182"
+                  },
+                  {
+                      "path":  "backend/src/config/billingPlans.ts",
+                      "sha256":  "697c4f6affd51a184dda681d7cccaba773e16bc61231ef5553b716644a6718ea"
+                  },
+                  {
+                      "path":  "backend/src/config/cors.ts",
+                      "sha256":  "5770fba8709049263cdfa6edbd201c4f17897737fa4c30f8ea022b6e14d6b8cb"
+                  },
+                  {
+                      "path":  "backend/src/config/database.ts",
+                      "sha256":  "96cbf691739391bb2b8d1a2ff341d8ca175f0ff567786b1d25174ba4a03ad021"
+                  },
+                  {
+                      "path":  "backend/src/config/redis.ts",
+                      "sha256":  "e8a5ec06027eef67a1a3f5cc4edf8da6086dc0faa1bd0e043ae7a76c86900c2b"
+                  },
+                  {
+                      "path":  "backend/src/controllers/yearEndController.ts",
+                      "sha256":  "93f7b5a61c361210b7a71e33fed70ed2e0af03d48ee61579801c7984d688aa94"
+                  },
+                  {
+                      "path":  "backend/src/index.ts",
+                      "sha256":  "3b989d7aa6b5c4ee8e596eb40ba411160b62f472dd03871e06785311306ed47b"
+                  },
+                  {
+                      "path":  "backend/src/middleware/companyActor.ts",
+                      "sha256":  "069dac45106f6da8b5e5bb3c65246bae08f4387893868f8d2d785bf34e7c0424"
+                  },
+                  {
+                      "path":  "backend/src/middleware/trafficControl.ts",
+                      "sha256":  "f9cc4dd0f55bcb650cec91fe9b5d3f99ac0c99b52000d756e737d90b73bb1c8a"
+                  },
+                  {
+                      "path":  "backend/src/middleware/trialMiddleware.ts",
+                      "sha256":  "6aa6e757eeef2a65c7dba9206e608cce18ee72b0a8a718d33c0d841fc81ca877"
+                  },
+                  {
+                      "path":  "backend/src/observability/runtimeMetrics.ts",
+                      "sha256":  "5719b507473449bcdb4f0cd18327e1ec441f5782b2ef7172221dc018d3fc6fd2"
+                  },
+                  {
+                      "path":  "backend/src/routes/adminRoutes.ts",
+                      "sha256":  "735bb366e565a6cb5320d58cad20046e69ecedc50f6a0d8500ce816f7ffc7665"
+                  },
+                  {
+                      "path":  "backend/src/routes/aiRoutes.ts",
+                      "sha256":  "c1135d90d2bdc4730fed1ea469603d7a69276e4236103c0208009a2079a30acd"
+                  },
+                  {
+                      "path":  "backend/src/routes/approvalRoutes.ts",
+                      "sha256":  "1b2c365f668b5a854732316f1feab88880e69bde77f0c5f2d4f4e63e2d71fba1"
+                  },
+                  {
+                      "path":  "backend/src/routes/assistantRoutes.ts",
+                      "sha256":  "2776395d2d32130a6589ab80f36b7c3b6225941d0fcf1eeeb0fa12611e89f679"
+                  },
+                  {
+                      "path":  "backend/src/routes/attachmentRoutes.ts",
+                      "sha256":  "096ccd09cc54369196c4210b4d05a4886c7ce8b696966469f94528dac18b8473"
+                  },
+                  {
+                      "path":  "backend/src/routes/authRoutes.ts",
+                      "sha256":  "2fd8bbc9e79b9367bbd420fe2287401ccda3c70a12caa286e1525c1ddfb516c7"
+                  },
+                  {
+                      "path":  "backend/src/routes/chatRoutes.ts",
+                      "sha256":  "21fdf09d843169a4c5f7cbd48b9f1d4b07e7c3f1edcfe5493693c850444e1438"
+                  },
+                  {
+                      "path":  "backend/src/routes/chatbotRoutes.ts",
+                      "sha256":  "ae0e3d6ce75c27cad8b14cff1b1be63ac4d1af21450e7e6dd47b3c33cad792db"
+                  },
+                  {
+                      "path":  "backend/src/routes/commandCenterRoutes.ts",
+                      "sha256":  "87fd7b29cdc5cdf23f4fbec116458c180e38ca075827ff3357756c03cff235e2"
+                  },
+                  {
+                      "path":  "backend/src/routes/companyAdminRoutes.ts",
+                      "sha256":  "4f2a8bbe3470ff00fcac071cfac403f505256a2ab8ab43caa0241fb69603c0c8"
+                  },
+                  {
+                      "path":  "backend/src/routes/companyRoutes.ts",
+                      "sha256":  "89d01665cf2811cc56a9f48e37f5f661cc431c4f5a300cde6164561d33004278"
+                  },
+                  {
+                      "path":  "backend/src/routes/connectedStripeWebhook.ts",
+                      "sha256":  "7b8103d3c09df47722fa76a88adc9800469f694cae6b73ea601a756031b7ac63"
+                  },
+                  {
+                      "path":  "backend/src/routes/crewRoutes.ts",
+                      "sha256":  "3a73d2c06a445376f8e993e986e938ec588ffaa4e71b807b14322d5eb2fe7f73"
+                  },
+                  {
+                      "path":  "backend/src/routes/dashboardRouter.ts",
+                      "sha256":  "c8724f3c60d50833352e0e43677a946c23c3c292be698c07306fae0f296c697a"
+                  },
+                  {
+                      "path":  "backend/src/routes/directDepositRouter.ts",
+                      "sha256":  "a99aee363d3c5356380e0262f5afc216258189c9399b4c82a1319502fe85a80b"
+                  },
+                  {
+                      "path":  "backend/src/routes/disputeRoutes.ts",
+                      "sha256":  "98b0f011055cafcf86ebc2e1cb23394c77c010437195cab2cd743357e8cdfd5f"
+                  },
+                  {
+                      "path":  "backend/src/routes/estimateRouter.ts",
+                      "sha256":  "524d605da0eb84c4cddec0159f122f384acbc67cb393d9dba1877625adbe319a"
+                  },
+                  {
+                      "path":  "backend/src/routes/evidenceBundleRoutes.ts",
+                      "sha256":  "2f1f94c917a3b08fb4ad26b42b1275e0ed50ea5a349431fc1c4abb74adea9299"
+                  },
+                  {
+                      "path":  "backend/src/routes/expenseRoutes.ts",
+                      "sha256":  "768c4e3ebcd9c393cf5ec078c74881a3f8dbfea8cf0647684c77a0999a3b9a9d"
+                  },
+                  {
+                      "path":  "backend/src/routes/formRoutes.ts",
+                      "sha256":  "691a3042ef2a8f208235e01ba80320478c044f1e8b34f2aaffaaae48c41cd490"
+                  },
+                  {
+                      "path":  "backend/src/routes/gpsRoutes.ts",
+                      "sha256":  "58b2d3ed690e1103ffb76172f45eab82fbddf5e2e327dc9e196cd33de60bd1b7"
+                  },
+                  {
+                      "path":  "backend/src/routes/integrationRoutes.ts",
+                      "sha256":  "bc72da0030ce9dfbfb361d2929df9dd37bd2d67b6d15eaffcb4e957cd21883eb"
+                  },
+                  {
+                      "path":  "backend/src/routes/invoiceRouter.ts",
+                      "sha256":  "d255c9abd181ceb02d02f69da4e5e556ac85e5a827606b00a1dc1fccb1af87db"
+                  },
+                  {
+                      "path":  "backend/src/routes/kioskPublicRoutes.ts",
+                      "sha256":  "58ee636ba34babd1951fb475554638d498e9968c9cc487bcc475a61c5e74c0cf"
+                  },
+                  {
+                      "path":  "backend/src/routes/kioskRoutes.ts",
+                      "sha256":  "5ab65f6739eebfe53ded00b0831f4b11fdf0b2781d417f22682df959d1352ab9"
+                  },
+                  {
+                      "path":  "backend/src/routes/lucyJarvisRoutes.ts",
+                      "sha256":  "55c48278641ec1c300afa22ffe653677e8b4b95a709247fef8c35a97b705b8ed"
+                  },
+                  {
+                      "path":  "backend/src/routes/manualPayrollRoutes.ts",
+                      "sha256":  "ea95cb9568d1c09c0c9f941bda34ad6d10686d30e4c08221256c1d7b0a24b411"
+                  },
+                  {
+                      "path":  "backend/src/routes/mediaRoutes.ts",
+                      "sha256":  "c5a3314afa96b54ed58ba5c130a39eed667790ec86f4caa1e21d8ebdca71fbb3"
+                  },
+                  {
+                      "path":  "backend/src/routes/notificationRoutes.ts",
+                      "sha256":  "4b9f10a1efde0119930734159d0134cd54e0f43e0cd56b28fac877933bef7b96"
+                  },
+                  {
+                      "path":  "backend/src/routes/operationsRoutes.ts",
+                      "sha256":  "effefaa1ae8a8728d3ab3d68ddf34a9599956c5976e4143dba759c6ce1325c0c"
+                  },
+                  {
+                      "path":  "backend/src/routes/payStubRouter.ts",
+                      "sha256":  "356a793a592700e848ab881496cbe4f2cf9d9600142e610d90aa5697a0212790"
+                  },
+                  {
+                      "path":  "backend/src/routes/paymentRoutes.ts",
+                      "sha256":  "6e55b9e1ece4502c9fe3ba9f422446180f5a2addbcdad5a8ef7a55a2c4d7ecfe"
+                  },
+                  {
+                      "path":  "backend/src/routes/payoutRoutes.ts",
+                      "sha256":  "246811b7ce3788cecacdffef4b8ee91eb9da383d9a80cb811cf349512648a7fd"
+                  },
+                  {
+                      "path":  "backend/src/routes/payrollRouter.ts",
+                      "sha256":  "63b41a57ebaf9aa6e190b4afc8680d875ee84fa6beeca6379956e8f1e1d35c01"
+                  },
+                  {
+                      "path":  "backend/src/routes/payrollRulesRoutes.ts",
+                      "sha256":  "82e644d96449cb7f734840bb91525381842426068e17a65cc26da387c56aeff8"
+                  },
+                  {
+                      "path":  "backend/src/routes/pdfRouter.ts",
+                      "sha256":  "e021e5bd4961fbdea4b25511404cf7771621f5ae536a257364ee09219f3ed1e1"
+                  },
+                  {
+                      "path":  "backend/src/routes/photoRoutes.ts",
+                      "sha256":  "e047128b668b57fdfa58a8680ad367ab5eee6460191dee6f9428ad4c88a22726"
+                  },
+                  {
+                      "path":  "backend/src/routes/projectRoutes.ts",
+                      "sha256":  "6cec43f05710e70fb3f3a88e6131cc3ebd61930a354d815b2b394f03632bb201"
+                  },
+                  {
+                      "path":  "backend/src/routes/ptoHistoryRoutes.ts",
+                      "sha256":  "19db131b166ea8de0b8381b68528163c0e38010b1c2e090da77bbbb0da1dee6e"
+                  },
+                  {
+                      "path":  "backend/src/routes/ptoRoutes.ts",
+                      "sha256":  "503aee22c4cb872bdc1c2f462396efca26098e5186f98ac144bbb29f0e93e81f"
+                  },
+                  {
+                      "path":  "backend/src/routes/recurringShiftRouter.ts",
+                      "sha256":  "fb35cb0d452745cb04067f74a263936637413e5bc8763e8e9fadaedb605cf725"
+                  },
+                  {
+                      "path":  "backend/src/routes/reportRoutes.ts",
+                      "sha256":  "c9638e8cffcce0240713a9d9e68e92b6110a4a9bf1bcc23b045f1791d114f0f7"
+                  },
+                  {
+                      "path":  "backend/src/routes/scheduleRoutes.ts",
+                      "sha256":  "82e047f1cb0bad0b032556981acb55f8d9dc0d66862f5d555f77dbb6a4fcf626"
+                  },
+                  {
+                      "path":  "backend/src/routes/statsRoutes.ts",
+                      "sha256":  "de37908e506278d42a3f8436b1a1a71ef20a9b677dc4583cf284ed512191a134"
+                  },
+                  {
+                      "path":  "backend/src/routes/stripeRoutes.ts",
+                      "sha256":  "8af9be5ee5f3ed58a025f11a55727856391ff67a4e8cf9ca12201b9ab13bcbea"
+                  },
+                  {
+                      "path":  "backend/src/routes/subscriptionRoutes.ts",
+                      "sha256":  "453e9d85b38adb7c22947a68177adf1945305b3375c9d5583a2cf64eab9f39ef"
+                  },
+                  {
+                      "path":  "backend/src/routes/supportAgentRoutes.ts",
+                      "sha256":  "0573beefe24df06748b3eaa00aeb28e8ada84e8f7a7cedc20d1448a3fbfc508e"
+                  },
+                  {
+                      "path":  "backend/src/routes/supportRoutes.ts",
+                      "sha256":  "94f35b6f431445d40bf1ca4c2cd34bb49c58b3b2d8e23dfa4e59f2fd008ea7d7"
+                  },
+                  {
+                      "path":  "backend/src/routes/systemReliabilityRoutes.ts",
+                      "sha256":  "fe7013b3974e6280adb5bce0935584b955afb541a89f88331f3a35d34568328b"
+                  },
+                  {
+                      "path":  "backend/src/routes/taskRoutes.ts",
+                      "sha256":  "ef40e15af0b3d23836d518d0eff178dc51e17bd7fdd5d16130cca7aaf6b36535"
+                  },
+                  {
+                      "path":  "backend/src/routes/teamRoutes.ts",
+                      "sha256":  "4f26a89c96666979c67d09e31c223e61e226eb5976583480baa14e19fbee7293"
+                  },
+                  {
+                      "path":  "backend/src/routes/timeEntryRoutes.ts",
+                      "sha256":  "6c7a8d3ae443c416e5e636cbee79ef88b2cea21b4c51e663f5e48f5f895524c9"
+                  },
+                  {
+                      "path":  "backend/src/routes/uploadRoutes.ts",
+                      "sha256":  "21e6be98eaafe78097abdff947e8c6c620d6775a6c49d1cad767cb1448f640ae"
+                  },
+                  {
+                      "path":  "backend/src/routes/userRoutes.ts",
+                      "sha256":  "f2eb49701ac3eebf3505f3bf255f79022a920003b66dc5ca8760986df2362d16"
+                  },
+                  {
+                      "path":  "backend/src/routes/voiceRoutes.ts",
+                      "sha256":  "1bac1bc47e025d1ffb5b408967765073fcb06d5099154a6e414a69b1ab088073"
+                  },
+                  {
+                      "path":  "backend/src/routes/webhookRoutes.ts",
+                      "sha256":  "9846e584c71dfbdfcf1010ec4321d6dc016a4a7f267d090d1367e424f527120c"
+                  },
+                  {
+                      "path":  "backend/src/routes/workforceOperationsRoutes.ts",
+                      "sha256":  "b1ce3a531afbcf6967af11a31e06ee83afbe0caa981a040a4db09f39decb19ba"
+                  },
+                  {
+                      "path":  "backend/src/routes/yearEndRouter.ts",
+                      "sha256":  "69644a3f0269682743b22cd9a6b5d3f9dc5ac645df7253d750e317bc7f1186eb"
+                  },
+                  {
+                      "path":  "backend/src/server.ts",
+                      "sha256":  "d910bb84a7f5915b426bdbe5141b51e6655a2bf12535c1f4dc7c2a211cc63627"
+                  },
+                  {
+                      "path":  "backend/src/services/adaptiveAIService.ts",
+                      "sha256":  "5a86d63e89134f65dda67e2eab687b473a57ca1707ef8f6f5e33ff1958f0f450"
+                  },
+                  {
+                      "path":  "backend/src/services/appleSubscriptionService.ts",
+                      "sha256":  "10d5237b4d9ce1359303ee24112c34b7566ef981b40fcaaddfcc20aab0e2dea7"
+                  },
+                  {
+                      "path":  "backend/src/services/assistantService.ts",
+                      "sha256":  "8f2af39d8228ec55ba1b4a0745d365b9b48f59285caa8259d0e2f6a5f92475b4"
+                  },
+                  {
+                      "path":  "backend/src/services/attachmentService.ts",
+                      "sha256":  "a322258b88f9a06a539c7158c813094865d39978ccf8e90d1af1b5b0c58400d5"
+                  },
+                  {
+                      "path":  "backend/src/services/chatService.ts",
+                      "sha256":  "4569461dfc0f4ba5aabf016d3ac63ffed9b0ffb5c36f804cffb6530ba1b1ee82"
+                  },
+                  {
+                      "path":  "backend/src/services/cloudStorageService.ts",
+                      "sha256":  "92aa10627faa9704cf3c156bcb3c59d6f004b853e787354e5745b5be3ce736e8"
+                  },
+                  {
+                      "path":  "backend/src/services/companyService.ts",
+                      "sha256":  "373e7701e8e72094d8dca53f33e9b1e8602cdafb7ce779b8d27be6294fadd2e3"
+                  },
+                  {
+                      "path":  "backend/src/services/complimentaryAccess.ts",
+                      "sha256":  "8ff6b22c34deb00dcd2c1259ea183eeabd4c66e5e77d66794581f4ccd156eb33"
+                  },
+                  {
+                      "path":  "backend/src/services/comprehensiveReportService.ts",
+                      "sha256":  "f1a8f268eba2a574d5a8270148f33e52d4f320ffa8abc3313a3e5ee347128350"
+                  },
+                  {
+                      "path":  "backend/src/services/disputeService.ts",
+                      "sha256":  "f509d71ef6898455a13df43035c852cfaf1c4de9fe8885b6c08d0f255f4d4f3e"
+                  },
+                  {
+                      "path":  "backend/src/services/emailService.ts",
+                      "sha256":  "0cc67282c90c5dcc9573f9ebf16d287b09b2c0703971b98869f16fb2ad7af9c5"
+                  },
+                  {
+                      "path":  "backend/src/services/encryptionService.ts",
+                      "sha256":  "d05239bc25fd9edc94b73cdcbfe6951488a234c0ccf97239cafa2e405a7e1b5a"
+                  },
+                  {
+                      "path":  "backend/src/services/evidenceBundleService.ts",
+                      "sha256":  "98d062968e787b89d538fd6df4a81d97790ec705e3adec0f2bd17c9bf98e903e"
+                  },
+                  {
+                      "path":  "backend/src/services/evidenceMediaService.ts",
+                      "sha256":  "6edf255e71feec51cf5c0ffa9f8d96f7eb52aa8823017341630722f6e9aed000"
+                  },
+                  {
+                      "path":  "backend/src/services/formService.ts",
+                      "sha256":  "fecf995e2b53874c959bb979172efe35d95f16acb1ff7c586fb4746c9d3f67b5"
+                  },
+                  {
+                      "path":  "backend/src/services/geocodeService.ts",
+                      "sha256":  "a1d370a8766530b63d1399893670c8a54d99abe8aabe0b1d041a4a28f9e9ba63"
+                  },
+                  {
+                      "path":  "backend/src/services/googleSubscriptionService.ts",
+                      "sha256":  "b78f2419972021914141d9a8662c055832a23f386b36a80f17bb9bc48e233e5f"
+                  },
+                  {
+                      "path":  "backend/src/services/gpsService.ts",
+                      "sha256":  "9883ba8f58cffec694bdebb5dda3e22ed149707fb1dad76911eee7fee0857a07"
+                  },
+                  {
+                      "path":  "backend/src/services/integrationService.ts",
+                      "sha256":  "efdeef87714298de05393ae4f7062ba669d29d1f20317ce2390301ee9d6f54e5"
+                  },
+                  {
+                      "path":  "backend/src/services/localSandboxPayoutAdapter.ts",
+                      "sha256":  "d5c4370fdd3eba80cf57d03a49d0c5a2cd46b5126eb1fa4ada13911b0b9cb6be"
+                  },
+                  {
+                      "path":  "backend/src/services/lucyPayrollService.ts",
+                      "sha256":  "9d9b3552ee7f2684fe9d46f9e49ad630c95a113386613eece7d256ce5e500a15"
+                  },
+                  {
+                      "path":  "backend/src/services/lucyReliabilityService.ts",
+                      "sha256":  "1efdef59b72ca4cd0684c8453e79bc82395dd957448f0cc874369d26d1dc4899"
+                  },
+                  {
+                      "path":  "backend/src/services/nachaGenerator.ts",
+                      "sha256":  "1b4116210302d2fc1e1b562c2da712c09ffe24eb5fbe2535d908c5e8d0f568da"
+                  },
+                  {
+                      "path":  "backend/src/services/nativePayoutService.ts",
+                      "sha256":  "2aec28de1d968d4c68cbef25f3f0ce5aff11c07f0e95c841dad4afc4648bf69a"
+                  },
+                  {
+                      "path":  "backend/src/services/notificationService.ts",
+                      "sha256":  "9f9ed8b4818e1a9ac1fbc44c400cfd7d5bce04129a4a10dba7cd0f52ab4857cd"
+                  },
+                  {
+                      "path":  "backend/src/services/operationsCore.ts",
+                      "sha256":  "ade445dc0d2eae914e71091407f43fbc9c01d2ec74aebe5621cd532b869bf1aa"
+                  },
+                  {
+                      "path":  "backend/src/services/payPeriodCalendar.ts",
+                      "sha256":  "b3643dc9ca0f475968c271566467b341015b72e4e7d5b3f2f5a33f5312a6bf44"
+                  },
+                  {
+                      "path":  "backend/src/services/payStubGenerator.ts",
+                      "sha256":  "41fbc7f47f549a4de0f18c153d70b129b1e3f22799ee1b035f79a730e465ca54"
+                  },
+                  {
+                      "path":  "backend/src/services/payrollController.ts",
+                      "sha256":  "6fcb41e344be2331741b78b9ce9fc2531815dfe7d0871b8621857ee87fde30fe"
+                  },
+                  {
+                      "path":  "backend/src/services/payrollGenerator.ts",
+                      "sha256":  "c1cf2c78f6071d351b3a2673aa207127a94cc7bc86ff4d484a091d5c194c5840"
+                  },
+                  {
+                      "path":  "backend/src/services/payrollRules/currency-units.json",
+                      "sha256":  "0725675be4593ed4499266834c6fc52512c289e67126f6ba158f0fd3092c1e52"
+                  },
+                  {
+                      "path":  "backend/src/services/payrollRules/engine.ts",
+                      "sha256":  "01736af48ecded7dcb3dcf0133a7e56513317325d7716d04da6461f9ec2a2df5"
+                  },
+                  {
+                      "path":  "backend/src/services/payrollRules/worldwide.ts",
+                      "sha256":  "72c7f90d9d66f047226bd1fe42777b17ddf6456de711cdd80fd7dcd01d19dbf0"
+                  },
+                  {
+                      "path":  "backend/src/services/payrollScheduler.ts",
+                      "sha256":  "af280aa18f17102ea22e0ba11f69cf0e37ce0c518ffdd552917e2c45cbdde349"
+                  },
+                  {
+                      "path":  "backend/src/services/payrollStrategies.ts",
+                      "sha256":  "e76211b35a1465cbec2f6b887fe6e18fe9a4df8940a8658b1ff3e6f8f1458835"
+                  },
+                  {
+                      "path":  "backend/src/services/pdfService.ts",
+                      "sha256":  "62da6f666ac46ed2df8b1efe388c908b56c9a941d7e1d86e9219bc27df39884d"
+                  },
+                  {
+                      "path":  "backend/src/services/pdfTemplates.ts",
+                      "sha256":  "3e637d998fe27b50fec3d69a7c9623b5ec0807c5aceeb933993c3578a6fd4f0e"
+                  },
+                  {
+                      "path":  "backend/src/services/photoComplianceService.ts",
+                      "sha256":  "f5d31022eb91a3b54c37002461974608e40660aaf45540cd173f55b7e3844c70"
+                  },
+                  {
+                      "path":  "backend/src/services/postgresPayoutRepository.ts",
+                      "sha256":  "4f6d44577aaf4109d1b86ae7798e1b1d71ec703a5171cc1e8cab692eb325a7eb"
+                  },
+                  {
+                      "path":  "backend/src/services/ptoService.ts",
+                      "sha256":  "7f7b69d233b83d93ad0ee47ffaa818474b23fb6b7aedc2695543b3242a73b7c5"
+                  },
+                  {
+                      "path":  "backend/src/services/quickbooksOAuth.ts",
+                      "sha256":  "9709fc6f19666407ae02040945c92068e9135f32e7e38db82651ced6733d3beb"
+                  },
+                  {
+                      "path":  "backend/src/services/quickbooksService.ts",
+                      "sha256":  "ca0e053ccba6dc8299c11f60abac9a1806c704d9d8f31efe6446583683108348"
+                  },
+                  {
+                      "path":  "backend/src/services/recurringShiftGenerator.ts",
+                      "sha256":  "df38efce20a420d1e80bcbe4de9b52b9c0d8aa88160393f6e0ebf977108536fd"
+                  },
+                  {
+                      "path":  "backend/src/services/reportService.ts",
+                      "sha256":  "0bbe4023348c44a9410ebaca7d17517cba8c7d77776d34ab937621e1c07d0d16"
+                  },
+                  {
+                      "path":  "backend/src/services/ruleService.ts",
+                      "sha256":  "6ea88359a1068ae27acc4db723d285b81cc5f358a2222cd7e7c435b34f9efc26"
+                  },
+                  {
+                      "path":  "backend/src/services/scheduleService.ts",
+                      "sha256":  "05c09461a012b9e129324bc852b9a805028ed296413000460ddb7910783b14b2"
+                  },
+                  {
+                      "path":  "backend/src/services/stripeService.ts",
+                      "sha256":  "7aa1dc0a94d5be74277f497c32b19745de43e41143ae232c91eb3be59fef2272"
+                  },
+                  {
+                      "path":  "backend/src/services/taskService.ts",
+                      "sha256":  "83b3f3bc6bfddf88ecc4fe88370ffc0032542cdc9b6d8612ce6b7643ad270156"
+                  },
+                  {
+                      "path":  "backend/src/services/teamService.ts",
+                      "sha256":  "42e9a58db030e88695041546212b0d74ff7096d560d6cf1274f112be6c71695d"
+                  },
+                  {
+                      "path":  "backend/src/services/timeEntryService.ts",
+                      "sha256":  "a3b9bc807bfcdc0af1b48b47f5fb6cae64d8eb06731e8649ef1a0a1099a40912"
+                  },
+                  {
+                      "path":  "backend/src/services/voiceService.ts",
+                      "sha256":  "6478af758a924c0994a0e6a25b9a5e066bd29beece026b8efd2be3652551c7bc"
+                  },
+                  {
+                      "path":  "backend/src/services/watermarkService.ts",
+                      "sha256":  "1d80936f294a4ccda32cac6ab4299bbe2880d484b90951be0cc6e975036037ac"
+                  },
+                  {
+                      "path":  "backend/src/services/webhookService.ts",
+                      "sha256":  "0ddc64466e93bf5a9c9e936799eee5611f3a5315e869aabcf10c9146dec8a4ae"
+                  },
+                  {
+                      "path":  "backend/src/services/yearEndService.ts",
+                      "sha256":  "288e5711c7e752a502a68be01b3473132efe13b55ee14bb472ea975fa1ee56d1"
+                  },
+                  {
+                      "path":  "backend/src/utils/auth.ts",
+                      "sha256":  "6d19f09fd5ecee63e23d67b5aa73e853a835c26f3461cda660c4be10538d9069"
+                  },
+                  {
+                      "path":  "backend/src/utils/geo.ts",
+                      "sha256":  "ce53649b965ba5acfcda9ece831fe79f9d16fd3d5c0d56ca20429adccdeb8aee"
+                  },
+                  {
+                      "path":  "backend/support-migration.js",
+                      "sha256":  "dde3ebc1c607d190064e0c893883e5bfbfbd26319d32ae94267de04ab17c1e28"
+                  },
+                  {
+                      "path":  "backend/test-payroll-details.js",
+                      "sha256":  "c51265c1890766f177ca303153fbcec9ed1dad421a086dfcb461d16ed9a2d7cc"
+                  },
+                  {
+                      "path":  "backend/tests/apple-billing.test.cjs",
+                      "sha256":  "dc7bc722035ee9497377ddcc5220d467d5cafdcbf61115f325582a86578fa9a7"
+                  },
+                  {
+                      "path":  "backend/tests/complimentary-access.test.cjs",
+                      "sha256":  "50821be9415052233db1868435f2c73bae9c7097650a2dd3c9a639cfe317922c"
+                  },
+                  {
+                      "path":  "backend/tests/google-billing.test.cjs",
+                      "sha256":  "18a5985fd6f9bccf5e41d8f65f0d7cc96db5b586b0e567c722e2330659ffeaf0"
+                  },
+                  {
+                      "path":  "backend/tests/local-sandbox-payout.test.cjs",
+                      "sha256":  "59c8419f897f6a1617719d575024c3bc980d9873de266477af200b448049928e"
+                  },
+                  {
+                      "path":  "backend/tests/native-payout-migration.test.cjs",
+                      "sha256":  "818cde2077c41ec59af43e96a25e6686b90eaccc5cbe8d907547a39146c4da1c"
+                  },
+                  {
+                      "path":  "backend/tests/native-payout.test.cjs",
+                      "sha256":  "d9302770e7cf8d970b3fbb84c58aff6322fa825d9d103f045a86661f71a6f7dc"
+                  },
+                  {
+                      "path":  "backend/tests/payroll-rules.test.cjs",
+                      "sha256":  "327e87ff21e63af39c08c156d4cc9fe011d093f36e88efaf7dd3ad06070983ff"
+                  },
+                  {
+                      "path":  "backend/tests/release-upgrade.test.cjs",
+                      "sha256":  "bdef6014d689f240d8a8d5d74f5e31858eb41d00c0a41be4ef6afc1d60791c4e"
+                  },
+                  {
+                      "path":  "backend/tests/release.test.cjs",
+                      "sha256":  "a3e00cd8b2d9caa97abd0530018e36d6e3b430d9b8fd68f62f0fc0a99a434b8c"
+                  },
+                  {
+                      "path":  "backend/tests/worldwide-payroll.test.cjs",
+                      "sha256":  "eff5165333550ccd8aa606186cb86f55a9df17a69e78bf19d1eb1b9a7fe8da6f"
+                  },
+                  {
+                      "path":  "backend/tsconfig.json",
+                      "sha256":  "f9e86f8514b1a5310f2edb05161a0f5a4d416a9b8ff905dce2c0e6eb0d233060"
+                  },
+                  {
+                      "path":  "backend/update-test-user-trial.js",
+                      "sha256":  "293250b678cc0af19635ffea832e39764ea0f8ef4f0faf6ad00ae9ceb77d27b4"
+                  },
+                  {
+                      "path":  "backend/update-voice-notes-table.js",
+                      "sha256":  "11eda552ab4c670ba2652fea34e2c6be33f571183e34bb8bd07ecc43aa185b4a"
+                  },
+                  {
+                      "path":  "docker-compose.scale-test.yml",
+                      "sha256":  "bef34d1bb526d4af38cb7db2287b0a8476d4dbb6a0420f33e46ce4853dca51e3"
+                  },
+                  {
+                      "path":  "lucy-core/Dockerfile",
+                      "sha256":  "ebc1938f80ac1133d9670af0c0da7d2625d02f1aecd464c8d69027394879bcb4"
+                  },
+                  {
+                      "path":  "lucy-core/FUTURE_JOBS_INSTALL.md",
+                      "sha256":  "2c3776a4e820ad34664517dfbca9224e4408d638975dec5f537a8d139bf2380c"
+                  },
+                  {
+                      "path":  "lucy-core/LICENSE",
+                      "sha256":  "3580b9b6c0ca7ab435f352b9aba269f11612614d114e261cbf0d06b6bc1d3aee"
+                  },
+                  {
+                      "path":  "lucy-core/README.md",
+                      "sha256":  "4929df79b2ea00b28a0aaf3bcacb76c6b0bc316baf91a6bd721edf68b557c6e8"
+                  },
+                  {
+                      "path":  "lucy-core/apply-future-jobs-update.ps1",
+                      "sha256":  "cbdc9e22982a8282cd8f3517bd78ab554c6c2ad6d37c24db87275ac018e74f8f"
+                  },
+                  {
+                      "path":  "lucy-core/clients/mobile/LucyWakeAudio.ts",
+                      "sha256":  "3825a233de95b8245f162b0edededd5b80c2ef38c1959aaafc01465583ddf596"
+                  },
+                  {
+                      "path":  "lucy-core/clients/mobile/modules/lucy-wake-audio/android/src/main/java/com/futurejobs/lucywake/LucyWakeAudioModule.kt",
+                      "sha256":  "1a9d849455e7e1ce32dde14383a6590721c4fbbf9df647960e28640d3bd68983"
+                  },
+                  {
+                      "path":  "lucy-core/clients/mobile/modules/lucy-wake-audio/expo-module.config.json",
+                      "sha256":  "da3b41c39018398b9e92abc39746449310f0be043ffbf7953f1f77866971cade"
+                  },
+                  {
+                      "path":  "lucy-core/clients/mobile/modules/lucy-wake-audio/index.ts",
+                      "sha256":  "89962c8e0e00fd206dc7e8954d3eb432f99dc9073bd046a717cc4f794dc7934f"
+                  },
+                  {
+                      "path":  "lucy-core/clients/mobile/modules/lucy-wake-audio/ios/LucyWakeAudioModule.swift",
+                      "sha256":  "37bd1c4045c6a63a14d709e01c96b501d85f9ba348e21295950b3fa36ae83e4c"
+                  },
+                  {
+                      "path":  "lucy-core/clients/mobile/modules/lucy-wake-audio/package.json",
+                      "sha256":  "637002d651816d9bbe77129a5befc4a4eac9beb8ea12bc29f9d72f9698183aed"
+                  },
+                  {
+                      "path":  "lucy-core/clients/mobile/wakeWordService.ts",
+                      "sha256":  "d48b621705e22b845d32f6d5d30843d6b32c9e5947f13dc43e4fdf69beda9947"
+                  },
+                  {
+                      "path":  "lucy-core/clients/web/LucyWakeControl.tsx",
+                      "sha256":  "0a052db318cf0283b19f6d7e1c8e84d4d2ac374a0f5632c6015574f6516d83db"
+                  },
+                  {
+                      "path":  "lucy-core/clients/web/lucyWakeClient.ts",
+                      "sha256":  "a5a97657d9b131e8332384f326a90b7ee196154a17fb77519deb301b5d9b2f2e"
+                  },
+                  {
+                      "path":  "lucy-core/docker-compose.yml",
+                      "sha256":  "de2589f2aa552a2b12e3979a9a34c008d299e74bd0bc0c5dbb846be7fd2542ff"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/backend/src/routes/voiceRoutes.ts",
+                      "sha256":  "1bac1bc47e025d1ffb5b408967765073fcb06d5099154a6e414a69b1ab088073"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/backend/src/services/voiceService.ts",
+                      "sha256":  "6478af758a924c0994a0e6a25b9a5e066bd29beece026b8efd2be3652551c7bc"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/App.tsx",
+                      "sha256":  "19f6e46c22f791cd64713cc93078b742dc152792f96e6c2fcc3036c9cdccce53"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/modules/lucy-wake-audio/android/src/main/java/com/futurejobs/lucywake/LucyWakeAudioModule.kt",
+                      "sha256":  "1a9d849455e7e1ce32dde14383a6590721c4fbbf9df647960e28640d3bd68983"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/modules/lucy-wake-audio/expo-module.config.json",
+                      "sha256":  "da3b41c39018398b9e92abc39746449310f0be043ffbf7953f1f77866971cade"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/modules/lucy-wake-audio/index.ts",
+                      "sha256":  "89962c8e0e00fd206dc7e8954d3eb432f99dc9073bd046a717cc4f794dc7934f"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/modules/lucy-wake-audio/ios/LucyWakeAudioModule.swift",
+                      "sha256":  "37bd1c4045c6a63a14d709e01c96b501d85f9ba348e21295950b3fa36ae83e4c"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/modules/lucy-wake-audio/package.json",
+                      "sha256":  "637002d651816d9bbe77129a5befc4a4eac9beb8ea12bc29f9d72f9698183aed"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/src/screens/AIAssistantScreen.tsx",
+                      "sha256":  "55e945886613b31366753ece348862dccf31bac7ff34bd48d9646b62f8d6345b"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/src/screens/DemoScreen.tsx",
+                      "sha256":  "d8c7fca666528ed3519c379b8596d8d5cce3493a9268fbcf5856dfe07ace4715"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/src/screens/HomeScreen.tsx",
+                      "sha256":  "380ab45279a5c44da0e689d21370614727ef64e4e2d4e10558eb557788832e9a"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/src/services/LucyWakeAudio.ts",
+                      "sha256":  "e16f7a9ad65c858ebcfd0b4ddd08be88b8452ea334dc29202f34eb2c80355f72"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/mobile/src/services/wakeWordService.ts",
+                      "sha256":  "d48b621705e22b845d32f6d5d30843d6b32c9e5947f13dc43e4fdf69beda9947"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/web/src/components/LucyWakeControl.tsx",
+                      "sha256":  "0a052db318cf0283b19f6d7e1c8e84d4d2ac374a0f5632c6015574f6516d83db"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/web/src/pages/AskLucy.tsx",
+                      "sha256":  "dc5b8a3515e0d150a8953baf604e3774a7ac2b2be359bebf2dd2803282274e97"
+                  },
+                  {
+                      "path":  "lucy-core/future-jobs-update/web/src/services/lucyWakeClient.ts",
+                      "sha256":  "a5a97657d9b131e8332384f326a90b7ee196154a17fb77519deb301b5d9b2f2e"
+                  },
+                  {
+                      "path":  "lucy-core/models/README.md",
+                      "sha256":  "9d85bd8febb540a43dfa0ca6f20a4a8d1d198a45fd22cc6be4a269f609fda9fc"
+                  },
+                  {
+                      "path":  "lucy-core/requirements.txt",
+                      "sha256":  "af4e22fb4d72057112d0ec6125677820bcb9447a25e395dd350ce702b56429f4"
+                  },
+                  {
+                      "path":  "lucy-core/service/__init__.py",
+                      "sha256":  "7f6612a04305b16caf5139da8c96341dbba890dd6187e54265dc49198dd89296"
+                  },
+                  {
+                      "path":  "lucy-core/service/app.py",
+                      "sha256":  "8913fafe2e983d53d53a9b1ea95d4dbc099ed4d8a578184a1a83a3d581e4a815"
+                  },
+                  {
+                      "path":  "lucy-core/service/engine.py",
+                      "sha256":  "d5034d09cdb8eb2f378c4ee4ab93175f2b814e50bce9a5387e1f259e3fb350ea"
+                  },
+                  {
+                      "path":  "lucy-core/training/README.md",
+                      "sha256":  "ab93195c4491e281e16c2cd75103bfae9e5e292ec7396904380d4539bfa6065b"
+                  },
+                  {
+                      "path":  "lucy-core/training/dataset-manifest.example.csv",
+                      "sha256":  "7b23d8f877505cbac47e64c49c8ddcc2e3ca8dd97b854fa009e0dcbe298e6ca9"
+                  },
+                  {
+                      "path":  "lucy-core/training/validate_dataset.py",
+                      "sha256":  "bece4c2b30af090f95f2062c04409c703f73b0c13a4836efaf5ea316f5ab77f1"
+                  },
+                  {
+                      "path":  "mobile/.easignore",
+                      "sha256":  "4f055078ba07089a1a40f0e698e7ad9c68018cd9abcad0990bd480115857c37b"
+                  },
+                  {
+                      "path":  "mobile/.gitignore",
+                      "sha256":  "d9a0b1dc86532e60d5256b86535ff548e31be68abc1328c512935385c64d0fad"
+                  },
+                  {
+                      "path":  "mobile/App.tsx",
+                      "sha256":  "ea63ae51619650df43db0c67c61159e626206688738ccbf743595eb02e21ac58"
+                  },
+                  {
+                      "path":  "mobile/app.json",
+                      "sha256":  "4865611e4fbf62181ab8f0a1fd482900d25d31758a86dc217eb21b74ccfc71cd"
+                  },
+                  {
+                      "path":  "mobile/assets/icon.png",
+                      "sha256":  "90e58cc422fe39a01576f1083b58a1fa27b861a26cfdfb5136477c3f1169ba45"
+                  },
+                  {
+                      "path":  "mobile/assets/icon_android.png",
+                      "sha256":  "90e58cc422fe39a01576f1083b58a1fa27b861a26cfdfb5136477c3f1169ba45"
+                  },
+                  {
+                      "path":  "mobile/assets/splash.png",
+                      "sha256":  "90e58cc422fe39a01576f1083b58a1fa27b861a26cfdfb5136477c3f1169ba45"
+                  },
+                  {
+                      "path":  "mobile/assets/wake-word/README.txt",
+                      "sha256":  "9dc5d68b4252798baaa8fae76cfa241dc2a67bbbe872faa224be94c572172c10"
+                  },
+                  {
+                      "path":  "mobile/eas.json",
+                      "sha256":  "8a43c2118a7351c7900f2b59bab78fdcc685ccf916d898f3faa7891ba0334111"
+                  },
+                  {
+                      "path":  "mobile/index.ts",
+                      "sha256":  "0228d726acc853fe05bf25f395de209c3c29b542845f3688542043034f5006b2"
+                  },
+                  {
+                      "path":  "mobile/modules/lucy-wake-audio/android/build.gradle",
+                      "sha256":  "b480ed5f28dbf7cf6f3ae6f8c6132d7f9de0819cbfe71ee1baf58942b762e253"
+                  },
+                  {
+                      "path":  "mobile/modules/lucy-wake-audio/android/src/main/AndroidManifest.xml",
+                      "sha256":  "350a8990ece62ce02051a665a466f72d8638e0e83bc4ce465d13294006c62576"
+                  },
+                  {
+                      "path":  "mobile/modules/lucy-wake-audio/android/src/main/java/com/futurejobs/lucywake/LucyWakeAudioModule.kt",
+                      "sha256":  "97aeb6a2dbada67077f1b7b748ea7129a070532c3e43e8f9c95141927c70a692"
+                  },
+                  {
+                      "path":  "mobile/modules/lucy-wake-audio/expo-module.config.json",
+                      "sha256":  "da3b41c39018398b9e92abc39746449310f0be043ffbf7953f1f77866971cade"
+                  },
+                  {
+                      "path":  "mobile/modules/lucy-wake-audio/index.ts",
+                      "sha256":  "b4fa0d3ce316769603c242be3c9bf98963dff97640c23678bfacdfad88c6dfa5"
+                  },
+                  {
+                      "path":  "mobile/modules/lucy-wake-audio/ios/LucyWakeAudio.podspec",
+                      "sha256":  "039785030e2c201d208e5c6aac01568f46a78f180a9098929ba63a6b0710137b"
+                  },
+                  {
+                      "path":  "mobile/modules/lucy-wake-audio/ios/LucyWakeAudioModule.swift",
+                      "sha256":  "731ba9b9ae1ab932826a42503641ef28600293faae1b537acd7e95a0b3594cff"
+                  },
+                  {
+                      "path":  "mobile/modules/lucy-wake-audio/package.json",
+                      "sha256":  "637002d651816d9bbe77129a5befc4a4eac9beb8ea12bc29f9d72f9698183aed"
+                  },
+                  {
+                      "path":  "mobile/npx",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  {
+                      "path":  "mobile/package-lock.json",
+                      "sha256":  "dac8dd5731ad01aad50c8a4096b12c05c863dcae7349a07bab5554f1643ffec6"
+                  },
+                  {
+                      "path":  "mobile/package.json",
+                      "sha256":  "c3612b5aafadde35e54175dfc64bc817d215208a23a89370b4f8db626313e093"
+                  },
+                  {
+                      "path":  "mobile/scripts/enableLucyWakeWord.js",
+                      "sha256":  "975ab5f169d8ce78f42e93aa5c8d7959e992cf53ee4eb17c3c981c41a124a687"
+                  },
+                  {
+                      "path":  "mobile/src/config/subscriptionProducts.ts",
+                      "sha256":  "2df19d66d15ce31273579243df803079f7d45577826ed021ee27f2682e76df7c"
+                  },
+                  {
+                      "path":  "mobile/src/context/AuthContext.tsx",
+                      "sha256":  "16e10b7c28e58b0902fa716efd08d472a4f03a0dee24eaae221d07fcdab808e8"
+                  },
+                  {
+                      "path":  "mobile/src/context/LanguageContext.tsx",
+                      "sha256":  "46d460ffca8cf19f9f0581090570c171d1a3b7eba0771a792ba045b504349cf5"
+                  },
+                  {
+                      "path":  "mobile/src/declarations.d.ts",
+                      "sha256":  "1f8dce6513eca5885c9ed252370824af10d1e86b1f9a57e5ce4ba4bc56c15be7"
+                  },
+                  {
+                      "path":  "mobile/src/lucy-wake/app-config-snippet.json",
+                      "sha256":  "d84b3cc1d12a3ccf1ad746b7466b10c10fbbf18230a81e0852b5d758be231b37"
+                  },
+                  {
+                      "path":  "mobile/src/lucy-wake/core/lucy-bootstrap-model.json",
+                      "sha256":  "afc7cc8c15678395a409f91a018ce7c1b10cbd17261b51898124e9dfe6418b85"
+                  },
+                  {
+                      "path":  "mobile/src/lucy-wake/core/lucy-wake-core.d.ts",
+                      "sha256":  "25ee32ea7e7e5b10ce5ab531a53909a391701e99471b73fdff891afcc15e5815"
+                  },
+                  {
+                      "path":  "mobile/src/lucy-wake/core/lucy-wake-core.mjs",
+                      "sha256":  "15ec75599dde70615ccd8a795b8e48553774c66f37bdc2d93e497e9c92150155"
+                  },
+                  {
+                      "path":  "mobile/src/lucy-wake/core/validation-report.json",
+                      "sha256":  "9d909f33035e05cc0d85e33789e5a5829863dcb9826916bbb8196da2fec52428"
+                  },
+                  {
+                      "path":  "mobile/src/lucy-wake/mobile/LucyMobileWakeService.ts",
+                      "sha256":  "075e554500f80c43a8b9826d62eeb18146c23162ddde2e5e67f900bf5043a2fa"
+                  },
+                  {
+                      "path":  "mobile/src/lucy-wake/mobile/useLucyWakeWord.ts",
+                      "sha256":  "c807b279cac4f4d4a52071be21e74de4a5fa81cb87935c265bb4fb070cf5bff2"
+                  },
+                  {
+                      "path":  "mobile/src/screens/AIAssistantScreen.tsx",
+                      "sha256":  "3752eea4d6c0652f57d79c8e2a8801db59762c65e03d026a7cdab8e4881ae02a"
+                  },
+                  {
+                      "path":  "mobile/src/screens/AboutScreen.tsx",
+                      "sha256":  "795f3585941d3a08a2976dc3419f301a157d66e06dbea856fd1ad471499a635f"
+                  },
+                  {
+                      "path":  "mobile/src/screens/CameraScreen.tsx",
+                      "sha256":  "83fb1fd7473924d2de0c342990c0e9347a8770f5ba7f92eae74feda857aaffd0"
+                  },
+                  {
+                      "path":  "mobile/src/screens/CameraView.tsx",
+                      "sha256":  "83455bbf6162f3edfb0f51bdb7880199a89d9518b87da4f423cbf83412ca04b4"
+                  },
+                  {
+                      "path":  "mobile/src/screens/ChatListScreen.tsx",
+                      "sha256":  "6046b0d9fd5b8be2a9e8121fc59b4ff976db51829e0849e994aaec77005a04f3"
+                  },
+                  {
+                      "path":  "mobile/src/screens/ChatScreen.tsx",
+                      "sha256":  "67dd22b84cdedd0e6f83f23881e9204578676923b4735cf8cf5336933da5e7e3"
+                  },
+                  {
+                      "path":  "mobile/src/screens/CompanySettingsScreen.tsx",
+                      "sha256":  "74646cdd22b68e589ba041ef9902b1dc108ab5545b85258feb5e8156e132848f"
+                  },
+                  {
+                      "path":  "mobile/src/screens/ContactScreen.tsx",
+                      "sha256":  "67beb2eba7148067914a6938da2dfa8c2b345b8a01d8eb1b859ae9169120958f"
+                  },
+                  {
+                      "path":  "mobile/src/screens/CreateShiftScreen.tsx",
+                      "sha256":  "ab1466c36372cdd1b50a699197de3f846ea2f2faaf71d03dc15438ed7797b682"
+                  },
+                  {
+                      "path":  "mobile/src/screens/CrewClockScreen.tsx",
+                      "sha256":  "8d550ad8624fd561ab413dd0288a1c7263b2ec61293c0c6aa2407be0ac041926"
+                  },
+                  {
+                      "path":  "mobile/src/screens/CrewTrackingScreen.tsx",
+                      "sha256":  "8487bf9c3ffef850a754f8055fd743868ceca6f909ff6f9235e02413804b233f"
+                  },
+                  {
+                      "path":  "mobile/src/screens/DemoScreen.tsx",
+                      "sha256":  "d8c7fca666528ed3519c379b8596d8d5cce3493a9268fbcf5856dfe07ace4715"
+                  },
+                  {
+                      "path":  "mobile/src/screens/FoldersScreen.tsx",
+                      "sha256":  "9c5d46418dd588544f8646522f4bb807510ccd5245ec679ed0cc7cdc85d7bb6d"
+                  },
+                  {
+                      "path":  "mobile/src/screens/ForgotPasswordScreen.tsx",
+                      "sha256":  "f63b7dc4b93b7f0b5d287ca91fb9cb07e5c2f79c21e78fe7bb1af6678f4767e2"
+                  },
+                  {
+                      "path":  "mobile/src/screens/GPSPlaybackScreen.tsx",
+                      "sha256":  "e865751a6e1218d703bca0185753da7174c6d1065fdcb235407c9a2e9fe0bdff"
+                  },
+                  {
+                      "path":  "mobile/src/screens/HistoryScreen.tsx",
+                      "sha256":  "fb66edcb2cdb2ce1534245f2e208ebcc6e8f4bd8a2e4cc07369e53a4b400a51b"
+                  },
+                  {
+                      "path":  "mobile/src/screens/HomeScreen.tsx",
+                      "sha256":  "7f95d4b18e145bb577a19a80f31cdd5a795409362455d076441b56bc87aadd87"
+                  },
+                  {
+                      "path":  "mobile/src/screens/KioskScreen.tsx",
+                      "sha256":  "8ea3056c1d91b82b4de0a4e6dd129dae58aad80607af7417929919f54cf2648f"
+                  },
+                  {
+                      "path":  "mobile/src/screens/LoginScreen.tsx",
+                      "sha256":  "762b9d16594549ac43ff2e2842d4d1e48a132fb058bf4bf06fecf8d1953f8bee"
+                  },
+                  {
+                      "path":  "mobile/src/screens/MonthMediaScreen.tsx",
+                      "sha256":  "fd7f3a471277e9f910ddb23005a551bb50d69dd873f2d27a38c92023d8459de3"
+                  },
+                  {
+                      "path":  "mobile/src/screens/MonthMediaTypeScreen.tsx",
+                      "sha256":  "b606ba06ae3cb97777bc4d99dcdfab1b412bb820c8b5fec813e7fa2bfcf63ec3"
+                  },
+                  {
+                      "path":  "mobile/src/screens/NewChatScreen.tsx",
+                      "sha256":  "583c394a3476866af7a2eb7e598884c94f8cae249033ac520a644a17b3a76cfb"
+                  },
+                  {
+                      "path":  "mobile/src/screens/PTOScreen.tsx",
+                      "sha256":  "2b2aebce240f090ea07be15ab70cff38c5d901dbe2af90d4a3c7c70e73021346"
+                  },
+                  {
+                      "path":  "mobile/src/screens/PayrollRulesScreen.tsx",
+                      "sha256":  "c231a1d2502361b95fbf2c037a8534c6d89244f7489fdbc59a0f3f38c3214b43"
+                  },
+                  {
+                      "path":  "mobile/src/screens/PrivacyScreen.tsx",
+                      "sha256":  "9fb6b98223305ff2059a727ac93ece277b65562ca8190d119157975a21a614b6"
+                  },
+                  {
+                      "path":  "mobile/src/screens/ProfileScreen.tsx",
+                      "sha256":  "b201bd9529f08d0b562a282827e5142e6d883979810b149d157c112d90bf1a37"
+                  },
+                  {
+                      "path":  "mobile/src/screens/ProjectAlbumScreen.tsx",
+                      "sha256":  "1948406494bae39122473090bea565985dc17810448870009e675fce76152afc"
+                  },
+                  {
+                      "path":  "mobile/src/screens/ProjectMediaScreen.tsx",
+                      "sha256":  "0152770df6e76125c8a1be3f0819faeffa46b0bafd6632b134bef063a034b890"
+                  },
+                  {
+                      "path":  "mobile/src/screens/ProjectsScreen.tsx",
+                      "sha256":  "79c0100319cf8b09e1c69d0fb2b4f83b2f160930a840414cbe1063dbc8066a3d"
+                  },
+                  {
+                      "path":  "mobile/src/screens/RegisterScreen.tsx",
+                      "sha256":  "b995ce4a40803be433797d9697dd0c397825371369993fdfff2597ca33743c2c"
+                  },
+                  {
+                      "path":  "mobile/src/screens/ScheduleScreen.tsx",
+                      "sha256":  "176138ca166f6a3536bd21e20c0c6b2c397a3f69a8ec8e060beeda2098186717"
+                  },
+                  {
+                      "path":  "mobile/src/screens/SecurityScreen.tsx",
+                      "sha256":  "67a7517ff96722e489c9f46aa1a048d9ccfee2da1b201db8c8e266e459bf8cf5"
+                  },
+                  {
+                      "path":  "mobile/src/screens/SelectEmployeesScreen.tsx",
+                      "sha256":  "f80d8a85e2bc493822a540ce98bd65c897890ad3c881c9725bfd80e4e31f9b88"
+                  },
+                  {
+                      "path":  "mobile/src/screens/SubscriptionScreen.tsx",
+                      "sha256":  "7b76dbedc1616ab5cb76ad801723329bcc888f2f78b851fcd9dab40f496f4a8a"
+                  },
+                  {
+                      "path":  "mobile/src/screens/SupportScreen.tsx",
+                      "sha256":  "9cdb69735270bb0e38af30d2122f418e4fb9978372acf9a8bc2f764b315625e2"
+                  },
+                  {
+                      "path":  "mobile/src/screens/TasksScreen.tsx",
+                      "sha256":  "1eaf95270efe4bcc8dca739a06590d9edf9670545c70e5f976e3e735f78351f6"
+                  },
+                  {
+                      "path":  "mobile/src/screens/TeamScreen.tsx",
+                      "sha256":  "10ff860e1e7577b580050daecb4b8ed99217831cbe2ca888a55a8d8a8ed078e0"
+                  },
+                  {
+                      "path":  "mobile/src/screens/TermsScreen.tsx",
+                      "sha256":  "12c153b948e16b8ad5fbe91ba6c2ff3122da903423b97a582a63ba68eaabdbbf"
+                  },
+                  {
+                      "path":  "mobile/src/screens/TimesheetScreen.tsx",
+                      "sha256":  "2d4b835c4a55e010580c8a9f231b8316440f822c9726b0a7ea7128865c3c8176"
+                  },
+                  {
+                      "path":  "mobile/src/screens/VoiceNoteScreen.tsx",
+                      "sha256":  "be3146e58737140e04f7dd341bd2efe55b1b4d61370b3e0852bf55121914c06c"
+                  },
+                  {
+                      "path":  "mobile/src/screens/WebViewScreen.tsx",
+                      "sha256":  "ba0818a78ea17242c179046b8536495617f8355be92c62dbd6658500366b0fda"
+                  },
+                  {
+                      "path":  "mobile/src/screens/WorkerToolsScreen.tsx",
+                      "sha256":  "540052ab7e791114a22f4db4716a278ad64380c3b090082d7e98d8c1d089ee12"
+                  },
+                  {
+                      "path":  "mobile/src/screens/WorldwidePayrollRules.tsx",
+                      "sha256":  "0686ce1e51ba385c4b2abf8c937c189c3415236e0f6b5b20497a670ebd64518f"
+                  },
+                  {
+                      "path":  "mobile/src/services/LucyWakeAudio.ts",
+                      "sha256":  "f3dbc56e85994c39ade13bf3723d81d4d010eff068d85a241fd4908d2c3901a6"
+                  },
+                  {
+                      "path":  "mobile/src/services/api.ts",
+                      "sha256":  "b5c5a66b911762a6b5f239ba7e7cf7a6cb300fe9c5470171807796efe976fbd5"
+                  },
+                  {
+                      "path":  "mobile/src/services/backgroundLocation.ts",
+                      "sha256":  "a4503f70593c08b4163b775855d023c0c05256decd2ca47858e9d017d3a575b9"
+                  },
+                  {
+                      "path":  "mobile/src/services/i18n.ts",
+                      "sha256":  "665ad57cbe92cae077199ed6f26e29d00769fda3b0f9771885877c56e2ef4b90"
+                  },
+                  {
+                      "path":  "mobile/src/services/notificationService.ts",
+                      "sha256":  "ed87b2793b98efbf80dba95243cc1d1e84a59c1cab8e7788ef021fa5287d5f73"
+                  },
+                  {
+                      "path":  "mobile/src/services/offlineService.ts",
+                      "sha256":  "927db05e2dad66630591e4eebe3313f48ecd3206805334fc917d494647391125"
+                  },
+                  {
+                      "path":  "mobile/src/services/wakeWordService.ts",
+                      "sha256":  "ece9f49dca7f930c185bf7d124f4acb09ba89784deaa03bc9c8840bbd28f309b"
+                  },
+                  {
+                      "path":  "mobile/src/utils/scale.ts",
+                      "sha256":  "cd9ee5e449044dc15894c8394e20dd772316e8de070fc8dd5dba731d94bd525f"
+                  },
+                  {
+                      "path":  "mobile/tsconfig.json",
+                      "sha256":  "712583ff9cdb4b4e4f9b000a4a56d68db8dc1921cbfbc36d490a3a9f2be3dd72"
+                  },
+                  {
+                      "path":  "railway.json",
+                      "sha256":  "7ecb4df3de1f13ae54c402c02911804e5588005fe60b9f0c012a200f1b1ab11f"
+                  },
+                  {
+                      "path":  "release-docs/Future-Jobs-Pro-AI-1.2-Release-Guide.md",
+                      "sha256":  "3159e827995b4df207616d06ada5e786958e4431f915268dddaf06af2f53475f"
+                  },
+                  {
+                      "path":  "release-docs/Future-Jobs-Pro-AI-1.2-Sales-Guide.md",
+                      "sha256":  "5eb6640be149a275e677e67771f5871f0d6153177f228f0a7f98c05eafa676dc"
+                  },
+                  {
+                      "path":  "release-docs/Future-Jobs-Pro-AI-1.2-Verification.md",
+                      "sha256":  "f256e50755cc5eb1b899d45c8c0708f8bc40adb3f6164e9f5c8066d68955245f"
+                  },
+                  {
+                      "path":  "release-docs/Native-Multi-Country-Payouts-Release-Runbook.md",
+                      "sha256":  "5ca1fe5a3eb7e7ec9384bad9bab234b04e4dd5bf84d7d25be0656cb09245a541"
+                  },
+                  {
+                      "path":  "release-docs/ORIGINAL-RC4-SOURCE-MANIFEST.json",
+                      "sha256":  "d95a6390ac19a92630bc6bc171a72988ceacd29b534ca214e2c1c69020253b5c"
+                  },
+                  {
+                      "path":  "release-docs/PAYROLL-RULES-AND-MANUAL-PAYMENTS.md",
+                      "sha256":  "88adb5666f3a59e07bef6eaf3c24cef13c85b91cf5502cc9119a349c4a0e2983"
+                  },
+                  {
+                      "path":  "release-docs/VALIDATION-1.2.1.json",
+                      "sha256":  "82ed34862540e4048c771dceab9dddf9eeec449c4bee71e3ab348b1b75abd4ab"
+                  },
+                  {
+                      "path":  "release-docs/WORLDWIDE-COMPANY-PAYROLL.md",
+                      "sha256":  "0ba28e67d117f9150e2fcbf4b3495f69be6312c62b5d46c0fc1f0cc83b9779ea"
+                  },
+                  {
+                      "path":  "release-docs/launch-pricing.json",
+                      "sha256":  "9856fb69a601df03339ae68f673ad4637ae400aea0d9d822501e9fc9b8cf01c1"
+                  },
+                  {
+                      "path":  "release-docs/screenshots-demo/operations-globe-demo.png",
+                      "sha256":  "b84b38795f3e1052e1fc07d86408e2e9111e0d1d71e65a0fccde553037535411"
+                  },
+                  {
+                      "path":  "release-docs/screenshots-demo/operations-mobile-demo.png",
+                      "sha256":  "4f4f2eb86e6891c8514c960c155560cbd7aea5e6d45bd5091536df4e7f80ae81"
+                  },
+                  {
+                      "path":  "scripts/Install-App.ps1",
+                      "sha256":  "936726bebdd909f51611b3117971857254e54d57ad5b67bde062f876519906dc"
+                  },
+                  {
+                      "path":  "scripts/Release-1.2.1.ps1",
+                      "sha256":  "357923505f5d6aeeb721b65078a38d30389ac3c5f9d0aa76f66c4c03ba1f2fc4"
+                  },
+                  {
+                      "path":  "scripts/Start-App.ps1",
+                      "sha256":  "f94d7599fe6c4d88bd6fe3f2f6ae5ca7dca652acfe5632933862e301bf94ea2f"
+                  },
+                  {
+                      "path":  "scripts/Stop-App.ps1",
+                      "sha256":  "51b7bd46c0fab37d8d9a148675f47b61b71d0a2663bb96f539079fb33139ffd2"
+                  },
+                  {
+                      "path":  "scripts/Test-App.ps1",
+                      "sha256":  "73c133615cdbf5b2bac5365f29468880c5aae94ca996e1b7c2a28bed301071dd"
+                  },
+                  {
+                      "path":  "scripts/Validate-Release.ps1",
+                      "sha256":  "66341254229e5ec6938ed44e0431c573805c401b58b89a02cc72492e083f1550"
+                  },
+                  {
+                      "path":  "web/.gitignore",
+                      "sha256":  "5342d590b785dfca844cf341379d0556a23225f09dbdcbc9fa5879544897a1bb"
+                  },
+                  {
+                      "path":  "web/.vercelignore",
+                      "sha256":  "d5f3f29b7bd656cc82268628349006ba045f8aabb3e103670e4b76680240ea11"
+                  },
+                  {
+                      "path":  "web/app.json",
+                      "sha256":  "c0e0b5dd1a06771011f1f6c180a8e73d1e8553bbfb5275bef94a7f0729b8bf00"
+                  },
+                  {
+                      "path":  "web/delete-account.html",
+                      "sha256":  "7edc51a77c4af500c90475bdbf85a3260799a3e9a4948318d4a49e6b71590784"
+                  },
+                  {
+                      "path":  "web/eas.json",
+                      "sha256":  "dabba5609fed9bebfac88ffa5edcb245e72f116f3eb9b8b558453dc5f6c12e0f"
+                  },
+                  {
+                      "path":  "web/index.html",
+                      "sha256":  "3244d29eb31c537afd8c614c5305576a6c7c22046f6460317416b40538ca2887"
+                  },
+                  {
+                      "path":  "web/package-lock.json",
+                      "sha256":  "4d029f094ab64c22a34c179e65a43765b6318f9d6bf0ca21cf0bfbf7ecfd64ac"
+                  },
+                  {
+                      "path":  "web/package.json",
+                      "sha256":  "114e12934342b59b5949da2cad637abdf2e69ef38bd5423be229894f39080b53"
+                  },
+                  {
+                      "path":  "web/src/App.tsx",
+                      "sha256":  "fe43305bb3fe358a4f48928d0153cc1054669c5b1ee5c6aaca7c31554165441f"
+                  },
+                  {
+                      "path":  "web/src/components/AppThemeProvider.tsx",
+                      "sha256":  "de395ad4567ceae51c349f751d1cd22c653423e79fa61b1be2761bf0b0b50f10"
+                  },
+                  {
+                      "path":  "web/src/components/ConstructionCalculator.tsx",
+                      "sha256":  "a8907239fc426ad667191e647bd91befc191584b7046d1c5c4b83cdb48adee55"
+                  },
+                  {
+                      "path":  "web/src/components/EvidencePackageDialog.tsx",
+                      "sha256":  "082b8d95ac8b7e09a9ab3dff3cbd47b24319df00da72875a621c39ebe2085025"
+                  },
+                  {
+                      "path":  "web/src/components/Layout.tsx",
+                      "sha256":  "6808c43e078d7a9a67e8610420350ad48d96f74f096eb2a440dbbeb00a6ae3f5"
+                  },
+                  {
+                      "path":  "web/src/components/LucyWakeControl.tsx",
+                      "sha256":  "ffe2684f599dd5c9c7fe07b1a3ee28abdf1260f0ca4b085e432dd40d183eaac7"
+                  },
+                  {
+                      "path":  "web/src/components/NotificationCenter.tsx",
+                      "sha256":  "0d699ef6cb875a3d6c3d2ebb0b558430e0aeb59a4e68ceb031413c0b38b59183"
+                  },
+                  {
+                      "path":  "web/src/components/ResourceAttachments.tsx",
+                      "sha256":  "298d224aac9e1e4fb4e606b947c9411b60e2145b3b5bc26f37c58aca01c418e0"
+                  },
+                  {
+                      "path":  "web/src/components/SelectEmployeesDialog.tsx",
+                      "sha256":  "9c1ed1e08523d2c95ba2484902b369ce55bfc7f444f4edd9652dccb7da6b56aa"
+                  },
+                  {
+                      "path":  "web/src/components/VacationPolicyPanel.tsx",
+                      "sha256":  "ccd0e9a970a0466650bebf686e70580d9fc9e87dd55ff33891520118831d55e5"
+                  },
+                  {
+                      "path":  "web/src/components/YearEndCompanyProfile.tsx",
+                      "sha256":  "df139443c3c2837172789c196970269decdda103cf613a4423e42df8d1c565f3"
+                  },
+                  {
+                      "path":  "web/src/data/README.md",
+                      "sha256":  "cb4bd1dde09b4d4c9c74fdcf5fac6eac10d332c40955537b5c06c50026e25e7e"
+                  },
+                  {
+                      "path":  "web/src/data/coastlines.json",
+                      "sha256":  "c584430fabed1bb5f2f2e6fa63aa7ba74b03983ad9def99ccfac27731e11300b"
+                  },
+                  {
+                      "path":  "web/src/features/workerTools/catalog.ts",
+                      "sha256":  "9420dc050a5a46c381c3a3fcd0f9443fa6987fa45a4cd56b5915c3ae9acaa608"
+                  },
+                  {
+                      "path":  "web/src/index.css",
+                      "sha256":  "3f4453b033ea7a3f71927a2764c1c090eda8a477e5a27ef4fb2c8669d00fae1a"
+                  },
+                  {
+                      "path":  "web/src/lucy-wake/core/lucy-bootstrap-model.json",
+                      "sha256":  "afc7cc8c15678395a409f91a018ce7c1b10cbd17261b51898124e9dfe6418b85"
+                  },
+                  {
+                      "path":  "web/src/lucy-wake/core/lucy-wake-core.d.ts",
+                      "sha256":  "25ee32ea7e7e5b10ce5ab531a53909a391701e99471b73fdff891afcc15e5815"
+                  },
+                  {
+                      "path":  "web/src/lucy-wake/core/lucy-wake-core.mjs",
+                      "sha256":  "15ec75599dde70615ccd8a795b8e48553774c66f37bdc2d93e497e9c92150155"
+                  },
+                  {
+                      "path":  "web/src/lucy-wake/core/validation-report.json",
+                      "sha256":  "9d909f33035e05cc0d85e33789e5a5829863dcb9826916bbb8196da2fec52428"
+                  },
+                  {
+                      "path":  "web/src/lucy-wake/web/LucyWakeButton.tsx",
+                      "sha256":  "85f5ef0da60c86d1c5217f681bf72d61ef91f4f847dd18c16ba6de9f719ad9c7"
+                  },
+                  {
+                      "path":  "web/src/lucy-wake/web/LucyWebWakeListener.d.ts",
+                      "sha256":  "fd6600f8f517ea7be3560728ade23eb0ad91b5506c5e57973e1a302cca469d0f"
+                  },
+                  {
+                      "path":  "web/src/lucy-wake/web/LucyWebWakeListener.mjs",
+                      "sha256":  "51b5c8c1f5b0297641095f87c1435dd7613dcfda63261c85c73cb1040c38a8bd"
+                  },
+                  {
+                      "path":  "web/src/main.tsx",
+                      "sha256":  "23530ed49b94012f5569de40b9b8200dc182908f4d8db1634f61822d30912ae8"
+                  },
+                  {
+                      "path":  "web/src/mjs.d.ts",
+                      "sha256":  "f8e715f8a5566601ff5f2d1a735c4b8de20add55eccd2769617d08080e0eb099"
+                  },
+                  {
+                      "path":  "web/src/pages/About.tsx",
+                      "sha256":  "12291d95990bf56b218e518d296067a3d2e0a8f64985a8389167bc06b2222cf8"
+                  },
+                  {
+                      "path":  "web/src/pages/AcceptInvite.tsx",
+                      "sha256":  "240a369a4852801b7d4e7c3a123bfd16ab75110a6d64afdc592e943f3cd65661"
+                  },
+                  {
+                      "path":  "web/src/pages/AdminDashboard.tsx",
+                      "sha256":  "9d18f9c72a11e4f531353a34e77cf56200128a148a687b92e9d3d83bddbd45f6"
+                  },
+                  {
+                      "path":  "web/src/pages/AskLucy.tsx",
+                      "sha256":  "f927a6ef4a0706792def74363fec6acb55f2d01f9b5677feec3f80e4b56d5301"
+                  },
+                  {
+                      "path":  "web/src/pages/Blog.tsx",
+                      "sha256":  "6b62e109b398a10ff82fb09ccc306b0cf243ba5983bd35dc2bb50c36c85d5534"
+                  },
+                  {
+                      "path":  "web/src/pages/Chat.tsx",
+                      "sha256":  "69a270517307c413dfe08840e529a2e3e8d2587769fe79383f1f859bb3b39df5"
+                  },
+                  {
+                      "path":  "web/src/pages/ChatList.tsx",
+                      "sha256":  "3451f5023fee317431f08d63a6d6eb8de816a0efd6b546e38f772bb667488bd1"
+                  },
+                  {
+                      "path":  "web/src/pages/CommandCenter.tsx",
+                      "sha256":  "6eccf200c934d2796f488f8564438f6ccaeafb531b11b0bc26f1c9ef0c48a794"
+                  },
+                  {
+                      "path":  "web/src/pages/CompanySettings.tsx",
+                      "sha256":  "ef4ce2f520aa14cd2e396af1ff7309b0ae923666a1286c7ad162ec178220a197"
+                  },
+                  {
+                      "path":  "web/src/pages/Contact.tsx",
+                      "sha256":  "7038ce585d115ef8c7a0ed27b2647e6928a0c124b849378c87929351c95aab15"
+                  },
+                  {
+                      "path":  "web/src/pages/CrewClock.tsx",
+                      "sha256":  "7e8e9f98df6aa6c8a7a6c3d8c4c369a7dba700993d731a5e202ba5443ab36a2f"
+                  },
+                  {
+                      "path":  "web/src/pages/CrewTracking.tsx",
+                      "sha256":  "e01578410eb2ffa7ede24336b9b3429c0322afd28839eae7124a6149b7b4b5ea"
+                  },
+                  {
+                      "path":  "web/src/pages/Dashboard.tsx",
+                      "sha256":  "04aa32ff0ce657c5a3d269b1de8633c5e3d787ae03b0c16267c04ca071f86238"
+                  },
+                  {
+                      "path":  "web/src/pages/Demo.tsx",
+                      "sha256":  "c58558515d52d206720e2348e40c74ea488f8c2f53e99771213602db43b239ff"
+                  },
+                  {
+                      "path":  "web/src/pages/DirectDeposit.tsx",
+                      "sha256":  "0eddb8223dbe28a7703bba1189340cc7b1ac305ff5cb06faba31ff3f242baaa6"
+                  },
+                  {
+                      "path":  "web/src/pages/EmployeePortal.tsx",
+                      "sha256":  "bfb77b5cdeaf725231e3a97c312ffd19cd17a02e354253b9434ecbb85d96b5d1"
+                  },
+                  {
+                      "path":  "web/src/pages/Estimates.tsx",
+                      "sha256":  "694aa85e2924a5fb1dee8d6e00b2b28840aa92d357482e2d7f156733168eaed1"
+                  },
+                  {
+                      "path":  "web/src/pages/EvidenceCenter.tsx",
+                      "sha256":  "5db6c2f6a3e620948c9fe6e017d2633d9d60fdd120a6e212004a7d8757382769"
+                  },
+                  {
+                      "path":  "web/src/pages/Expenses.tsx",
+                      "sha256":  "b9260d13e5b934150d554972e1d3661e4b5e6d316c60f958b7ccaacc0e9f771c"
+                  },
+                  {
+                      "path":  "web/src/pages/FAQ.tsx",
+                      "sha256":  "9a668fcaf6f4b292e318d6bf266853bf52e712c9fbfd7e29a91aec463f55e88c"
+                  },
+                  {
+                      "path":  "web/src/pages/Features.tsx",
+                      "sha256":  "06abfa9d91b9c1b9520fd4f8cbc8479a1f8fdd5b29a17126051562870d445ae7"
+                  },
+                  {
+                      "path":  "web/src/pages/FinalizedSlips.tsx",
+                      "sha256":  "f9522d7b8ee75de38971d64842e5c203669cacd570800149233ecf5f8e6bc082"
+                  },
+                  {
+                      "path":  "web/src/pages/ForgotPassword.tsx",
+                      "sha256":  "8cdc5e40398c579a668ce8a180694e29dc4e683dc3ccf86c9895683db984394a"
+                  },
+                  {
+                      "path":  "web/src/pages/GPSPlayback.tsx",
+                      "sha256":  "d5487a8c549a7e9e8e7395dfcd921e5ae97ee890f724564b98e88cdf4c41fa01"
+                  },
+                  {
+                      "path":  "web/src/pages/Integrations.tsx",
+                      "sha256":  "55e00ed60f5ddea282a48de09c2bc387ff3adc23c70d41e86083a23fd5ca576f"
+                  },
+                  {
+                      "path":  "web/src/pages/Invoices.tsx",
+                      "sha256":  "accef3fdf577352275afef39151a54ac1630265c79097d8acaed03d55215be9e"
+                  },
+                  {
+                      "path":  "web/src/pages/Kiosk.tsx",
+                      "sha256":  "d0084003b831f9206a578828e20dfc0dbdf9d1e21c55beec03b532ad4d6c3f42"
+                  },
+                  {
+                      "path":  "web/src/pages/KioskClock.tsx",
+                      "sha256":  "0babaefcf9553f506cbec1edf1ec9298548c4cbe4c5628675cb7d5f7f212bba4"
+                  },
+                  {
+                      "path":  "web/src/pages/Landing.tsx",
+                      "sha256":  "8f724ea55b8547d4fb41f35497d9c8ee64558c502b9c07fdb6f17eec6e251418"
+                  },
+                  {
+                      "path":  "web/src/pages/Login.tsx",
+                      "sha256":  "05761f6e977e79fecb0737a07e6448452b9a200c703a542cd0475cae22164fe4"
+                  },
+                  {
+                      "path":  "web/src/pages/ManualPayroll.tsx",
+                      "sha256":  "25e2f0e6274294f34cf69164a0cc57ea04a7121d53140c25823516acf2504dae"
+                  },
+                  {
+                      "path":  "web/src/pages/MediaFolders.tsx",
+                      "sha256":  "8ec3a6a2b896fd84cf5753ef62a855b2849919064d6005c3adb886842531116e"
+                  },
+                  {
+                      "path":  "web/src/pages/MonthMedia.tsx",
+                      "sha256":  "39803e54bc149170185ffef9ecd3d7b3d981cbfee07abc260f0f92f0541222d8"
+                  },
+                  {
+                      "path":  "web/src/pages/MonthMediaType.tsx",
+                      "sha256":  "8bf8ae33a9813b94bb59e7da98d597ca2b969f8634de1365998bbf392628f343"
+                  },
+                  {
+                      "path":  "web/src/pages/NewChat.tsx",
+                      "sha256":  "87950c90315fa90eec8779a7791dd225340dc5da9c29b8293e73164842e98aed"
+                  },
+                  {
+                      "path":  "web/src/pages/NotFound.tsx",
+                      "sha256":  "643de1802120a4a4c0f6968cd792de2d0420d75b573b1557e756faf2e6c1b92d"
+                  },
+                  {
+                      "path":  "web/src/pages/Operations.tsx",
+                      "sha256":  "552a0f4656b70be783f142f926d87fe0ee9903e2d8adcd2da5a604f66303c8bb"
+                  },
+                  {
+                      "path":  "web/src/pages/PTO.tsx",
+                      "sha256":  "5fb322dfc59cd138bb5cdb17df9845368b09f13cc628f1e21d55d0bd081edfd4"
+                  },
+                  {
+                      "path":  "web/src/pages/PaymentRequired.tsx",
+                      "sha256":  "43dc4a2f2c15114c8055983180a355d2c824324ca52a2032229167571c4def08"
+                  },
+                  {
+                      "path":  "web/src/pages/Payroll.tsx",
+                      "sha256":  "7b37696484c1dd4ba1569b5d2c1b7e67e7da42a85dfb6db10095041cf30844ed"
+                  },
+                  {
+                      "path":  "web/src/pages/PayrollRules.tsx",
+                      "sha256":  "a7bdd02defb0c2632f4d9a30efd4c55d4010f68dad4be607e99e56b33ab586f9"
+                  },
+                  {
+                      "path":  "web/src/pages/Pricing.tsx",
+                      "sha256":  "ff47ffef1a19964464b4d9b764a3bc81577cbff57e70eedd9f28444c69980566"
+                  },
+                  {
+                      "path":  "web/src/pages/Privacy.tsx",
+                      "sha256":  "9c469d0bb6880c6015a8ac3be82b7d3c0669329b49d56fce61dc4868190510d0"
+                  },
+                  {
+                      "path":  "web/src/pages/ProjectMedia.tsx",
+                      "sha256":  "0d68d659c69d585463134e01e58803ee7a21480bd7fe64ca78c9dbf5e7b5c1bb"
+                  },
+                  {
+                      "path":  "web/src/pages/Projects.tsx",
+                      "sha256":  "ea0e16855af3015fb186a537cf091250e7bde7ccf8b36d7810ce840c053213da"
+                  },
+                  {
+                      "path":  "web/src/pages/Register.tsx",
+                      "sha256":  "80ed6a61f269306be1ff5ba993c26bd88f63be4e6ebd3e7ccd6e2f10e0c3c52d"
+                  },
+                  {
+                      "path":  "web/src/pages/Reports.tsx",
+                      "sha256":  "a0ae18b7ba20dec7f2342395a87c35602692651bc1a08b27325f770d17438880"
+                  },
+                  {
+                      "path":  "web/src/pages/ResetPassword.tsx",
+                      "sha256":  "292ef574eb6d520846631ce482c6b71ebc78a0a6fad2879466c57d39edf8c5e3"
+                  },
+                  {
+                      "path":  "web/src/pages/Schedule.tsx",
+                      "sha256":  "712856e988a6adfb402a3eab6fc5712e3170b286293eb57e2bdf07170c33f2fc"
+                  },
+                  {
+                      "path":  "web/src/pages/Security.tsx",
+                      "sha256":  "f439e4c957ab2b9e5b8f006305f29d442c2ae35a26fba3b9c5888b9b319ff9da"
+                  },
+                  {
+                      "path":  "web/src/pages/Settings.tsx",
+                      "sha256":  "4a662d725290ba404b3fe0a47d998024ea13e44094e918c2b539859dff913eb7"
+                  },
+                  {
+                      "path":  "web/src/pages/Subscription.tsx",
+                      "sha256":  "5d7d30d302f457996774d76278f2ac5f8ad41274384ff82cdb2e2fbdd7979e0c"
+                  },
+                  {
+                      "path":  "web/src/pages/Support.tsx",
+                      "sha256":  "3cc23c2ec8cbc46c7558fd5ec1ee48a4178408931a990cd342aa26530f1fb795"
+                  },
+                  {
+                      "path":  "web/src/pages/Tasks.tsx",
+                      "sha256":  "a8665c62214137f6b5dde2b30ea0a58af6681dc85c787a079d34a0d6705dafd5"
+                  },
+                  {
+                      "path":  "web/src/pages/Team.tsx",
+                      "sha256":  "e20b4fa5a5ed550020de3b6afb96992f6092f91bc4668ca8520918f22d38c90a"
+                  },
+                  {
+                      "path":  "web/src/pages/Terms.tsx",
+                      "sha256":  "2cfa60514e9c3c02e209f1d69f8e5feb620b67cd2e12c8d5657abf13571c9410"
+                  },
+                  {
+                      "path":  "web/src/pages/Timesheet.tsx",
+                      "sha256":  "4329d961c781d9d111b8dc08345cfaea356a12b5ba9fe7307635f6f827d321bf"
+                  },
+                  {
+                      "path":  "web/src/pages/VoiceAssistant.tsx",
+                      "sha256":  "f8cec345ab0eaeb626f5b83bcceb5b7d6ccfe72582225598ca2f13c0a7b29d6c"
+                  },
+                  {
+                      "path":  "web/src/pages/WorkPreferences.tsx",
+                      "sha256":  "3088f0bb8dc650761a1f3a4cb71284b25ce9d3c99e2570d7ebbca2aafe2ad1b8"
+                  },
+                  {
+                      "path":  "web/src/pages/WorkerTools.tsx",
+                      "sha256":  "3eabda0c03ba586fd6c8dd6433dfd33b5ad2ffdd0b459b7e7015f96cc04a37e4"
+                  },
+                  {
+                      "path":  "web/src/pages/WorldwidePayrollEditor.tsx",
+                      "sha256":  "855055c4fc0e7e2325afe82e1612d20e097a84bc79ded877a4a944fd5feee45c"
+                  },
+                  {
+                      "path":  "web/src/pages/YearEnd.tsx",
+                      "sha256":  "a546c8d24a91ba3f3f2b3580e432d70d0f4e1d01bbbf29a06da6fee23e9f4c25"
+                  },
+                  {
+                      "path":  "web/src/services/api.ts",
+                      "sha256":  "8ade9e7d87f92de7c214cf71b122193b7cad37c2091746e36672929768be15d8"
+                  },
+                  {
+                      "path":  "web/src/services/lucyWakeClient.ts",
+                      "sha256":  "a5a97657d9b131e8332384f326a90b7ee196154a17fb77519deb301b5d9b2f2e"
+                  },
+                  {
+                      "path":  "web/src/services/workerTools.ts",
+                      "sha256":  "38610323a181ddfa3449450a0319233253ee816da109d5af93acbb2f2e49ce92"
+                  },
+                  {
+                      "path":  "web/src/theme.ts",
+                      "sha256":  "d09b7761992f7e2761f530ca97f663290147d48e23c8710cc812f77cc379cec6"
+                  },
+                  {
+                      "path":  "web/src/types/css.d.ts",
+                      "sha256":  "c618a8f8e3fef75df80c42a37451adcf2a5886148f11cabfa32a689a65226127"
+                  },
+                  {
+                      "path":  "web/src/types/react-big-calendar.d.ts",
+                      "sha256":  "4acd1dad013172be88082b16c65244a1df7b1abb676da06096b0828778089c35"
+                  },
+                  {
+                      "path":  "web/src/types/vite-env.d.ts",
+                      "sha256":  "cac918af9797359289faea01f4a443f6158e20c6b815d6c6ac93c7412e67f22d"
+                  },
+                  {
+                      "path":  "web/src/utils/lucySpeech.ts",
+                      "sha256":  "b7d020eab4e7b1deb346b8165aa721934854a0d1b07fc36847be36b6236b0641"
+                  },
+                  {
+                      "path":  "web/tsconfig.json",
+                      "sha256":  "6c31635d60b17323fa1b40c125094f896bb12a39b9c4d7977188971502995e99"
+                  },
+                  {
+                      "path":  "web/vercel.json",
+                      "sha256":  "763cd4f8c1d68765c29bcd75a037911ac31ead3d84ecfa46fc5ebe5bb59fe25d"
+                  },
+                  {
+                      "path":  "web/vite.config.ts",
+                      "sha256":  "ac28b11573ba5859ad1b047b415b5a66f996ebb4e78d83a841f35d15ee81926b"
+                  },
+                  {
+                      "path":  "webdash/.gitignore",
+                      "sha256":  "18a379369bdd66dff2000c3b61d5ba127967f46ce6fdf647617d3fc1276f3c9e"
+                  },
+                  {
+                      "path":  "webdash/README.md",
+                      "sha256":  "328d4eaeb55df732890a8fd7843e164c9b456337c6fbfc69d1bc17d28d62ecb4"
+                  },
+                  {
+                      "path":  "webdash/cd",
+                      "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  },
+                  {
+                      "path":  "webdash/package-lock.json",
+                      "sha256":  "f100dae96c9e38ec6821a637b9a8397b2b945470ecfa368ded05721ef092758a"
+                  },
+                  {
+                      "path":  "webdash/package.json",
+                      "sha256":  "c7e032bfc801cba5317e8e7b613e07302b5be80384d7a5491889b3c2da00454e"
+                  },
+                  {
+                      "path":  "webdash/public/favicon.ico",
+                      "sha256":  "3d10f7da6c603178340081668c4ac5b3ae9743ca9a262ab0fcd312fbb9f48bdd"
+                  },
+                  {
+                      "path":  "webdash/public/index.html",
+                      "sha256":  "12a1b162e333264616245d82eae52fd038e32fad9bbc367c01e1660f91ba8c05"
+                  },
+                  {
+                      "path":  "webdash/public/logo192.png",
+                      "sha256":  "c386396ec70db3608075b5fbfaac4ab1ccaa86ba05a68ab393ec551eb66c3e00"
+                  },
+                  {
+                      "path":  "webdash/public/logo512.png",
+                      "sha256":  "9ea4f4da7050c0cc408926f6a39c253624e9babb1d43c7977cd821445a60b461"
+                  },
+                  {
+                      "path":  "webdash/public/manifest.json",
+                      "sha256":  "33fdb99cc2cd3ad8e1815b18b7005eb3f58048990d80ee7c73aed28ab69a4e19"
+                  },
+                  {
+                      "path":  "webdash/public/robots.txt",
+                      "sha256":  "e5ab0d231eeb01b4a982d1c79a6729cac9797ad15a69247e4f28ba6afc149b4c"
+                  },
+                  {
+                      "path":  "webdash/src/App.css",
+                      "sha256":  "df55949b9438af66b0d7af2175d8b1b174ff6eff12624d1cad5845f28a6da377"
+                  },
+                  {
+                      "path":  "webdash/src/App.js",
+                      "sha256":  "cb33cc557ad8a45ae0b3154995900a656184027fa1b90eaefc8ea518a383c97f"
+                  },
+                  {
+                      "path":  "webdash/src/App.test.js",
+                      "sha256":  "78eb8f13a8b8cbdcd6f25554f77111a90c9b1e5c128cf84b003c6a821a7f67e5"
+                  },
+                  {
+                      "path":  "webdash/src/index.css",
+                      "sha256":  "0783a8d15b7c26a11d1286accf5026f3c1f8d52a17e30c4d0cfd75e146cd1e16"
+                  },
+                  {
+                      "path":  "webdash/src/index.js",
+                      "sha256":  "10943746c5e810a957d9983e74b9c27e40a819c256af8b3592feb1972944e439"
+                  },
+                  {
+                      "path":  "webdash/src/logo.svg",
+                      "sha256":  "6000b0e9b0b05b3f112de04f0d039768a1db63588ff9b6ef7099dbd71632f383"
+                  },
+                  {
+                      "path":  "webdash/src/reportWebVitals.js",
+                      "sha256":  "5efbb84cbed52b82cab1165c816c92390b0a5d752e490ca564172a14e3a84a6d"
+                  },
+                  {
+                      "path":  "webdash/src/setupTests.js",
+                      "sha256":  "c630b70e0f17b0fddf547079fd2ec64e6d677252588037f873f1008f307f49b9"
+                  }
+              ]
+}

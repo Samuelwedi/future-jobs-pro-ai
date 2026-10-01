@@ -6,10 +6,20 @@ import {
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../services/api';
+import { api, API_URL } from '../services/api';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { Audio } from 'expo-av';
+import type { AudioRecorder } from 'expo-audio';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from 'expo-audio';
 import * as Speech from 'expo-speech';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface Message {
   text: string;
@@ -24,8 +34,14 @@ interface ActionReceipt {
   title: string;
   status: 'completed' | 'information' | 'pending' | 'failed';
   summary: string;
+  download?: {url:string;filename:string;label:string};
   details: Array<{ label: string; value: string | number }>;
 }
+
+const LUCY_RECORDING_OPTIONS = {
+  ...RecordingPresets.HIGH_QUALITY,
+  isMeteringEnabled: true,
+};
 
 export default function AIAssistantScreen() {
   const { user } = useAuth();
@@ -36,10 +52,11 @@ export default function AIAssistantScreen() {
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState('');
   const [conversationActive, setConversationActive] = useState(false);
+  const [wakeEnabled, setWakeEnabled] = useState(true);
+  const [wakeStatus, setWakeStatus] = useState('starting');
   const flatListRef = useRef<FlatList>(null);
   const isSpeaking = useRef(false);
   const finishingRecording = useRef(false);
@@ -50,6 +67,46 @@ export default function AIAssistantScreen() {
   const conversationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const conversationActiveRef = useRef(false);
   const consecutiveMisses = useRef(0);
+  const recorderRef = useRef<AudioRecorder | null>(null);
+  const finishRecordingRef = useRef<(recorder: AudioRecorder) => void>(() => undefined);
+  const audioRecorder = useAudioRecorder(LUCY_RECORDING_OPTIONS);
+  const recorderState = useAudioRecorderState(audioRecorder, 200);
+  recorderRef.current = audioRecorder;
+
+  useEffect(() => {
+    const activeRecorder = recorderRef.current;
+    if (!activeRecorder || !recorderState.isRecording || typeof recorderState.metering !== 'number') return;
+    if (recorderState.metering > -42) {
+      heardSpeech.current = true;
+      silenceStartedAt.current = null;
+    } else if (heardSpeech.current) {
+      silenceStartedAt.current ??= Date.now();
+      if (Date.now() - silenceStartedAt.current > 1800) {
+        finishRecordingRef.current(activeRecorder);
+      }
+    }
+  }, [recorderState.isRecording, recorderState.metering]);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem('lucyWakeWordEnabled').then(value => {
+      if (mounted) setWakeEnabled(value !== 'false');
+    });
+    const subscription = DeviceEventEmitter.addListener('lucyWakeWordStatusChanged', event => {
+      if (!mounted) return;
+      setWakeStatus(String(event?.status || 'off'));
+      if (event?.status === 'error' && event?.message) setVoiceStatus(String(event.message));
+    });
+    return () => { mounted = false; subscription.remove(); };
+  }, []);
+
+  const toggleWakeWord = async () => {
+    const enabled = !wakeEnabled;
+    setWakeEnabled(enabled);
+    await AsyncStorage.setItem('lucyWakeWordEnabled', String(enabled));
+    DeviceEventEmitter.emit('lucyWakeWordPreferenceChanged', enabled);
+    setVoiceStatus(enabled ? 'Starting foreground Hey Lucy…' : 'Hey Lucy disabled');
+  };
 
   const setConversation = (active: boolean) => {
     conversationActiveRef.current = active;
@@ -90,6 +147,7 @@ export default function AIAssistantScreen() {
     if (followUpTimer.current) clearTimeout(followUpTimer.current);
     if (conversationTimer.current) clearTimeout(conversationTimer.current);
     if (maximumRecordingTimer.current) clearTimeout(maximumRecordingTimer.current);
+    if (recorderRef.current?.isRecording) void recorderRef.current.stop().catch(() => undefined);
     Speech.stop();
     DeviceEventEmitter.emit('lucyConversationEnded');
   }, []);
@@ -113,10 +171,10 @@ export default function AIAssistantScreen() {
   // Speak Lucy's response
   const speakText = async (text: string): Promise<void> => {
     if (isSpeaking.current) Speech.stop();
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
+    await setAudioModeAsync({
+      allowsRecording: false,
+      playsInSilentMode: true,
+      interruptionMode: 'duckOthers',
     });
     const voices = await Speech.getAvailableVoicesAsync().catch(() => []);
     const preferred = voices.find(voice =>
@@ -137,7 +195,7 @@ export default function AIAssistantScreen() {
   };
 
   const sendMessage = async (text: string, fromVoice = false) => {
-    if (!text.trim()) return;
+    if (!text.trim() || loading) return;
     setMessages(prev => [...prev, { text: text.trim(), isUser: true }]);
     setLoading(true);
     try {
@@ -152,7 +210,7 @@ export default function AIAssistantScreen() {
       if (fromVoice && data?.continueListening !== false && !approvalId && conversationActiveRef.current) queueFollowUp();
       else if (approvalId) setVoiceStatus('Waiting for your approval');
     } catch (err: any) {
-      const errorMsg = 'Sorry, Lucy is taking a break.';
+      const errorMsg = err?.response?.data?.message || err?.message || 'Lucy could not complete this request. Please retry.';
       setMessages(prev => [...prev, { text: errorMsg, isUser: false }]);
       await speakText(errorMsg);
       if (fromVoice && conversationActiveRef.current) queueFollowUp(900);
@@ -161,24 +219,33 @@ export default function AIAssistantScreen() {
     }
   };
 
+  const downloadAction=async(item:NonNullable<ActionReceipt['download']>)=>{
+    try{
+      if(!item.url.startsWith('/lucy-v2/timesheet-excel?'))throw new Error('Unsupported report link');
+      const token=await api.getToken();
+      const name=item.filename.replace(/[^a-zA-Z0-9_.-]/g,'_');
+      const result=await FileSystem.downloadAsync(`${API_URL}${item.url}`,`${FileSystem.cacheDirectory}${name}`,{headers:{Authorization:`Bearer ${token}`}});
+      if(result.status!==200)throw new Error('Report could not be downloaded');
+      if(await Sharing.isAvailableAsync())await Sharing.shareAsync(result.uri,{mimeType:'application/vnd.ms-excel'});
+      else Alert.alert('Report downloaded',result.uri);
+    }catch(e:any){Alert.alert('Report',e.message);}
+  };
   const handleSend = () => {
     if (!input.trim()) return;
     sendMessage(input);
     setInput('');
   };
 
-  // ----- Voice Recording with higher gain -----
-  const finishRecording = async (activeRecording: Audio.Recording | null) => {
+  // ----- Voice recording with metering-based silence detection -----
+  const finishRecording = async (activeRecording: AudioRecorder | null) => {
     if (!activeRecording || finishingRecording.current) return;
     finishingRecording.current = true;
     if (maximumRecordingTimer.current) clearTimeout(maximumRecordingTimer.current);
     setIsRecording(false);
     setVoiceStatus('Processing your request…');
     try {
-      activeRecording.setOnRecordingStatusUpdate(null);
-      await activeRecording.stopAndUnloadAsync();
-      const uri = activeRecording.getURI();
-      setRecording(null);
+      await activeRecording.stop();
+      const uri = activeRecording.uri;
       if (!uri) throw new Error('Recording file was not created');
       const transcript = await transcribeAudio(uri);
       const endConversation = /^(thanks|thank you|that's all|that is all|goodbye|stop listening|cancel)$/i.test(transcript.trim());
@@ -209,57 +276,36 @@ export default function AIAssistantScreen() {
       setVoiceStatus('');
     }
   };
+  finishRecordingRef.current = (activeRecording) => {
+    void finishRecording(activeRecording);
+  };
 
   const startRecording = async () => {
     try {
-      const permission = await Audio.requestPermissionsAsync();
+      const permission = await requestRecordingPermissionsAsync();
       if (!permission.granted) {
         Alert.alert('Permission required', 'Please grant microphone access.');
         return;
       }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
       });
 
-      // Higher gain for better sensitivity
-      const recordingOptions = {
-        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        isMeteringEnabled: true,
-        android: {
-          ...Audio.RecordingOptionsPresets.HIGH_QUALITY.android,
-          inputGain: 25,  // louder
-        },
-        ios: {
-          ...Audio.RecordingOptionsPresets.HIGH_QUALITY.ios,
-          inputGain: 25,
-        },
-      };
-      const { recording } = await Audio.Recording.createAsync(recordingOptions);
-      setRecording(recording);
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
       setIsRecording(true);
       setVoiceStatus('Listening… speak now');
       heardSpeech.current = false;
       silenceStartedAt.current = null;
-      recording.setProgressUpdateInterval(150);
-      recording.setOnRecordingStatusUpdate(status => {
-        if (!status.isRecording || typeof status.metering !== 'number') return;
-        if (status.metering > -42) {
-          heardSpeech.current = true;
-          silenceStartedAt.current = null;
-        } else if (heardSpeech.current) {
-          silenceStartedAt.current ??= Date.now();
-          if (Date.now() - silenceStartedAt.current > 1800) void finishRecording(recording);
-        }
-      });
-      maximumRecordingTimer.current = setTimeout(() => void finishRecording(recording), 15000);
+      maximumRecordingTimer.current = setTimeout(() => void finishRecording(audioRecorder), 15000);
     } catch (err) {
       Alert.alert('Error', 'Could not start recording. Please check microphone permissions.');
     }
   };
 
   const stopRecording = async () => {
-    await finishRecording(recording);
+    await finishRecording(audioRecorder);
   };
 
   const transcribeAudio = async (uri: string): Promise<string> => {
@@ -316,10 +362,12 @@ export default function AIAssistantScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <View style={styles.headerIdentity}><Text style={styles.headerTitle}>Lucy</Text><Text style={[styles.sessionStatus, conversationActive && styles.sessionStatusLive]}>{conversationActive ? 'CONVERSATION LIVE' : 'READY'}</Text></View>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerIdentity}><Text style={styles.headerTitle}>Lucy</Text><Text style={[styles.sessionStatus, (conversationActive||wakeStatus==='listening') && styles.sessionStatusLive]}>{conversationActive ? 'CONVERSATION LIVE' : wakeEnabled&&wakeStatus==='listening' ? 'HEY LUCY LISTENING' : wakeEnabled ? 'HEY LUCY STARTING' : 'READY'}</Text></View>
+        <TouchableOpacity onPress={toggleWakeWord} accessibilityRole="switch" accessibilityState={{checked:wakeEnabled}} style={[styles.wakeToggle,wakeEnabled&&styles.wakeToggleOn]}><MaterialIcons name={wakeEnabled?'hearing':'hearing-disabled'} size={19} color={wakeEnabled?'#071018':'#94A3B8'}/></TouchableOpacity>
       </View>
       <FlatList
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
         ref={flatListRef}
         data={messages}
         keyExtractor={(_, i) => String(i)}
@@ -353,6 +401,8 @@ export default function AIAssistantScreen() {
               <View key={`${action.type}-${actionIndex}`} style={[styles.actionCard, action.status === 'failed' && styles.actionFailed]}>
                 <View style={styles.actionHeader}><MaterialIcons name={action.status === 'completed' ? 'check-circle' : action.status === 'pending' ? 'schedule' : action.status === 'failed' ? 'error' : 'insights'} size={19} color={action.status === 'failed' ? '#FF6B6B' : '#67E8F9'} /><Text style={styles.actionTitle}>{action.title}</Text><Text style={styles.actionStatus}>{action.status}</Text></View>
                 <Text style={styles.actionSummary}>{action.summary}</Text>
+                {action.download&&<TouchableOpacity onPress={()=>void downloadAction(action.download!)}><Text style={{color:"#67E8F9",paddingVertical:12}}>{action.download.label}</Text></TouchableOpacity>}
+                {action.status==='pending'&&<TouchableOpacity disabled={loading} onPress={()=>void sendMessage('yes, run it')}><Text style={{color:"#67E8F9",paddingVertical:12}}>Create draft payroll</Text></TouchableOpacity>}
                 {action.details?.map((detail: { label: string; value: string | number }, detailIndex: number) => <View key={detailIndex} style={styles.detailRow}><Text style={styles.detailLabel}>{detail.label}</Text><Text style={styles.detailValue}>{String(detail.value)}</Text></View>)}
               </View>
             ))}
@@ -401,6 +451,8 @@ const styles = StyleSheet.create({
   headerIdentity: { alignItems: 'center' },
   sessionStatus: { color: '#64748B', fontSize: 8, fontWeight: '900', letterSpacing: 1.2, marginTop: 2 },
   sessionStatusLive: { color: '#67E8F9' },
+  wakeToggle: { width: 40, height: 32, borderRadius: 16, borderWidth: 1, borderColor: '#334155', alignItems: 'center', justifyContent: 'center' },
+  wakeToggleOn: { backgroundColor: '#67E8F9', borderColor: '#67E8F9' },
   bubble: { margin: 8, padding: 12, borderRadius: 12, maxWidth: '80%' },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#00D4FF' },
   bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#333', flexDirection: 'row', alignItems: 'center' },

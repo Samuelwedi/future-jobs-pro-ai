@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../services/api';
+import { API_URL, api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import { format, startOfWeek, endOfWeek, parseISO } from 'date-fns';
 import * as DocumentPicker from 'expo-document-picker';
@@ -112,7 +112,7 @@ export default function TimesheetScreen() {
   const handleExport = async () => {
     try {
       const userId = selectedUserId || user?.id;
-      const baseURL = (api as any).baseURL || 'https://future-jobs-pro-ai-production.up.railway.app/api';
+      const baseURL = API_URL;
       const token = await getAuthToken();
       const url = `${baseURL}/time-entries/export?userId=${userId}&start=${weekStart}&end=${weekEnd}`;
 

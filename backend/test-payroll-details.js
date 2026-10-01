@@ -3,7 +3,8 @@ const jwt = require('jsonwebtoken');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
-const JWT_SECRET = 'f1jp@i2026_SamuelB_Secret#FutureJobsPro';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is required');
 
 // Replace with your actual token from the browser (copy from localStorage after login)
 const token = 'PASTE_YOUR_TOKEN_HERE';

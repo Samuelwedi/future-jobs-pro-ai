@@ -1,0 +1,13 @@
+{
+    "CollectedAtUtc":  "2026-09-30T00:48:15.6976900Z",
+    "BackendVersion":  "1.2.0-rc.4",
+    "WebVersion":  "1.2.0-rc.4",
+    "MobileVersion":  "1.2.0-rc.4",
+    "ExpoVersion":  "1.2.0",
+    "AndroidPackage":  "com.samuel33.futurejobspro",
+    "LocalAndroidVersionCode":  3,
+    "IOSBuildNumber":  "3",
+    "EASVersionSource":  "remote",
+    "FileCount":  525,
+    "Excluded":  "environments, credentials, dependencies, compiled output, databases, backups"
+}

@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
+import { sendPushNotification } from '../services/notificationService';
 
 const router = express.Router();
 
@@ -15,9 +16,13 @@ router.get('/', async (req: Request, res: Response) => {
     if (!actor?.company_id) return res.status(401).json({ success: false, message: 'Not authenticated' });
     const canSeeCompany = ['boss', 'manager', 'admin'].includes(String(actor.role || '').toLowerCase());
     const result = await pool.query(
-      `SELECT pr.*, u.first_name || ' ' || u.last_name AS user_name
+      `SELECT pr.*, u.first_name || ' ' || u.last_name AS user_name,
+              u.email AS user_email,
+              GREATEST(1, (pr.end_date::date - pr.start_date::date) + 1) AS calendar_days,
+              TRIM(COALESCE(approver.first_name, '') || ' ' || COALESCE(approver.last_name, '')) AS approved_by_name
        FROM pto_requests pr
        JOIN users u ON u.id = pr.user_id
+       LEFT JOIN users approver ON approver.id = pr.approved_by
        WHERE COALESCE(pr.company_id, u.company_id) = $1
          AND ($2::boolean = true OR pr.user_id = $3)
        ORDER BY pr.start_date DESC, pr.created_at DESC`,
@@ -42,11 +47,19 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
     if(status==='rejected' && managerNote.length<3) return res.status(400).json({success:false,message:'Add a reason for rejecting this request'});
     const result=await pool.query(
       `UPDATE pto_requests pr SET status=$1,approved_by=$2,approved_at=NOW(),manager_note=$3,updated_at=NOW()
-       FROM users u WHERE pr.id=$4 AND u.id=pr.user_id AND COALESCE(pr.company_id,u.company_id)=$5 RETURNING pr.*`,
+       FROM users u WHERE pr.id=$4 AND u.id=pr.user_id AND COALESCE(pr.company_id,u.company_id)=$5
+         AND pr.status = 'pending' RETURNING pr.*`,
       [status,decoded.id,managerNote||null,String(req.params.id),actor.company_id],
     );
-    if(!result.rowCount)return res.status(404).json({success:false,message:'PTO request not found'});
-    res.json({success:true,request:result.rows[0]});
+    if(!result.rowCount)return res.status(409).json({success:false,message:'This PTO request was not found or has already been decided'});
+    const updated = result.rows[0];
+    void sendPushNotification(
+      updated.user_id,
+      status === 'approved' ? 'PTO approved' : 'PTO rejected',
+      `Your ${updated.type} request from ${updated.start_date} to ${updated.end_date} was ${status}.${managerNote ? ` ${managerNote}` : ''}`,
+      { type: 'pto', status, requestId: updated.id },
+    ).catch(error => console.error('PTO decision notification error:', error));
+    res.json({success:true,request:updated});
   } catch(error:any){res.status(500).json({success:false,message:error.message});}
 });
 

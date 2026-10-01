@@ -28,7 +28,11 @@ public final class LucyWakeAudioModule: Module {
         )
       }
 
-      try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
+      try session.setCategory(
+        .playAndRecord,
+        mode: .measurement,
+        options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP]
+      )
       try session.setPreferredSampleRate(16000)
       try session.setPreferredIOBufferDuration(0.08)
       try session.setActive(true)
@@ -94,11 +98,21 @@ public final class LucyWakeAudioModule: Module {
         ])
       }
 
-      self.engine.prepare()
-      try self.engine.start()
       self.stateLock.lock()
       self.running = true
       self.stateLock.unlock()
+      do {
+        self.engine.prepare()
+        try self.engine.start()
+      } catch {
+        self.stateLock.lock()
+        self.running = false
+        self.stateLock.unlock()
+        input.removeTap(onBus: 0)
+        self.converter = nil
+        try? session.setActive(false, options: [.notifyOthersOnDeactivation])
+        throw error
+      }
     }
 
     AsyncFunction("stop") {

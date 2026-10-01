@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
-import { AutoAwesome, Bolt, ErrorOutline, Lock, Mail, PlayCircleOutline, Shield } from '@mui/icons-material';
-import { Box, Button, Container, Divider, Grid, Paper, Stack, TextField, Typography } from '@mui/material';
-
-const API_BASE = (import.meta.env.VITE_API_URL || 'https://future-jobs-pro-ai-production.up.railway.app').replace(/\/$/, '');
+import { AutoAwesome, Bolt, ErrorOutline, Lock, Mail, PlayCircleOutline, Shield, Visibility, VisibilityOff } from '@mui/icons-material';
+import { Box, Button, Container, Divider, Grid, IconButton, InputAdornment, Paper, Stack, TextField, Typography } from '@mui/material';
+import { API_BASE } from '../services/api';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -35,8 +35,21 @@ export default function Login() {
       <Typography variant="h4" fontWeight={950}>Welcome back</Typography><Typography sx={{ color: '#91A3B7', mt: .7, mb: 3 }}>Sign in to your secure company workspace.</Typography>
       {error && <Box sx={{ display: 'flex', gap: 1, p: 1.5, mb: 2, borderRadius: 2, bgcolor: 'rgba(244,67,54,.1)', color: '#FF9A92' }}><ErrorOutline fontSize="small" /><Typography fontSize={13}>{error}</Typography></Box>}
       <Box component="form" onSubmit={handleLogin}>
-        <TextField fullWidth label="Work email" type="email" value={email} onChange={e => setEmail(e.target.value)} required InputProps={{ startAdornment: <Mail sx={{ color: '#71869C', mr: 1 }} /> }} sx={{ mb: 2 }} />
-        <TextField fullWidth label="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} required InputProps={{ startAdornment: <Lock sx={{ color: '#71869C', mr: 1 }} /> }} />
+        <TextField fullWidth label="Work email" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} required InputProps={{ startAdornment: <InputAdornment position="start"><Mail sx={{ color: '#71869C' }} /></InputAdornment> }} sx={{ mb: 2 }} />
+        <TextField
+          fullWidth
+          label="Password"
+          type={showPassword ? 'text' : 'password'}
+          autoComplete="current-password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          required
+          InputProps={{
+            startAdornment: <InputAdornment position="start"><Lock sx={{ color: '#71869C' }} /></InputAdornment>,
+            endAdornment: <InputAdornment position="end"><IconButton aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} edge="end" onClick={() => setShowPassword(value => !value)} onMouseDown={event => event.preventDefault()}>{showPassword ? <VisibilityOff /> : <Visibility />}</IconButton></InputAdornment>,
+          }}
+        />
+        <Box sx={{ textAlign: 'right', mt: 1 }}><Box component={RouterLink} to="/forgot-password" sx={{ color: '#8FDDEC', textDecoration: 'none', fontSize: 13, fontWeight: 750 }}>Forgot password?</Box></Box>
         <Button type="submit" fullWidth variant="contained" disabled={loading} sx={{ bgcolor: '#6FE7FF', color: '#06101D', py: 1.45, mt: 2.5, fontWeight: 950, '&:hover': { bgcolor: '#A1F1FF' } }}>{loading ? 'Opening workspace…' : 'Open workspace'}</Button>
       </Box>
       <Divider sx={{ my: 2.5, color: '#60738A', '&::before, &::after': { borderColor: '#29435F' } }}>OR EXPLORE FIRST</Divider>

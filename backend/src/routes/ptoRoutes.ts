@@ -83,13 +83,40 @@ router.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Start and end dates are required' });
     }
 
+    const startDate = new Date(`${start_date}T00:00:00Z`);
+    const endDate = new Date(`${end_date}T00:00:00Z`);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      return res.status(400).json({ success: false, message: 'Dates must use YYYY-MM-DD format' });
+    }
+    if (endDate < startDate) {
+      return res.status(400).json({ success: false, message: 'End date cannot be before start date' });
+    }
+    const calendarDays = Math.floor((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
+    if (calendarDays > 366) {
+      return res.status(400).json({ success: false, message: 'A PTO request cannot exceed 366 calendar days' });
+    }
+    const normalizedType = String(type || 'vacation').toLowerCase();
+    if (!['vacation', 'sick', 'personal', 'unpaid', 'other'].includes(normalizedType)) {
+      return res.status(400).json({ success: false, message: 'Unsupported PTO type' });
+    }
+    const overlap = await pool.query(
+      `SELECT id FROM pto_requests
+       WHERE user_id = $1 AND status IN ('pending', 'approved')
+         AND start_date::date <= $3::date AND end_date::date >= $2::date
+       LIMIT 1`,
+      [decoded.id, start_date, end_date],
+    );
+    if (overlap.rowCount) {
+      return res.status(409).json({ success: false, message: 'These dates overlap an existing pending or approved PTO request' });
+    }
+
     const result = await pool.query(
       `INSERT INTO pto_requests (company_id, user_id, start_date, end_date, type, reason, status)
        VALUES ($1, $2, $3, $4, $5, $6, 'pending')
        RETURNING *`,
-      [companyId, decoded.id, start_date, end_date, type || 'vacation', reason || null]
+      [companyId, decoded.id, start_date, end_date, normalizedType, String(reason || '').trim() || null]
     );
-    res.status(201).json({ success: true, request: result.rows[0] });
+    res.status(201).json({ success: true, request: { ...result.rows[0], calendar_days: calendarDays } });
   } catch (error: any) {
     console.error('PTO request error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to submit PTO request' });

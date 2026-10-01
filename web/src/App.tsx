@@ -1,68 +1,80 @@
-import React from 'react';
+﻿import React, {lazy,Suspense} from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Landing from './pages/Landing';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Schedule from './pages/Schedule';
-import Reports from './pages/Reports';
-import Pricing from './pages/Pricing';
-import AdminDashboard from './pages/AdminDashboard';
-import Contact from './pages/Contact';
-import FAQ from './pages/FAQ';
-import Terms from './pages/Terms';
-import Privacy from './pages/Privacy';
-import VoiceAssistant from './pages/VoiceAssistant';
-import Team from './pages/Team';
-import Projects from './pages/Projects';
-import Timesheet from './pages/Timesheet';
-import Chat from './pages/Chat';
-import ChatList from './pages/ChatList';
-import Tasks from './pages/Tasks';
-import PTO from './pages/PTO';
-import Kiosk from './pages/Kiosk';
-import KioskClock from './pages/KioskClock';
-import Settings from './pages/Settings';
-import NotFound from './pages/NotFound';
-import Register from './pages/Register';
-import PaymentRequired from './pages/PaymentRequired';
-import Integrations from './pages/Integrations';
-import AskLucy from './pages/AskLucy';
-import Features from './pages/Features';
-import Demo from './pages/Demo';
-import About from './pages/About';
-import Blog from './pages/Blog';
-import Security from './pages/Security';
-import Payroll from './pages/Payroll';
-import Invoices from './pages/Invoices';
-import Estimates from './pages/Estimates';
-import EmployeePortal from './pages/EmployeePortal';
-import YearEnd from './pages/YearEnd';
-import FinalizedSlips from './pages/FinalizedSlips';
-import DirectDeposit from './pages/DirectDeposit';
-import MediaFolders from './pages/MediaFolders';
-import Support from './pages/Support';
-import ProjectMedia from './pages/ProjectMedia';
-import MonthMedia from './pages/MonthMedia';
-import MonthMediaType from './pages/MonthMediaType';
+const Landing = lazy(() => import('./pages/Landing'));
+const Login = lazy(() => import('./pages/Login'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Schedule = lazy(() => import('./pages/Schedule'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Pricing = lazy(() => import('./pages/Pricing'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const Contact = lazy(() => import('./pages/Contact'));
+const FAQ = lazy(() => import('./pages/FAQ'));
+const Terms = lazy(() => import('./pages/Terms'));
+const Privacy = lazy(() => import('./pages/Privacy'));
+const VoiceAssistant = lazy(() => import('./pages/VoiceAssistant'));
+const Team = lazy(() => import('./pages/Team'));
+const Projects = lazy(() => import('./pages/Projects'));
+const Timesheet = lazy(() => import('./pages/Timesheet'));
+const Chat = lazy(() => import('./pages/Chat'));
+const ChatList = lazy(() => import('./pages/ChatList'));
+const Tasks = lazy(() => import('./pages/Tasks'));
+const PTO = lazy(() => import('./pages/PTO'));
+const Kiosk = lazy(() => import('./pages/Kiosk'));
+const KioskClock = lazy(() => import('./pages/KioskClock'));
+const Settings = lazy(() => import('./pages/Settings'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+const Register = lazy(() => import('./pages/Register'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const PaymentRequired = lazy(() => import('./pages/PaymentRequired'));
+const Integrations = lazy(() => import('./pages/Integrations'));
+const AskLucy = lazy(() => import('./pages/AskLucy'));
+const Features = lazy(() => import('./pages/Features'));
+const Demo = lazy(() => import('./pages/Demo'));
+const About = lazy(() => import('./pages/About'));
+const Blog = lazy(() => import('./pages/Blog'));
+const Security = lazy(() => import('./pages/Security'));
+const Payroll = lazy(() => import('./pages/Payroll'));
+const Invoices = lazy(() => import('./pages/Invoices'));
+const Estimates = lazy(() => import('./pages/Estimates'));
+const EmployeePortal = lazy(() => import('./pages/EmployeePortal'));
+const YearEnd = lazy(() => import('./pages/YearEnd'));
+const FinalizedSlips = lazy(() => import('./pages/FinalizedSlips'));
+const DirectDeposit = lazy(() => import('./pages/ManualPayroll'));
+const PayrollRules = lazy(() => import('./pages/PayrollRules'));
+const MediaFolders = lazy(() => import('./pages/MediaFolders'));
+const Support = lazy(() => import('./pages/Support'));
+const ProjectMedia = lazy(() => import('./pages/ProjectMedia'));
+const MonthMedia = lazy(() => import('./pages/MonthMedia'));
+const MonthMediaType = lazy(() => import('./pages/MonthMediaType'));
 import Layout from './components/Layout';
 
-// ✅ NEW PAGES
-import CompanySettings from './pages/CompanySettings';
-import CrewClock from './pages/CrewClock';
-import CrewTracking from './pages/CrewTracking';
-import GPSPlayback from './pages/GPSPlayback';
-import NewChat from './pages/NewChat';
-import Subscription from './pages/Subscription';
-import EvidenceCenter from './pages/EvidenceCenter';
+// âœ… NEW PAGES
+const CompanySettings = lazy(() => import('./pages/CompanySettings'));
+const CrewClock = lazy(() => import('./pages/CrewClock'));
+const CrewTracking = lazy(() => import('./pages/CrewTracking'));
+const GPSPlayback = lazy(() => import('./pages/GPSPlayback'));
+const NewChat = lazy(() => import('./pages/NewChat'));
+const Subscription = lazy(() => import('./pages/Subscription'));
+const EvidenceCenter = lazy(() => import('./pages/EvidenceCenter'));
 
+const CommandCenter = lazy(()=>import('./pages/CommandCenter'));
+const Expenses = lazy(()=>import('./pages/Expenses'));
+const WorkPreferences=lazy(()=>import('./pages/WorkPreferences'));
+const Operations=lazy(()=>import('./pages/Operations'));
+const AcceptInvite=lazy(()=>import('./pages/AcceptInvite'));
+const WorkerTools=lazy(()=>import('./pages/WorkerTools'));
 export default function App() {
   return (
     <Router>
-      <Routes>
+      <Suspense fallback={<div role="status" style={{padding:32}}>Loading workspaceâ€¦</div>}><Routes>
         {/* Public routes */}
         <Route path="/" element={<Landing />} />
+        <Route path="/accept-invite" element={<AcceptInvite />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/features" element={<Features />} />
         <Route path="/demo" element={<Demo />} />
@@ -77,12 +89,18 @@ export default function App() {
 
         {/* Protected routes with sidebar (Layout) */}
         <Route path="/" element={<Layout />}>
-          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="dashboard" element={<CommandCenter />} />
+          <Route path="classic-dashboard" element={<Dashboard />} />
+          <Route path="work-preferences" element={<WorkPreferences />} />
+          <Route path="operations" element={<Operations />} />
+          <Route path="expenses" element={<Expenses />} />
           <Route path="team" element={<Team />} />
           <Route path="employee-portal" element={<EmployeePortal />} />
           <Route path="schedule" element={<Schedule />} />
           <Route path="timesheet" element={<Timesheet />} />
           <Route path="tasks" element={<Tasks />} />
+          <Route path="worker-tools" element={<WorkerTools />} />
+          <Route path="worker-tools/:calculatorId" element={<WorkerTools />} />
           <Route path="pto" element={<PTO />} />
           <Route path="projects" element={<Projects />} />
           <Route path="media" element={<MediaFolders />} />
@@ -94,6 +112,7 @@ export default function App() {
           <Route path="support" element={<Support />} />
           <Route path="payroll" element={<Payroll />} />
           <Route path="direct-deposit" element={<DirectDeposit />} />
+          <Route path="payroll-rules" element={<PayrollRules />} />
           <Route path="year-end" element={<YearEnd />} />
           <Route path="year-end/finalized" element={<FinalizedSlips />} />
           <Route path="invoices" element={<Invoices />} />
@@ -107,7 +126,7 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="security" element={<Security />} />
 
-          {/* ✅ NEW ROUTES */}
+          {/* âœ… NEW ROUTES */}
           <Route path="company-settings" element={<CompanySettings />} />
           <Route path="crew-clock" element={<CrewClock />} />
           <Route path="crew-tracking" element={<CrewTracking />} />
@@ -118,7 +137,8 @@ export default function App() {
         </Route>
 
         <Route path="*" element={<NotFound />} />
-      </Routes>
+      </Routes></Suspense>
     </Router>
   );
 }
+

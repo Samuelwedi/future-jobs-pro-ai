@@ -4,8 +4,22 @@ import multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
 import { pool } from '../config/database';
+import { companyActor, manages } from '../middleware/companyActor';
 
 const router = express.Router();
+router.use(companyActor);
+router.use('/:companyId', (req, res, next) => {
+  if (String(req.params.companyId) !== String(res.locals.actor.company_id)) {
+    return res.status(403).json({ success: false, message: 'Company access denied' });
+  }
+  next();
+});
+const requireCompanyManager = (_req: Request, res: Response, next: any) => {
+  if (!manages(res.locals.actor)) {
+    return res.status(403).json({ success: false, message: 'Manager access is required' });
+  }
+  next();
+};
 
 const logoDir = path.join(__dirname, '../../uploads/logos');
 if (!fs.existsSync(logoDir)) fs.mkdirSync(logoDir, { recursive: true });
@@ -14,7 +28,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, logoDir),
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
+    const ext = ({ 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' } as Record<string, string>)[file.mimetype] || '';
     cb(null, `logo-${uniqueSuffix}${ext}`);
   }
 });
@@ -23,8 +37,8 @@ const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Only image files are allowed!') as any, false);
+    if (['image/png', 'image/jpeg', 'image/webp'].includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Only PNG, JPEG, and WebP images are allowed') as any, false);
   }
 });
 
@@ -48,7 +62,7 @@ router.get('/:companyId', async (req: Request, res: Response) => {
 });
 
 // ─── PUT /api/companies/:companyId ─── (update general info)
-router.put('/:companyId', async (req: Request, res: Response) => {
+router.put('/:companyId', requireCompanyManager, async (req: Request, res: Response) => {
   try {
     const { name, address, phone, email } = req.body;
     const result = await pool.query(
@@ -66,7 +80,7 @@ router.put('/:companyId', async (req: Request, res: Response) => {
 });
 
 // POST /api/companies/:companyId/logo
-router.post('/:companyId/logo', upload.single('logo'), async (req: Request, res: Response) => {
+router.post('/:companyId/logo', requireCompanyManager, upload.single('logo'), async (req: Request, res: Response) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'No logo file provided' });
     const logoUrl = `/uploads/logos/${req.file.filename}`;
@@ -79,7 +93,7 @@ router.post('/:companyId/logo', upload.single('logo'), async (req: Request, res:
 });
 
 // PUT /api/companies/:companyId/temperature-unit
-router.put('/:companyId/temperature-unit', async (req: Request, res: Response) => {
+router.put('/:companyId/temperature-unit', requireCompanyManager, async (req: Request, res: Response) => {
   try {
     const { unit } = req.body;
     if (!unit || !['celsius','fahrenheit'].includes(unit)) {
@@ -140,7 +154,7 @@ router.get('/:companyId/settings', async (req: Request, res: Response) => {
 });
 
 // ─── PUT /api/companies/:companyId/settings ───
-router.put('/:companyId/settings', async (req: Request, res: Response) => {
+router.put('/:companyId/settings', requireCompanyManager, async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {

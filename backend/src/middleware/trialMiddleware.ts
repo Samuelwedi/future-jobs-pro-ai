@@ -1,86 +1,134 @@
-import { Request, Response, NextFunction } from 'express';
-import { verifyToken } from '../utils/auth';
+import { NextFunction, Request, Response } from 'express';
+import { hasComplimentaryAccess } from '../services/complimentaryAccess';
 import { pool } from '../config/database';
+import { verifyToken } from '../utils/auth';
 
-// Test company ID for unlimited trial
-const TEST_COMPANY_ID = 'ed1887d9-3ffd-46e4-b281-338c8ad03a66';
+export type SubscriptionActor = {
+  id: string;
+  companyId: string;
+  role: string;
+  name: string;
+  subscriptionStatus: string;
+  subscriptionTier: string;
+  subscriptionProvider: string | null;
+  entitlementEndsAt: Date | null;
+};
 
-export const trialCheck = async (req: Request, res: Response, next: NextFunction) => {
-  // Skip auth, stripe, health, lucy
-  if (
-    req.path.startsWith('/api/auth') ||
-    req.path.startsWith('/api/stripe') ||
-    req.path === '/api/health' ||
-    req.path === '/api/lucy'
-  ) {
-    return next();
+const PUBLIC_API_PREFIXES = [
+  '/api/auth',
+  '/api/stripe',
+  '/api/subscriptions',
+  '/api/kiosk-public',
+  '/api/support',
+  '/api/support-agent',
+  '/api/system-reliability',
+  '/api/admin',
+];
+
+const PUBLIC_API_ENDPOINTS = new Set([
+  '/api/health',
+  '/api/operations/accept-invite',
+  '/api/integrations/quickbooks/callback',
+  '/api/integrations/stripe/callback',
+]);
+
+function requestPath(req: Request): string {
+  const originalPath = String(req.originalUrl || req.url || req.path || '').split('?')[0];
+  if (originalPath.startsWith('/api')) return originalPath.replace(/\/+$/, '') || '/';
+  const mountedPath = `${req.baseUrl || ''}${req.path || ''}`.split('?')[0];
+  return mountedPath.replace(/\/+$/, '') || '/';
+}
+
+export function isPublicSubscriptionPath(req: Request): boolean {
+  if (req.method === 'OPTIONS') return true;
+  const path = requestPath(req);
+  if (PUBLIC_API_ENDPOINTS.has(path)) return true;
+  return PUBLIC_API_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+export async function loadSubscriptionActor(
+  userId: string,
+  claimedCompanyId?: string,
+): Promise<SubscriptionActor> {
+  const result = await pool.query(
+    `SELECT u.id,
+            u.company_id,
+            LOWER(COALESCE(u.role, '')) AS role,
+            TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS name,
+            LOWER(COALESCE(c.subscription_status, 'inactive')) AS subscription_status,
+            LOWER(COALESCE(c.subscription_tier, 'trial')) AS subscription_tier,
+            NULLIF(c.subscription_provider, '') AS subscription_provider,
+            COALESCE(c.subscription_current_period_end, c.subscription_expires_at) AS entitlement_ends_at
+       FROM users u
+       JOIN companies c ON c.id = u.company_id
+      WHERE u.id = $1
+        AND COALESCE(u.is_active, TRUE) = TRUE
+        AND COALESCE(NULLIF(to_jsonb(c)->>'is_active', '')::boolean, TRUE) = TRUE
+      LIMIT 1`,
+    [userId],
+  );
+
+  if (!result.rowCount) throw new Error('Authenticated account or company was not found');
+  const row = result.rows[0];
+  const companyId = String(row.company_id || '');
+  if (!companyId || (claimedCompanyId && claimedCompanyId !== companyId)) {
+    throw new Error('Authentication token does not match the current company');
   }
+
+  return {
+    id: String(row.id),
+    companyId,
+    role: String(row.role || ''),
+    name: String(row.name || '').trim() || 'User',
+    subscriptionStatus: String(row.subscription_status || 'inactive'),
+    subscriptionTier: String(row.subscription_tier || 'trial'),
+    subscriptionProvider: row.subscription_provider ? String(row.subscription_provider) : null,
+    entitlementEndsAt: row.entitlement_ends_at ? new Date(row.entitlement_ends_at) : null,
+  };
+}
+
+export function hasCompanyEntitlement(actor: SubscriptionActor, now = new Date()): boolean {
+  if (hasComplimentaryAccess(actor.id, actor.companyId)) return true;
+  if (!['active', 'trialing'].includes(actor.subscriptionStatus)) return false;
+  if (!actor.entitlementEndsAt) return actor.subscriptionStatus === 'active';
+  return Number.isFinite(actor.entitlementEndsAt.getTime())
+    && actor.entitlementEndsAt.getTime() > now.getTime();
+}
+
+export const subscriptionGate = async (req: Request, res: Response, next: NextFunction) => {
+  if (isPublicSubscriptionPath(req)) return next();
 
   try {
     const decoded = verifyToken(req);
+    const actor = await loadSubscriptionActor(decoded.id, decoded.companyId);
+    if (!hasCompanyEntitlement(actor)) {
+      res.set('Cache-Control', 'no-store');
+      return res.status(402).json({
+        success: false,
+        code: 'SUBSCRIPTION_REQUIRED',
+        message: 'An active subscription or trial is required to use this feature.',
+        subscription: {
+          status: actor.subscriptionStatus,
+          tier: actor.subscriptionTier,
+          provider: actor.subscriptionProvider,
+          currentPeriodEnd: actor.entitlementEndsAt?.toISOString() || null,
+        },
+      });
+    }
+
     (req as any).user = decoded;
-    (req as any).companyId = decoded.companyId || TEST_COMPANY_ID;
-
-    // If user belongs to the test company, skip trial check
-    if (decoded.companyId === TEST_COMPANY_ID) {
-      console.log('🧪 Test company – unlimited trial');
-      return next();
-    }
-
-    // Trial logic
-    const userRes = await pool.query(
-      `SELECT trial_ends_at, grace_ends_at, stripe_payment_method_id, paid_months
-       FROM users WHERE id = $1`,
-      [decoded.id]
-    );
-    if (userRes.rows.length === 0) {
-      return res.status(401).json({ success: false, message: 'User not found' });
-    }
-
-    const user = userRes.rows[0];
-    const now = new Date();
-    const trialEnd = new Date(user.trial_ends_at);
-    const graceEnd = user.grace_ends_at ? new Date(user.grace_ends_at) : null;
-    const hasPaymentMethod = !!user.stripe_payment_method_id;
-    const paidMonths = user.paid_months || 0;
-
-    if (now < trialEnd) {
-      return next();
-    }
-
-    if (!hasPaymentMethod && !graceEnd) {
-      const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-      await pool.query('UPDATE users SET grace_ends_at = $1 WHERE id = $2', [sevenDays, decoded.id]);
-      console.log(`🆓 First grace period for user ${decoded.id} until ${sevenDays}`);
-      return next();
-    }
-
-    if (hasPaymentMethod) {
-      if (graceEnd && now < graceEnd) {
-        return next();
-      }
-      if (paidMonths >= 3) {
-        const sevenDays = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        await pool.query('UPDATE users SET grace_ends_at = $1 WHERE id = $2', [sevenDays, decoded.id]);
-        console.log(`🆓 Grace period granted for loyal user ${decoded.id} (paid ${paidMonths} months) until ${sevenDays}`);
-        return next();
-      }
-      return res.status(402).json({
-        success: false,
-        message: 'Payment required. Please update your payment method.',
-      });
-    }
-
-    if (graceEnd && now >= graceEnd) {
-      return res.status(402).json({
-        success: false,
-        message: 'Payment required. Please add a payment method.',
-      });
-    }
-
-    next();
+    (req as any).companyId = actor.companyId;
+    res.locals.subscriptionActor = actor;
+    res.set('Cache-Control', 'no-store');
+    return next();
   } catch (error: any) {
-    console.error('❌ Trial check error:', error.message);
-    return res.status(401).json({ success: false, message: error.message });
+    return res.status(401).json({
+      success: false,
+      code: 'AUTHENTICATION_REQUIRED',
+      message: error?.message || 'Authentication is required',
+    });
   }
 };
+
+// Import-compatible alias retained for older modules during staged upgrades.
+export const trialCheck = subscriptionGate;

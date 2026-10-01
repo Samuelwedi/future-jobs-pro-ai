@@ -7,6 +7,7 @@ const router = express.Router();
 // POST /api/webhooks/trigger – Zapier calls this endpoint
 router.post('/trigger', async (req: Request, res: Response) => {
   try {
+    verifyToken(req);
     const { trigger, payload } = req.body;
     if (!trigger) {
       return res.status(400).json({ success: false, message: 'Trigger name is required' });
@@ -15,7 +16,8 @@ router.post('/trigger', async (req: Request, res: Response) => {
     res.json({ success: true, data });
   } catch (error: any) {
     console.error('Webhook error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    const status = /token|authenticated/i.test(String(error.message || '')) ? 401 : 500;
+    res.status(status).json({ success: false, message: status === 401 ? 'Authentication is required' : 'Webhook processing failed' });
   }
 });
 

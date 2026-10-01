@@ -6,8 +6,7 @@ import {
 } from '@mui/material';
 import { Assignment, Add, AttachFile } from '@mui/icons-material';
 import ResourceAttachments from '../components/ResourceAttachments';
-
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 export default function Tasks() {
   const [tasks, setTasks] = useState<any[]>([]);

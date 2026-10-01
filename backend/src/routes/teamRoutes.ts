@@ -1,13 +1,12 @@
+import { companyActor,manages } from '../middleware/companyActor';
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { inviteEmployee, getCompanyMembers, updateMemberRole, removeMember, setPassword } from '../services/teamService';
 
 const router = express.Router();
-
-const isTestUser = (req: Request): boolean => {
-  return req.headers['x-test-user'] === 'samuel@test.com';
-};
+router.use(companyActor);
+router.use((req,res,next)=>{const a=res.locals.actor;if(req.method!=='GET'&&!manages(a))return res.status(403).json({message:'Manager access required'});if(req.body?.companyId&&String(req.body.companyId)!==String(a.company_id))return res.status(403).json({message:'Company access denied'});next();});
 
 // Helper to safely get userId as string
 const getUserId = (req: Request): string => {
@@ -22,32 +21,9 @@ const getCompanyId = (req: Request): string => {
 // GET /api/team
 router.get('/', async (req: Request, res: Response) => {
   try {
-    if (isTestUser(req)) {
-      const result = await pool.query(
-        'SELECT id, email, role, full_name, first_name, last_name FROM users WHERE company_id = $1',
-        ['ed1887d9-3ffd-46e4-b281-338c8ad03a66']
-      );
-      return res.json({ success: true, members: result.rows });
-    }
-
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-    const decoded = verifyToken(req);
-
-    const userResult = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-    const companyId = userResult.rows[0].company_id;
-    if (!companyId) {
-      return res.json({ success: true, members: [] });
-    }
-
     const result = await pool.query(
       'SELECT id, email, role, full_name, first_name, last_name FROM users WHERE company_id = $1',
-      [companyId]
+      [res.locals.actor.company_id]
     );
     res.json({ success: true, members: result.rows });
   } catch (error: any) {
@@ -64,23 +40,11 @@ router.post('/invite', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'All fields are required' });
     }
 
-    if (!isTestUser(req)) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ success: false, message: 'Not authenticated' });
-      }
-      try {
-        const decoded = verifyToken(req);
-        if (decoded.id !== invitedBy) {
-          return res.status(403).json({ success: false, message: 'Forbidden' });
-        }
-      } catch (err) {
-        return res.status(401).json({ success: false, message: 'Invalid token' });
-      }
-    } else {
-      console.log('✅ Team invite: bypassing auth for test user');
+    if (String(invitedBy) !== String(res.locals.actor.id)) {
+      return res.status(403).json({ success: false, message: 'Inviter must match the authenticated manager' });
     }
 
+    if(!['employee','manager'].includes(role)|| (role==='manager'&&!['boss','admin'].includes(res.locals.actor.role)))return res.status(403).json({message:'This role cannot be assigned by your account'});
     const result = await inviteEmployee(companyId, email, firstName, lastName, role, invitedBy);
     res.status(201).json({
       success: true,
@@ -109,18 +73,11 @@ router.post('/set-password', async (req: Request, res: Response) => {
     const { userId, newPassword } = req.body;
     if (!userId || !newPassword) return res.status(400).json({ success: false, message: 'userId and newPassword required' });
 
-    if (!isTestUser(req)) {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ success: false, message: 'Not authenticated' });
-      }
-      const decoded=verifyToken(req);
-      const actor=await pool.query("SELECT company_id,LOWER(COALESCE(role,'employee')) role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE",[decoded.id]);
-      const target=await pool.query('SELECT company_id,role FROM users WHERE id=$1',[userId]);
-      if(!actor.rowCount||!target.rowCount||String(actor.rows[0].company_id)!==String(target.rows[0].company_id)||!['boss','manager','admin'].includes(actor.rows[0].role))return res.status(403).json({success:false,message:'Manager access is required'});
-      if(String(target.rows[0].role).toLowerCase()==='boss'&&String(userId)!==String(decoded.id))return res.status(403).json({success:false,message:'The owner password cannot be reset here'});
-    }
-
+    const targetRole=(await pool.query('SELECT lower(role) role FROM users WHERE id=$1 AND company_id=$2',[userId,res.locals.actor.company_id])).rows[0]?.role;
+    if(!targetRole)return res.status(404).json({message:'User not found in your company'});
+    if(targetRole==='boss'&&String(userId)!==String(res.locals.actor.id))return res.status(403).json({message:'The owner password cannot be reset here'});
+    if(targetRole!=='employee'&&!['boss','admin'].includes(res.locals.actor.role))return res.status(403).json({message:'Only the owner can manage privileged accounts'});
+    if(String(newPassword).length<12)return res.status(400).json({message:'Use at least 12 characters'});
     await setPassword(userId, newPassword);
     res.json({ success: true, message: 'Password updated' });
   } catch (error: any) {
@@ -132,15 +89,7 @@ router.post('/set-password', async (req: Request, res: Response) => {
 router.get('/members/:companyId', async (req: Request, res: Response) => {
   try {
     const companyId = getCompanyId(req);
-    if (isTestUser(req)) {
-      const members = await getCompanyMembers(companyId);
-      return res.json({ success: true, members });
-    }
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-    verifyToken(req);
+    if(companyId!==String(res.locals.actor.company_id))return res.status(403).json({message:'Company access denied'});
     const members = await getCompanyMembers(companyId);
     res.json({ success: true, members });
   } catch (error: any) {
@@ -152,20 +101,12 @@ router.get('/members/:companyId', async (req: Request, res: Response) => {
 router.put('/:userId/role', async (req: Request, res: Response) => {
   try {
     const { role, companyId } = req.body;
+    if(!['boss','admin'].includes(res.locals.actor.role))return res.status(403).json({message:'Only the owner can change roles'});
+    const targetRole=(await pool.query('SELECT role FROM users WHERE id=$1 AND company_id=$2',[req.params.userId,res.locals.actor.company_id])).rows[0]?.role;
+    if(targetRole==='boss')return res.status(403).json({message:'Use ownership transfer to change the owner'});
     const userId = getUserId(req);
-    if (isTestUser(req)) {
-      const user = await updateMemberRole(userId, role, companyId);
-      return res.json({ success: true, user });
-    }
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-    const decoded=verifyToken(req);
-    const actor=await pool.query("SELECT company_id,LOWER(COALESCE(role,'employee')) role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE",[decoded.id]);
-    if(!actor.rowCount||!['boss','manager','admin'].includes(actor.rows[0].role)||String(actor.rows[0].company_id)!==String(companyId))return res.status(403).json({success:false,message:'Manager access is required'});
     if(!['employee','manager'].includes(String(role).toLowerCase()))return res.status(400).json({success:false,message:'Role must be employee or manager'});
-    const user = await updateMemberRole(userId, role, actor.rows[0].company_id);
+    const user = await updateMemberRole(userId, role, res.locals.actor.company_id);
     res.json({ success: true, user });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -235,18 +176,11 @@ router.post('/:userId/transfer-ownership', async (req: Request, res: Response) =
 // DELETE /api/team/:userId
 router.delete('/:userId', async (req: Request, res: Response) => {
   try {
-    const { companyId } = req.body;
     const userId = getUserId(req);
-    if (isTestUser(req)) {
-      await removeMember(userId, companyId);
-      return res.json({ success: true, message: 'Member removed' });
-    }
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-    verifyToken(req);
-    await removeMember(userId, companyId);
+    const target=(await pool.query('SELECT lower(role) role FROM users WHERE id=$1 AND company_id=$2',[userId,res.locals.actor.company_id])).rows[0];
+    if(!target)return res.status(404).json({message:'User not found in your company'});
+    if(target.role==='boss')return res.status(403).json({message:'Transfer ownership before removing the owner'});
+    await removeMember(userId, res.locals.actor.company_id);
     res.json({ success: true, message: 'Member removed' });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });

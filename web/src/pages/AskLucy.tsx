@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Avatar, Box, Button, Chip, CircularProgress, IconButton, List, ListItem, ListItemAvatar, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import { CheckCircle, Mic, Send, SmartToy, StopCircle } from '@mui/icons-material';
+import { api, API_BASE } from '../services/api';
 import { LucyWakeControl } from '../components/LucyWakeControl';
 import { speakAsLucy } from '../utils/lucySpeech';
-
-const API_BASE = ((import.meta.env as any).VITE_API_URL as string | undefined)?.replace(/\/$/, '') || 'https://future-jobs-pro-ai-production.up.railway.app';
 type Detail = { label: string; value: string | number };
 type ResultSection = { title: string; rows: Array<Record<string, unknown>> };
-type LucyAction = { type: string; title: string; status: 'completed' | 'pending_approval' | 'failed' | 'information'; summary?: string; details?: Detail[]; sections?: ResultSection[]; approvalId?: string };
+type LucyAction = { type: string; title: string; status: 'completed' | 'pending_approval' | 'failed' | 'information'; summary?: string; details?: Detail[]; sections?: ResultSection[]; approvalId?: string; download?: {url:string;filename:string;label:string} };
 type Message = { text: string; isUser: boolean; action?: LucyAction };
 type VoiceState = 'idle' | 'greeting' | 'listening' | 'thinking' | 'speaking';
 const recognitionConstructor = (): any => (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -24,9 +23,10 @@ function ActionSections({ sections }: { sections?: ResultSection[] }) {
   </Box>)}</Stack>;
 }
 
-export default function AskLucy() {
+export default function AskLucy({initialPrompt = ''}: {initialPrompt?:string}) {
   const [messages, setMessages] = useState<Message[]>([{ text: "Hi! I'm Lucy. Ask about your workforce or tell me what you need done.", isUser: false }]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialPrompt);
+  useEffect(()=>setInput(initialPrompt),[initialPrompt]);
   const [loading, setLoading] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [error, setError] = useState('');
@@ -48,15 +48,15 @@ export default function AskLucy() {
 
   const sendMessage = async (supplied?: string, fromVoice = false) => {
     const message = (supplied ?? input).trim(); if (!message || loading) return;
-    setMessages(current => [...current, { text: message, isUser: true }]); setInput(''); setLoading(true);
+    setMessages(current => [...current, { text: message, isUser: true }]); setInput(''); setLoading(true);setError('');
     if (fromVoice) setVoiceState('thinking');
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/api/lucy`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ message, channel: fromVoice ? 'voice' : 'text' }) });
+      const response = await fetch(`${API_BASE}/api/lucy-v2`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ message, channel: fromVoice ? 'voice' : 'text' }) });
       const data = await response.json(); if (!response.ok) throw new Error(data.message || `Lucy returned ${response.status}`);
       const text = data.text || "I completed the request but didn't receive a summary.";
-      const action: LucyAction | undefined = data.action || (data.approvalId ? { type: 'approval', title: 'Approval required', status: 'pending_approval', approvalId: data.approvalId } : undefined);
-      setMessages(current => [...current, { text, isUser: false, action }]);
+      const action: LucyAction | undefined = data.action || data.actions?.[0] || (data.approvalId ? { type: 'approval', title: 'Approval required', status: 'pending_approval', approvalId: data.approvalId } : undefined);
+      setMessages(current => [...current, { text, isUser: false, action }, ...(data.actions || []).slice(1).map((a:LucyAction)=>({text:'',isUser:false,action:a}))]);
       if (fromVoice) { setVoiceState('speaking'); await speakAsLucy(text, { onEnd: finishVoice, onError: finishVoice }); }
     } catch (cause: any) {
       const text = `I couldn't complete that request. ${cause.message || 'Please try again.'}`;
@@ -90,8 +90,14 @@ export default function AskLucy() {
     } catch (cause: any) { setError(cause.message || 'Approval failed'); }
   };
 
+  const download = async (item:NonNullable<LucyAction['download']>) => {
+    try {
+      if(!item.url.startsWith('/lucy-v2/timesheet-excel?'))throw new Error('Unsupported report link');
+      const blob=await api.download(`/api${item.url}`);const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=item.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    } catch(e:any){setError(e.message);}
+  };
   const voiceBusy = voiceState !== 'idle';
-  return <Box sx={{ bgcolor: '#070B10', minHeight: '100vh', py: 4, display: 'flex', justifyContent: 'center' }}><Box sx={{ width: '100%', maxWidth: 760, px: 2, display: 'flex', flexDirection: 'column', height: '90vh' }}>
+  return <Box sx={{ bgcolor: '#070B10', minHeight: '100vh', py: 4, display: 'flex', justifyContent: 'center' }}><Box sx={{ width: '100%', maxWidth: 960, px: 2, display: 'flex', flexDirection: 'column', height: '82vh' }}>
     <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 850, mb: 1, textAlign: 'center' }}><SmartToy sx={{ mr: 1, verticalAlign: 'middle' }} />Ask Lucy</Typography>
     <Typography variant="body2" sx={{ color: '#8FA5B8', mb: 2, textAlign: 'center' }}>Your voice-first workforce command centre. Lucy explains every action and asks before protected operations.</Typography>
     <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}><LucyWakeControl suspended={voiceBusy} onWake={() => void startVoice(true)} /></Box>
@@ -100,8 +106,8 @@ export default function AskLucy() {
     <Paper sx={{ flex: 1, bgcolor: '#10161E', borderRadius: 3, border: '1px solid #22303E', p: 2, mb: 2, overflowY: 'auto' }}><List>{messages.map((message, index) => <ListItem key={index} sx={{ flexDirection: message.isUser ? 'row-reverse' : 'row', alignItems: 'flex-start' }}>
       {!message.isUser && <ListItemAvatar sx={{ minWidth: 40 }}><Avatar sx={{ bgcolor: '#00D4FF', width: 32, height: 32, fontSize: 14 }}>L</Avatar></ListItemAvatar>}
       <Box sx={{ width: message.isUser ? 'auto' : '100%' }}><ListItemText primary={message.text} primaryTypographyProps={{ color: message.isUser ? '#00D4FF' : '#FFF', fontSize: 14, fontWeight: message.isUser ? 700 : 400, sx: { textAlign: message.isUser ? 'right' : 'left', whiteSpace: 'pre-wrap' } }} />
-      {message.action && <Paper variant="outlined" sx={{ mt: 1, p: 2, bgcolor: '#0B1118', borderColor: message.action.status === 'failed' ? '#7B2C38' : message.action.status === 'pending_approval' ? '#806B28' : '#20545D' }}><Stack direction="row" spacing={1} alignItems="center"><CheckCircle color={message.action.status === 'failed' ? 'error' : 'success'} /><Typography sx={{ color: '#FFF', fontWeight: 750 }}>{message.action.title}</Typography><Chip size="small" label={message.action.status.replace('_', ' ')} /></Stack>{message.action.summary && <Typography variant="body2" sx={{ color: '#AFC0CF', mt: 1 }}>{message.action.summary}</Typography>}{message.action.details?.map(detail => <Stack key={detail.label} direction="row" justifyContent="space-between" sx={{ mt: 1, gap: 2 }}><Typography variant="body2" sx={{ color: '#8295A7' }}>{detail.label}</Typography><Typography variant="body2" sx={{ color: '#FFF', textAlign: 'right' }}>{String(detail.value)}</Typography></Stack>)}<ActionSections sections={message.action.sections} />{message.action.status === 'pending_approval' && message.action.approvalId && <Stack direction="row" spacing={1} sx={{ mt: 2 }}><Button variant="contained" onClick={() => void resolveApproval(message.action!.approvalId!, 'approve')}>Approve</Button><Button color="error" onClick={() => void resolveApproval(message.action!.approvalId!, 'reject')}>Reject</Button></Stack>}</Paper>}
+      {message.action && <Paper variant="outlined" sx={{ mt: 1, p: 2, bgcolor: '#0B1118', borderColor: message.action.status === 'failed' ? '#7B2C38' : message.action.status === 'pending_approval' ? '#806B28' : '#20545D' }}><Stack direction="row" spacing={1} alignItems="center"><CheckCircle color={message.action.status === 'failed' ? 'error' : 'success'} /><Typography sx={{ color: '#FFF', fontWeight: 750 }}>{message.action.title}</Typography><Chip size="small" label={message.action.status.replace('_', ' ')} /></Stack>{message.action.summary && <Typography variant="body2" sx={{ color: '#AFC0CF', mt: 1 }}>{message.action.summary}</Typography>}{message.action.details?.map(detail => <Stack key={detail.label} direction="row" justifyContent="space-between" sx={{ mt: 1, gap: 2 }}><Typography variant="body2" sx={{ color: '#8295A7' }}>{detail.label}</Typography><Typography variant="body2" sx={{ color: '#FFF', textAlign: 'right' }}>{String(detail.value)}</Typography></Stack>)}<ActionSections sections={message.action.sections} />{message.action.download&&<Button sx={{mt:1}} onClick={()=>void download(message.action!.download!)}>{message.action.download.label}</Button>}{message.action.status === ('pending' as any)&&<Button sx={{mt:1}} disabled={loading} onClick={()=>void sendMessage('yes, run it')}>Create draft payroll</Button>}{message.action.status === 'pending_approval' && message.action.approvalId && <Stack direction="row" spacing={1} sx={{ mt: 2 }}><Button variant="contained" onClick={() => void resolveApproval(message.action!.approvalId!, 'approve')}>Approve</Button><Button color="error" onClick={() => void resolveApproval(message.action!.approvalId!, 'reject')}>Reject</Button></Stack>}</Paper>}
       </Box></ListItem>)}{loading && <CircularProgress size={22} sx={{ color: '#00D4FF', display: 'block', mx: 'auto' }} />}<div ref={endRef} /></List></Paper>
-    <Box sx={{ display: 'flex', gap: 1 }}><IconButton aria-label={voiceBusy ? 'Stop Lucy voice interaction' : 'Talk to Lucy'} onClick={voiceBusy ? stopVoice : () => void startVoice(false)} sx={{ border: '1px solid #27404C', color: voiceBusy ? '#FF667A' : '#00D4FF', width: 48, height: 48 }}>{voiceBusy ? <StopCircle /> : <Mic />}</IconButton><TextField fullWidth placeholder={voiceState === 'listening' ? 'Listening…' : 'Ask Lucy or give her a task…'} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} disabled={loading} sx={{ input: { color: '#FFF' }, '& .MuiOutlinedInput-root': { bgcolor: '#10161E', '& fieldset': { borderColor: '#293746' } } }} /><IconButton onClick={() => void sendMessage()} disabled={loading || !input.trim()} sx={{ bgcolor: '#00D4FF', color: '#07111F', width: 48, height: 48 }}><Send /></IconButton></Box>
+    <Box sx={{ display: 'flex', gap: 1 }}><IconButton aria-label={voiceBusy ? 'Stop Lucy voice interaction' : 'Talk to Lucy'} onClick={voiceBusy ? stopVoice : () => void startVoice(false)} sx={{ border: '1px solid #27404C', color: voiceBusy ? '#FF667A' : '#00D4FF', width: 48, height: 48 }}>{voiceBusy ? <StopCircle /> : <Mic />}</IconButton><TextField fullWidth placeholder={voiceState === 'listening' ? 'Listening…' : 'Ask Lucy or give her a task…'} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} disabled={loading} sx={{ input: { color: '#FFF' }, '& .MuiOutlinedInput-root': { bgcolor: '#10161E', '& fieldset': { borderColor: '#293746' } } }} /><IconButton aria-label="Send message" onClick={() => void sendMessage()} disabled={loading || !input.trim()} sx={{ bgcolor: '#00D4FF', color: '#07111F', width: 48, height: 48 }}><Send /></IconButton></Box>
   </Box></Box>;
 }

@@ -11,8 +11,7 @@ import {
   Close, ErrorOutline, InsertPhoto, VolumeUp,
 } from '@mui/icons-material';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 interface MediaItem {
   id: string;

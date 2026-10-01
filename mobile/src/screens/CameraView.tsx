@@ -6,7 +6,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system';
-import { Audio } from 'expo-av';
+import { requestRecordingPermissionsAsync } from 'expo-audio';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -66,7 +66,7 @@ export default function CameraView() {
 
       // Request microphone permission (only needed for video)
       if (Platform.OS !== 'web') {
-        const { status: audioStatus } = await Audio.requestPermissionsAsync();
+        const { status: audioStatus } = await requestRecordingPermissionsAsync();
         setHasAudioPermission(audioStatus === 'granted');
       }
 
@@ -215,7 +215,7 @@ export default function CameraView() {
 
     // For video, check audio permission
     if (mode === 'video' && hasAudioPermission === false) {
-      const { status } = await Audio.requestPermissionsAsync();
+      const { status } = await requestRecordingPermissionsAsync();
       setHasAudioPermission(status === 'granted');
       if (status !== 'granted') {
         Alert.alert('Audio required', 'Microphone permission is needed for video recording.');

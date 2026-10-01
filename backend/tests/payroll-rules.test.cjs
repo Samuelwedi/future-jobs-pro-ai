@@ -1,0 +1,47 @@
+const {test,before,after}=require('node:test');
+const assert=require('node:assert/strict');
+const {PGlite}=require('@electric-sql/pglite');
+const fs=require('node:fs');
+const {ALBERTA_2026,previewPayroll,rulesHash,RulesSchema,classification}=require('../dist/services/payrollRules/engine');
+const input={payDate:'2026-09-01',gross:4200,cppYtd:0,cpp2Ytd:0,eiYtd:0,pensionableYtd:0,standardCaseConfirmed:true};
+const copy=()=>structuredClone(ALBERTA_2026);
+test('CRA contribution example and zero-wage boundaries',()=>{const rules=copy();rules.policy.periodsPerYear=24;const r=previewPayroll(rules,input);assert.equal(r.cpp,'241.22');assert.equal(r.ei,'68.46');assert.equal(r.employerEi,'95.84');assert.equal(r.verified,false);assert.equal(r.moneyMovement,false);const zero=previewPayroll(rules,{...input,gross:0});assert.equal(zero.net,'0.00');assert.equal(zero.incomeTax,'0.00');});
+test('annual caps and CPP2 crossing are applied without negative deductions',()=>{const r=previewPayroll(copy(),{...input,gross:2000,cppYtd:4220,eiYtd:1120,pensionableYtd:74000});assert.equal(r.cpp,'10.45');assert.equal(r.ei,'3.07');assert.equal(r.cpp2,'56.00');const capped=previewPayroll(copy(),{...input,cppYtd:4230.45,cpp2Ytd:416,eiYtd:1123.07});assert.equal(capped.cpp,'0.00');assert.equal(capped.cpp2,'0.00');assert.equal(capped.ei,'0.00');});
+test('custom rates change preview and hash without claiming verification',()=>{const rules=copy(),before=rulesHash(rules);rules.statutory.eiRate=.02;assert.notEqual(rulesHash(rules),before);assert.equal(classification(rules),'custom_rules_review_required');assert.equal(previewPayroll(rules,input).ei,'84.00');assert.equal(ALBERTA_2026.statutory.eiRate,.0163);});
+test('unsupported geography, year, invalid brackets and unconfirmed scope fail closed',()=>{const r=copy();r.country='US';assert.throws(()=>previewPayroll(r,input),/jurisdiction/);assert.throws(()=>previewPayroll(copy(),{...input,payDate:'2027-01-01'}));assert.throws(()=>previewPayroll(copy(),{...input,standardCaseConfirmed:false}));r.country='CA';r.statutory.federalBrackets[0].floor=10;assert.equal(RulesSchema.safeParse(r).success,false);assert.throws(()=>previewPayroll(copy(),{...input,cppYtd:5000}));});
+process.env.JWT_SECRET='isolated-payroll-rule-test-secret';
+const jwt=require('jsonwebtoken'),express=require('express'),{pool}=require('../dist/config/database');
+const db=new PGlite();let server,base;
+const uid=n=>`00000000-0000-4000-a000-${String(n).padStart(12,'0')}`;
+const query=async(sql,args)=>{const r=await db.query(sql,args);return {rows:r.rows,rowCount:r.affectedRows||r.rows.length};};
+async function request(path,body,user=11){const r=await fetch(base+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(user?{Authorization:'Bearer '+jwt.sign({id:uid(user)},process.env.JWT_SECRET)}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json()};}
+before(async()=>{
+ await db.exec(`CREATE TABLE companies(id uuid PRIMARY KEY);CREATE TABLE users(id uuid PRIMARY KEY,company_id uuid,role text,is_active boolean DEFAULT true,first_name text,last_name text);CREATE TABLE payrolls(id uuid PRIMARY KEY,company_id uuid,period_start date,period_end date,total_hours numeric,total_pay numeric,status text,updated_at timestamptz);CREATE TABLE payroll_items(id uuid PRIMARY KEY,payroll_id uuid REFERENCES payrolls(id) ON DELETE CASCADE,employee_id uuid,hours numeric,hourly_rate numeric,adjustments numeric,cpp_deduction numeric,ei_deduction numeric,tax_deduction numeric);`);
+ const sql=fs.readFileSync(require('node:path').join(__dirname,'../migrations/20260930_payroll_rules.sql'),'utf8');await db.exec(sql);await db.exec(sql);
+ for(const n of [1,2])await query('INSERT INTO companies VALUES($1)',[uid(n)]);
+ for(const [n,c,role] of [[11,1,'boss'],[12,1,'employee'],[13,2,'boss']])await query('INSERT INTO users(id,company_id,role) VALUES($1,$2,$3)',[uid(n),uid(c),role]);
+ await query("INSERT INTO payrolls(id,company_id,status,total_hours,total_pay) VALUES($1,$2,'draft',100,4200)",[uid(21),uid(1)]);
+ await query('INSERT INTO payroll_items(id,payroll_id,employee_id,hours,hourly_rate,adjustments) VALUES($1,$2,$3,100,42,0)',[uid(31),uid(21),uid(12)]);
+ pool.query=query;pool.connect=async()=>({query,release(){}});
+ const app=express();app.use(express.json());app.use('/rules',require('../dist/routes/payrollRulesRoutes').default);app.use('/manual',require('../dist/routes/manualPayrollRoutes').default);app.use('/payouts',require('../dist/routes/payoutRoutes').default);
+ server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));base='http://127.0.0.1:'+server.address().port;
+});
+after(async()=>{if(server)await new Promise(r=>server.close(r));await db.close();await pool.end();});
+test('rules require manager access and scope records to the authenticated company',async()=>{assert.equal((await request('/rules',null,null)).status,401);assert.equal((await request('/rules',null,12)).status,403);const save=await request('/rules',{rules:copy(),expectedRevision:0,reason:'Reviewed reference rules'});assert.equal(save.status,201);assert.equal((await request('/rules',null,13)).data.current,null);assert.equal((await request('/manual/'+uid(21),null,13)).status,404);});
+test('stale revision writes reject and history cannot be changed or deleted',async()=>{assert.equal((await request('/rules',{rules:copy(),expectedRevision:0,reason:'Stale editor attempt'})).status,409);await assert.rejects(query('UPDATE company_payroll_rule_versions SET reason=$1',['tampering']),/immutable/);await assert.rejects(query('DELETE FROM company_payroll_rule_versions'),/immutable/);const r=copy();r.statutory.eiRate=.02;assert.equal((await request('/rules',{rules:r,expectedRevision:1,reason:'Company custom review'})).status,201);});
+test('manual workflow preserves snapshots across edits and records payments exactly once',async()=>{const path='/manual/'+uid(21);assert.equal((await request(path+'/review',{confirmed:true,reference:'Independent check'})).status,422);assert.equal((await request(path+'/calculate',{itemId:uid(31),rulesRevision:1,input})).status,422);
+ const calc=await request(path+'/calculate',{itemId:uid(31),rulesRevision:2,input});assert.equal(calc.status,200,JSON.stringify(calc.data));const hash=calc.data.result.rulesHash;
+ assert.equal((await request('/rules',{rules:copy(),expectedRevision:2,reason:'Restore CRA reference'})).status,201);let item=(await request(path)).data.items[0];assert.equal(item.calculation_snapshot.rulesHash,hash);
+ assert.equal((await request(path+'/review',{confirmed:true,reference:'Independent payroll review 2026'})).status,200);
+ await assert.rejects(query('UPDATE payroll_items SET adjustments=0 WHERE id=$1',[uid(31)]),/cannot be changed/);
+ await assert.rejects(query("UPDATE payrolls SET status='draft' WHERE id=$1",[uid(21)]),/immutable/);
+ assert.equal((await request(path+'/calculate',{itemId:uid(31),rulesRevision:3,input})).status,422);
+ await assert.rejects(query(`INSERT INTO manual_payroll_payments(company_id,payroll_id,payroll_item_id,amount,currency,paid_on,reference,recorded_by) VALUES($1,$2,$3,1,'CAD','2026-09-01','bad',$4)`,[uid(2),uid(21),uid(31),uid(13)]),/match the reviewed/);
+ const payment={itemId:uid(31),amount:calc.data.result.net,paidOn:input.payDate,confirmed:true,reference:'BANK-TEST-ONLY-001'};
+ assert.equal((await request(path+'/record-payment',{...payment,amount:'1.00'})).status,422);assert.equal((await request(path+'/record-payment',{...payment,paidOn:'2026-09-02'})).status,422);
+ assert.equal((await request(path+'/record-payment',payment)).status,200);assert.equal((await request(path+'/record-payment',payment)).status,200);assert.equal((await request(path+'/record-payment',{...payment,reference:'OTHER'})).status,422);
+ assert.equal((await query('SELECT count(*)::int n FROM manual_payroll_payments')).rows[0].n,1);assert.equal((await request(path)).data.payroll.status,'paid');await assert.rejects(query('DELETE FROM manual_payroll_payments'),/immutable/);
+});
+test('draft deletion remains possible despite item immutability triggers',async()=>{await query("INSERT INTO payrolls(id,company_id,status) VALUES($1,$2,'draft')",[uid(22),uid(1)]);await query('INSERT INTO payroll_items(id,payroll_id) VALUES($1,$2)',[uid(32),uid(22)]);await query('DELETE FROM payrolls WHERE id=$1',[uid(22)]);assert.equal((await query('SELECT * FROM payroll_items WHERE id=$1',[uid(32)])).rowCount,0);});
+
+test('direct deposit mutation routes are disabled',async()=>{const r=await request('/payouts/batches',{country:'CA',currency:'CAD'});assert.equal(r.status,409);assert.match(r.data.message,/disabled/);});

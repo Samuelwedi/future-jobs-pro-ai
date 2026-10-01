@@ -13,10 +13,7 @@ import {
 import { ArrowBack, PersonAdd, Send } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
-
-const API_BASE =
-  ((import.meta.env as any).VITE_API_URL as string | undefined)?.replace(/\/$/, '') ||
-  'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 const LUCY_ID = 'lucy-ai';
 
 interface Message {

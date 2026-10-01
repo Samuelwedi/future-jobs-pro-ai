@@ -1,7 +1,7 @@
 const configuredBase = (import.meta.env as any).VITE_API_URL || (import.meta.env as any).VITE_API_BASE;
 
 export const API_BASE = String(
-  configuredBase || 'https://future-jobs-pro-ai-production.up.railway.app',
+  configuredBase || (typeof window !== 'undefined' ? window.location.origin : ''),
 ).replace(/\/$/, '');
 
 export const WS_URL = API_BASE;

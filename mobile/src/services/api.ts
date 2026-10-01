@@ -5,16 +5,14 @@
 
 import axios, { AxiosInstance } from 'axios';
 import * as SecureStore from 'expo-secure-store';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { getOnlineStatus, queueAction } from './offlineService';
 
 // Railway permanent backend
 const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 const PROD_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
-export const API_URL = __DEV__ ? DEV_API_URL : PROD_API_URL;
-
-console.log('🚀 API_URL:', API_URL);
+export const API_URL = (process.env.EXPO_PUBLIC_API_URL || (__DEV__ ? DEV_API_URL : PROD_API_URL)).replace(/\/$/,'');
 
 class ApiService {
   private client: AxiosInstance;
@@ -40,13 +38,13 @@ class ApiService {
 
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
-          console.log('🔑 Authorization header added for:', config.url, 'token first 10 chars:', token.substring(0, 10) + '...');
+
         } else {
-          console.log('⚠️ No token available for request:', config.url);
+
         }
 
         // Send test user header (for review)
-        config.headers['X-Test-User'] = 'samuel@test.com';
+
 
         return config;
       },
@@ -78,10 +76,10 @@ class ApiService {
   }
 
   async setToken(token: string): Promise<void> {
-    console.log('🔑 api.setToken called, token length:', token.length);
+
     this.token = token;
     await SecureStore.setItemAsync('authToken', token);
-    console.log('✅ Token stored in SecureStore');
+
   }
 
   async getToken(): Promise<string | null> {
@@ -94,65 +92,70 @@ class ApiService {
   async clearToken(): Promise<void> {
     this.token = null;
     await SecureStore.deleteItemAsync('authToken');
-    console.log('🗑️ Token cleared');
+
   }
 
+  async replayQueued(action:any):Promise<void>{
+    if(action.fileUri){await this.uploadFileWithData(action.url,action.fileUri,action.data||{},action.fieldName||'file',true);return;}
+    await this.client.request({method:action.method,url:action.url,data:action.data});
+  }
   async get<T>(url: string): Promise<T> {
-    console.log('📤 GET', this.client.defaults.baseURL + url);
+
     const response = await this.client.get<T>(url);
-    console.log('✅ GET /' + url + ' success', response.data);
+
     return response.data;
   }
 
   async post<T>(url: string, data?: any, p0?: { headers: { 'Content-Type': string; }; }): Promise<T> {
     const online = getOnlineStatus();
+    if (!online && /^\/(payroll-rules|manual-payroll)(\/|$)/.test(url)) throw new Error('Payroll requires an online connection. Nothing was queued or saved.');
     if (!online) {
-      console.log('📴 Offline – queuing action:', url);
+
       await queueAction({ method: 'POST', url, data });
       throw new Error('Offline – action queued for later');
     }
-    console.log('📤 POST', this.client.defaults.baseURL + url, data);
+
     const response = await this.client.post<T>(url, data);
-    console.log('✅ POST /' + url + ' success', response.data);
+
     return response.data;
   }
 
   async put<T>(url: string, data?: any): Promise<T> {
     const online = getOnlineStatus();
     if (!online) {
-      console.log('📴 Offline – queuing action:', url);
+
       await queueAction({ method: 'PUT', url, data });
       throw new Error('Offline – action queued for later');
     }
-    console.log('📤 PUT', this.client.defaults.baseURL + url, data);
+
     const response = await this.client.put<T>(url, data);
-    console.log('✅ PUT /' + url + ' success', response.data);
+
     return response.data;
   }
 
   async patch<T>(url: string, data?: any): Promise<T> {
     const online = getOnlineStatus();
     if (!online) {
-      console.log('📴 Offline – queuing action:', url);
+
       await queueAction({ method: 'PATCH', url, data });
       throw new Error('Offline – action queued for later');
     }
-    console.log('📤 PATCH', this.client.defaults.baseURL + url, data);
+
     const response = await this.client.patch<T>(url, data);
-    console.log('✅ PATCH /' + url + ' success', response.data);
+
     return response.data;
   }
 
   async delete<T>(url: string): Promise<T> {
     const online = getOnlineStatus();
     if (!online) {
-      console.log('📴 Offline – queuing action:', url);
+
       await queueAction({ method: 'DELETE', url });
       throw new Error('Offline – action queued for later');
     }
-    console.log('📤 DELETE', this.client.defaults.baseURL + url);
+
     const response = await this.client.delete<T>(url);
-    console.log('✅ DELETE /' + url + ' success', response.data);
+
     return response.data;
   }
 
@@ -160,12 +163,13 @@ class ApiService {
     url: string,
     fileUri: string,
     extraFields: Record<string, string>,
-    fieldName = 'photo'
+    fieldName = 'photo',
+    replay = false
   ): Promise<T> {
     const online = getOnlineStatus();
-    if (!online) {
-      console.log('📴 Offline – queuing upload:', url);
-      const permanentUri = (FileSystem as any).documentDirectory + `offline-${Date.now()}.jpg`;
+    if (!online && !replay) {
+
+      const permanentUri = (FileSystem as any).documentDirectory + `offline-${Date.now()}-${fileUri.split('/').pop()||'upload'}`;
       await FileSystem.copyAsync({ from: fileUri, to: permanentUri });
       await queueAction({ method: 'POST', url, data: extraFields, fileUri: permanentUri, fieldName });
       throw new Error('Offline – upload queued for later');
@@ -184,11 +188,10 @@ class ApiService {
     formData.append(fieldName, { uri: fileUri, name: filename, type } as any);
     Object.entries(extraFields).forEach(([key, value]) => formData.append(key, value));
 
-    console.log('📤 UPLOAD', this.client.defaults.baseURL + url, { file: filename, extraFields });
     const response = await this.client.post<T>(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    console.log('✅ UPLOAD /' + url + ' success', response.data);
+
     return response.data;
   }
 

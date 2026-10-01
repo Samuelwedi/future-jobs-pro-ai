@@ -5,6 +5,15 @@ import { generatePayroll } from '../services/payrollGenerator';
 import { generatePayStubPDFBuffer } from '../services/pdfService';
 
 const router = express.Router();
+router.use(async (req, res, next) => {
+  try {
+    const token = verifyToken(req);
+    const user = await pool.query("SELECT id,company_id,LOWER(role) role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE", [token.id]);
+    if (!user.rows[0]?.company_id) return res.status(401).json({success:false,message:'Not authenticated'});
+    if (!['boss','owner','manager','admin'].includes(user.rows[0].role)) return res.status(403).json({success:false,message:'Manager access required'});
+    (req as any).user = user.rows[0]; next();
+  } catch { res.status(401).json({success:false,message:'Not authenticated'}); }
+});
 
 // ─── Helper ───────────────────────────────────────────────────────
 const getCompanyId = async (req: Request): Promise<string | null> => {
@@ -75,17 +84,19 @@ router.post('/generate', async (req: Request, res: Response) => {
 });
 
 // ─── PUT /api/payroll/:id ─────────────────────────────────────
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response, next) => {
+  if (req.params.id === 'settings') return next();
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const { id } = req.params;
     const { status, notes } = req.body;
+    if (status !== undefined) return res.status(400).json({success:false,message:'Use a verified payment workflow to record a payment'});
 
     const result = await pool.query(
       `UPDATE payrolls SET status = COALESCE($1, status), notes = COALESCE($2, notes), updated_at = NOW()
-       WHERE id = $3 AND company_id = $4 RETURNING *`,
+       WHERE id = $3 AND company_id = $4 AND status='draft' RETURNING *`,
       [status, notes, id, companyId]
     );
     if (result.rows.length === 0) {
@@ -100,23 +111,18 @@ router.put('/:id', async (req: Request, res: Response) => {
 
 // ─── DELETE /api/payroll/:id ──────────────────────────────────
 router.delete('/:id', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { id } = req.params;
-    const result = await pool.query(
-      'DELETE FROM payrolls WHERE id = $1 AND company_id = $2 AND status = $3 RETURNING id',
-      [id, companyId, 'draft']
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Payroll not found or not draft' });
-    }
-    res.json({ success: true, message: 'Payroll deleted' });
-  } catch (error) {
-    console.error('Error deleting payroll:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+ const client=await pool.connect();
+ try{
+  const companyId=await getCompanyId(req);
+  await client.query('BEGIN');
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`payroll:${companyId}`]);
+  const found=await client.query("SELECT id FROM payrolls WHERE id=$1 AND company_id=$2 AND status='draft' FOR UPDATE",[req.params.id,companyId]);
+  if(!found.rowCount){await client.query('ROLLBACK');return res.status(404).json({success:false,message:'Draft payroll was not found'});}
+  await client.query(`UPDATE time_entries SET payroll_locked_at=NULL WHERE id IN (SELECT unnest(timesheet_ids) FROM payroll_items WHERE payroll_id=$1)`,[req.params.id]);
+  await client.query('DELETE FROM payroll_items WHERE payroll_id=$1',[req.params.id]);
+  await client.query('DELETE FROM payrolls WHERE id=$1 AND company_id=$2',[req.params.id,companyId]);
+  await client.query('COMMIT');res.json({success:true,message:'Draft deleted; associated time entries unlocked'});
+ }catch{await client.query('ROLLBACK');res.status(400).json({success:false,message:'Draft could not be deleted'});}finally{client.release();}
 });
 
 // ─── GET /api/payroll/settings ───────────────────────────────
@@ -219,7 +225,10 @@ router.post('/employees/compensation', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Valid raiseType and raiseValue required' });
     }
     const effective = effectiveDate || new Date().toISOString().split('T')[0];
-    const userId = (req as any).user?.id || null;
+    const userId = (req as any).user.id;
+    const permitted = await client.query('SELECT id FROM users WHERE company_id=$1 AND id=ANY($2::uuid[])', [companyId, employeeIds]);
+    if (permitted.rowCount !== new Set(employeeIds).size) return res.status(403).json({success:false,message:'Employee is outside your company'});
+    await client.query('BEGIN');
 
     let updatedCount = 0;
     for (const empId of employeeIds) {
@@ -342,7 +351,7 @@ router.post('/employees/rate', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'employeeId and hourlyRate required' });
     }
     const effective = effectiveDate || new Date().toISOString().split('T')[0];
-    const userId = (req as any).user?.id || null;
+    const userId = (req as any).user.id;
 
     const empCheck = await pool.query('SELECT id FROM users WHERE id = $1 AND company_id = $2', [employeeId, companyId]);
     if (empCheck.rows.length === 0) {
@@ -372,17 +381,20 @@ router.get('/paystub/:itemId', async (req: Request, res: Response) => {
     const { itemId } = req.params;
     const result = await pool.query(
       `SELECT pi.*, u.first_name, u.last_name, u.email,
-              p.period_start, p.period_end
+              p.period_start, p.period_end, p.status, p.manual_review, c.name company_name
        FROM payroll_items pi
        JOIN users u ON pi.employee_id = u.id
        JOIN payrolls p ON pi.payroll_id = p.id
-       WHERE pi.id = $1 AND u.company_id = $2`,
+       JOIN companies c ON c.id=p.company_id
+       WHERE pi.id = $1 AND u.company_id = $2 AND p.company_id=$2`,
       [itemId, companyId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Payroll item not found' });
     }
     const item = result.rows[0];
+    if (!item.calculation_snapshot || !item.manual_review || !['approved','paid'].includes(item.status)) return res.status(409).json({success:false,message:'Calculate and review payroll before exporting a pay statement'});
+    const snapshot=item.calculation_snapshot;
 
     const data = {
       employeeName: `${item.first_name} ${item.last_name}`,
@@ -391,10 +403,11 @@ router.get('/paystub/:itemId', async (req: Request, res: Response) => {
       periodEnd: item.period_end || 'N/A',
       hours: Number(item.hours) || 0,
       rate: Number(item.hourly_rate) || 0,
-      pay: Number(item.pay) || 0,
-      adjustments: Number(item.adjustments) || 0,
-      finalPay: Number(item.final_pay) || 0,
-      companyName: 'Future Jobs Pro AI',
+      pay: Number(snapshot.gross),
+      adjustments: Number(snapshot.net)-Number(snapshot.gross),
+      finalPay: Number(snapshot.net),
+      calculation: snapshot,
+      companyName: item.company_name,
     };
 
     const pdfBuffer = await generatePayStubPDFBuffer(data);

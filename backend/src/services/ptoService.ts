@@ -86,7 +86,12 @@ export async function getCompanyPTORequests(companyId: string): Promise<PTOReque
 // Get PTO requests for a specific user
 export async function getUserPTORequests(userId: string): Promise<PTORequest[]> {
   const result = await pool.query(
-    `SELECT * FROM pto_requests WHERE user_id = $1 ORDER BY created_at DESC`,
+    `SELECT pr.*,
+            GREATEST(1, (pr.end_date::date - pr.start_date::date) + 1) AS calendar_days,
+            TRIM(COALESCE(approver.first_name, '') || ' ' || COALESCE(approver.last_name, '')) AS approved_by_name
+     FROM pto_requests pr
+     LEFT JOIN users approver ON approver.id = pr.approved_by
+     WHERE pr.user_id = $1 ORDER BY pr.created_at DESC`,
     [userId]
   );
   return result.rows;

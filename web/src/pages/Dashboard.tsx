@@ -11,9 +11,9 @@ import {
   AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
+import { API_BASE } from '../services/api';
 
 const COLORS = ['#00D4FF', '#4CAF50', '#FF9800', '#F44336'];
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
 
 interface DashboardStats {
   activeJobs: number;

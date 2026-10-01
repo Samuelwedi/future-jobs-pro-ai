@@ -5,6 +5,7 @@
 
 import { pool } from '../config/database';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { sendInviteEmail } from './emailService';
 
 export async function inviteEmployee(
@@ -34,7 +35,7 @@ export async function inviteEmployee(
     }
 
     // 3. Generate temporary password and hash
-    const tempPassword = Math.random().toString(36).slice(-10);
+    const tempPassword = randomBytes(18).toString('base64url');
     const passwordHash = await bcrypt.hash(tempPassword, 10);
     const fullName = `${firstName} ${lastName}`;
 

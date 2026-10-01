@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Box, Container, Typography, TextField, Button, Paper, Link, Alert,
 } from '@mui/material';
-
-const API_BASE = 'https://future-jobs-pro-ai-production.up.railway.app';
+import { API_BASE } from '../services/api';
 
 export default function Register() {
   const [firstName, setFirstName] = useState('');

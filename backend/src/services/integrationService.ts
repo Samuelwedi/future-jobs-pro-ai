@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import OAuthClient from 'intuit-oauth';
 import Stripe from 'stripe';
 import { pool } from '../config/database';
 import { decrypt, encrypt } from './encryptionService';
@@ -7,6 +6,11 @@ import {
   createSalesReceipt,
   findOrCreateQuickBooksCustomer,
 } from './quickbooksService';
+import {
+  createQuickBooksAuthorizationUrl,
+  exchangeQuickBooksAuthorizationCode,
+  revokeQuickBooksToken,
+} from './quickbooksOAuth';
 
 type Provider = 'quickbooks' | 'stripe';
 
@@ -20,23 +24,10 @@ function integrationEnvironment(provider: Provider): 'sandbox' | 'production' {
 }
 
 const frontendUrl = (process.env.FRONTEND_URL || 'https://www.futurejobsproai.com').replace(/\/$/, '');
-const quickBooksEnvironment = process.env.QUICKBOOKS_ENVIRONMENT === 'production'
-  ? 'production'
-  : 'sandbox';
-
 function requireEnvironment(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is not configured`);
   return value;
-}
-
-function quickBooksClient(): OAuthClient {
-  return new OAuthClient({
-    clientId: requireEnvironment('QUICKBOOKS_CLIENT_ID'),
-    clientSecret: requireEnvironment('QUICKBOOKS_CLIENT_SECRET'),
-    environment: quickBooksEnvironment as any,
-    redirectUri: requireEnvironment('QUICKBOOKS_REDIRECT_URI'),
-  });
 }
 
 function stripeClient(): any {
@@ -93,10 +84,7 @@ export function integrationResultUrl(provider: Provider, result: 'connected' | '
 
 export async function getQuickBooksAuthUrl(companyId: string, userId: string): Promise<string> {
   const state = await createOAuthState(companyId, userId, 'quickbooks');
-  return quickBooksClient().authorizeUri({
-    scope: [OAuthClient.scopes.Accounting],
-    state,
-  });
+  return createQuickBooksAuthorizationUrl(state);
 }
 
 export async function getStripeConnectUrl(companyId: string, userId: string): Promise<string> {
@@ -111,12 +99,11 @@ export async function getStripeConnectUrl(companyId: string, userId: string): Pr
   return `https://connect.stripe.com/oauth/authorize?${params.toString()}`;
 }
 
-export async function handleQuickBooksCallback(callbackUrl: string, state: string, realmId: string): Promise<void> {
+export async function handleQuickBooksCallback(code: string, state: string, realmId: string): Promise<void> {
   const { companyId } = await consumeOAuthState(state, 'quickbooks');
   if (!realmId) throw new Error('QuickBooks did not return a company realm');
 
-  const tokenResponse = await quickBooksClient().createToken(callbackUrl);
-  const token = tokenResponse.getJson();
+  const token = await exchangeQuickBooksAuthorizationCode(code);
   const expiresAt = new Date(Date.now() + Number(token.expires_in || 3600) * 1000);
 
   await pool.query(
@@ -218,9 +205,7 @@ export async function disconnectIntegration(companyId: string, provider: Provide
 
   if (provider === 'quickbooks' && existing.rows[0]?.refresh_token) {
     try {
-      await quickBooksClient().revoke({
-        refresh_token: decrypt(existing.rows[0].refresh_token),
-      });
+      await revokeQuickBooksToken(decrypt(existing.rows[0].refresh_token));
     } catch (error) {
       // An already-expired/revoked grant should not prevent local disconnection.
       console.warn('QuickBooks revoke returned an error; clearing the local connection:', error);

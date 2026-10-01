@@ -141,15 +141,8 @@ router.get(
         req.query.realmId || '',
       );
 
-      const baseUrl = (
-        process.env.BASE_URL ||
-        `${req.protocol}://${req.get(
-          'host',
-        )}`
-      ).replace(/\/$/, '');
-
       await handleQuickBooksCallback(
-        `${baseUrl}${req.originalUrl}`,
+        String(req.query.code || ''),
         state,
         realmId,
       );

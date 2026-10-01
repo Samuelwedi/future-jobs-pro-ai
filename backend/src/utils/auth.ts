@@ -21,7 +21,7 @@ export const verifyToken = (req: Request): DecodedToken => {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as DecodedToken;
-    console.log('✅ Token verified for user:', decoded.id);
+    if (!decoded.id || decoded.purpose) throw new Error('Invalid access token');
     return decoded;
   } catch (err: any) {
     console.error('❌ Token verification failed:', err.message);

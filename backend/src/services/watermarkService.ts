@@ -24,7 +24,8 @@ export interface WatermarkResult {
 
 // ---------- OpenWeatherMap ----------
 async function fetchWeather(lat: number, lng: number): Promise<string> {
-  const apiKey = process.env.OPENWEATHER_API_KEY || '5747418241c0b06e9b0dc9223223479f';
+  const apiKey = process.env.OPENWEATHER_API_KEY?.trim();
+  if (!apiKey) return 'Weather unavailable';
   const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`;
   try {
     const res = await fetch(url);

@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator,
-  Image, Modal, SafeAreaView, Alert,
+  Image, Modal, Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { Audio, Video, ResizeMode } from 'expo-av';
+import { useEventListener } from 'expo';
+import { AudioPlayer, createAudioPlayer } from 'expo-audio';
+import { VideoView, useVideoPlayer } from 'expo-video';
 
 export default function MonthMediaTypeScreen() {
   const navigation = useNavigation<any>();
@@ -18,8 +21,32 @@ export default function MonthMediaTypeScreen() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
-  const videoRef = useRef<Video>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
+  const videoPlayer = useVideoPlayer(null);
+
+  useEventListener(videoPlayer, 'statusChange', ({ status, error }) => {
+    setVideoLoading(status === 'loading');
+    if (status === 'error') {
+      setVideoError(true);
+      console.error('Video error:', error?.message || 'Unknown playback error');
+    }
+  });
+
+  useEffect(() => {
+    if (selectedMedia?.type !== 'video' || !selectedMedia.url) {
+      videoPlayer.pause();
+      return;
+    }
+    setVideoError(false);
+    setVideoLoading(true);
+    videoPlayer.replaceAsync(selectedMedia.url)
+      .then(() => videoPlayer.play())
+      .catch((error) => {
+        setVideoLoading(false);
+        setVideoError(true);
+        console.error('Video error:', error);
+      });
+  }, [selectedMedia?.id, selectedMedia?.type, selectedMedia?.url, videoPlayer]);
 
   useEffect(() => {
     if (projectId && yearMonth && mediaType) {
@@ -29,7 +56,7 @@ export default function MonthMediaTypeScreen() {
     }
     return () => {
       if (soundRef.current) {
-        soundRef.current.unloadAsync();
+        soundRef.current.remove();
       }
     };
   }, []);
@@ -55,21 +82,19 @@ export default function MonthMediaTypeScreen() {
     }
     try {
       if (soundRef.current) {
-        await soundRef.current.unloadAsync();
+        soundRef.current.remove();
         soundRef.current = null;
         setIsPlaying(false);
       }
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: url },
-        { shouldPlay: true }
-      );
+      const sound = createAudioPlayer({ uri: url });
       soundRef.current = sound;
       setIsPlaying(true);
-      sound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.isLoaded && status.didJustFinish) {
+      sound.addListener('playbackStatusUpdate', (status) => {
+        if (status.didJustFinish) {
           setIsPlaying(false);
         }
       });
+      sound.play();
     } catch (error) {
       Alert.alert('Error', 'Could not play audio');
     }
@@ -77,8 +102,8 @@ export default function MonthMediaTypeScreen() {
 
   const handleStopAudio = async () => {
     if (soundRef.current) {
-      await soundRef.current.stopAsync();
-      await soundRef.current.unloadAsync();
+      soundRef.current.pause();
+      soundRef.current.remove();
       soundRef.current = null;
       setIsPlaying(false);
     }
@@ -158,8 +183,8 @@ export default function MonthMediaTypeScreen() {
     setVideoLoading(false);
     setVideoError(false);
     if (soundRef.current) {
-      soundRef.current.stopAsync();
-      soundRef.current.unloadAsync();
+      soundRef.current.pause();
+      soundRef.current.remove();
       soundRef.current = null;
       setIsPlaying(false);
     }
@@ -207,11 +232,15 @@ export default function MonthMediaTypeScreen() {
         transparent={true}
         animationType="fade"
         onRequestClose={closeModal}
+        statusBarTranslucent
+        navigationBarTranslucent
       >
         <SafeAreaView style={styles.modalContainer}>
-          <TouchableOpacity style={styles.closeModalBtn} onPress={closeModal}>
-            <Ionicons name="arrow-back" size={28} color="#FFF" />
-          </TouchableOpacity>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity style={styles.closeModalBtn} onPress={closeModal} accessibilityRole="button" accessibilityLabel="Close media preview"><Ionicons name="arrow-back" size={28} color="#FFF" /></TouchableOpacity>
+            <Text style={styles.modalTitle} numberOfLines={1}>Media preview</Text>
+            <View style={styles.headerSpacer} />
+          </View>
 
           {selectedMedia && (
             <View style={styles.modalContent}>
@@ -231,21 +260,11 @@ export default function MonthMediaTypeScreen() {
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <Video
-                      ref={videoRef}
-                      source={{ uri: selectedMedia.url }}
+                    <VideoView
+                      player={videoPlayer}
                       style={styles.fullVideo}
-                      resizeMode={ResizeMode.CONTAIN}
-                      shouldPlay={true}
-                      useNativeControls={true}
-                      isLooping={false}
-                      onLoadStart={() => setVideoLoading(true)}
-                      onLoad={() => setVideoLoading(false)}
-                      onError={(error: any) => {
-                        setVideoLoading(false);
-                        setVideoError(true);
-                        console.error('Video error:', error);
-                      }}
+                      contentFit="contain"
+                      nativeControls
                     />
                   )}
                 </View>
@@ -347,22 +366,21 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.95)',
-    paddingTop: 60,
   },
+  modalHeader: { minHeight: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
   closeModalBtn: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    zIndex: 10,
-    padding: 8,
+    width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24,
   },
+  modalTitle: { flex: 1, color: '#FFF', fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  headerSpacer: { width: 48 },
   modalContent: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
+    paddingBottom: 12,
   },
-  fullImage: { width: '100%', height: '80%' },
+  fullImage: { width: '100%', flex: 1, maxHeight: '82%' },
   videoContainer: {
     width: '100%',
     height: '80%',
@@ -380,7 +398,7 @@ const styles = StyleSheet.create({
   voiceDuration: { color: '#888', fontSize: 14 },
   noAudioContainer: { alignItems: 'center', padding: 20 },
   noAudioText: { color: '#888', fontSize: 18, marginTop: 12 },
-  modalMeta: { marginTop: 16, alignItems: 'center' },
+  modalMeta: { minHeight: 64, marginTop: 12, alignItems: 'center', justifyContent: 'center' },
   modalDate: { color: '#AAA', fontSize: 14 },
   modalHash: { color: '#4CAF50', fontSize: 13, marginTop: 4 },
 });

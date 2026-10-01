@@ -72,7 +72,7 @@ export default function Pricing() {
         {loading ? <CircularProgress /> : (
           <Grid container spacing={3}>
             {plans.map((plan) => {
-              const popular = plan.key === 'professional';
+              const popular = plan.key === 'team_50';
               return (
                 <Grid item xs={12} md={4} key={plan.key}>
                   <Card sx={{ height: '100%', bgcolor: '#121827', color: '#fff', border: popular ? '2px solid #00d4ff' : '1px solid #2a3448', borderRadius: 4 }}>
@@ -105,8 +105,11 @@ export default function Pricing() {
           </Grid>
         )}
         <Typography sx={{ color: '#8996ad', textAlign: 'center', mt: 5 }}>
+          More than 110 active accounts? Contact sales through Support for a company plan.
+          {' '}
           Prices are loaded directly from Stripe. Taxes may be added based on the billing address.
         </Typography>
+        {!loading && !error && plans.length === 0 && <Alert severity="info" sx={{mt:2}}>Subscription plans are being configured. Please contact support.</Alert>}
       </Container>
     </Box>
   );

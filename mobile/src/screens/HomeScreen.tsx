@@ -1,3 +1,5 @@
+import {DeviceEventEmitter} from 'react-native';
+import {startBackgroundLocation,stopBackgroundLocation} from '../services/backgroundLocation';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
@@ -95,6 +97,14 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isClockedIn, activeTimeEntry]);
 
+  const [gpsStatus,setGpsStatus]=useState('GPS status unavailable');
+  useEffect(()=>{const listener=DeviceEventEmitter.addListener('gps-tracking-status',setGpsStatus);return()=>listener.remove();},[]);
+  useEffect(()=>{
+    if(isClockedIn&&activeTimeEntry&&user?.id){
+      startBackgroundLocation({userId:user.id,timeEntryId:activeTimeEntry.id,projectId:activeTimeEntry.project_id}).then(()=>setGpsStatus('Background tracking enabled')).catch((e:Error)=>setGpsStatus(e.message));
+    }else{void stopBackgroundLocation().catch(()=>undefined);setGpsStatus('Off clock');}
+  },[isClockedIn,activeTimeEntry?.id,user?.id]);
+  // Foreground updates remain available if background permission is declined.
   // ─── GPS tracking ───
   useEffect(() => {
     if (isClockedIn && activeTimeEntry) {
@@ -303,6 +313,7 @@ export default function HomeScreen() {
     { icon: 'chatbubbles', color: '#00BCD4', gradient: ['#00BCD4', '#0097A7'], label: 'Chat', screen: 'ChatList', IconSet: Ionicons },
     { icon: 'map', color: '#4CAF50', gradient: ['#4CAF50', '#388E3C'], label: 'Crew', screen: 'CrewTracking', IconSet: Ionicons },
     { icon: 'folder', color: '#9C27B0', gradient: ['#9C27B0', '#7B1FA2'], label: 'Folders', screen: 'Folders', needsProject: false, IconSet: MaterialIcons },
+    { icon: 'construction', color: '#67E8F9', gradient: ['#67E8F9', '#0891B2'], label: 'Tools', screen: 'WorkerTools', needsProject: false, IconSet: MaterialIcons },
   ];
 
   const todayLabel = format(new Date(), 'EEEE, MMMM d');
@@ -323,6 +334,7 @@ export default function HomeScreen() {
         ['Time off', 'beach-access', 'PTO', '#C4B5FD'],
         ['History', 'history', 'History', '#93C5FD'],
         ['Project files', 'perm-media', 'Folders', '#67E8F9'],
+        ['Worker tools', 'construction', 'WorkerTools', '#67E8F9'],
       ],
     },
     ...(user?.role === 'boss' || user?.role === 'manager' ? [{
@@ -388,9 +400,9 @@ export default function HomeScreen() {
               <Text style={investorStyles.heroEyebrow}>CURRENT SESSION</Text>
               <Text style={investorStyles.liveTimer}>{formatElapsed(elapsedSeconds)}</Text>
               <Text style={investorStyles.heroTitle}>{activeTimeEntry.project_name || firstProject?.name || 'Work in progress'}</Text>
-              <Text style={investorStyles.heroCopy}>Time and location evidence are being recorded for this session.</Text>
+              <Text style={investorStyles.heroCopy}>Your clock session is active. GPS availability is shown below.</Text>
               <View style={investorStyles.sessionSignals}>
-                <View style={investorStyles.signal}><MaterialIcons name="my-location" size={16} color="#A7F3D0" /><Text style={investorStyles.signalText}>GPS connected</Text></View>
+                <View style={investorStyles.signal}><MaterialIcons name="my-location" size={16} color="#A7F3D0" /><Text style={investorStyles.signalText}>{gpsStatus}</Text></View>
                 <View style={investorStyles.signal}><MaterialIcons name="lock-clock" size={16} color="#A7F3D0" /><Text style={investorStyles.signalText}>Evidence live</Text></View>
               </View>
               <TouchableOpacity style={investorStyles.clockOutButton} onPress={handleClockOut}><MaterialIcons name="stop-circle" size={21} color="#FFF" /><Text style={investorStyles.clockOutText}>Finish shift</Text></TouchableOpacity>
@@ -496,7 +508,7 @@ export default function HomeScreen() {
           </View>
         ))}
 
-        <View style={investorStyles.footerRow}>{(user?.role === 'boss' || user?.role === 'manager') && <><TouchableOpacity onPress={() => navigation.navigate('CompanySettings')}><Text style={investorStyles.footerLink}>Company settings</Text></TouchableOpacity><View style={investorStyles.footerDot} /></>}<TouchableOpacity onPress={logout}><Text style={investorStyles.footerLink}>Sign out</Text></TouchableOpacity></View>
+        <View style={investorStyles.footerRow}>{(user?.role === 'boss' || user?.role === 'manager') && <><TouchableOpacity onPress={() => navigation.navigate('CompanySettings')}><Text style={investorStyles.footerLink}>Company settings</Text></TouchableOpacity><TouchableOpacity onPress={() => navigation.navigate('PayrollRules')}><Text style={investorStyles.footerLink}>Payroll rules</Text></TouchableOpacity><View style={investorStyles.footerDot} /></>}<TouchableOpacity onPress={logout}><Text style={investorStyles.footerLink}>Sign out</Text></TouchableOpacity></View>
       </ScrollView>
     </View>
   );

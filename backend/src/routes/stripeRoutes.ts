@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import { verifyToken } from '../utils/auth';
+import { loadSubscriptionActor } from '../middleware/trialMiddleware';
 import {
   createBillingPortalSession,
   createCheckoutSession,
@@ -10,9 +11,10 @@ import {
 
 const router = express.Router();
 
-function actor(req: Request) {
+async function actor(req: Request) {
   const decoded = verifyToken(req);
-  return { userId: decoded.id, companyId: decoded.companyId };
+  const current=await loadSubscriptionActor(decoded.id,decoded.companyId);
+  return { userId: current.id, companyId: current.companyId };
 }
 
 function statusFor(error: any): number {
@@ -33,7 +35,7 @@ router.get('/plans', async (_req: Request, res: Response) => {
 
 router.get('/status', async (req: Request, res: Response) => {
   try {
-    const { companyId } = actor(req);
+    const { companyId } = await actor(req);
     res.set('Cache-Control', 'no-store');
     res.json({ success: true, subscription: await getSubscriptionStatus(companyId) });
   } catch (error: any) {
@@ -43,7 +45,7 @@ router.get('/status', async (req: Request, res: Response) => {
 
 router.post('/create-checkout', async (req: Request, res: Response) => {
   try {
-    const { userId, companyId } = actor(req);
+    const { userId, companyId } = await actor(req);
     const checkoutUrl = await createCheckoutSession(userId, companyId, req.body?.plan);
     res.json({ success: true, checkoutUrl });
   } catch (error: any) {
@@ -53,7 +55,7 @@ router.post('/create-checkout', async (req: Request, res: Response) => {
 
 router.post('/billing-portal', async (req: Request, res: Response) => {
   try {
-    const { userId, companyId } = actor(req);
+    const { userId, companyId } = await actor(req);
     res.json({ success: true, url: await createBillingPortalSession(userId, companyId) });
   } catch (error: any) {
     res.status(statusFor(error)).json({ success: false, message: error.message });
@@ -62,7 +64,7 @@ router.post('/billing-portal', async (req: Request, res: Response) => {
 
 router.post('/cancel-subscription', async (req: Request, res: Response) => {
   try {
-    const { userId, companyId } = actor(req);
+    const { userId, companyId } = await actor(req);
     await setSubscriptionCancellation(userId, companyId, true);
     res.json({ success: true, message: 'Subscription will end after the current billing period.' });
   } catch (error: any) {
@@ -72,7 +74,7 @@ router.post('/cancel-subscription', async (req: Request, res: Response) => {
 
 router.post('/resume-subscription', async (req: Request, res: Response) => {
   try {
-    const { userId, companyId } = actor(req);
+    const { userId, companyId } = await actor(req);
     await setSubscriptionCancellation(userId, companyId, false);
     res.json({ success: true, message: 'Scheduled cancellation was removed.' });
   } catch (error: any) {

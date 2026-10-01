@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy,Suspense,useState,useEffect } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
   Box,
+  Button,
+  Dialog,
+  DialogContent,
+  TextField,
   Drawer,
   AppBar,
   Toolbar,
@@ -21,6 +25,7 @@ import {
   useMediaQuery,
 } from '@mui/material';
 import {
+  Search as SearchIcon,
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   CalendarMonth,
@@ -62,6 +67,7 @@ import {
   People,
   Gavel,
 } from '@mui/icons-material';
+const AskLucy = lazy(()=>import('../pages/AskLucy'));
 import NotificationCenter from './NotificationCenter';
 import { useAppTheme } from './AppThemeProvider';
 import { API_BASE } from '../services/api';
@@ -88,6 +94,12 @@ const navConfig = [
       { label: 'Schedule', icon: <CalendarMonth />, path: '/schedule' },
       { label: 'Timesheet', icon: <Timer />, path: '/timesheet' },
       { label: 'Tasks', icon: <Assignment />, path: '/tasks' },
+      { label: 'Worker Tools', icon: <Calculate />, path: '/worker-tools' },
+      {label:'Availability & cover',icon:<ReceiptLong/>,path:'/work-preferences'},
+      {label:'Operations',icon:<ReceiptLong/>,path:'/operations'},
+      {label:'Expenses',icon:<ReceiptLong/>,path:'/expenses'},
+      {label:'Crew map',icon:<Groups/>,path:'/crew-tracking'},
+      {label:'GPS playback',icon:<Work/>,path:'/gps-playback'},
       { label: 'Projects', icon: <Folder />, path: '/projects' },
       { label: 'Evidence Center', icon: <Gavel />, path: '/evidence' },
     ],
@@ -105,7 +117,8 @@ const navConfig = [
     category: 'Payroll & Finance',
     items: [
       { label: 'Payroll', icon: <AttachMoney />, path: '/payroll' },
-      { label: 'Direct Deposit', icon: <AccountBalance />, path: '/direct-deposit' },
+      { label: 'Payroll & Manual Payments', icon: <AccountBalance />, path: '/direct-deposit' },
+      { label: 'Payroll Rules', icon: <AccountBalance />, path: '/payroll-rules' },
       { label: 'Year‑End', icon: <Receipt />, path: '/year-end' },
       { label: 'Finalized T4 Slips', icon: <ArticleIcon />, path: '/year-end/finalized' },
       { label: 'Invoices', icon: <ReceiptLong />, path: '/invoices' },
@@ -148,7 +161,7 @@ const navConfig = [
 
 // Flatten all items for the sidebar
 const allNavItems = navConfig.flatMap(group => group.items);
-const managerOnlyPaths=new Set(['/admin-dashboard','/payroll','/direct-deposit','/year-end','/year-end/finalized','/reports','/kiosk']);
+const managerOnlyPaths=new Set(['/operations','/admin-dashboard','/payroll','/payroll-rules','/direct-deposit','/year-end','/year-end/finalized','/reports','/kiosk']);
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -157,7 +170,15 @@ export default function Layout() {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const appTheme = useAppTheme();
 
+  const [lucyOpen,setLucyOpen]=useState(false),[lucyPrompt,setLucyPrompt]=useState(''),[searchOpen,setSearchOpen]=useState(false),[search,setSearch]=useState('');
+  useEffect(()=>{
+    const open=(e:Event)=>{setLucyPrompt((e as CustomEvent).detail||'');setLucyOpen(true);};
+    const key=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setSearchOpen(true);}};
+    window.addEventListener('open-lucy',open);window.addEventListener('keydown',key);
+    return()=>{window.removeEventListener('open-lucy',open);window.removeEventListener('keydown',key);};
+  },[]);
   const [drawerOpen, setDrawerOpen] = useState(!isMobile);
+  useEffect(()=>{setDrawerOpen(!isMobile);},[isMobile]);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [user, setUser] = useState<any>(null);
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
@@ -172,7 +193,7 @@ export default function Layout() {
   useEffect(()=>{
     let mounted=true;
     const refresh=async()=>{
-      const token=localStorage.getItem('token');if(!token)return;
+      const token=localStorage.getItem('token');if(!token){navigate('/login');return;}
       try{const response=await fetch(`${API_BASE}/api/auth/session`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});if(response.status===401){handleLogout();return;}const data=await response.json();if(response.ok&&mounted){localStorage.setItem('user',JSON.stringify(data.user));setUser(data.user);window.dispatchEvent(new CustomEvent('auth-user-updated',{detail:data.user}));}}catch{}
     };
     void refresh();const timer=window.setInterval(refresh,60000);window.addEventListener('focus',refresh);
@@ -197,7 +218,7 @@ export default function Layout() {
   const initials = user
     ? `${user.firstName?.charAt(0) || ''}${user.lastName?.charAt(0) || ''}`
     : 'U';
-  const canManage=['boss','manager','admin'].includes(String(user?.role||'').toLowerCase());
+  const canManage=['boss','owner','manager','admin'].includes(String(user?.role||'').toLowerCase());
 
   const drawerContent = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
@@ -278,10 +299,12 @@ export default function Layout() {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" sx={{ flexGrow: 1, color: '#FFF' }}>
+          <Typography variant="h6" noWrap sx={{ flexGrow:1,minWidth:0,mr:1,color:'#FFF',fontSize:{xs:16,sm:20} }}>
             {location.pathname.split('/')[1] || 'Dashboard'}
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{display:'flex',alignItems:'center',gap:{xs:0,sm:1},flexShrink:0}}>
+            {isMobile?<IconButton aria-label="Search workspaces" onClick={()=>setSearchOpen(true)}><SearchIcon/></IconButton>:<Button onClick={()=>setSearchOpen(true)} sx={{color:'text.primary'}}>Search ⌘K</Button>}
+            {isMobile?<IconButton aria-label="Open Lucy" onClick={()=>setLucyOpen(true)}><SmartToy/></IconButton>:<Button startIcon={<SmartToy/>} onClick={()=>setLucyOpen(true)} sx={{color:'primary.main'}}>Lucy</Button>}
             <NotificationCenter />
             <Tooltip title="Toggle theme">
               <IconButton onClick={appTheme.toggle} sx={{ color: 'text.secondary' }}>
@@ -318,7 +341,7 @@ export default function Layout() {
         open={drawerOpen}
         onClose={toggleDrawer}
         sx={{
-          width: 280,
+          width: {xs:0,md:280},
           flexShrink: 0,
           '& .MuiDrawer-paper': {
             width: 280,
@@ -333,16 +356,19 @@ export default function Layout() {
         {drawerContent}
       </Drawer>
 
+      <Dialog open={searchOpen} onClose={()=>setSearchOpen(false)} fullWidth maxWidth="sm"><DialogContent><TextField autoFocus fullWidth label="Find a workspace" value={search} onChange={e=>setSearch(e.target.value)}/><List>{allNavItems.filter(item=>(canManage||!managerOnlyPaths.has(item.path))&&item.label.toLowerCase().includes(search.toLowerCase())).map(item=><ListItemButton key={item.path} onClick={()=>{navigate(item.path);setSearchOpen(false);}}><ListItemIcon>{item.icon}</ListItemIcon><ListItemText primary={item.label}/></ListItemButton>)}</List></DialogContent></Dialog>
+      <Drawer anchor="right" open={lucyOpen} onClose={()=>setLucyOpen(false)} PaperProps={{sx:{width:{xs:'100%',md:650},maxWidth:'100vw'}}}><Button onClick={()=>setLucyOpen(false)}>Close Lucy</Button><Suspense fallback={<Box p={3}>Loading Lucy…</Box>}><AskLucy initialPrompt={lucyPrompt}/></Suspense></Drawer>
       {/* Main Content */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
-          mt: 8,
+          p:{xs:2,md:3},
+          minWidth:0,
+          mt:8,
           bgcolor: 'background.default',
           minHeight: '100vh',
-          width: { md: `calc(100% - 280px)` },
+          width:{xs:'100%',md:'calc(100% - 280px)'},
         }}
       >
         <Outlet />

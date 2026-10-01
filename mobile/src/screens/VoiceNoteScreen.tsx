@@ -3,7 +3,12 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
   ActivityIndicator, Platform, ScrollView,
 } from 'react-native';
-import { Audio } from 'expo-av';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+} from 'expo-audio';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -37,7 +42,7 @@ export default function VoiceNoteScreen() {
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<VoiceNoteResponse | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -45,12 +50,12 @@ export default function VoiceNoteScreen() {
 
   useEffect(() => {
     (async () => {
-      const { status } = await Audio.requestPermissionsAsync();
+      const { status } = await requestRecordingPermissionsAsync();
       setHasPermission(status === 'granted');
       if (status === 'granted') {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
         });
       } else {
         Alert.alert('Permission Denied', 'Microphone access is required to record voice notes.');
@@ -68,10 +73,8 @@ export default function VoiceNoteScreen() {
     }
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      setRecording(newRecording);
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
       setIsRecording(true);
       const startTime = Date.now();
       timerRef.current = setInterval(() => {
@@ -84,7 +87,7 @@ export default function VoiceNoteScreen() {
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
+    if (!audioRecorder.isRecording) return;
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -92,9 +95,8 @@ export default function VoiceNoteScreen() {
     setIsRecording(false);
     setRecordingDuration(0);
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
       if (uri) {
         await processRecording(uri);
       } else {

@@ -17,6 +17,7 @@ import { API_BASE } from '../services/api';
 import VacationPolicyPanel from '../components/VacationPolicyPanel';
 // ─── Types ────────────────────────────────────────────────────────
 interface Payroll {
+  manual_review?: {currency:string;netTotal:string;decimals:number};
   id: string;
   period_start: string;
   period_end: string;
@@ -29,6 +30,7 @@ interface Payroll {
 }
 
 interface PayrollItem {
+  calculation_snapshot?: any;
   id: string;
   employee_id: string;
   employee_name: string;
@@ -445,13 +447,13 @@ export default function PayrollPage() {
                 <TableCell sx={{ color: '#FFF' }}>{p.period_start} → {p.period_end}</TableCell>
                 <TableCell sx={{ color: '#FFF' }}>{Number(p.employee_count) || 0}</TableCell>
                 <TableCell sx={{ color: '#FFF' }}>{Number(p.total_hours).toFixed(2)}h</TableCell>
-                <TableCell sx={{ color: '#FFF' }}>${Number(p.total_pay).toFixed(2)}</TableCell>
+                <TableCell sx={{ color: '#FFF' }}>{p.manual_review ? `${p.manual_review.currency} ${p.manual_review.netTotal}` : `Draft gross ${Number(p.total_pay).toFixed(2)}`}</TableCell>
                 <TableCell>{getStatusChip(p.status)}</TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <Stack direction="row" spacing={1}>
                     {p.status === 'draft' && (
                       <>
-                        <IconButton size="small" onClick={() => handleUpdateStatus(p.id, 'approved')} color="primary" title="Approve">
+                        <IconButton size="small" onClick={() => window.location.assign(`/direct-deposit?payrollId=${encodeURIComponent(p.id)}`)} color="primary" title="Calculate and review payroll">
                           <CheckCircle fontSize="small" />
                         </IconButton>
                         <IconButton size="small" onClick={() => handleDelete(p.id)} color="error" title="Delete">
@@ -460,7 +462,12 @@ export default function PayrollPage() {
                       </>
                     )}
                     {p.status === 'approved' && (
-                      <IconButton size="small" onClick={() => handleUpdateStatus(p.id, 'paid')} color="success" title="Mark Paid">
+                      <IconButton
+                        size="small"
+                        onClick={() => window.location.assign(`/direct-deposit?payrollId=${encodeURIComponent(p.id)}`)}
+                        color="success"
+                        title="Record manual bank payments"
+                      >
                         <Send fontSize="small" />
                       </IconButton>
                     )}
@@ -610,7 +617,7 @@ export default function PayrollPage() {
                   <Grid item xs={12} md={3}>
                     <Typography variant="body2" sx={{ color: '#888' }}>Total Gross</Typography>
                     <Typography variant="body1" sx={{ color: '#FFF' }}>
-                      ${Number(selectedPayroll.total_pay).toFixed(2)}
+                      {selectedPayroll.manual_review ? `${selectedPayroll.manual_review.currency} ${selectedPayroll.manual_review.netTotal}` : Number(selectedPayroll.total_pay).toFixed(2)}
                     </Typography>
                   </Grid>
                   <Grid item xs={12}>
@@ -647,6 +654,7 @@ export default function PayrollPage() {
                   </TableHead>
                   <TableBody>
                     {payrollItems.map((item) => {
+                      if(item.calculation_snapshot?.lines){const s=item.calculation_snapshot;return <TableRow key={item.id}><TableCell colSpan={12}><Typography>{item.employee_name} · Gross {s.gross} · Net {s.net} {s.currency}</Typography>{s.lines.map((l:any)=><Typography key={l.id} variant="body2">{l.label} ({l.category}): {l.amount} {s.currency}</Typography>)}<Button onClick={()=>handleExportPayStub(item.id,item.employee_name||'Employee')}>Export reviewed pay statement</Button></TableCell></TableRow>;}
                       const hours = Number(item.hours) || 0;
                       const rate = Number(item.hourly_rate) || 0;
                       const grossPay = Number(item.pay) || 0;
@@ -984,7 +992,7 @@ export default function PayrollPage() {
                 <Grid item xs={12} sm={6}><TextField label="Pay Period Start" type="date" fullWidth value={runPeriodStart} onChange={(e) => setRunPeriodStart(e.target.value)} InputLabelProps={{ shrink: true }} sx={darkInputStyle} /></Grid>
                 <Grid item xs={12} sm={6}><TextField label="Pay Period End" type="date" fullWidth value={runPeriodEnd} onChange={(e) => { setRunPeriodEnd(e.target.value); if (e.target.value) setRunTaxYear(Number(e.target.value.slice(0, 4))); }} InputLabelProps={{ shrink: true }} sx={darkInputStyle} /></Grid>
               </Grid>
-              <Alert severity="info" sx={{ mb: 2 }}>Gross pay is calculated from completed, approved, unlocked time entries and each employee’s effective compensation rate.</Alert>
+              <Alert severity="info" sx={{ mb: 2 }}>Draft totals are gross preparation only, without tax deductions. Calculate and review deductions in Payroll & Manual Payments before paying. Gross uses approved, unlocked time entries and employee compensation rates.</Alert>
               <TextField
                 label="Tax Year"
                 type="number"

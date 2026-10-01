@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 
-interface PTORequest { id: string; start_date: string; end_date: string; type: string; status: string; reason?: string; created_at: string; user_name?:string; manager_note?:string; }
+interface PTORequest { id: string; start_date: string; end_date: string; type: string; status: string; reason?: string; created_at: string; user_name?:string; user_email?:string; manager_note?:string; approved_by_name?:string; approved_at?:string; calendar_days?:number; }
 interface PTOBalance { vacation_days: number; sick_days: number; personal_days: number; }
 
 export default function PTOScreen() {
@@ -20,9 +20,16 @@ export default function PTOScreen() {
   const [endDate, setEndDate] = useState('');
   const [leaveType, setLeaveType] = useState('vacation');
   const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [filter, setFilter] = useState<'all'|'pending'|'approved'|'rejected'>('all');
+  const [selected, setSelected] = useState<PTORequest | null>(null);
+  const [decision, setDecision] = useState<'approved'|'rejected'|null>(null);
+  const [managerNote, setManagerNote] = useState('');
+  const [saving, setSaving] = useState(false);
   const manager=['boss','manager','admin'].includes(String(user?.role||'').toLowerCase());
 
   const fetchData = async () => {
+    setError('');
     try {
       const [reqRes, balRes] = await Promise.all([
         api.get<{ success: boolean; requests: PTORequest[] }>(manager?'/pto-history':'/pto/mine'),
@@ -30,7 +37,7 @@ export default function PTOScreen() {
       ]);
       setRequests(reqRes.requests || []);
       setBalance(balRes.balance || { vacation_days: 10, sick_days: 5, personal_days: 3 });
-    } catch (e) { console.error(e); }
+    } catch (e: any) { console.error(e); setError(e?.message || 'PTO information could not be loaded'); }
     finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -38,6 +45,8 @@ export default function PTOScreen() {
 
   const handleSubmitRequest = async () => {
     if (!startDate || !endDate) { Alert.alert('Missing dates'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) { Alert.alert('Invalid date', 'Use YYYY-MM-DD format.'); return; }
+    if (endDate < startDate) { Alert.alert('Invalid range', 'End date cannot be before start date.'); return; }
     try {
       await api.post('/pto', { start_date: startDate, end_date: endDate, type: leaveType, reason });
       Alert.alert('Success', 'PTO request submitted!');
@@ -48,7 +57,10 @@ export default function PTOScreen() {
   };
 
   const getStatusColor = (status: string) => status === 'approved' ? '#4CAF50' : status === 'rejected' ? '#F44336' : '#FF9800';
-  const decide=async(request:PTORequest,status:'approved'|'rejected')=>{let managerNote='';if(status==='rejected')managerNote='Rejected by manager';try{await api.patch(`/pto-history/${request.id}/status`,{status,managerNote});Alert.alert('Updated',`PTO request ${status}.`);await fetchData();}catch(cause:any){Alert.alert('Update failed',cause?.response?.data?.message||cause?.message||'Could not update PTO');}};
+  const calendarDays=(request:PTORequest)=>Number(request.calendar_days||Math.max(1,Math.round((new Date(request.end_date).getTime()-new Date(request.start_date).getTime())/86400000)+1));
+  const visibleRequests=requests.filter(request=>filter==='all'||request.status===filter);
+  const openDecision=(request:PTORequest,status:'approved'|'rejected')=>{setSelected(request);setDecision(status);setManagerNote(request.manager_note||'');};
+  const decide=async()=>{if(!selected||!decision)return;if(decision==='rejected'&&managerNote.trim().length<3){Alert.alert('Reason required','Add a reason for rejecting this request.');return;}setSaving(true);try{await api.patch(`/pto-history/${selected.id}/status`,{status:decision,managerNote:managerNote.trim()});Alert.alert('Updated',`PTO request ${decision}.`);setDecision(null);setSelected(null);setManagerNote('');await fetchData();}catch(cause:any){Alert.alert('Update failed',cause?.response?.data?.message||cause?.message||'Could not update PTO');}finally{setSaving(false);}};
 
   if (loading) return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
 
@@ -70,22 +82,27 @@ export default function PTOScreen() {
           <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.personal_days}</Text><Text style={styles.balanceLabel}>Personal</Text></View>
         </View>
       )}
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filters} contentContainerStyle={styles.filterContent}>
+        {(['all','pending','approved','rejected'] as const).map(value=><TouchableOpacity key={value} onPress={()=>setFilter(value)} style={[styles.filterBtn,filter===value&&styles.filterBtnActive]}><Text style={[styles.filterText,filter===value&&styles.filterTextActive]}>{value.toUpperCase()} ({value==='all'?requests.length:requests.filter(item=>item.status===value).length})</Text></TouchableOpacity>)}
+      </ScrollView>
       <ScrollView style={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor="#00D4FF" />}>
-        {requests.map(r => (
-          <View key={r.id} style={styles.requestCard}>
+        {visibleRequests.map(r => (
+          <TouchableOpacity key={r.id} style={styles.requestCard} onPress={()=>setSelected(r)}>
             <View style={{ flex: 1 }}>
               <Text style={styles.requestType}>{r.type.toUpperCase()}</Text>
               {r.user_name?<Text style={{color:'#00D4FF',fontWeight:'800',marginTop:3}}>{r.user_name}</Text>:null}
               <Text style={styles.requestDates}>{r.start_date} → {r.end_date}</Text>
+              <Text style={styles.duration}>{calendarDays(r)} calendar day{calendarDays(r)===1?'':'s'}</Text>
               {r.reason ? <Text style={styles.requestReason}>{r.reason}</Text> : null}
               <Text style={styles.requestReason}>Submitted {new Date(r.created_at).toLocaleString()}</Text>
               {r.manager_note?<Text style={styles.requestReason}>Manager note: {r.manager_note}</Text>:null}
-              {manager&&r.status==='pending'?<View style={{flexDirection:'row',gap:8,marginTop:10}}><TouchableOpacity onPress={()=>decide(r,'approved')} style={{backgroundColor:'#4CAF50',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>Approve</Text></TouchableOpacity><TouchableOpacity onPress={()=>decide(r,'rejected')} style={{backgroundColor:'#F44336',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>Reject</Text></TouchableOpacity></View>:null}
+              {manager&&r.status==='pending'?<View style={{flexDirection:'row',gap:8,marginTop:10}}><TouchableOpacity onPress={()=>openDecision(r,'approved')} style={{backgroundColor:'#1F7A46',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>Approve</Text></TouchableOpacity><TouchableOpacity onPress={()=>openDecision(r,'rejected')} style={{backgroundColor:'#9C3541',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>Reject</Text></TouchableOpacity></View>:null}
             </View>
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor(r.status) }]}><Text style={styles.statusText}>{r.status}</Text></View>
-          </View>
+          </TouchableOpacity>
         ))}
-        {requests.length === 0 && <Text style={styles.emptyText}>No PTO requests yet</Text>}
+        {visibleRequests.length === 0 && <Text style={styles.emptyText}>No {filter==='all'?'':filter} PTO requests</Text>}
       </ScrollView>
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
@@ -112,6 +129,18 @@ export default function PTOScreen() {
           </View>
         </View>
       </Modal>
+      <Modal visible={Boolean(selected)&&!decision} animationType="fade" transparent onRequestClose={()=>setSelected(null)}>
+        <View style={styles.modalOverlay}><View style={styles.modalContent}>{selected&&<>
+          <Text style={styles.modalTitle}>PTO request details</Text>
+          <Text style={styles.detailName}>{selected.user_name||'My request'}</Text>
+          {selected.user_email?<Text style={styles.detailMuted}>{selected.user_email}</Text>:null}
+          <View style={styles.detailGrid}><Text style={styles.detailLabel}>Type</Text><Text style={styles.detailValue}>{selected.type}</Text><Text style={styles.detailLabel}>Dates</Text><Text style={styles.detailValue}>{selected.start_date} → {selected.end_date}</Text><Text style={styles.detailLabel}>Duration</Text><Text style={styles.detailValue}>{calendarDays(selected)} calendar day(s)</Text><Text style={styles.detailLabel}>Status</Text><Text style={styles.detailValue}>{selected.status}</Text><Text style={styles.detailLabel}>Reason</Text><Text style={styles.detailValue}>{selected.reason||'No reason supplied'}</Text><Text style={styles.detailLabel}>Submitted</Text><Text style={styles.detailValue}>{new Date(selected.created_at).toLocaleString()}</Text>{selected.manager_note?<><Text style={styles.detailLabel}>Manager note</Text><Text style={styles.detailValue}>{selected.manager_note}</Text></>:null}{selected.approved_by_name?<><Text style={styles.detailLabel}>Decided by</Text><Text style={styles.detailValue}>{selected.approved_by_name}</Text></>:null}</View>
+          <TouchableOpacity onPress={()=>setSelected(null)} style={styles.submitBtn}><Text style={styles.submitText}>Close</Text></TouchableOpacity>
+        </>}</View></View>
+      </Modal>
+      <Modal visible={Boolean(selected)&&Boolean(decision)} animationType="fade" transparent onRequestClose={()=>!saving&&setDecision(null)}>
+        <View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>{decision==='approved'?'Approve':'Reject'} PTO request</Text><Text style={styles.detailMuted}>{selected?.user_name} · {selected?calendarDays(selected):0} day(s)</Text><Text style={styles.label}>{decision==='rejected'?'Reason (required)':'Manager note (optional)'}</Text><TextInput style={[styles.input,{minHeight:84}]} multiline value={managerNote} onChangeText={setManagerNote} placeholder="Add decision details" placeholderTextColor="#888"/><View style={styles.modalActions}><TouchableOpacity disabled={saving} onPress={()=>setDecision(null)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity><TouchableOpacity disabled={saving} onPress={decide} style={[styles.submitBtn,decision==='rejected'&&{backgroundColor:'#F44336'}]}><Text style={styles.submitText}>{saving?'Saving…':'Confirm'}</Text></TouchableOpacity></View></View></View>
+      </Modal>
     </View>
   );
 }
@@ -125,9 +154,17 @@ const styles = StyleSheet.create({
   balanceValue: { color: '#00D4FF', fontSize: 28, fontWeight: 'bold' },
   balanceLabel: { color: '#888', fontSize: 13, marginTop: 4 },
   list: { flex: 1, paddingHorizontal: 16 },
+  filters: { maxHeight: 52 },
+  filterContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 10 },
+  filterBtn: { borderWidth: 1, borderColor: '#334155', borderRadius: 18, paddingHorizontal: 12, paddingVertical: 7 },
+  filterBtnActive: { backgroundColor: '#00D4FF', borderColor: '#00D4FF' },
+  filterText: { color: '#94A3B8', fontSize: 11, fontWeight: '800' },
+  filterTextActive: { color: '#071018' },
+  errorText: { color: '#FF718B', paddingHorizontal: 16, paddingBottom: 8 },
   requestCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#333' },
   requestType: { color: '#FFF', fontWeight: '600', fontSize: 15 },
   requestDates: { color: '#AAA', fontSize: 13, marginTop: 4 },
+  duration: { color: '#67E8F9', fontSize: 11, marginTop: 3, fontWeight: '700' },
   requestReason: { color: '#888', fontSize: 12, marginTop: 4 },
   statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
   statusText: { color: '#FFF', fontSize: 12, fontWeight: '600' },
@@ -147,4 +184,9 @@ const styles = StyleSheet.create({
   cancelText: { color: '#888' },
   submitBtn: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10, backgroundColor: '#00D4FF' },
   submitText: { color: '#0A0A0A', fontWeight: '600' },
+  detailName: { color: '#FFF', fontSize: 18, fontWeight: '800' },
+  detailMuted: { color: '#94A3B8', marginTop: 3 },
+  detailGrid: { marginVertical: 18, gap: 6 },
+  detailLabel: { color: '#64748B', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', marginTop: 7 },
+  detailValue: { color: '#F8FAFC', fontSize: 14 },
 });

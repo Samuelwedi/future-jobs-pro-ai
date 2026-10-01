@@ -1,29 +1,10 @@
 import Stripe from 'stripe';
 import { pool } from '../config/database';
+import { BILLING_PLANS, applyPlanAllowance } from '../config/billingPlans';
 
-type PlanKey = 'basic' | 'professional' | 'enterprise';
+type PlanKey = string;
 
-const PLAN_DEFINITIONS: Record<PlanKey, {
-  name: string;
-  envName: string;
-  features: string[];
-}> = {
-  basic: {
-    name: 'Basic',
-    envName: 'STRIPE_PRICE_BASIC_MONTHLY',
-    features: ['Up to 5 employees', 'Time tracking', 'GPS location', 'Basic reports'],
-  },
-  professional: {
-    name: 'Professional',
-    envName: 'STRIPE_PRICE_PRO_MONTHLY',
-    features: ['Up to 20 employees', 'AI photo compliance', 'Voice notes', 'Advanced reports'],
-  },
-  enterprise: {
-    name: 'Enterprise',
-    envName: 'STRIPE_PRICE_ENTERPRISE_MONTHLY',
-    features: ['Unlimited employees', 'Evidence packages', 'Priority support', 'Custom integrations'],
-  },
-};
+const PLAN_DEFINITIONS = BILLING_PLANS;
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -49,7 +30,7 @@ function configuredPriceId(plan: PlanKey): string {
 }
 
 function isPlanKey(value: unknown): value is PlanKey {
-  return typeof value === 'string' && value in PLAN_DEFINITIONS;
+  return typeof value === 'string' && Object.hasOwn(PLAN_DEFINITIONS,value);
 }
 
 async function billingActor(userId: string, companyId?: string) {
@@ -58,6 +39,7 @@ async function billingActor(userId: string, companyId?: string) {
     `SELECT u.id, u.email, u.first_name, u.last_name, u.role,
             c.id AS company_id, c.name AS company_name,
             c.stripe_customer_id, c.stripe_subscription_id,
+            c.subscription_provider,c.subscription_status,c.subscription_current_period_end,c.subscription_expires_at,
             c.stripe_trial_used_at
        FROM users u
        JOIN companies c ON c.id = u.company_id
@@ -90,7 +72,7 @@ async function ensureCustomer(actor: any): Promise<string> {
 
 export async function getPricingPlans() {
   const stripe = stripeClient();
-  return Promise.all((Object.keys(PLAN_DEFINITIONS) as PlanKey[]).map(async (key) => {
+  return Promise.all(Object.keys(PLAN_DEFINITIONS).filter(key=>PLAN_DEFINITIONS[key].sale && process.env[PLAN_DEFINITIONS[key].envName]).map(async (key) => {
     const definition = PLAN_DEFINITIONS[key];
     const price: any = await stripe.prices.retrieve(configuredPriceId(key));
     if (!price.active || price.type !== 'recurring') {
@@ -113,8 +95,12 @@ export async function createCheckoutSession(
   companyId: string | undefined,
   requestedPlan: unknown,
 ): Promise<string> {
-  if (!isPlanKey(requestedPlan)) throw new Error('Choose a valid subscription plan');
+  if (!isPlanKey(requestedPlan) || !PLAN_DEFINITIONS[requestedPlan].sale) throw new Error('Choose a current subscription plan');
   const actor = await billingActor(userId, companyId);
+  const end=actor.subscription_current_period_end || actor.subscription_expires_at;
+  if (actor.subscription_provider && !['stripe','internal'].includes(actor.subscription_provider) &&
+    ['active','trialing'].includes(actor.subscription_status) && (!end || new Date(end).getTime()>Date.now()))
+    throw new Error('Manage the existing store subscription before changing billing provider');
   const stripe = stripeClient();
   const customerId = await ensureCustomer(actor);
 
@@ -200,8 +186,8 @@ function unixDate(value: unknown): Date | null {
 }
 
 function planFromSubscription(subscription: any): PlanKey | null {
-  if (isPlanKey(subscription?.metadata?.planKey)) return subscription.metadata.planKey;
   const priceId = subscription?.items?.data?.[0]?.price?.id;
+  if (!priceId) return null;
   return (Object.keys(PLAN_DEFINITIONS) as PlanKey[]).find(
     (key) => process.env[PLAN_DEFINITIONS[key].envName]?.trim() === priceId,
   ) || null;
@@ -223,8 +209,13 @@ async function companyIdForSubscription(subscription: any, db: any = pool): Prom
 async function applySubscription(subscription: any, knownCompanyId?: string, db: any = pool) {
   const companyId = knownCompanyId || await companyIdForSubscription(subscription, db);
   if (!companyId) throw new Error(`Could not match Stripe subscription ${subscription.id} to a company`);
+  const company=await db.query('SELECT subscription_provider,stripe_subscription_id,subscription_status FROM companies WHERE id=$1',[companyId]);
+  const current=company.rows[0];
+  if(current?.subscription_provider && !['stripe','internal'].includes(current.subscription_provider)) return;
+  if(current?.stripe_subscription_id && current.stripe_subscription_id!==subscription.id && ['active','trialing'].includes(current.subscription_status)) return;
   const priceId = subscription?.items?.data?.[0]?.price?.id || null;
   const plan = planFromSubscription(subscription);
+  if (!plan) throw new Error('Subscription price is not mapped to a configured plan');
   const periodEnd = unixDate(
     subscription.current_period_end || subscription?.items?.data?.[0]?.current_period_end,
   );
@@ -254,6 +245,7 @@ async function applySubscription(subscription: any, knownCompanyId?: string, db:
       companyId,
     ],
   );
+  await applyPlanAllowance(db,companyId,plan);
 }
 
 async function processPlatformEvent(event: any, db: any) {
