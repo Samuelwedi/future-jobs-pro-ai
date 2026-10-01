@@ -8,9 +8,10 @@ import {
 } from '@mui/material';
 import {
   PhotoLibrary, Videocam, Mic, ArrowBack, PlayArrow, Pause,
-  Close, ErrorOutline, InsertPhoto, VolumeUp,
+  Close, ErrorOutline, InsertPhoto, VolumeUp, Download,
 } from '@mui/icons-material';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { downloadMedia } from '../services/mediaDownload';
 import { API_BASE } from '../services/api';
 
 interface MediaItem {
@@ -34,6 +35,13 @@ export default function MonthMediaType() {
   const { projectName } = location.state || { projectName: 'Project' };
   const token = localStorage.getItem('token') || '';
 
+  const [downloadError,setDownloadError]=useState('');
+  const [downloading,setDownloading]=useState<string|null>(null);
+  const handleDownload=async(item:MediaItem)=>{
+    setDownloading(item.id);setDownloadError('');
+    try{await downloadMedia(item);}catch(e:any){setDownloadError(e.message||'Unable to download the file.');}
+    finally{setDownloading(null);}
+  };
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +142,10 @@ export default function MonthMediaType() {
             )}
           </Box>
 
-          <IconButton onClick={() => setSelectedMedia(item)} sx={{ color: '#00D4FF' }}>
+          <IconButton aria-label={`Download ${item.type}`} title="Download file" disabled={Boolean(downloading)||!item.url||item.url==='null'} onClick={()=>void handleDownload(item)} sx={{color:'#00D4FF'}}>
+            {downloading===item.id?<CircularProgress size={20}/>:<Download/>}
+          </IconButton>
+          <IconButton aria-label="Open media" onClick={() => setSelectedMedia(item)} sx={{ color: '#00D4FF' }}>
             <InsertPhoto />
           </IconButton>
         </CardContent>
@@ -194,6 +205,7 @@ export default function MonthMediaType() {
         <Typography sx={{ color: '#FFF' }}>{typeLabels[mediaType || ''] || mediaType}</Typography>
       </Breadcrumbs>
 
+      {downloadError&&<Alert severity="error" sx={{mb:2}} onClose={()=>setDownloadError('')}>{downloadError}</Alert>}
       {media.length === 0 ? (
         <Paper sx={{ p: 4, bgcolor: '#1A1A1A', border: '1px solid #333', textAlign: 'center' }}>
           <Typography variant="body1" sx={{ color: '#888' }}>No {typeLabels[mediaType || ''] || mediaType} found.</Typography>
@@ -210,11 +222,13 @@ export default function MonthMediaType() {
           <>
             <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Typography variant="h6">{selectedMedia.type}</Typography>
+              <Button startIcon={<Download/>} disabled={Boolean(downloading)||!selectedMedia.url||selectedMedia.url==='null'} onClick={()=>void handleDownload(selectedMedia)}>{downloading===selectedMedia.id?'Downloading...':'Download file'}</Button>
               <IconButton onClick={() => setSelectedMedia(null)} sx={{ color: '#FFF' }}>
                 <Close />
               </IconButton>
             </DialogTitle>
             <DialogContent sx={{ bgcolor: '#0A0A0A', p: 3, textAlign: 'center' }}>
+              {downloadError&&<Alert severity="error" sx={{mb:2}}>{downloadError}</Alert>}
               {selectedMedia.type === 'photo' && (
                 <img src={selectedMedia.url} alt="media" style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' }} />
               )}

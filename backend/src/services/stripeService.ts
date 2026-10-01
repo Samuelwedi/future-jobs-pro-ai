@@ -1,3 +1,5 @@
+import { canManageCompanyBilling } from './billingPermission';
+import { hasComplimentaryCompanyAccess } from './complimentaryAccess';
 import Stripe from 'stripe';
 import { pool } from '../config/database';
 import { BILLING_PLANS, applyPlanAllowance } from '../config/billingPlans';
@@ -35,6 +37,10 @@ function isPlanKey(value: unknown): value is PlanKey {
 
 async function billingActor(userId: string, companyId?: string) {
   if (!companyId) throw new Error('Your user is not assigned to a company');
+  if (!await canManageCompanyBilling(userId, companyId)) {
+    throw new Error('Only the company owner or an explicitly authorized manager can change billing');
+  }
+
   const result = await pool.query(
     `SELECT u.id, u.email, u.first_name, u.last_name, u.role,
             c.id AS company_id, c.name AS company_name,
@@ -49,9 +55,6 @@ async function billingActor(userId: string, companyId?: string) {
   );
   if (!result.rowCount) throw new Error('Company billing account was not found');
   const actor = result.rows[0];
-  if (!['boss', 'owner', 'admin'].includes(String(actor.role || '').toLowerCase())) {
-    throw new Error('Only a company owner or administrator can change billing');
-  }
   return actor;
 }
 
@@ -97,6 +100,7 @@ export async function createCheckoutSession(
 ): Promise<string> {
   if (!isPlanKey(requestedPlan) || !PLAN_DEFINITIONS[requestedPlan].sale) throw new Error('Choose a current subscription plan');
   const actor = await billingActor(userId, companyId);
+  if (await hasComplimentaryCompanyAccess(userId, companyId!)) throw new Error('This company has complimentary access; no purchase is required');
   const end=actor.subscription_current_period_end || actor.subscription_expires_at;
   if (actor.subscription_provider && !['stripe','internal'].includes(actor.subscription_provider) &&
     ['active','trialing'].includes(actor.subscription_status) && (!end || new Date(end).getTime()>Date.now()))

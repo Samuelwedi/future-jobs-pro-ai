@@ -69,7 +69,7 @@ export default function SubscriptionScreen() {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [processingProductId, setProcessingProductId] = useState<string | null>(null);
-  const [billing, setBilling] = useState<{google:boolean;apple:boolean;canPurchase:boolean;googleAccountId:string}|null>(null);
+  const [billing, setBilling] = useState<{google:boolean;apple:boolean;canPurchase:boolean;canManageBilling:boolean;complimentary:boolean;googleAccountId:string}|null>(null);
   const storeReady = Boolean(billing?.canPurchase && (Platform.OS === 'android' ? billing.google : billing.apple));
 
   const verifyAndFinish = useCallback(async (purchase: Purchase) => {
@@ -162,7 +162,7 @@ export default function SubscriptionScreen() {
 
   const startPurchase = async (plan: PlanKey) => {
     if (!storeReady) {
-      Alert.alert('Purchases unavailable', 'Store billing must be configured and you must be a company owner or administrator.');
+      Alert.alert('Purchases unavailable', 'Company billing requires the boss or a manager explicitly authorized by the boss.');
       return;
     }
     if (status.status === 'active' && status.provider) {
@@ -246,8 +246,8 @@ export default function SubscriptionScreen() {
           </TouchableOpacity>
           <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>FUTURE JOBS PRO AI</Text>
-            <Text style={styles.title}>Choose your workspace plan</Text>
-            {status.provider && <TouchableOpacity onPress={manageSubscription} accessibilityRole="button"><Text style={styles.restoreText}>Manage existing subscription</Text></TouchableOpacity>}
+            <Text style={styles.title}>{billing?.canPurchase ? 'Choose your workspace plan' : 'Company subscription'}</Text>
+            {billing?.canManageBilling && status.provider && !billing.complimentary && <TouchableOpacity onPress={manageSubscription} accessibilityRole="button"><Text style={styles.restoreText}>Manage existing subscription</Text></TouchableOpacity>}
           </View>
           <View style={styles.secureBadge}>
             <Ionicons name="shield-checkmark" size={15} color="#6FE7FF" />
@@ -261,7 +261,7 @@ export default function SubscriptionScreen() {
             <Text style={styles.statusLabel}>CURRENT WORKSPACE</Text>
             <Text style={styles.statusTitle}>{loadingStatus ? 'Checking entitlement…' : planLabel(status.tier)}</Text>
             <Text style={styles.statusMeta}>
-              {active ? `Status: ${status.status}` : 'Select a plan to unlock premium tools'}
+              {active ? `Status: ${status.status}` : billing?.canPurchase ? 'Select a company plan' : 'Contact your boss about company access; no individual payment is required'}
               {renewalDate ? ` · ${status.cancelAtPeriodEnd ? 'Ends' : 'Renews'} ${new Date(renewalDate).toLocaleDateString()}` : ''}
             </Text>
           </View>
@@ -274,7 +274,7 @@ export default function SubscriptionScreen() {
           <Promise icon="refresh" text="Restore on any signed-in device" />
         </View>
 
-        {(Object.keys(FALLBACK_PLAN_COPY) as PlanKey[]).map((plan, index) => {
+        {billing?.canPurchase && (Object.keys(FALLBACK_PLAN_COPY) as PlanKey[]).map((plan, index) => {
           const copy = FALLBACK_PLAN_COPY[plan];
           const product = productsByPlan.get(plan);
           const selected = status.tier?.toLowerCase() === plan ||
@@ -332,7 +332,7 @@ export default function SubscriptionScreen() {
           );
         })}
 
-        <TouchableOpacity disabled={processingProductId === 'restore'} onPress={() => void restore()} style={styles.restoreButton}>
+        <TouchableOpacity disabled={!billing?.canPurchase || processingProductId === 'restore'} onPress={() => void restore()} style={styles.restoreButton}>
           {processingProductId === 'restore' ? (
             <ActivityIndicator color="#6FE7FF" />
           ) : (

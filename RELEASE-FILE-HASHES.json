@@ -662,20 +662,12 @@
                       "sha256":  "93f7b5a61c361210b7a71e33fed70ed2e0af03d48ee61579801c7984d688aa94"
                   },
                   {
-                      "path":  "backend/src/index.ts",
-                      "sha256":  "3b989d7aa6b5c4ee8e596eb40ba411160b62f472dd03871e06785311306ed47b"
-                  },
-                  {
                       "path":  "backend/src/middleware/companyActor.ts",
                       "sha256":  "069dac45106f6da8b5e5bb3c65246bae08f4387893868f8d2d785bf34e7c0424"
                   },
                   {
                       "path":  "backend/src/middleware/trafficControl.ts",
                       "sha256":  "5aec983faa3424b90f8acb7048e8f9fd512a62d96685f3f2502aeeb577a06d04"
-                  },
-                  {
-                      "path":  "backend/src/middleware/trialMiddleware.ts",
-                      "sha256":  "6aa6e757eeef2a65c7dba9206e608cce18ee72b0a8a718d33c0d841fc81ca877"
                   },
                   {
                       "path":  "backend/src/observability/runtimeMetrics.ts",
@@ -858,14 +850,6 @@
                       "sha256":  "de37908e506278d42a3f8436b1a1a71ef20a9b677dc4583cf284ed512191a134"
                   },
                   {
-                      "path":  "backend/src/routes/stripeRoutes.ts",
-                      "sha256":  "8af9be5ee5f3ed58a025f11a55727856391ff67a4e8cf9ca12201b9ab13bcbea"
-                  },
-                  {
-                      "path":  "backend/src/routes/subscriptionRoutes.ts",
-                      "sha256":  "453e9d85b38adb7c22947a68177adf1945305b3375c9d5583a2cf64eab9f39ef"
-                  },
-                  {
                       "path":  "backend/src/routes/supportAgentRoutes.ts",
                       "sha256":  "0573beefe24df06748b3eaa00aeb28e8ada84e8f7a7cedc20d1448a3fbfc508e"
                   },
@@ -944,10 +928,6 @@
                   {
                       "path":  "backend/src/services/companyService.ts",
                       "sha256":  "373e7701e8e72094d8dca53f33e9b1e8602cdafb7ce779b8d27be6294fadd2e3"
-                  },
-                  {
-                      "path":  "backend/src/services/complimentaryAccess.ts",
-                      "sha256":  "8ff6b22c34deb00dcd2c1259ea183eeabd4c66e5e77d66794581f4ccd156eb33"
                   },
                   {
                       "path":  "backend/src/services/comprehensiveReportService.ts",
@@ -1102,10 +1082,6 @@
                       "sha256":  "05c09461a012b9e129324bc852b9a805028ed296413000460ddb7910783b14b2"
                   },
                   {
-                      "path":  "backend/src/services/stripeService.ts",
-                      "sha256":  "7aa1dc0a94d5be74277f497c32b19745de43e41143ae232c91eb3be59fef2272"
-                  },
-                  {
                       "path":  "backend/src/services/taskService.ts",
                       "sha256":  "83b3f3bc6bfddf88ecc4fe88370ffc0032542cdc9b6d8612ce6b7643ad270156"
                   },
@@ -1154,10 +1130,6 @@
                       "sha256":  "dc7bc722035ee9497377ddcc5220d467d5cafdcbf61115f325582a86578fa9a7"
                   },
                   {
-                      "path":  "backend/tests/complimentary-access.test.cjs",
-                      "sha256":  "50821be9415052233db1868435f2c73bae9c7097650a2dd3c9a639cfe317922c"
-                  },
-                  {
                       "path":  "backend/tests/google-billing.test.cjs",
                       "sha256":  "18a5985fd6f9bccf5e41d8f65f0d7cc96db5b586b0e567c722e2330659ffeaf0"
                   },
@@ -1176,10 +1148,6 @@
                   {
                       "path":  "backend/tests/payroll-rules.test.cjs",
                       "sha256":  "327e87ff21e63af39c08c156d4cc9fe011d093f36e88efaf7dd3ad06070983ff"
-                  },
-                  {
-                      "path":  "backend/tests/release-upgrade.test.cjs",
-                      "sha256":  "bdef6014d689f240d8a8d5d74f5e31858eb41d00c0a41be4ef6afc1d60791c4e"
                   },
                   {
                       "path":  "backend/tests/release.test.cjs",
@@ -1626,10 +1594,6 @@
                       "sha256":  "f80d8a85e2bc493822a540ce98bd65c897890ad3c881c9725bfd80e4e31f9b88"
                   },
                   {
-                      "path":  "mobile/src/screens/SubscriptionScreen.tsx",
-                      "sha256":  "7b76dbedc1616ab5cb76ad801723329bcc888f2f78b851fcd9dab40f496f4a8a"
-                  },
-                  {
                       "path":  "mobile/src/screens/SupportScreen.tsx",
                       "sha256":  "9cdb69735270bb0e38af30d2122f418e4fb9978372acf9a8bc2f764b315625e2"
                   },
@@ -2034,10 +1998,6 @@
                       "sha256":  "39803e54bc149170185ffef9ecd3d7b3d981cbfee07abc260f0f92f0541222d8"
                   },
                   {
-                      "path":  "web/src/pages/MonthMediaType.tsx",
-                      "sha256":  "8bf8ae33a9813b94bb59e7da98d597ca2b969f8634de1365998bbf392628f343"
-                  },
-                  {
                       "path":  "web/src/pages/NewChat.tsx",
                       "sha256":  "87950c90315fa90eec8779a7791dd225340dc5da9c29b8293e73164842e98aed"
                   },
@@ -2054,20 +2014,12 @@
                       "sha256":  "5fb322dfc59cd138bb5cdb17df9845368b09f13cc628f1e21d55d0bd081edfd4"
                   },
                   {
-                      "path":  "web/src/pages/PaymentRequired.tsx",
-                      "sha256":  "43dc4a2f2c15114c8055983180a355d2c824324ca52a2032229167571c4def08"
-                  },
-                  {
                       "path":  "web/src/pages/Payroll.tsx",
                       "sha256":  "7b37696484c1dd4ba1569b5d2c1b7e67e7da42a85dfb6db10095041cf30844ed"
                   },
                   {
                       "path":  "web/src/pages/PayrollRules.tsx",
                       "sha256":  "a7bdd02defb0c2632f4d9a30efd4c55d4010f68dad4be607e99e56b33ab586f9"
-                  },
-                  {
-                      "path":  "web/src/pages/Pricing.tsx",
-                      "sha256":  "ff47ffef1a19964464b4d9b764a3bc81577cbff57e70eedd9f28444c69980566"
                   },
                   {
                       "path":  "web/src/pages/Privacy.tsx",
@@ -2104,10 +2056,6 @@
                   {
                       "path":  "web/src/pages/Settings.tsx",
                       "sha256":  "4a662d725290ba404b3fe0a47d998024ea13e44094e918c2b539859dff913eb7"
-                  },
-                  {
-                      "path":  "web/src/pages/Subscription.tsx",
-                      "sha256":  "5d7d30d302f457996774d76278f2ac5f8ad41274384ff82cdb2e2fbdd7979e0c"
                   },
                   {
                       "path":  "web/src/pages/Support.tsx",
@@ -2268,6 +2216,86 @@
                   {
                       "path":  "webdash/src/setupTests.js",
                       "sha256":  "c630b70e0f17b0fddf547079fd2ec64e6d677252588037f873f1008f307f49b9"
+                  },
+                  {
+                      "path":  "backend/src/services/complimentaryAccess.ts",
+                      "sha256":  "81e7c20e695e3f204d7c1cfa1bb6de46bef740fe93154143c2200e8ba183a8b9"
+                  },
+                  {
+                      "path":  "backend/src/services/billingPermission.ts",
+                      "sha256":  "39f49fda3902f5cddcd834e20c73259b067d13f144e5f0e99ef9fdbdd24f8597"
+                  },
+                  {
+                      "path":  "backend/src/middleware/trialMiddleware.ts",
+                      "sha256":  "6c95452ede718479836dce77422b893758793021f1b9f18cf515cee8bf95f61b"
+                  },
+                  {
+                      "path":  "backend/src/routes/subscriptionRoutes.ts",
+                      "sha256":  "ff14a3efe72ef5f055cbfa699b50341fc06c81cbd73b82721410990617786c1f"
+                  },
+                  {
+                      "path":  "backend/src/services/stripeService.ts",
+                      "sha256":  "f8712db0f5f8728444ce3489e4ca6d7d6d90b250b241fc632de01e7f7da060d4"
+                  },
+                  {
+                      "path":  "backend/src/routes/stripeRoutes.ts",
+                      "sha256":  "2019a01cddb3ddafa4dd2bf34faa42fefc52ddc6cedd6dadc4ca45c61123f3c8"
+                  },
+                  {
+                      "path":  "web/src/components/BillingPermissions.tsx",
+                      "sha256":  "4d272ffb913e614f55d5a0233988fa99e66ac0c525ffe3a3950e8b4aa4ef57e6"
+                  },
+                  {
+                      "path":  "web/src/pages/PaymentRequired.tsx",
+                      "sha256":  "54af6259e2ef81eeca558ac798763b9041c32dda5eaf30de7ce5c02a4fc07ca6"
+                  },
+                  {
+                      "path":  "web/src/pages/Pricing.tsx",
+                      "sha256":  "76f26307c8f9ad40c1e1792a1e3862e9abc6b6553160273c8f8e81f57e45a09c"
+                  },
+                  {
+                      "path":  "mobile/src/screens/SubscriptionScreen.tsx",
+                      "sha256":  "b3d3e714de34fdaf9d8bc22fb0d3ae012a527a5a8b70b81ea824309ee5eeea90"
+                  },
+                  {
+                      "path":  "web/src/pages/Subscription.tsx",
+                      "sha256":  "0abdb82d1f0b0e1686862ae3d46d3711c73eab2b3b726f79db90a088c450e7ca"
+                  },
+                  {
+                      "path":  "backend/tests/company-billing.test.cjs",
+                      "sha256":  "4fe9915c39e9acffa346f18658ae1a9017e8875fef9e661a5f9f40efabc4f6dd"
+                  },
+                  {
+                      "path":  "backend/tests/complimentary-access.test.cjs",
+                      "sha256":  "2f1553f70a65789f653c0bd1c65e2fd4c481c3b76b32593c30d9ebfdd714b175"
+                  },
+                  {
+                      "path":  "backend/src/config/webSecurity.ts",
+                      "sha256":  "c3f2606c90df42ffed949266a77c8b739a73d8da475de8e4a004a29fe284b480"
+                  },
+                  {
+                      "path":  "backend/src/index.ts",
+                      "sha256":  "183d118433c5a4bb7369e707deec79f6dea808b79ad008d364554b839abec061"
+                  },
+                  {
+                      "path":  "backend/tests/web-media-security.test.cjs",
+                      "sha256":  "b386d2a077ff63b4df61049b8347b56b85ff8bf2db278f59c55404276d8231c7"
+                  },
+                  {
+                      "path":  "backend/tests/release-upgrade.test.cjs",
+                      "sha256":  "4f7162062a84c5f8c2876a47b99e9bb6ff24b55b1b13f5a89e4da314de4f84d6"
+                  },
+                  {
+                      "path":  "web/src/services/mediaDownload.ts",
+                      "sha256":  "00ae3d2912a1d01b29e398e1f80620882c284b97178fca19798a273fbf558f4a"
+                  },
+                  {
+                      "path":  "web/src/pages/MonthMediaType.tsx",
+                      "sha256":  "e49557730ba42c5057d4317fd187d7357f2fa0661b05c77b1b1c76394c0ba4e8"
+                  },
+                  {
+                      "path":  "backend/tests/media-download.test.cjs",
+                      "sha256":  "28f0e7d2cd47d5660070987aec3802bd0970ef7dadd18cf8927663c38d910fa8"
                   }
               ]
 }

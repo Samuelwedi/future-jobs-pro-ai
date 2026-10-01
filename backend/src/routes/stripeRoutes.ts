@@ -1,3 +1,4 @@
+import { hasComplimentaryCompanyAccess, complimentarySubscription } from '../services/complimentaryAccess';
 import express, { Request, Response } from 'express';
 import { verifyToken } from '../utils/auth';
 import { loadSubscriptionActor } from '../middleware/trialMiddleware';
@@ -35,9 +36,9 @@ router.get('/plans', async (_req: Request, res: Response) => {
 
 router.get('/status', async (req: Request, res: Response) => {
   try {
-    const { companyId } = await actor(req);
+    const { userId, companyId } = await actor(req);
     res.set('Cache-Control', 'no-store');
-    res.json({ success: true, subscription: await getSubscriptionStatus(companyId) });
+    res.json({ success: true, subscription: await hasComplimentaryCompanyAccess(userId,companyId) ? complimentarySubscription() : await getSubscriptionStatus(companyId) });
   } catch (error: any) {
     res.status(statusFor(error)).json({ success: false, message: error.message });
   }

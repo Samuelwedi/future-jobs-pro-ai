@@ -7,7 +7,7 @@ import lucyJarvisRoutes from './routes/lucyJarvisRoutes';
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { corsOptions, configuredOrigins } from './config/cors';
-import helmet from 'helmet';
+import { webSecurityHeaders } from './config/webSecurity';
 import morgan from 'morgan';
 import compression from 'compression';
 import dotenv from 'dotenv';
@@ -48,7 +48,7 @@ console.log(`ðŸ”— BASE_URL: ${BASE_URL}`);
 // ----- CORS -----
 app.use(cors(corsOptions));
 
-app.use(helmet());
+app.use(webSecurityHeaders());
 app.use(compression());
 app.use(morgan('dev'));
 

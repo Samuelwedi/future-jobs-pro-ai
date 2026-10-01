@@ -5,6 +5,7 @@ import {
   Container, Divider, Grid, Typography,
 } from '@mui/material';
 import { Check } from '@mui/icons-material';
+import BillingPermissions, {useBillingAccess} from '../components/BillingPermissions';
 import { API_BASE } from '../services/api';
 
 interface Plan {
@@ -19,6 +20,8 @@ interface Plan {
 
 export default function Pricing() {
   const navigate = useNavigate();
+  const {access}=useBillingAccess();
+  const signedIn=Boolean(localStorage.getItem('token'));
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<string | null>(null);
@@ -41,6 +44,7 @@ export default function Pricing() {
       navigate('/register');
       return;
     }
+    if (!access?.canPurchase) {setError('Company billing is managed by the boss or an authorized manager. No individual employee purchase is required.');return;}
     setWorking(plan.key);
     setError('');
     try {
@@ -68,6 +72,8 @@ export default function Pricing() {
           payment methods, upgrades, and cancellation from the secure billing portal.
         </Typography>
 
+        <BillingPermissions />
+        {signedIn && access && !access.canPurchase && <Alert severity="info" sx={{mb:2}}>{access.complimentary ? 'Your company has complimentary access. No subscription purchase is required.' : 'Your company manages billing. Employees do not purchase individual plans.'}</Alert>}
         {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
         {loading ? <CircularProgress /> : (
           <Grid container spacing={3}>
@@ -93,7 +99,7 @@ export default function Pricing() {
                           <Typography sx={{ color: '#dce5f5' }}>{feature}</Typography>
                         </Box>
                       ))}
-                      <Button fullWidth variant="contained" disabled={Boolean(working)} onClick={() => beginCheckout(plan)}
+                      <Button fullWidth variant="contained" disabled={Boolean(working) || (signedIn && !access?.canPurchase)} onClick={() => beginCheckout(plan)}
                         sx={{ mt: 3, py: 1.4, bgcolor: popular ? '#00d4ff' : '#365cff', color: '#06101a', fontWeight: 800 }}>
                         {working === plan.key ? 'Opening secure checkout…' : 'Choose plan'}
                       </Button>

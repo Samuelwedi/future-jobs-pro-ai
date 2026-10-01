@@ -1,9 +1,11 @@
-import { hasComplimentaryAccess, complimentarySubscription } from '../services/complimentaryAccess';
+import { complimentarySubscription } from '../services/complimentaryAccess';
+import { canManageCompanyBilling, isBillingOwner, setBillingPermission } from '../services/billingPermission';
+import { pool } from '../config/database';
 import express, { Request, Response } from 'express';
 import { verifyToken } from '../utils/auth';
 import { getSubscriptionStatus } from '../services/stripeService';
 import { appleBillingReady, processAppleNotification, verifyApplePurchase } from '../services/appleSubscriptionService';
-import { loadSubscriptionActor } from '../middleware/trialMiddleware';
+import { loadSubscriptionActor, hasCompanyEntitlement } from '../middleware/trialMiddleware';
 import { BillingError, googleAccountId, googleBilling, googleBillingReady, verifyGooglePush } from '../services/googleSubscriptionService';
 
 const router = express.Router();
@@ -17,7 +19,10 @@ router.get('/capabilities', async (req, res) => {
     res.set('Cache-Control','no-store');
     res.json({ success:true, google:googleBillingReady(),
       apple:appleBillingReady(),
-      canPurchase:!hasComplimentaryAccess(a.id,a.companyId) && ['boss','owner','admin'].includes(a.role),
+      canPurchase:!a.complimentary && await canManageCompanyBilling(a.id,a.companyId),
+      canManageBilling:await canManageCompanyBilling(a.id,a.companyId),
+      canDelegateBilling:isBillingOwner(a.role),
+      entitled:hasCompanyEntitlement(a), complimentary:Boolean(a.complimentary),
       googleAccountId:googleAccountId(a.companyId,a.id) });
   } catch { res.status(401).json({success:false,message:'Sign in to load billing options'}); }
 });
@@ -25,7 +30,8 @@ router.get('/capabilities', async (req, res) => {
 router.post('/verify', async (req: Request, res: Response) => {
   try {
     const decoded = await actor(req);
-    if (!['boss','owner','admin'].includes(decoded.role)) throw new BillingError('Only a company owner or administrator can change billing',403);
+    if (!await canManageCompanyBilling(decoded.id,decoded.companyId)) throw new BillingError('Only the boss or an explicitly authorized manager can change billing',403);
+    if (decoded.complimentary) throw new BillingError('This company has complimentary access; no purchase is required',409);
     const platform = String(req.body?.platform || '').toLowerCase();
     if (!['ios','apple','android','google'].includes(platform)) throw new BillingError('Unsupported store platform');
     const productId = String(req.body?.productId || '');
@@ -74,7 +80,7 @@ router.post('/apple/notifications', async (req: Request, res: Response) => {
 router.get('/status', async (req: Request, res: Response) => {
   try {
     const decoded = await actor(req);
-    if (hasComplimentaryAccess(decoded.id,decoded.companyId)) {
+    if (decoded.complimentary) {
       res.set('Cache-Control', 'no-store');
       return res.json({success:true,subscription:complimentarySubscription()});
     }
@@ -86,4 +92,21 @@ router.get('/status', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/billing-managers',async(req,res)=>{
+  try {
+    const a=await actor(req); if(!isBillingOwner(a.role)) return res.status(403).json({message:'Only the boss can manage billing permissions'});
+    const rows=(await pool.query("SELECT id,first_name,last_name,email FROM users WHERE company_id=$1 AND LOWER(role)='manager' AND COALESCE(is_active,TRUE)=TRUE ORDER BY first_name,id",[a.companyId])).rows;
+    const managers=await Promise.all(rows.map(async r=>({...r,canManageBilling:await canManageCompanyBilling(r.id,a.companyId)})));
+    res.set('Cache-Control','no-store').json({success:true,managers});
+  }catch{res.status(401).json({message:'Unable to load billing permissions'});}
+});
+router.put('/billing-managers/:id',async(req,res)=>{
+  try {
+    const a=await actor(req);
+    if(!isBillingOwner(a.role))return res.status(403).json({message:'Only the boss can manage billing permissions'});
+    if(typeof req.body.enabled!=='boolean')return res.status(400).json({message:'enabled must be a boolean'});
+    await setBillingPermission(a.id,a.companyId,String(req.params.id),req.body.enabled);
+    res.set('Cache-Control','no-store').json({success:true});
+  }catch{res.status(403).json({message:'Billing permission was not changed; verify the manager belongs to your company'});}
+});
 export default router;

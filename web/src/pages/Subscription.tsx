@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, Box, Button, Chip, CircularProgress, Container, Paper, Stack, Typography } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import BillingPermissions,{useBillingAccess} from '../components/BillingPermissions';
 import { API_BASE } from '../services/api';
 
 interface SubscriptionState {
@@ -14,6 +15,7 @@ interface SubscriptionState {
 
 export default function Subscription() {
   const navigate = useNavigate();
+  const {access}=useBillingAccess();
   const [params] = useSearchParams();
   const [subscription, setSubscription] = useState<SubscriptionState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,12 +83,14 @@ export default function Subscription() {
           <Typography>{subscription?.cancelAtPeriodEnd ? 'Access ends' : 'Current period ends'}: {date}</Typography>
         </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-          {!subscription?.hasStripeSubscription && <Button variant="contained" onClick={() => navigate('/pricing')}>Choose a plan</Button>}
-          {subscription?.hasStripeSubscription && <Button variant="contained" disabled={working} onClick={() => post('/api/stripe/billing-portal')}>Manage billing</Button>}
-          {subscription?.hasStripeSubscription && !subscription.cancelAtPeriodEnd && <Button color="warning" disabled={working} onClick={() => post('/api/stripe/cancel-subscription')}>Cancel at period end</Button>}
-          {subscription?.cancelAtPeriodEnd && <Button color="success" disabled={working} onClick={() => post('/api/stripe/resume-subscription')}>Keep subscription</Button>}
+          {access?.canPurchase && !subscription?.hasStripeSubscription && <Button variant="contained" onClick={() => navigate('/pricing')}>Choose a plan</Button>}
+          {access?.canManageBilling && subscription?.hasStripeSubscription && <Button variant="contained" disabled={working} onClick={() => post('/api/stripe/billing-portal')}>Manage billing</Button>}
+          {access?.canManageBilling && subscription?.hasStripeSubscription && !subscription.cancelAtPeriodEnd && <Button color="warning" disabled={working} onClick={() => post('/api/stripe/cancel-subscription')}>Cancel at period end</Button>}
+          {access?.canManageBilling && subscription?.cancelAtPeriodEnd && <Button color="success" disabled={working} onClick={() => post('/api/stripe/resume-subscription')}>Keep subscription</Button>}
         </Stack>
       </Paper>
+      {access && !access.canManageBilling && <Alert severity="info">Your company covers your access. Contact your boss about billing; employees do not buy individual subscriptions.</Alert>}
+      <BillingPermissions />
     </Container>
   );
 }

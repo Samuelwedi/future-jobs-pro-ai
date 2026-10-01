@@ -1,3 +1,4 @@
+require('./web-media-security.test.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');

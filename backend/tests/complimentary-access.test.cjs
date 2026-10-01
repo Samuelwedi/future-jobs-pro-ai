@@ -1,3 +1,4 @@
+require('./company-billing.test.cjs');
 const {test}=require('node:test');const assert=require('node:assert/strict');
 const {hasComplimentaryAccess,complimentarySubscription}=require('../dist/services/complimentaryAccess');
 test('complimentary tester is exact user plus company, non-expiring and disabled by default',()=>{

@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-import { hasComplimentaryAccess } from '../services/complimentaryAccess';
+import { hasComplimentaryCompanyAccess } from '../services/complimentaryAccess';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
 
@@ -12,6 +12,7 @@ export type SubscriptionActor = {
   subscriptionTier: string;
   subscriptionProvider: string | null;
   entitlementEndsAt: Date | null;
+  complimentary?: boolean;
 };
 
 const PUBLIC_API_PREFIXES = [
@@ -76,6 +77,7 @@ export async function loadSubscriptionActor(
   }
 
   return {
+    complimentary: await hasComplimentaryCompanyAccess(String(row.id), companyId),
     id: String(row.id),
     companyId,
     role: String(row.role || ''),
@@ -88,7 +90,7 @@ export async function loadSubscriptionActor(
 }
 
 export function hasCompanyEntitlement(actor: SubscriptionActor, now = new Date()): boolean {
-  if (hasComplimentaryAccess(actor.id, actor.companyId)) return true;
+  if (actor.complimentary === true) return true;
   if (!['active', 'trialing'].includes(actor.subscriptionStatus)) return false;
   if (!actor.entitlementEndsAt) return actor.subscriptionStatus === 'active';
   return Number.isFinite(actor.entitlementEndsAt.getTime())
