@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { rateLimit } from 'express-rate-limit';
+import { rateLimit, ipKeyGenerator } from 'express-rate-limit';
 
 const envInt = (name: string, fallback: number) => {
   const value = Number.parseInt(process.env[name] || '', 10);
@@ -20,6 +20,6 @@ export const lucyTrafficLimit = rateLimit({
   limit: envInt('LUCY_RATE_LIMIT', 20),
   standardHeaders: 'draft-8',
   legacyHeaders: false,
-  keyGenerator: (req: Request) => req.headers.authorization || req.ip || 'anonymous',
+  keyGenerator: (req: Request) => req.headers.authorization || (req.ip ? ipKeyGenerator(req.ip) : 'anonymous'),
   handler: (_req: Request, res: Response) => res.status(429).json({ success: false, message: 'Lucy is busy. Please retry shortly.' }),
 });
