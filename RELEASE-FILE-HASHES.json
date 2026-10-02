@@ -1486,6 +1486,10 @@
       "sha256": "0d70cab39f12c462f4ff1e3f45eb9aa93b7c4620260ea4bf2d9cc7b08358be78"
     },
     {
+      "path": "mobile/scripts/auditPatchedDependencies.cjs",
+      "sha256": "a8346b2d536ee3da90eb28c2aa4d3f946b44dad1d8734c7867f858379a7c339f"
+    },
+    {
       "path": "mobile/scripts/enableLucyWakeWord.js",
       "sha256": "975ab5f169d8ce78f42e93aa5c8d7959e992cf53ee4eb17c3c981c41a124a687"
     },
@@ -1815,7 +1819,7 @@
     },
     {
       "path": "scripts/Validate-Release.ps1",
-      "sha256": "66341254229e5ec6938ed44e0431c573805c401b58b89a02cc72492e083f1550"
+      "sha256": "c0e971addf8976680b91175929ac1eb04e7a3bb064ef8cd82e9d73a172af8a4e"
     },
     {
       "path": "web/.gitignore",
