@@ -1,9 +1,15 @@
+require('./company-overtime.test.cjs');
 require('./web-media-security.test.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');
 const {sqlBody}=require('../scripts/release-database.cjs');
 const {BILLING_PLANS,STORE_PLANS}=require('../dist/config/billingPlans');
+test('legacy server entry point cannot start an unauthenticated alternate API', () => {
+ const entry=fs.readFileSync(path.join(__dirname,'../src/server.ts'),'utf8');
+ assert.match(entry,/^import '\.\/index';/m);
+ assert.doesNotMatch(entry,/server\.listen\(|socket\.on\(/);
+});
 test('migration runner strips transaction wrappers but preserves PL/pgSQL blocks',()=>{
  const input='BEGIN;\nDO $$\nBEGIN\n NULL;\nEND $$;\nCOMMIT;\n';
  assert.equal(sqlBody(input).trim(),'DO $$\nBEGIN\n NULL;\nEND $$;');

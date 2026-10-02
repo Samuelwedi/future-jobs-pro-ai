@@ -1,3 +1,4 @@
+import { refreshEmployeeOvertime } from './overtimeService';
 import { pool } from '../config/database';
 import { validateRange } from './payPeriodCalendar';
 
@@ -18,11 +19,19 @@ export async function generatePayroll(companyId:string,periodStart:string,period
   if(duplicate.rowCount)throw new Error('A payroll already exists for these dates; review the existing run');
   const settings=await client.query("SELECT COALESCE(NULLIF(to_jsonb(c)->>'timezone',''),'UTC') timezone, COALESCE((to_jsonb(c)->>'overtime_multiplier')::numeric,1.5) multiplier FROM companies c WHERE id=$1",[companyId]);
   if(!settings.rowCount)throw new Error('Company was not found');
-  const ruleRow=await client.query(`SELECT rules FROM company_payroll_rule_versions WHERE company_id=$1 AND (rules->>'effectiveFrom')::date <= $2::date AND (rules->>'effectiveTo')::date >= $2::date ORDER BY revision DESC LIMIT 1`,[companyId,periodEnd]);
-  const companyPolicy=ruleRow.rows[0]?.rules?.policy;
-  const multiplier=Number(companyPolicy?.overtimeMultiplier??settings.rows[0].multiplier);
+  const multiplier=Number(settings.rows[0].multiplier);
   if(!Number.isFinite(multiplier)||multiplier<1)throw new Error('Configure a valid overtime multiplier');
-  const timeEntries=await client.query(`SELECT te.user_id,te.regular_hours,te.overtime_hours,te.id FROM time_entries te JOIN users u ON te.user_id=u.id WHERE u.company_id=$1 AND te.clock_in >= ($2::date::timestamp AT TIME ZONE $5) AND te.clock_in < (($3::date+1)::timestamp AT TIME ZONE $5) AND te.status='completed' AND te.approval_status='approved' AND te.payroll_locked_at IS NULL AND (cardinality($4::uuid[])=0 OR te.user_id=ANY($4::uuid[])) FOR UPDATE OF te`,[companyId,periodStart,periodEnd,selectedEmployeeIds,settings.rows[0].timezone]);
+  const candidates=await client.query(`SELECT DISTINCT te.user_id FROM time_entries te JOIN users u ON u.id=te.user_id
+    WHERE u.company_id=$1 AND te.clock_in >= ($2::date::timestamp AT TIME ZONE $5)
+    AND te.clock_in < (($3::date+1)::timestamp AT TIME ZONE $5) AND te.status='completed'
+    AND te.approval_status='approved' AND te.payroll_locked_at IS NULL
+    AND (cardinality($4::uuid[])=0 OR te.user_id=ANY($4::uuid[]))`,[companyId,periodStart,periodEnd,selectedEmployeeIds,settings.rows[0].timezone]);
+  for(const row of candidates.rows) await refreshEmployeeOvertime(client,companyId,String(row.user_id),periodStart,periodEnd,true,true);
+  const timeEntries=await client.query(`SELECT te.user_id,te.regular_hours,te.overtime_hours,te.id,
+    (SELECT ch.hourly_rate FROM compensation_history ch WHERE ch.user_id=te.user_id
+      AND ch.effective_date <= (te.clock_in AT TIME ZONE $5)::date
+      ORDER BY ch.effective_date DESC,ch.created_at DESC LIMIT 1) AS entry_hourly_rate
+    FROM time_entries te JOIN users u ON te.user_id=u.id WHERE u.company_id=$1 AND te.clock_in >= ($2::date::timestamp AT TIME ZONE $5) AND te.clock_in < (($3::date+1)::timestamp AT TIME ZONE $5) AND te.status='completed' AND te.approval_status='approved' AND te.payroll_locked_at IS NULL AND (cardinality($4::uuid[])=0 OR te.user_id=ANY($4::uuid[])) FOR UPDATE OF te`,[companyId,periodStart,periodEnd,selectedEmployeeIds,settings.rows[0].timezone]);
   if(!timeEntries.rowCount)throw new Error('No approved, unlocked time entries found in this period');
   const overrides=new Map(employeeRates.map(r=>[r.employeeId,Number(r.hourlyRate)]));
   const employeeIds=[...new Set<string>(timeEntries.rows.map((r:any)=>String(r.user_id)))];
@@ -35,7 +44,7 @@ export async function generatePayroll(companyId:string,periodStart:string,period
    policies.set(employeeId,{rate:Number(pr.rows[0]?.rate||0),method:pr.rows[0]?.method==='each_pay'?'each_pay':'accrue'});
   }
   const grouped=new Map<string,{hours:number;pay:number;rate:number;ids:string[]}>();
-  for(const row of timeEntries.rows){const id=String(row.user_id),rate=rates.get(id)||0,regular=Number(row.regular_hours||0),overtime=Number(row.overtime_hours||0);if(!grouped.has(id))grouped.set(id,{hours:0,pay:0,rate,ids:[]});const g=grouped.get(id)!;g.hours+=regular+overtime;g.pay+=regular*rate+overtime*rate*multiplier;g.ids.push(String(row.id));}
+  for(const row of timeEntries.rows){const id=String(row.user_id),displayRate=rates.get(id)||0,rate=overrides.get(id)??Number(row.entry_hourly_rate),regular=Number(row.regular_hours||0),overtime=Number(row.overtime_hours||0);if(!Number.isFinite(rate)||rate<=0)throw new Error('Every approved shift needs a positive hourly rate effective on its work date');if(!grouped.has(id))grouped.set(id,{hours:0,pay:0,rate:displayRate,ids:[]});const g=grouped.get(id)!;g.hours+=regular+overtime;g.pay+=regular*rate+overtime*rate*multiplier;g.ids.push(String(row.id));}
   let totalHours=0,totalPay=0;for(const g of grouped.values()){totalHours+=g.hours;totalPay+=g.pay;}
   const payroll=await client.query(`INSERT INTO payrolls(company_id,period_start,period_end,total_hours,total_pay,created_by,status) VALUES($1,$2,$3,$4,$5,$6,'draft') RETURNING id`,[companyId,periodStart,periodEnd,totalHours,totalPay,createdBy]);const payrollId=payroll.rows[0].id;
   for(const [employeeId,g] of grouped){

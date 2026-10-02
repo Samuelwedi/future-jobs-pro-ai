@@ -1,3 +1,4 @@
+import { completeTimeEntry } from '../services/overtimeService';
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
@@ -138,15 +139,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Kiosk is not enabled for your company' });
     }
 
-    const entryResult = await pool.query(
-      `UPDATE time_entries SET clock_out = NOW(), clock_out_latitude = $1, clock_out_longitude = $2, status = 'completed'
-       WHERE user_id = $3 AND clock_out IS NULL RETURNING *`,
-      [latitude || null, longitude || null, user.id]
-    );
-
-    if (entryResult.rows.length === 0) {
-      return res.status(400).json({ success: false, message: 'No active clock-in found' });
-    }
+    const entry=await completeTimeEntry(user.company_id,user.id,null,latitude,longitude,true);
 
     await recordUserEvent({
       userId: user.id,
@@ -155,7 +148,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
       latitude, longitude,
     });
 
-    res.json({ success: true, message: `${user.first_name} clocked out`, timeEntry: entryResult.rows[0] });
+    res.json({ success: true, message: `${user.first_name} clocked out`, timeEntry: entry });
   } catch (error: any) {
     console.error('Kiosk clock-out error:', error);
     res.status(500).json({ success: false, message: error.message });

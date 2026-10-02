@@ -51,6 +51,8 @@ before(async()=>{
  await query("INSERT INTO time_entries(id,user_id,project_id,clock_in,clock_out,regular_hours,overtime_hours,total_wage,approval_status,status) VALUES($1,$2,$3,$4::timestamptz,$5::timestamptz,8,2,220,'approved','completed')",[ids.entry,ids.worker,ids.project,new Date().toISOString().slice(0,7)+'-15T01:00:00Z',new Date().toISOString().slice(0,7)+'-15T11:00:00Z']);
  await query("INSERT INTO compensation_history(user_id,hourly_rate,effective_date) VALUES($1,20,'2020-01-01')",[ids.worker]);
  await db.exec(fs.readFileSync(require('path').join(__dirname,'../migrations/20260930_payroll_rules.sql'),'utf8'));
+ await db.exec(fs.readFileSync(require('path').join(__dirname,'../migrations/20261002_company_overtime_policy.sql'),'utf8'));
+ await query("UPDATE companies SET overtime_mode='daily',overtime_daily_threshold_hours=8");
  pool.query=query;pool.connect=async()=>({query,release(){}});
  const email=require('../dist/services/emailService');email.sendPasswordResetEmail=async(_email,link)=>{resetLink=link;if(simulateResetEmailFailure)throw new Error('Simulated SMTP outage');};
  await query('UPDATE users SET password_hash=$1',[await require('bcryptjs').hash('OldPassword123!',10)]);
