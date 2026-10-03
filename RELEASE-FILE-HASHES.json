@@ -2242,10 +2242,6 @@
                       "sha256":  "a94b592ebb1badfeff1cf7ac9b5042a81104d952713fe1ce88e6991c87a094d1"
                   },
                   {
-                      "path":  "backend/src/routes/workforceOperationsRoutes.ts",
-                      "sha256":  "51b828513faa6da3a6fa788a88b01b3ed5dfc8e109e4fb249a0b514a2a2f316b"
-                  },
-                  {
                       "path":  "backend/src/services/timeEntryService.ts",
                       "sha256":  "62793e1548fa9d0acb0012086419a323c2e9143388ff9abcb30ecd6b19e8dfe6"
                   },
@@ -2264,10 +2260,6 @@
                   {
                       "path":  "backend/tests/release.test.cjs",
                       "sha256":  "1204df6e54ed3017bfcd25ed877cae0e582adf5e48414320d2d531adf2253fc3"
-                  },
-                  {
-                      "path":  "backend/tests/release-upgrade.test.cjs",
-                      "sha256":  "2fd6288a7e7e45e6ab9dc34ce671d0dc1f1028f89c042ff5f18893eb613706ac"
                   },
                   {
                       "path":  "backend/src/services/overtimePolicy.ts",
@@ -2328,6 +2320,18 @@
                   {
                       "path":  "web/src/components/CompanyPayrollCalendar.tsx",
                       "sha256":  "4f7faddab8533cf6df0a7d5c9f060ad8c4c9e16e381cbfb69700d6881dde5c07"
+                  },
+                  {
+                      "path":  "backend/src/routes/workforceOperationsRoutes.ts",
+                      "sha256":  "98eef2251b7a32e1fc6834dba250172a5c7ab433cf3c42944f9d15bb154c3a74"
+                  },
+                  {
+                      "path":  "backend/tests/release-upgrade.test.cjs",
+                      "sha256":  "804390ef6bc71e700acb252b3e248d34913a99c6aa7e22369281f0379303e0fd"
+                  },
+                  {
+                      "path":  "backend/tests/vacation-policy.test.cjs",
+                      "sha256":  "8245cfbe1daa7455c7d01a9dc8f4d08d9cb1cc35cfd32d058560acf1750010a7"
                   }
               ]
 }

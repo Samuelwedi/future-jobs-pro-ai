@@ -3,6 +3,7 @@ import { lockCompanyTime, refreshEmployeeOvertime, companyOvertimeSettings } fro
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
+import { companyActor, manages } from '../middleware/companyActor';
 
 const router = express.Router();
 
@@ -79,6 +80,41 @@ router.post('/time-entries/:id/approve', async (req: Request, res: Response) => 
     if (!result.rowCount) return res.status(400).json({ success:false, message:'Entry cannot be approved or is payroll locked' });
     res.json({ success:true, entry:result.rows[0] });
   } catch (error:any) { res.status(/access/i.test(error.message)?403:400).json({ success:false, message:error.message }); }
+});
+
+const vacationManager = (req: Request, res: Response, next: any) => {
+  if (!manages(res.locals.actor)) return res.status(403).json({message:'Manager access is required'});
+  next();
+};
+router.get('/vacation-policies', companyActor, vacationManager, async (_req: Request, res: Response) => {
+  try {
+    const result = await pool.query(`SELECT id,first_name,last_name,email,
+      COALESCE(vacation_pay_rate,4) vacation_pay_rate,
+      COALESCE(vacation_pay_method,'accrue') vacation_pay_method,
+      COALESCE(vacation_pay_balance,0) vacation_pay_balance,
+      COALESCE(vacation_hours_balance,0) vacation_hours_balance
+      FROM users WHERE company_id=$1 AND COALESCE(is_active,TRUE)=TRUE
+      ORDER BY last_name,first_name,id`,[res.locals.actor.company_id]);
+    res.json({success:true,employees:result.rows});
+  } catch { res.status(503).json({message:'Vacation policies are temporarily unavailable'}); }
+});
+router.patch('/employees/:id/vacation', companyActor, vacationManager, async (req: Request, res: Response) => {
+  const actor=res.locals.actor;
+  const {rate,method,payBalance,hoursBalance}=req.body;
+  const valid=(value:unknown,max:number)=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=max&&Math.abs(value*100-Math.round(value*100))<0.00001;
+  if (!valid(rate,100)||!['accrue','each_pay'].includes(method)||!valid(payBalance,1000000000)||!valid(hoursBalance,1000000)) {
+    return res.status(400).json({message:'Enter a rate from 0 to 100%, accrue or each_pay, and nonnegative balances with at most two decimal places'});
+  }
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(req.params.id)))return res.status(404).json({message:'Employee not found in your company'});
+  try {
+    const result=await pool.query(`UPDATE users SET vacation_pay_rate=$1,vacation_pay_method=$2,
+      vacation_pay_balance=$3,vacation_hours_balance=$4
+      WHERE id=$5 AND company_id=$6 AND COALESCE(is_active,TRUE)=TRUE
+      RETURNING id,vacation_pay_rate,vacation_pay_method,vacation_pay_balance,vacation_hours_balance`,
+      [rate,method,payBalance,hoursBalance,req.params.id,actor.company_id]);
+    if(!result.rowCount)return res.status(404).json({message:'Employee not found in your company'});
+    res.json({success:true,employee:result.rows[0]});
+  } catch {res.status(503).json({message:'Vacation policy could not be saved'});}
 });
 
 export default router;

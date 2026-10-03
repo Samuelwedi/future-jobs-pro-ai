@@ -1,3 +1,4 @@
+require('./vacation-policy.test.cjs');
 require('./company-overtime.test.cjs');
 require('./web-media-security.test.cjs');
 const {test}=require('node:test');
