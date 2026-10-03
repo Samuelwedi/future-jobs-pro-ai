@@ -1,3 +1,5 @@
+import { companyDate } from '../services/payPeriodCalendar';
+import { lockCompanyTime, refreshEmployeeOvertime, companyOvertimeSettings } from '../services/overtimeService';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
@@ -30,6 +32,7 @@ router.patch('/time-entries/:id', async (req: Request, res: Response) => {
     if (!Number.isInteger(breakMinutes) || breakMinutes < 0 || breakMinutes > 720) return res.status(400).json({ success:false, message:'Break minutes must be between 0 and 720' });
 
     await client.query('BEGIN');
+    await lockCompanyTime(client,actor.company_id);
     const found = await client.query(
       `SELECT te.*,u.company_id FROM time_entries te JOIN users u ON u.id=te.user_id
        WHERE te.id=$1 AND u.company_id=$2 FOR UPDATE`, [id, actor.company_id],
@@ -38,8 +41,8 @@ router.patch('/time-entries/:id', async (req: Request, res: Response) => {
     if (!old) throw new Error('Time entry was not found in your company');
     if (old.payroll_locked_at) throw new Error('This entry is locked by finalized payroll');
     const totalHours = clockOut ? Math.max(0, (clockOut.getTime()-clockIn.getTime())/3600000-breakMinutes/60) : 0;
-    const regular = Math.min(totalHours, 8);
-    const overtime = Math.max(totalHours-8, 0);
+    const regular = totalHours;
+    const overtime = 0;
     const updated = await client.query(
       `UPDATE time_entries SET clock_in=$1,clock_out=$2,break_minutes=$3,
          regular_hours=$4,overtime_hours=$5,status=CASE WHEN $2::timestamptz IS NULL THEN 'active' ELSE 'completed' END,
@@ -47,6 +50,10 @@ router.patch('/time-entries/:id', async (req: Request, res: Response) => {
        WHERE id=$7 RETURNING *`,
       [clockIn.toISOString(),clockOut?.toISOString() || null,breakMinutes,regular,overtime,reason,id],
     );
+    const policy=await companyOvertimeSettings(client,actor.company_id);
+    const dates=[old.clock_in,old.clock_out,clockIn,clockOut].filter(Boolean).map(t=>companyDate(policy.timezone,new Date(t))).sort();
+    await refreshEmployeeOvertime(client,actor.company_id,old.user_id,dates[0],dates[dates.length-1]);
+    updated.rows[0]=(await client.query('SELECT * FROM time_entries WHERE id=$1',[id])).rows[0];
     await client.query(
       `INSERT INTO time_entry_audit_logs(time_entry_id,company_id,actor_id,action,before_values,after_values,reason)
        VALUES($1,$2,$3,'corrected',$4,$5,$6)`,

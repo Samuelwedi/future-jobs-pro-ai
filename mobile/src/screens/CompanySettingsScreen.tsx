@@ -24,6 +24,10 @@ interface CompanySettings {
   address: string | null;
   phone: string | null;
   email: string | null;
+  overtime_mode: 'daily' | 'weekly' | 'daily_weekly';
+  overtime_daily_threshold_hours: number;
+  overtime_week_start: number;
+  timezone: string;
   overtime_enabled: boolean;
   overtime_threshold_hours: number;
   overtime_multiplier: number;
@@ -42,9 +46,14 @@ interface CompanyResponse {
 interface SettingsResponse {
   success: boolean;
   settings: {
-    overtime_enabled: boolean;
+    overtime_mode: 'daily' | 'weekly' | 'daily_weekly';
+  overtime_daily_threshold_hours: number;
+  overtime_week_start: number;
+  timezone: string;
+  overtime_enabled: boolean;
     overtime_threshold_hours: number;
     overtime_multiplier: number;
+    default_hourly_rate: number;
   };
 }
 
@@ -60,6 +69,10 @@ export default function CompanySettingsScreen() {
     address: null,
     phone: null,
     email: null,
+    overtime_mode: 'weekly',
+    overtime_daily_threshold_hours: 8,
+    overtime_week_start: 1,
+    timezone: 'UTC',
     overtime_enabled: true,
     overtime_threshold_hours: 40,
     overtime_multiplier: 1.5,
@@ -69,6 +82,7 @@ export default function CompanySettingsScreen() {
   const [logoFile, setLogoFile] = useState<any>(null);
 
   // ─── String states for decimal inputs ───
+  const [dailyStr, setDailyStr] = useState('8');
   const [thresholdStr, setThresholdStr] = useState('40');
   const [multiplierStr, setMultiplierStr] = useState('1.5');
   const [hourlyRateStr, setHourlyRateStr] = useState('20');
@@ -92,14 +106,19 @@ export default function CompanySettingsScreen() {
         address: companyData.address || null,
         phone: companyData.phone || null,
         email: companyData.email || null,
+        overtime_mode: settingsData.settings?.overtime_mode ?? 'weekly',
+        overtime_daily_threshold_hours: settingsData.settings?.overtime_daily_threshold_hours ?? 8,
+        overtime_week_start: settingsData.settings?.overtime_week_start ?? 1,
+        timezone: settingsData.settings?.timezone ?? 'UTC',
         overtime_enabled: settingsData.settings?.overtime_enabled ?? true,
         overtime_threshold_hours: settingsData.settings?.overtime_threshold_hours ?? 40,
         overtime_multiplier: settingsData.settings?.overtime_multiplier ?? 1.5,
-        default_hourly_rate: 20,
+        default_hourly_rate: settingsData.settings?.default_hourly_rate ?? 20,
       };
       setSettings(merged);
       setOriginalSettings(merged);
       // Update string states
+      setDailyStr(String(merged.overtime_daily_threshold_hours));
       setThresholdStr(String(merged.overtime_threshold_hours));
       setMultiplierStr(String(merged.overtime_multiplier));
       setHourlyRateStr(String(merged.default_hourly_rate));
@@ -113,27 +132,31 @@ export default function CompanySettingsScreen() {
 
   const saveSettings = async () => {
     // Convert strings to numbers
-    const threshold = parseFloat(thresholdStr);
-    const multiplier = parseFloat(multiplierStr);
-    const hourlyRate = parseFloat(hourlyRateStr);
+    const threshold = thresholdStr.trim() ? Number(thresholdStr) : NaN;
+    const daily = dailyStr.trim() ? Number(dailyStr) : NaN;
+    const multiplier = multiplierStr.trim() ? Number(multiplierStr) : NaN;
+    const hourlyRate = hourlyRateStr.trim() ? Number(hourlyRateStr) : NaN;
 
-    if (isNaN(threshold) || threshold < 0) {
-      Alert.alert('Invalid Value', 'Please enter a valid positive number for overtime threshold.');
+    if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 168 || !Number.isFinite(daily) || daily <= 0 || daily > 24) {
+      Alert.alert('Invalid Value', 'Enter daily hours greater than 0 up to 24, and weekly hours greater than 0 up to 168. Decimal hours are accepted.');
       return;
     }
-    if (isNaN(multiplier) || multiplier < 1) {
-      Alert.alert('Invalid Value', 'Overtime multiplier must be at least 1.');
+    if (!Number.isFinite(multiplier) || multiplier < 1 || multiplier > 10) {
+      Alert.alert('Invalid Value', 'Overtime multiplier must be between 1 and 10.');
       return;
     }
-    if (isNaN(hourlyRate) || hourlyRate < 0) {
+    if (!Number.isFinite(hourlyRate) || hourlyRate < 0) {
       Alert.alert('Invalid Value', 'Hourly rate must be a positive number.');
       return;
     }
 
     setSaving(true);
     try {
-      console.log('📤 Sending to backend:', { threshold, multiplier, hourlyRate });
       await api.put(`/companies/${user?.companyId}/settings`, {
+        overtime_mode: settings.overtime_mode,
+        overtime_daily_threshold_hours: daily,
+        overtime_week_start: settings.overtime_week_start,
+        timezone: settings.timezone.trim(),
         overtime_enabled: settings.overtime_enabled,
         overtime_threshold_hours: threshold,
         overtime_multiplier: multiplier,
@@ -173,7 +196,7 @@ export default function CompanySettingsScreen() {
       fetchSettings();
     } catch (e: any) {
       console.error('Error saving settings:', e);
-      Alert.alert('Error', e.message || 'Failed to save settings');
+      Alert.alert('Error', e?.response?.data?.message || e.message || 'Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -192,26 +215,15 @@ export default function CompanySettingsScreen() {
     }
   };
 
-  const getOvertimeSuggestion = () => {
-    // Simulated AI suggestion – you can later replace with real API
-    return {
-      suggestion: 'Industry standard is 40h. Your team is within healthy limits.',
-      threshold: 40,
-      multiplier: 1.5,
-    };
+  const applyPreset = (mode: 'daily' | 'weekly', hours: number) => {
+    setSettings(current => ({...current, overtime_enabled:true, overtime_mode:mode}));
+    if(mode==='daily')setDailyStr(String(hours));else setThresholdStr(String(hours));
   };
-
-  const applySuggestion = () => {
-    const suggestion = getOvertimeSuggestion();
-    setThresholdStr(String(suggestion.threshold));
-    setMultiplierStr(String(suggestion.multiplier));
-    setSettings({
-      ...settings,
-      overtime_threshold_hours: suggestion.threshold,
-      overtime_multiplier: suggestion.multiplier,
-    });
-    Alert.alert('💡 AI Suggestion Applied', suggestion.suggestion);
-  };
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const dailyLimit = settings.overtime_enabled && settings.overtime_mode!=='weekly' ? Number(dailyStr) : Infinity;
+  const weeklyLimit = settings.overtime_enabled && settings.overtime_mode!=='daily' ? Number(thresholdStr) : Infinity;
+  const exampleRegular = Math.max(0,Math.min(45,5*Math.min(9,dailyLimit),weeklyLimit));
+  const example = Number.isFinite(exampleRegular) ? `Example: five 9-hour days = ${exampleRegular.toFixed(2)} regular hours + ${(45-exampleRegular).toFixed(2)} overtime hours.` : 'Enter valid thresholds to see an example.';
 
   if (loading) {
     return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
@@ -282,24 +294,32 @@ export default function CompanySettingsScreen() {
         </View>
         {settings.overtime_enabled && (
           <>
-            <InputFieldDecimal
-              label="Threshold (hours per week)"
-              value={thresholdStr}
-              onChangeText={setThresholdStr}
-              placeholder="e.g. 40.5"
-            />
-            <InputFieldDecimal
-              label="Overtime Multiplier (e.g. 1.5)"
-              value={multiplierStr}
-              onChangeText={setMultiplierStr}
-              placeholder="e.g. 1.5"
-            />
-            <TouchableOpacity style={styles.aiSuggestionBtn} onPress={applySuggestion}>
-              <Ionicons name="sparkles" size={20} color="#FFF" />
-              <Text style={styles.aiSuggestionText}>AI‑recommended threshold</Text>
-            </TouchableOpacity>
+            <Text style={styles.label}>Overtime basis</Text>
+            <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
+              {([['daily','Daily'],['weekly','Weekly'],['daily_weekly','Daily + weekly']] as const).map(([mode,label])=>(
+                <TouchableOpacity key={mode} accessibilityRole="radio" accessibilityState={{checked:settings.overtime_mode===mode}}
+                  onPress={()=>setSettings({...settings,overtime_mode:mode})}
+                  style={{padding:12,borderRadius:8,borderWidth:1,borderColor:settings.overtime_mode===mode?'#00D4FF':'#555'}}>
+                  <Text style={{color:settings.overtime_mode===mode?'#00D4FF':'#FFF'}}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {settings.overtime_mode!=='weekly' && <InputFieldDecimal label="Daily overtime after (hours)" value={dailyStr} onChangeText={setDailyStr} placeholder="8 or 10"/>}
+            {settings.overtime_mode!=='daily' && <InputFieldDecimal label="Weekly overtime after (hours)" value={thresholdStr} onChangeText={setThresholdStr} placeholder="40 or 44.5"/>}
+            <InputFieldDecimal label="Overtime pay multiplier" value={multiplierStr} onChangeText={setMultiplierStr} placeholder="1.5"/>
+            <Text style={styles.label}>Workweek starts on</Text>
+            <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
+              {days.map((day,index)=><TouchableOpacity key={day} accessibilityRole="radio" accessibilityLabel={day} accessibilityState={{checked:settings.overtime_week_start===index}} onPress={()=>setSettings({...settings,overtime_week_start:index})} style={{padding:10,borderRadius:8,backgroundColor:settings.overtime_week_start===index?'#164856':'#292929'}}><Text style={{color:'#FFF'}}>{day.slice(0,3)}</Text></TouchableOpacity>)}
+            </View>
+            <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
+              {([['daily',8],['daily',10],['weekly',40],['weekly',44.5]] as const).map(([mode,hours])=><TouchableOpacity key={mode+hours} onPress={()=>applyPreset(mode,hours)} style={{padding:10,borderWidth:1,borderColor:'#555',borderRadius:8}}><Text style={{color:'#00D4FF'}}>{mode==='daily'?'Daily':'Weekly'} {hours}h</Text></TouchableOpacity>)}
+            </View>
           </>
         )}
+        <InputField label="Company time zone (IANA)" value={settings.timezone} onChange={(timezone:string)=>setSettings({...settings,timezone})}/>
+        <Text style={{color:'#CCC',lineHeight:21,marginBottom:12}}>{example}</Text>
+        <Text style={{color:'#AAA',lineHeight:21}}>Combined mode uses the greater of daily or weekly overtime for each week, without counting an hour twice. 44.5 hours means 44 hours 30 minutes. Unpaid breaks are excluded; overnight breaks are allocated proportionally between days.</Text>
+        <Text style={{color:'#AAA',lineHeight:21,marginTop:12}}>Changes apply to unlocked time and new payroll drafts. Previously approved entries whose pay changes return for manager review. Existing payroll stays unchanged. Use rules that meet applicable employment requirements.</Text>
       </Section>
 
       <Section title="Payroll & Branding" icon="palette">
@@ -311,18 +331,7 @@ export default function CompanySettingsScreen() {
         />
       </Section>
 
-      <Section title="Smart Insights" icon="analytics">
-        <View style={styles.insightCard}>
-          <Text style={styles.insightTitle}>Overtime Usage</Text>
-          <Text style={styles.insightValue}>$1,240 this month</Text>
-          <Text style={styles.insightSub}>↑ 12% from last month</Text>
-        </View>
-        <View style={styles.insightCard}>
-          <Text style={styles.insightTitle}>Average Weekly Hours</Text>
-          <Text style={styles.insightValue}>38.2h</Text>
-          <Text style={styles.insightSub}>Within threshold ✓</Text>
-        </View>
-      </Section>
+
     </ScrollView>
   );
 }

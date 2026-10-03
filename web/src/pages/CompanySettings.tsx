@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Paper, Grid, TextField, Button,
   Switch, FormControlLabel, CircularProgress, Alert, Divider,
-  Avatar, IconButton, Chip, Card, CardContent,
+  Avatar, IconButton, Chip, Card, CardContent, MenuItem,
 } from '@mui/material';
 import { Save, ArrowBack, Upload, Business, Timer, Palette, Analytics, Lightbulb } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -15,6 +15,10 @@ interface CompanySettings {
   address: string | null;
   phone: string | null;
   email: string | null;
+  overtime_mode: 'daily' | 'weekly' | 'daily_weekly';
+  overtime_daily_threshold_hours: number;
+  overtime_week_start: number;
+  timezone: string;
   overtime_enabled: boolean;
   overtime_threshold_hours: number;
   overtime_multiplier: number;
@@ -35,6 +39,10 @@ export default function CompanySettings() {
     address: null,
     phone: null,
     email: null,
+    overtime_mode: 'weekly',
+    overtime_daily_threshold_hours: 8,
+    overtime_week_start: 1,
+    timezone: 'UTC',
     overtime_enabled: true,
     overtime_threshold_hours: 40,
     overtime_multiplier: 1.5,
@@ -43,6 +51,7 @@ export default function CompanySettings() {
   const [originalSettings, setOriginalSettings] = useState<CompanySettings>(settings);
 
   // For decimal inputs
+  const [dailyStr, setDailyStr] = useState('8');
   const [thresholdStr, setThresholdStr] = useState('40');
   const [multiplierStr, setMultiplierStr] = useState('1.5');
   const [hourlyRateStr, setHourlyRateStr] = useState('20');
@@ -57,11 +66,13 @@ export default function CompanySettings() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const companyData = await companyRes.json();
+      if(!companyRes.ok)throw new Error(companyData.message || 'Could not load company');
 
       const settingsRes = await fetch(`${API_BASE}/api/companies/${user?.companyId}/settings`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const settingsData = await settingsRes.json();
+      if(!settingsRes.ok)throw new Error(settingsData.message || 'Could not load overtime settings');
 
       const merged: CompanySettings = {
         id: companyData.id,
@@ -70,13 +81,18 @@ export default function CompanySettings() {
         address: companyData.address || null,
         phone: companyData.phone || null,
         email: companyData.email || null,
+        overtime_mode: settingsData.settings?.overtime_mode ?? 'weekly',
+        overtime_daily_threshold_hours: settingsData.settings?.overtime_daily_threshold_hours ?? 8,
+        overtime_week_start: settingsData.settings?.overtime_week_start ?? 1,
+        timezone: settingsData.settings?.timezone ?? 'UTC',
         overtime_enabled: settingsData.settings?.overtime_enabled ?? true,
         overtime_threshold_hours: settingsData.settings?.overtime_threshold_hours ?? 40,
         overtime_multiplier: settingsData.settings?.overtime_multiplier ?? 1.5,
-        default_hourly_rate: 20,
+        default_hourly_rate: settingsData.settings?.default_hourly_rate ?? 20,
       };
       setSettings(merged);
       setOriginalSettings(merged);
+      setDailyStr(String(merged.overtime_daily_threshold_hours));
       setThresholdStr(String(merged.overtime_threshold_hours));
       setMultiplierStr(String(merged.overtime_multiplier));
       setHourlyRateStr(String(merged.default_hourly_rate));
@@ -89,19 +105,20 @@ export default function CompanySettings() {
   };
 
   const saveSettings = async () => {
-    const threshold = parseFloat(thresholdStr);
-    const multiplier = parseFloat(multiplierStr);
-    const hourlyRate = parseFloat(hourlyRateStr);
+    const threshold = thresholdStr.trim() ? Number(thresholdStr) : NaN;
+    const daily = dailyStr.trim() ? Number(dailyStr) : NaN;
+    const multiplier = multiplierStr.trim() ? Number(multiplierStr) : NaN;
+    const hourlyRate = hourlyRateStr.trim() ? Number(hourlyRateStr) : NaN;
 
-    if (isNaN(threshold) || threshold < 0) {
-      alert('Please enter a valid positive number for overtime threshold.');
+    if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 168 || !Number.isFinite(daily) || daily <= 0 || daily > 24) {
+      alert('Enter daily hours greater than 0 up to 24, and weekly hours greater than 0 up to 168. Decimal hours are accepted.');
       return;
     }
-    if (isNaN(multiplier) || multiplier < 1) {
-      alert('Overtime multiplier must be at least 1.');
+    if (!Number.isFinite(multiplier) || multiplier < 1 || multiplier > 10) {
+      alert('Overtime multiplier must be between 1 and 10.');
       return;
     }
-    if (isNaN(hourlyRate) || hourlyRate < 0) {
+    if (!Number.isFinite(hourlyRate) || hourlyRate < 0) {
       alert('Hourly rate must be a positive number.');
       return;
     }
@@ -109,16 +126,23 @@ export default function CompanySettings() {
     setSaving(true);
     try {
       // Update settings
-      await fetch(`${API_BASE}/api/companies/${user?.companyId}/settings`, {
+      const saved=await fetch(`${API_BASE}/api/companies/${user?.companyId}/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
+          overtime_mode: settings.overtime_mode,
+          overtime_daily_threshold_hours: daily,
+          overtime_week_start: settings.overtime_week_start,
+          timezone: settings.timezone.trim(),
           overtime_enabled: settings.overtime_enabled,
           overtime_threshold_hours: threshold,
           overtime_multiplier: multiplier,
           default_hourly_rate: hourlyRate,
         }),
       });
+
+      const savedData=await saved.json();
+      if(!saved.ok)throw new Error(savedData.message || 'Could not save overtime settings');
 
       // Update company profile if changed
       if (
@@ -127,7 +151,7 @@ export default function CompanySettings() {
         settings.phone !== originalSettings.phone ||
         settings.email !== originalSettings.email
       ) {
-        await fetch(`${API_BASE}/api/companies/${user?.companyId}`, {
+        const profileSaved=await fetch(`${API_BASE}/api/companies/${user?.companyId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
@@ -137,9 +161,10 @@ export default function CompanySettings() {
             email: settings.email,
           }),
         });
+        if(!profileSaved.ok)throw new Error('Overtime saved, but the company profile could not be updated');
       }
 
-      alert('✅ Company settings updated.');
+      alert('Company settings updated.');
       fetchSettings();
     } catch (e: any) {
       alert('Error: ' + e.message);
@@ -148,18 +173,15 @@ export default function CompanySettings() {
     }
   };
 
-  const applySuggestion = () => {
-    // Simulated AI suggestion – matches mobile app
-    const suggestion = { threshold: 40, multiplier: 1.5, suggestion: 'Industry standard is 40h. Your team is within healthy limits.' };
-    setThresholdStr(String(suggestion.threshold));
-    setMultiplierStr(String(suggestion.multiplier));
-    setSettings({
-      ...settings,
-      overtime_threshold_hours: suggestion.threshold,
-      overtime_multiplier: suggestion.multiplier,
-    });
-    alert('💡 AI Suggestion Applied: ' + suggestion.suggestion);
+  const applyPreset = (mode: 'daily' | 'weekly', hours: number) => {
+    setSettings(current => ({...current, overtime_enabled:true, overtime_mode:mode}));
+    if(mode==='daily')setDailyStr(String(hours));else setThresholdStr(String(hours));
   };
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const dailyLimit = settings.overtime_enabled && settings.overtime_mode!=='weekly' ? Number(dailyStr) : Infinity;
+  const weeklyLimit = settings.overtime_enabled && settings.overtime_mode!=='daily' ? Number(thresholdStr) : Infinity;
+  const exampleRegular = Math.max(0,Math.min(45,5*Math.min(9,dailyLimit),weeklyLimit));
+  const example = Number.isFinite(exampleRegular) ? `Example: five 9-hour days = ${exampleRegular.toFixed(2)} regular hours + ${(45-exampleRegular).toFixed(2)} overtime hours.` : 'Enter valid thresholds to see an example.';
 
   if (loading) {
     return (
@@ -263,31 +285,23 @@ export default function CompanySettings() {
           sx={{ color: '#FFF' }}
         />
         {settings.overtime_enabled && (
-          <Box sx={{ mt: 2 }}>
-            <TextField
-              fullWidth
-              label="Threshold (hours per week)"
-              value={thresholdStr}
-              onChange={(e) => setThresholdStr(e.target.value)}
-              sx={{ mb: 2, input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
-            />
-            <TextField
-              fullWidth
-              label="Overtime Multiplier (e.g. 1.5)"
-              value={multiplierStr}
-              onChange={(e) => setMultiplierStr(e.target.value)}
-              sx={{ mb: 2, input: { color: '#FFF' }, label: { color: '#888' }, '& .MuiOutlinedInput-root': { '& fieldset': { borderColor: '#333' } } }}
-            />
-            <Button
-              variant="outlined"
-              startIcon={<Lightbulb />}
-              onClick={applySuggestion}
-              sx={{ color: '#9C27B0', borderColor: '#9C27B0' }}
-            >
-              AI‑recommended threshold
-            </Button>
+          <Box sx={{mt:2,display:'grid',gap:2}}>
+            <TextField select fullWidth label="Overtime basis" value={settings.overtime_mode} onChange={e=>setSettings({...settings,overtime_mode:e.target.value as CompanySettings['overtime_mode']})}>
+              <MenuItem value="daily">Daily</MenuItem><MenuItem value="weekly">Weekly</MenuItem><MenuItem value="daily_weekly">Daily + weekly</MenuItem>
+            </TextField>
+            {settings.overtime_mode!=='weekly' && <TextField fullWidth type="number" label="Daily overtime after (hours)" value={dailyStr} onChange={e=>setDailyStr(e.target.value)} inputProps={{min:0.01,max:24,step:'any'}} helperText="For example 8, 10, or 8.5 hours"/>}
+            {settings.overtime_mode!=='daily' && <TextField fullWidth type="number" label="Weekly overtime after (hours)" value={thresholdStr} onChange={e=>setThresholdStr(e.target.value)} inputProps={{min:0.01,max:168,step:'any'}} helperText="44.5 hours means 44 hours 30 minutes"/>}
+            <TextField fullWidth type="number" label="Overtime pay multiplier" value={multiplierStr} onChange={e=>setMultiplierStr(e.target.value)} inputProps={{min:1,max:10,step:'any'}} helperText="1.5 pays one and a half times the hourly rate"/>
+            <TextField select fullWidth label="Workweek starts on" value={settings.overtime_week_start} onChange={e=>setSettings({...settings,overtime_week_start:Number(e.target.value)})}>{days.map((day,index)=><MenuItem key={day} value={index}>{day}</MenuItem>)}</TextField>
+            <Box sx={{display:'flex',gap:1,flexWrap:'wrap'}}>
+              {([['daily',8],['daily',10],['weekly',40],['weekly',44.5]] as const).map(([mode,hours])=><Button key={mode+hours} variant="outlined" onClick={()=>applyPreset(mode,hours)}>{mode==='daily'?'Daily':'Weekly'} {hours}h</Button>)}
+            </Box>
           </Box>
         )}
+        <TextField fullWidth label="Company time zone (IANA)" value={settings.timezone} onChange={e=>setSettings({...settings,timezone:e.target.value})} helperText="For example America/Edmonton. Also used by the payroll calendar." sx={{mt:2}}/>
+        <Alert severity="info" sx={{mt:2}}>{example}</Alert>
+        <Typography variant="body2" color="text.secondary" sx={{mt:2}}>Combined mode uses the greater of daily or weekly overtime for each week, without counting an hour twice. Unpaid breaks are excluded; overnight breaks are allocated proportionally between days.</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{mt:2}}>Changes apply to unlocked time and new payroll drafts. Previously approved entries whose pay changes return for manager review. Existing payroll stays unchanged. Use rules that meet applicable employment requirements.</Typography>
       </Paper>
 
       {/* Payroll & Branding */}
@@ -305,27 +319,7 @@ export default function CompanySettings() {
         />
       </Paper>
 
-      {/* Smart Insights */}
-      <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <Analytics sx={{ color: '#00D4FF', mr: 1 }} />
-          <Typography variant="h6" sx={{ color: '#FFF' }}>Smart Insights</Typography>
-        </Box>
-        <Card sx={{ bgcolor: '#0A0A0A', border: '1px solid #333', mb: 2 }}>
-          <CardContent>
-            <Typography variant="body2" sx={{ color: '#888' }}>Overtime Usage</Typography>
-            <Typography variant="h5" sx={{ color: '#00D4FF', fontWeight: 'bold' }}>$1,240 this month</Typography>
-            <Typography variant="caption" sx={{ color: '#4CAF50' }}>↑ 12% from last month</Typography>
-          </CardContent>
-        </Card>
-        <Card sx={{ bgcolor: '#0A0A0A', border: '1px solid #333' }}>
-          <CardContent>
-            <Typography variant="body2" sx={{ color: '#888' }}>Average Weekly Hours</Typography>
-            <Typography variant="h5" sx={{ color: '#00D4FF', fontWeight: 'bold' }}>38.2h</Typography>
-            <Typography variant="caption" sx={{ color: '#4CAF50' }}>Within threshold ✓</Typography>
-          </CardContent>
-        </Card>
-      </Paper>
+
     </Container>
   );
 }

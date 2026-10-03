@@ -1,3 +1,4 @@
+import { completeTimeEntry, employeeOvertime } from '../services/overtimeService';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
@@ -34,24 +35,27 @@ router.get('/', async (req: Request, res: Response) => {
       return res.status(403).json({ success:false, message:'Manager access is required to view another employee timesheet' });
     }
 
+    const companyId=targetRes.rows[0].company_id;
+    const computed=await employeeOvertime(pool,companyId,String(userId),String(start),String(end));
     const result = await pool.query(
       `SELECT te.*, p.name as project_name, p.address as project_address
        FROM time_entries te
        LEFT JOIN projects p ON te.project_id = p.id
        WHERE te.user_id = $1
-         AND te.clock_in >= $2::date
-         AND te.clock_in <= $3::date
+         AND te.clock_in >= ($2::date::timestamp AT TIME ZONE $4)
+         AND te.clock_in < (($3::date+1)::timestamp AT TIME ZONE $4)
        ORDER BY te.clock_in DESC`,
-      [userId, start, end]
+      [userId, start, end, computed.policy.timezone]
     );
 
     const entries = result.rows.map((row: any) => {
-      const regularHours = Number(row.regular_hours) || 0;
-      const overtimeHours = Number(row.overtime_hours) || 0;
+      const calculated = row.payroll_locked_at ? undefined : computed.hours.get(row.id);
+      const regularHours = calculated?.regular ?? (Number(row.regular_hours) || 0);
+      const overtimeHours = calculated?.overtime ?? (Number(row.overtime_hours) || 0);
       const breakMinutes = Number(row.break_minutes) || 0;
       const clockIn = new Date(row.clock_in);
       const clockOut = row.clock_out ? new Date(row.clock_out) : null;
-      const hours = clockOut ? ((clockOut.getTime() - clockIn.getTime()) / 3600000).toFixed(2) : '0.00';
+      const hours = clockOut ? Math.max(0,(clockOut.getTime() - clockIn.getTime()) / 3600000-breakMinutes/60).toFixed(2) : '0.00';
 
       return {
         id: row.id,
@@ -252,45 +256,14 @@ router.post('/clock-out', async (req: Request, res: Response) => {
     if (check.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Active time entry not found' });
     }
-    const row = check.rows[0];
-    const clockIn = new Date(row.clock_in);
-    const now = new Date();
-    const diffMs = now.getTime() - clockIn.getTime();
-    const hoursWorked = diffMs / 3600000;
-
-    const companyId = row.company_id;
-    const settingsRes = await pool.query(
-      `SELECT overtime_enabled, overtime_threshold_hours, overtime_multiplier FROM companies WHERE id = $1`,
-      [companyId]
-    );
-    const settings = settingsRes.rows[0] || { overtime_enabled: true, overtime_threshold_hours: 40, overtime_multiplier: 1.5 };
-    const threshold = settings.overtime_enabled ? settings.overtime_threshold_hours : Infinity;
-    const multiplier = settings.overtime_multiplier || 1.5;
-
-    const regularHours = Math.min(hoursWorked, threshold);
-    const overtimeHours = Math.max(hoursWorked - threshold, 0);
-    const hourlyRate = 20;
-    const totalWage = (regularHours + overtimeHours * multiplier) * hourlyRate;
-
-    const result = await pool.query(
-      `UPDATE time_entries
-       SET clock_out = NOW(),
-           latitude_out = $1,
-           longitude_out = $2,
-           regular_hours = $3,
-           overtime_hours = $4,
-           total_wage = $5,
-           status = 'completed'
-       WHERE id = $6 AND user_id = $7
-       RETURNING id, clock_out`,
-      [latitude || 0, longitude || 0, regularHours, overtimeHours, totalWage, timeEntryId, userId]
-    );
+    const entry = await completeTimeEntry(check.rows[0].company_id,String(userId),String(timeEntryId),latitude,longitude);
+    const regularHours=Number(entry.regular_hours),overtimeHours=Number(entry.overtime_hours),totalWage=entry.total_wage;
 
     res.json({
       success: true,
       message: 'Clocked out successfully',
-      timeEntryId: result.rows[0].id,
-      clockOut: result.rows[0].clock_out,
+      timeEntryId: entry.id,
+      clockOut: entry.clock_out,
       regularHours,
       overtimeHours,
       totalWage,
@@ -329,15 +302,16 @@ router.get('/export', async (req: Request, res: Response) => {
       return res.status(403).json({ success:false, message:'Manager access is required to export another employee timesheet' });
     }
 
+    const computed=await employeeOvertime(pool,targetRes.rows[0].company_id,String(userId),String(start),String(end));
     const result = await pool.query(
       `SELECT te.*, p.name as project_name
        FROM time_entries te
        LEFT JOIN projects p ON te.project_id = p.id
        WHERE te.user_id = $1
-         AND te.clock_in >= $2::date
-         AND te.clock_in <= $3::date
+         AND te.clock_in >= ($2::date::timestamp AT TIME ZONE $4)
+         AND te.clock_in < (($3::date+1)::timestamp AT TIME ZONE $4)
        ORDER BY te.clock_in DESC`,
-      [userId, start, end]
+      [userId, start, end, computed.policy.timezone]
     );
 
     const rows = result.rows;
@@ -355,17 +329,19 @@ router.get('/export', async (req: Request, res: Response) => {
       const date = new Date(row.clock_in).toLocaleDateString();
       const clockIn = new Date(row.clock_in).toLocaleTimeString();
       const clockOut = row.clock_out ? new Date(row.clock_out).toLocaleTimeString() : '';
-      const project = row.project_name || '';
+      const project = '"'+String(row.project_name || '').replace(/"/g,'""').replace(/^[=+@-]/,"'$&")+'"';
 
       let hours = '0.00';
       if (row.clock_out) {
         const diffMs = new Date(row.clock_out).getTime() - new Date(row.clock_in).getTime();
-        hours = (diffMs / 3600000).toFixed(2);
+        hours = Math.max(0,diffMs / 3600000-Number(row.break_minutes??0)/60).toFixed(2);
       }
 
-      const regular = safeToFixed(row.regular_hours);
-      const overtime = safeToFixed(row.overtime_hours);
-      const wage = safeToFixed(row.total_wage);
+      const calculated=row.payroll_locked_at?undefined:computed.hours.get(row.id);
+      const regular = safeToFixed(calculated?.regular??row.regular_hours);
+      const overtime = safeToFixed(calculated?.overtime??row.overtime_hours);
+      const rate=Number(computed.rows.find((entry:any)=>entry.id===row.id)?.overtime_hourly_rate);
+      const wage = row.payroll_locked_at ? safeToFixed(row.total_wage) : (rate>0 && calculated ? safeToFixed((calculated.regular+calculated.overtime*computed.policy.overtime_multiplier)*rate) : '');
 
       csv += `${date},${clockIn},${clockOut},${project},${hours},${regular},${overtime},${wage}\n`;
     }
@@ -475,41 +451,14 @@ router.post('/bulk-clock-out', async (req: Request, res: Response) => {
         results.push({ userId, success: false, message: 'No active clock-in found' });
         continue;
       }
-      const row = active.rows[0];
-      const clockIn = new Date(row.clock_in);
-      const now = new Date();
-      const hoursWorked = (now.getTime() - clockIn.getTime()) / 3600000;
+      const entry=await completeTimeEntry(userCheck.rows[0].company_id,String(userId),active.rows[0].id,latitude,longitude);
+      const regularHours=Number(entry.regular_hours),overtimeHours=Number(entry.overtime_hours),totalWage=entry.total_wage;
 
-      const settingsRes = await pool.query(
-        `SELECT overtime_enabled, overtime_threshold_hours, overtime_multiplier FROM companies WHERE id = $1`,
-        [row.company_id]
-      );
-      const settings = settingsRes.rows[0] || { overtime_enabled: true, overtime_threshold_hours: 40, overtime_multiplier: 1.5 };
-      const threshold = settings.overtime_enabled ? settings.overtime_threshold_hours : Infinity;
-      const multiplier = settings.overtime_multiplier || 1.5;
-      const regularHours = Math.min(hoursWorked, threshold);
-      const overtimeHours = Math.max(hoursWorked - threshold, 0);
-      const hourlyRate = 20;
-      const totalWage = (regularHours + overtimeHours * multiplier) * hourlyRate;
-
-      const result = await pool.query(
-        `UPDATE time_entries
-         SET clock_out = NOW(),
-             latitude_out = $1,
-             longitude_out = $2,
-             regular_hours = $3,
-             overtime_hours = $4,
-             total_wage = $5,
-             status = 'completed'
-         WHERE id = $6 AND user_id = $7
-         RETURNING id, clock_out`,
-        [latitude || 0, longitude || 0, regularHours, overtimeHours, totalWage, row.id, userId]
-      );
       results.push({
         userId,
         success: true,
-        timeEntryId: result.rows[0].id,
-        clockOut: result.rows[0].clock_out,
+        timeEntryId: entry.id,
+        clockOut: entry.clock_out,
         regularHours,
         overtimeHours,
         totalWage,

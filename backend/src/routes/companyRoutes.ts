@@ -4,6 +4,8 @@ import multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
 import { pool } from '../config/database';
+import { readOvertimePolicy, validateOvertimePolicy } from '../services/overtimePolicy';
+import { lockCompanyTime, refreshCompanyOvertime } from '../services/overtimeService';
 import { companyActor, manages } from '../middleware/companyActor';
 
 const router = express.Router();
@@ -66,7 +68,8 @@ router.put('/:companyId', requireCompanyManager, async (req: Request, res: Respo
   try {
     const { name, address, phone, email } = req.body;
     const result = await pool.query(
-      `UPDATE companies SET name = $1, address = $2, phone = $3, email = $4 WHERE id = $5 RETURNING *`,
+      `UPDATE companies SET name = $1, address = $2, phone = $3, email = $4 WHERE id = $5
+       RETURNING id, name, address, phone, email, logo_url, temperature_unit`,
       [name, address, phone, email, req.params.companyId]
     );
     if (result.rows.length === 0) {
@@ -119,114 +122,38 @@ router.get('/:companyId/unit', async (req: Request, res: Response) => {
   }
 });
 
-// ─── GET /api/companies/:companyId/settings ───
+// Company overtime policies are tenant scoped and may be edited only by managers.
 router.get('/:companyId/settings', async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-    const decoded = verifyToken(req);
-    const { companyId } = req.params;
-
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
-    if (userRes.rows.length === 0 || userRes.rows[0].company_id !== companyId) {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
-
-    const result = await pool.query(
-      `SELECT overtime_enabled, overtime_threshold_hours, overtime_multiplier FROM companies WHERE id = $1`,
-      [companyId]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Company not found' });
-    }
-    const settings = {
-      overtime_enabled: result.rows[0].overtime_enabled,
-      overtime_threshold_hours: parseFloat(result.rows[0].overtime_threshold_hours),
-      overtime_multiplier: parseFloat(result.rows[0].overtime_multiplier),
-    };
-    res.json({ success: true, settings });
-  } catch (error: any) {
-    console.error('Error fetching company settings:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
+    const result=await pool.query('SELECT to_jsonb(c) AS settings FROM companies c WHERE id=$1',[req.params.companyId]);
+    if(!result.rows.length)return res.status(404).json({success:false,message:'Company not found'});
+    const company=result.rows[0].settings;
+    res.json({success:true,settings:{...readOvertimePolicy(company),default_hourly_rate:Number(company.default_hourly_rate??20)}});
+  }catch(error:any){res.status(400).json({success:false,message:error.message});}
 });
-
-// ─── PUT /api/companies/:companyId/settings ───
 router.put('/:companyId/settings', requireCompanyManager, async (req: Request, res: Response) => {
+  const client=await pool.connect();
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-    }
-    const decoded = verifyToken(req);
-    const { companyId } = req.params;
-    let { overtime_enabled, overtime_threshold_hours, overtime_multiplier } = req.body;
-
-    console.log('📥 Raw request body:', req.body);
-    console.log('📥 Extracted values:', { overtime_enabled, overtime_threshold_hours, overtime_multiplier });
-
-    const userRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
-    if (userRes.rows.length === 0 || userRes.rows[0].company_id !== companyId) {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
-    if (!['boss', 'manager'].includes(userRes.rows[0].role)) {
-      return res.status(403).json({ success: false, message: 'Only boss/manager can update settings' });
-    }
-
-    const parsedThreshold = parseFloat(overtime_threshold_hours);
-    const parsedMultiplier = parseFloat(overtime_multiplier);
-    const enabled = overtime_enabled === true || overtime_enabled === 'true';
-
-    console.log('📤 Parsed values:', { enabled, parsedThreshold, parsedMultiplier });
-
-    if (isNaN(parsedThreshold) && overtime_threshold_hours !== undefined) {
-      return res.status(400).json({ success: false, message: 'overtime_threshold_hours must be a number' });
-    }
-    if (isNaN(parsedMultiplier) && overtime_multiplier !== undefined) {
-      return res.status(400).json({ success: false, message: 'overtime_multiplier must be a number' });
-    }
-
-    const updates: string[] = [];
-    const values: any[] = [];
-    let idx = 1;
-
-    if (overtime_enabled !== undefined) {
-      updates.push(`overtime_enabled = $${idx++}`);
-      values.push(enabled);
-    }
-    if (overtime_threshold_hours !== undefined) {
-      updates.push(`overtime_threshold_hours = $${idx++}`);
-      values.push(parsedThreshold);
-    }
-    if (overtime_multiplier !== undefined) {
-      updates.push(`overtime_multiplier = $${idx++}`);
-      values.push(parsedMultiplier);
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ success: false, message: 'No fields to update' });
-    }
-    values.push(companyId);
-    const query = `UPDATE companies SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`;
-    console.log('🔍 Executing query:', query);
-    console.log('📦 With values:', values);
-
-    const result = await pool.query(query, values);
-    console.log('✅ Updated row:', result.rows[0]);
-    res.json({
-      success: true,
-      settings: {
-        overtime_enabled: result.rows[0].overtime_enabled,
-        overtime_threshold_hours: parseFloat(result.rows[0].overtime_threshold_hours),
-        overtime_multiplier: parseFloat(result.rows[0].overtime_multiplier),
-      },
-    });
-  } catch (error: any) {
-    console.error('❌ Error updating company settings:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
+    await client.query('BEGIN');
+    const companyId=String(req.params.companyId);
+    await lockCompanyTime(client,companyId);
+    const current=await client.query('SELECT to_jsonb(c) AS settings FROM companies c WHERE id=$1 FOR UPDATE',[companyId]);
+    if(!current.rows.length)throw new Error('Company not found');
+    const before=readOvertimePolicy(current.rows[0].settings);
+    const next={...before};
+    for(const key of Object.keys(before))if(Object.prototype.hasOwnProperty.call(req.body,key))(next as any)[key]=req.body[key];
+    validateOvertimePolicy(next);
+    const rate=req.body.default_hourly_rate??Number(current.rows[0].settings.default_hourly_rate??20);
+    if(typeof rate!=='number'||!Number.isFinite(rate)||rate<0||rate>1000000)throw new Error('Default hourly rate must be a number between 0 and 1000000');
+    await client.query(`UPDATE companies SET overtime_enabled=$1,overtime_mode=$2,overtime_threshold_hours=$3,
+      overtime_daily_threshold_hours=$4,overtime_multiplier=$5,overtime_week_start=$6,timezone=$7,default_hourly_rate=$8 WHERE id=$9`,
+      [next.overtime_enabled,next.overtime_mode,next.overtime_threshold_hours,next.overtime_daily_threshold_hours,next.overtime_multiplier,next.overtime_week_start,next.timezone,rate,companyId]);
+    if(JSON.stringify(before)!==JSON.stringify(next))await client.query(`INSERT INTO company_overtime_policy_audit(company_id,actor_id,before_policy,after_policy) VALUES($1,$2,$3,$4)`,[companyId,res.locals.actor.id,JSON.stringify(before),JSON.stringify(next)]);
+    if(JSON.stringify(before)!==JSON.stringify(next))await refreshCompanyOvertime(client,companyId);
+    await client.query('COMMIT');
+    res.json({success:true,settings:{...next,default_hourly_rate:rate}});
+  }catch(error:any){await client.query('ROLLBACK');res.status(400).json({success:false,message:error.message});}
+  finally{client.release();}
 });
 
 export default router;

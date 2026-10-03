@@ -667,7 +667,7 @@
                   },
                   {
                       "path":  "backend/src/middleware/trafficControl.ts",
-                      "sha256":  "5aec983faa3424b90f8acb7048e8f9fd512a62d96685f3f2502aeeb577a06d04"
+                      "sha256":  "f9cc4dd0f55bcb650cec91fe9b5d3f99ac0c99b52000d756e737d90b73bb1c8a"
                   },
                   {
                       "path":  "backend/src/observability/runtimeMetrics.ts",
@@ -712,10 +712,6 @@
                   {
                       "path":  "backend/src/routes/companyAdminRoutes.ts",
                       "sha256":  "4f2a8bbe3470ff00fcac071cfac403f505256a2ab8ab43caa0241fb69603c0c8"
-                  },
-                  {
-                      "path":  "backend/src/routes/companyRoutes.ts",
-                      "sha256":  "89d01665cf2811cc56a9f48e37f5f661cc431c4f5a300cde6164561d33004278"
                   },
                   {
                       "path":  "backend/src/routes/connectedStripeWebhook.ts",
@@ -770,10 +766,6 @@
                       "sha256":  "58ee636ba34babd1951fb475554638d498e9968c9cc487bcc475a61c5e74c0cf"
                   },
                   {
-                      "path":  "backend/src/routes/kioskRoutes.ts",
-                      "sha256":  "5ab65f6739eebfe53ded00b0831f4b11fdf0b2781d417f22682df959d1352ab9"
-                  },
-                  {
                       "path":  "backend/src/routes/lucyJarvisRoutes.ts",
                       "sha256":  "55c48278641ec1c300afa22ffe653677e8b4b95a709247fef8c35a97b705b8ed"
                   },
@@ -804,10 +796,6 @@
                   {
                       "path":  "backend/src/routes/payoutRoutes.ts",
                       "sha256":  "246811b7ce3788cecacdffef4b8ee91eb9da383d9a80cb811cf349512648a7fd"
-                  },
-                  {
-                      "path":  "backend/src/routes/payrollRouter.ts",
-                      "sha256":  "63b41a57ebaf9aa6e190b4afc8680d875ee84fa6beeca6379956e8f1e1d35c01"
                   },
                   {
                       "path":  "backend/src/routes/payrollRulesRoutes.ts",
@@ -870,10 +858,6 @@
                       "sha256":  "4f26a89c96666979c67d09e31c223e61e226eb5976583480baa14e19fbee7293"
                   },
                   {
-                      "path":  "backend/src/routes/timeEntryRoutes.ts",
-                      "sha256":  "6c7a8d3ae443c416e5e636cbee79ef88b2cea21b4c51e663f5e48f5f895524c9"
-                  },
-                  {
                       "path":  "backend/src/routes/uploadRoutes.ts",
                       "sha256":  "21e6be98eaafe78097abdff947e8c6c620d6775a6c49d1cad767cb1448f640ae"
                   },
@@ -890,16 +874,8 @@
                       "sha256":  "9846e584c71dfbdfcf1010ec4321d6dc016a4a7f267d090d1367e424f527120c"
                   },
                   {
-                      "path":  "backend/src/routes/workforceOperationsRoutes.ts",
-                      "sha256":  "b1ce3a531afbcf6967af11a31e06ee83afbe0caa981a040a4db09f39decb19ba"
-                  },
-                  {
                       "path":  "backend/src/routes/yearEndRouter.ts",
                       "sha256":  "69644a3f0269682743b22cd9a6b5d3f9dc5ac645df7253d750e317bc7f1186eb"
-                  },
-                  {
-                      "path":  "backend/src/server.ts",
-                      "sha256":  "d910bb84a7f5915b426bdbe5141b51e6655a2bf12535c1f4dc7c2a211cc63627"
                   },
                   {
                       "path":  "backend/src/services/adaptiveAIService.ts",
@@ -1014,10 +990,6 @@
                       "sha256":  "6fcb41e344be2331741b78b9ce9fc2531815dfe7d0871b8621857ee87fde30fe"
                   },
                   {
-                      "path":  "backend/src/services/payrollGenerator.ts",
-                      "sha256":  "c1cf2c78f6071d351b3a2673aa207127a94cc7bc86ff4d484a091d5c194c5840"
-                  },
-                  {
                       "path":  "backend/src/services/payrollRules/currency-units.json",
                       "sha256":  "0725675be4593ed4499266834c6fc52512c289e67126f6ba158f0fd3092c1e52"
                   },
@@ -1090,10 +1062,6 @@
                       "sha256":  "42e9a58db030e88695041546212b0d74ff7096d560d6cf1274f112be6c71695d"
                   },
                   {
-                      "path":  "backend/src/services/timeEntryService.ts",
-                      "sha256":  "a3b9bc807bfcdc0af1b48b47f5fb6cae64d8eb06731e8649ef1a0a1099a40912"
-                  },
-                  {
                       "path":  "backend/src/services/voiceService.ts",
                       "sha256":  "6478af758a924c0994a0e6a25b9a5e066bd29beece026b8efd2be3652551c7bc"
                   },
@@ -1148,10 +1116,6 @@
                   {
                       "path":  "backend/tests/payroll-rules.test.cjs",
                       "sha256":  "327e87ff21e63af39c08c156d4cc9fe011d093f36e88efaf7dd3ad06070983ff"
-                  },
-                  {
-                      "path":  "backend/tests/release.test.cjs",
-                      "sha256":  "a3e00cd8b2d9caa97abd0530018e36d6e3b430d9b8fd68f62f0fc0a99a434b8c"
                   },
                   {
                       "path":  "backend/tests/worldwide-payroll.test.cjs",
@@ -1407,11 +1371,11 @@
                   },
                   {
                       "path":  "mobile/package-lock.json",
-                      "sha256":  "dac8dd5731ad01aad50c8a4096b12c05c863dcae7349a07bab5554f1643ffec6"
+                      "sha256":  "1a5ebe2dfdbf32d83f0c01b8660755d843529f1ee38e6c61a1f066d52e03d8ec"
                   },
                   {
                       "path":  "mobile/package.json",
-                      "sha256":  "c3612b5aafadde35e54175dfc64bc817d215208a23a89370b4f8db626313e093"
+                      "sha256":  "bb152ae88da03f51b899cadd994ce42f5192be68c82ce13e68abe7aad66dce37"
                   },
                   {
                       "path":  "mobile/scripts/enableLucyWakeWord.js",
@@ -1484,10 +1448,6 @@
                   {
                       "path":  "mobile/src/screens/ChatScreen.tsx",
                       "sha256":  "67dd22b84cdedd0e6f83f23881e9204578676923b4735cf8cf5336933da5e7e3"
-                  },
-                  {
-                      "path":  "mobile/src/screens/CompanySettingsScreen.tsx",
-                      "sha256":  "74646cdd22b68e589ba041ef9902b1dc108ab5545b85258feb5e8156e132848f"
                   },
                   {
                       "path":  "mobile/src/screens/ContactScreen.tsx",
@@ -1650,10 +1610,6 @@
                       "sha256":  "ed87b2793b98efbf80dba95243cc1d1e84a59c1cab8e7788ef021fa5287d5f73"
                   },
                   {
-                      "path":  "mobile/src/services/offlineService.ts",
-                      "sha256":  "927db05e2dad66630591e4eebe3313f48ecd3206805334fc917d494647391125"
-                  },
-                  {
                       "path":  "mobile/src/services/wakeWordService.ts",
                       "sha256":  "ece9f49dca7f930c185bf7d124f4acb09ba89784deaa03bc9c8840bbd28f309b"
                   },
@@ -1732,10 +1688,6 @@
                   {
                       "path":  "scripts/Test-App.ps1",
                       "sha256":  "73c133615cdbf5b2bac5365f29468880c5aae94ca996e1b7c2a28bed301071dd"
-                  },
-                  {
-                      "path":  "scripts/Validate-Release.ps1",
-                      "sha256":  "66341254229e5ec6938ed44e0431c573805c401b58b89a02cc72492e083f1550"
                   },
                   {
                       "path":  "web/.gitignore",
@@ -1896,10 +1848,6 @@
                   {
                       "path":  "web/src/pages/CommandCenter.tsx",
                       "sha256":  "6eccf200c934d2796f488f8564438f6ccaeafb531b11b0bc26f1c9ef0c48a794"
-                  },
-                  {
-                      "path":  "web/src/pages/CompanySettings.tsx",
-                      "sha256":  "ef4ce2f520aa14cd2e396af1ff7309b0ae923666a1286c7ad162ec178220a197"
                   },
                   {
                       "path":  "web/src/pages/Contact.tsx",
@@ -2134,10 +2082,6 @@
                       "sha256":  "6c31635d60b17323fa1b40c125094f896bb12a39b9c4d7977188971502995e99"
                   },
                   {
-                      "path":  "web/vercel.json",
-                      "sha256":  "763cd4f8c1d68765c29bcd75a037911ac31ead3d84ecfa46fc5ebe5bb59fe25d"
-                  },
-                  {
                       "path":  "web/vite.config.ts",
                       "sha256":  "ac28b11573ba5859ad1b047b415b5a66f996ebb4e78d83a841f35d15ee81926b"
                   },
@@ -2282,10 +2226,6 @@
                       "sha256":  "b386d2a077ff63b4df61049b8347b56b85ff8bf2db278f59c55404276d8231c7"
                   },
                   {
-                      "path":  "backend/tests/release-upgrade.test.cjs",
-                      "sha256":  "4f7162062a84c5f8c2876a47b99e9bb6ff24b55b1b13f5a89e4da314de4f84d6"
-                  },
-                  {
                       "path":  "web/src/services/mediaDownload.ts",
                       "sha256":  "00ae3d2912a1d01b29e398e1f80620882c284b97178fca19798a273fbf558f4a"
                   },
@@ -2296,6 +2236,94 @@
                   {
                       "path":  "backend/tests/media-download.test.cjs",
                       "sha256":  "28f0e7d2cd47d5660070987aec3802bd0970ef7dadd18cf8927663c38d910fa8"
+                  },
+                  {
+                      "path":  "backend/src/routes/companyRoutes.ts",
+                      "sha256":  "2a32e19625a21a2f9b135449d635daa1d75b7fadef9a767df80c9c767c8af410"
+                  },
+                  {
+                      "path":  "backend/src/routes/timeEntryRoutes.ts",
+                      "sha256":  "6ab974fb7a21a603c510a337197e3b5bc505cb2a59da2fae83c688d24dbda32d"
+                  },
+                  {
+                      "path":  "backend/src/routes/kioskRoutes.ts",
+                      "sha256":  "a94b592ebb1badfeff1cf7ac9b5042a81104d952713fe1ce88e6991c87a094d1"
+                  },
+                  {
+                      "path":  "backend/src/routes/workforceOperationsRoutes.ts",
+                      "sha256":  "51b828513faa6da3a6fa788a88b01b3ed5dfc8e109e4fb249a0b514a2a2f316b"
+                  },
+                  {
+                      "path":  "backend/src/services/timeEntryService.ts",
+                      "sha256":  "62793e1548fa9d0acb0012086419a323c2e9143388ff9abcb30ecd6b19e8dfe6"
+                  },
+                  {
+                      "path":  "backend/src/services/payrollGenerator.ts",
+                      "sha256":  "855d3d13fcf85be55c83649b72908edd288f761d06754b3b39316652f602af3b"
+                  },
+                  {
+                      "path":  "backend/src/routes/payrollRouter.ts",
+                      "sha256":  "003ae09b84b7fcd9cb569c45c6eb5eecdd6e50af48015c1189e01857582e3dd2"
+                  },
+                  {
+                      "path":  "web/src/pages/CompanySettings.tsx",
+                      "sha256":  "c55fb1ec2f5ceb304937b4f464eed23d45c640e9cdee9733f32020fe3a5a762a"
+                  },
+                  {
+                      "path":  "mobile/src/screens/CompanySettingsScreen.tsx",
+                      "sha256":  "f860d4d704fc6e7acd86eae3fe8d4e35a61cfbf4546fd1e606d0db4bbf66feb2"
+                  },
+                  {
+                      "path":  "backend/tests/release.test.cjs",
+                      "sha256":  "1204df6e54ed3017bfcd25ed877cae0e582adf5e48414320d2d531adf2253fc3"
+                  },
+                  {
+                      "path":  "backend/tests/release-upgrade.test.cjs",
+                      "sha256":  "2fd6288a7e7e45e6ab9dc34ce671d0dc1f1028f89c042ff5f18893eb613706ac"
+                  },
+                  {
+                      "path":  "backend/src/services/overtimePolicy.ts",
+                      "sha256":  "69a69692f13b28dcf3fe2bc3e4fc0f39f73086bb4a89e6d39124f9a270f7d892"
+                  },
+                  {
+                      "path":  "backend/src/services/overtimeService.ts",
+                      "sha256":  "596fff2da75e871b6e073ef3044f3e45569a0113e92e731fd4e60161cf01f095"
+                  },
+                  {
+                      "path":  "backend/migrations/20261002_company_overtime_policy.sql",
+                      "sha256":  "5412557feb340c01de70751faa9262ec5a60d248ab48caf4a6bba6f04ca46953"
+                  },
+                  {
+                      "path":  "backend/tests/company-overtime.test.cjs",
+                      "sha256":  "6f03cf26385f500218896eda45884760e5dd2816d7fa024cde3acf77fc77a2dc"
+                  },
+                  {
+                      "path":  "backend/src/server.ts",
+                      "sha256":  "d2236fd9e098800956002afb031359e43c4c2a710cc1948a7fbcec62dc83f654"
+                  },
+                  {
+                      "path":  "mobile/src/services/offlineService.ts",
+                      "sha256":  "2418ee06c435afcddf9482ff2879804c204c316091e6cffbe3de98de71d5c9e7"
+                  },
+                  {
+                      "path":  "web/vercel.json",
+                      "sha256":  "327a4c72b6b78a6559817c14eec45a6493cf8891328abb89a619eceda7d214be"
+                  },
+                  {
+                      "path":  "mobile/patches/node-forge+1.4.0.patch",
+                      "sha256":  "0d70cab39f12c462f4ff1e3f45eb9aa93b7c4620260ea4bf2d9cc7b08358be78"
+                  },
+                  {
+                      "path":  "mobile/tests/node-forge-patch.test.cjs",
+                      "sha256":  "d37372a69cb6ef5d9496bbf6dceca288d9252eac89f96eb3adf615515884836d"
+                  },
+                  {
+                      "path":  "scripts/Validate-Release.ps1",
+                      "sha256":  "c0e971addf8976680b91175929ac1eb04e7a3bb064ef8cd82e9d73a172af8a4e"
+                  },
+                  {
+                      "path":  "mobile/scripts/auditPatchedDependencies.cjs",
+                      "sha256":  "a8346b2d536ee3da90eb28c2aa4d3f946b44dad1d8734c7867f858379a7c339f"
                   }
               ]
 }

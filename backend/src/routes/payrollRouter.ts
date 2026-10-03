@@ -1,3 +1,5 @@
+import { companyOvertimeSettings, refreshCompanyOvertime } from '../services/overtimeService';
+import { readOvertimePolicy } from '../services/overtimePolicy';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
@@ -154,12 +156,17 @@ router.get('/settings', async (req: Request, res: Response) => {
 
 // ─── PUT /api/payroll/settings ───────────────────────────────
 router.put('/settings', async (req: Request, res: Response) => {
+  const client=await pool.connect();
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const { payroll_schedule, payroll_day, payroll_time, default_hourly_rate, overtime_multiplier, tax_rate } = req.body;
-    const result = await pool.query(
+    if(overtime_multiplier!=null && (typeof overtime_multiplier!=='number'||!Number.isFinite(overtime_multiplier)||overtime_multiplier<1||overtime_multiplier>10))return res.status(400).json({success:false,message:'Overtime multiplier must be between 1 and 10'});
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`payroll:${companyId}`]);
+    const previousPolicy=await companyOvertimeSettings(client,companyId);
+    const result = await client.query(
       `UPDATE companies
        SET payroll_schedule = COALESCE($1, payroll_schedule),
            payroll_day = COALESCE($2, payroll_day),
@@ -179,11 +186,18 @@ router.put('/settings', async (req: Request, res: Response) => {
         companyId,
       ]
     );
+    const nextPolicy=readOvertimePolicy(result.rows[0]);
+    if(JSON.stringify(previousPolicy)!==JSON.stringify(nextPolicy)) {
+      await client.query('INSERT INTO company_overtime_policy_audit(company_id,actor_id,before_policy,after_policy) VALUES($1,$2,$3,$4)',[companyId,(req as any).user.id,JSON.stringify(previousPolicy),JSON.stringify(nextPolicy)]);
+      await refreshCompanyOvertime(client,companyId);
+    }
+    await client.query('COMMIT');
     res.json({ success: true, settings: result.rows[0] });
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Error updating payroll settings:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+  } finally {client.release();}
 });
 
 // ─── GET /api/payroll/employees/compensation ──────────────────

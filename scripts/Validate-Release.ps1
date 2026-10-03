@@ -24,7 +24,18 @@ try {
     $env:PAYOUT_LOCAL_SANDBOX = ''; $env:NODE_ENV = 'test'
     foreach ($Component in @('backend','web','mobile')) {
         Run-Npm $Component @('ci','--no-audit','--no-fund')
-        Run-Npm $Component @('audit','--omit=dev','--audit-level=low')
+        if ($Component -eq 'mobile') {
+            Push-Location -LiteralPath (Join-Path $Root 'mobile')
+            try {
+                $AuditJson = (& $Npm 'audit' '--omit=dev' '--json') -join "`n"
+                $AuditJson | & $Node 'scripts/auditPatchedDependencies.cjs'
+                if ($LASTEXITCODE -ne 0) { throw 'Mobile dependency audit differs from the reviewed, patched advisory.' }
+                & $Node '--test' 'tests/node-forge-patch.test.cjs'
+                if ($LASTEXITCODE -ne 0) { throw 'Mobile certificate-verification regression failed.' }
+            } finally { Pop-Location }
+        } else {
+            Run-Npm $Component @('audit','--omit=dev','--audit-level=low')
+        }
     }
     Run-Npm 'backend' @('run','test:release')
     Run-Npm 'web' @('run','build')
