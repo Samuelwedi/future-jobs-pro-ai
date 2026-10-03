@@ -3,7 +3,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const expectedAdvisory = 'https://github.com/advisories/GHSA-86w9-cpqp-85rv';
-const expectedNames = ['@expo/cli', '@expo/code-signing-certificates', 'expo', 'node-forge'];
+const expectedNames = ["@expo/cli", "@expo/code-signing-certificates", "@expo/metro", "@expo/metro-config", "@jest/environment", "@jest/fake-timers", "@jest/transform", "@react-native-community/cli", "@react-native-community/cli-clean", "@react-native-community/cli-config", "@react-native-community/cli-config-android", "@react-native-community/cli-config-apple", "@react-native-community/cli-doctor", "@react-native-community/cli-platform-android", "@react-native-community/cli-platform-apple", "@react-native-community/cli-platform-ios", "@react-native/community-cli-plugin", "babel-jest", "braces", "expo", "fast-glob", "jest-environment-node", "jest-haste-map", "jest-message-util", "metro", "metro-config", "metro-file-map", "metro-transform-worker", "micromatch", "node-forge", "react-native"];
 const expectedPatchSha256 = '0d70cab39f12c462f4ff1e3f45eb9aa93b7c4620260ea4bf2d9cc7b08358be78';
 
 function fail(message) {
@@ -19,20 +19,33 @@ try {
     throw Error(`Unexpected affected packages: ${names.join(', ')}`);
   }
   const counts = report.metadata?.vulnerabilities;
-  if(counts?.high !== 4 || counts?.total !== 4) {
-    throw Error('Unexpected severity or finding count');
+  if(counts?.high !== 31 || counts?.total !== 31) throw Error('Unexpected severity or finding count');
+  const allowed = new Map([
+    ['node-forge', [expectedAdvisory, '<=1.4.0']],
+    ['braces', ['https://github.com/advisories/GHSA-vfj7-8cjw-p6xm', '<=3.0.3']]
+  ]);
+  for (const name of names) {
+    const finding = findings[name];
+    if(finding.severity !== 'high' || !Array.isArray(finding.via) || !finding.via.length) throw Error('Unexpected finding shape');
+    for(const via of finding.via) {
+      if(typeof via === 'string') {
+        if(!findings[via]) throw Error('Unknown transitive dependency');
+      } else {
+        const expected = allowed.get(name);
+        if(!expected || via.url !== expected[0] || via.range !== expected[1] || via.severity !== 'high') throw Error('Unreviewed advisory');
+      }
+    }
   }
-  const direct = findings['node-forge'];
-  if(direct?.severity !== 'high' || direct.via?.length !== 1 ||
-      direct.via[0]?.url !== expectedAdvisory || direct.via[0]?.range !== '<=1.4.0') {
-    throw Error('The node-forge advisory differs from the reviewed finding');
+  for(const [name] of allowed) {
+    if(findings[name].via.length !== 1 || typeof findings[name].via[0] !== 'object') throw Error('Root advisory changed');
   }
-  if(names.some(name => findings[name].severity !== 'high') ||
-      findings['@expo/cli'].via.some(v => !['@expo/code-signing-certificates', 'node-forge'].includes(v)) ||
-      findings['@expo/code-signing-certificates'].via.some(v => v !== 'node-forge') ||
-      findings.expo.via.some(v => v !== '@expo/cli')) {
-    throw Error('The transitive advisory paths differ from the reviewed dependency chain');
-  }
+  const reachesRoot = (name, seen = new Set()) => {
+    if(allowed.has(name)) return true;
+    if(seen.has(name)) return false;
+    const next = new Set(seen); next.add(name);
+    return findings[name].via.some(v => typeof v === 'string' && reachesRoot(v, next));
+  };
+  if(names.some(name => !reachesRoot(name))) throw Error('Unreviewed dependency chain');
   const root = path.resolve(__dirname, '..');
   const patch = fs.readFileSync(path.join(root, 'patches/node-forge+1.4.0.patch'));
   if(crypto.createHash('sha256').update(patch).digest('hex') !== expectedPatchSha256) {
@@ -42,7 +55,10 @@ try {
   if(!installed.includes("obj.value[0].value.length !==\n            (('parameters' in capture) ? 2 : 1)")) {
     throw Error('The node-forge patch is not installed');
   }
-  console.log('Reviewed node-forge advisory remains in published metadata; installed patch verified.');
+  const bracesPatch = fs.readFileSync(path.join(root, 'patches/braces+3.0.3.patch'), 'utf8').replace(/\r\n/g, '\n');
+  if(crypto.createHash('sha256').update(bracesPatch).digest('hex') !== '544e39aba70c08a5a8070bb4e734cdfb70be5afdb0d3ff4bfd1a60238ec04982') throw Error('Reviewed braces mitigation changed');
+  require('node:child_process').execFileSync(process.execPath, ['--test', path.join(root, 'tests/braces-patch.test.cjs')], {stdio:'inherit'});
+  console.log('Two reviewed advisories remain in registry metadata; installed local mitigations verified.');
 } catch(error) {
   fail(error.message);
 }

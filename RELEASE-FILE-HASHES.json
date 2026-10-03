@@ -2302,10 +2302,6 @@
                       "sha256":  "c0e971addf8976680b91175929ac1eb04e7a3bb064ef8cd82e9d73a172af8a4e"
                   },
                   {
-                      "path":  "mobile/scripts/auditPatchedDependencies.cjs",
-                      "sha256":  "a8346b2d536ee3da90eb28c2aa4d3f946b44dad1d8734c7867f858379a7c339f"
-                  },
-                  {
                       "path":  "web/src/components/Layout.tsx",
                       "sha256":  "063ea42ebf45a33e118689b5910166928fe79d9367985b48af45cc67e83fb63d"
                   },
@@ -2332,6 +2328,18 @@
                   {
                       "path":  "backend/tests/vacation-policy.test.cjs",
                       "sha256":  "8245cfbe1daa7455c7d01a9dc8f4d08d9cb1cc35cfd32d058560acf1750010a7"
+                  },
+                  {
+                      "path":  "mobile/patches/braces+3.0.3.patch",
+                      "sha256":  "544e39aba70c08a5a8070bb4e734cdfb70be5afdb0d3ff4bfd1a60238ec04982"
+                  },
+                  {
+                      "path":  "mobile/scripts/auditPatchedDependencies.cjs",
+                      "sha256":  "473c4deaf6873d412decfc917185890deb8e31bbe6291841513d45d02d797915"
+                  },
+                  {
+                      "path":  "mobile/tests/braces-patch.test.cjs",
+                      "sha256":  "7462c52b5c3afa97837980881c4760cda37c71340cf25bd49e2faadf6ebd5777"
                   }
               ]
 }

@@ -1,0 +1,82 @@
+diff --git a/node_modules/braces/lib/compile.js b/node_modules/braces/lib/compile.js
+index dce69be..9d560c2 100644
+--- a/node_modules/braces/lib/compile.js
++++ b/node_modules/braces/lib/compile.js
+@@ -4,6 +4,7 @@ const fill = require('fill-range');
+ const utils = require('./utils');
+ 
+ const compile = (ast, options = {}) => {
++  require('./depth-guard')(ast);
+   const walk = (node, parent = {}) => {
+     const invalidBlock = utils.isInvalidBrace(parent);
+     const invalidNode = node.invalid === true && options.escapeInvalid === true;
+diff --git a/node_modules/braces/lib/depth-guard.js b/node_modules/braces/lib/depth-guard.js
+new file mode 100644
+index 0000000..4ca32d4
+--- /dev/null
++++ b/node_modules/braces/lib/depth-guard.js
+@@ -0,0 +1,16 @@
++'use strict';
++
++// Local mitigation for GHSA-vfj7-8cjw-p6xm; do not recurse on unbounded ASTs.
++module.exports = ast => {
++  const pending = [[ast, 0]];
++  let count = 0;
++  while (pending.length) {
++    const [node, depth] = pending.pop();
++    if (depth > 64 || ++count > 100000) {
++      throw new SyntaxError('Brace AST exceeds safe depth or size');
++    }
++    if (node && Array.isArray(node.nodes)) {
++      for (const child of node.nodes) pending.push([child, depth + 1]);
++    }
++  }
++};
+diff --git a/node_modules/braces/lib/expand.js b/node_modules/braces/lib/expand.js
+index 35b2c41..8855444 100644
+--- a/node_modules/braces/lib/expand.js
++++ b/node_modules/braces/lib/expand.js
+@@ -31,6 +31,7 @@ const append = (queue = '', stash = '', enclose = false) => {
+ };
+ 
+ const expand = (ast, options = {}) => {
++  require('./depth-guard')(ast);
+   const rangeLimit = options.rangeLimit === undefined ? 1000 : options.rangeLimit;
+ 
+   const walk = (node, parent = {}) => {
+diff --git a/node_modules/braces/lib/parse.js b/node_modules/braces/lib/parse.js
+index 3a6988e..2928575 100644
+--- a/node_modules/braces/lib/parse.js
++++ b/node_modules/braces/lib/parse.js
+@@ -144,6 +144,9 @@ const parse = (input, options = {}) => {
+ 
+     if (value === CHAR_LEFT_PARENTHESES) {
+       block = push({ type: 'paren', nodes: [] });
++      if (stack.length >= 64) {
++        throw new SyntaxError('Brace pattern exceeds safe nesting depth');
++      }
+       stack.push(block);
+       push({ type: 'text', value });
+       continue;
+@@ -210,6 +213,9 @@ const parse = (input, options = {}) => {
+       };
+ 
+       block = push(brace);
++      if (stack.length >= 64) {
++        throw new SyntaxError('Brace pattern exceeds safe nesting depth');
++      }
+       stack.push(block);
+       push({ type: 'open', value });
+       continue;
+diff --git a/node_modules/braces/lib/stringify.js b/node_modules/braces/lib/stringify.js
+index 8bcf872..43efa77 100644
+--- a/node_modules/braces/lib/stringify.js
++++ b/node_modules/braces/lib/stringify.js
+@@ -3,6 +3,7 @@
+ const utils = require('./utils');
+ 
+ module.exports = (ast, options = {}) => {
++  require('./depth-guard')(ast);
+   const stringify = (node, parent = {}) => {
+     const invalidBlock = options.escapeInvalid && utils.isInvalidBrace(parent);
+     const invalidNode = node.invalid === true && options.escapeInvalid === true;
