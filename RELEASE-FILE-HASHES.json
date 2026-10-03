@@ -1738,10 +1738,6 @@
                       "sha256":  "082b8d95ac8b7e09a9ab3dff3cbd47b24319df00da72875a621c39ebe2085025"
                   },
                   {
-                      "path":  "web/src/components/Layout.tsx",
-                      "sha256":  "6808c43e078d7a9a67e8610420350ad48d96f74f096eb2a440dbbeb00a6ae3f5"
-                  },
-                  {
                       "path":  "web/src/components/LucyWakeControl.tsx",
                       "sha256":  "ffe2684f599dd5c9c7fe07b1a3ee28abdf1260f0ca4b085e432dd40d183eaac7"
                   },
@@ -2000,10 +1996,6 @@
                   {
                       "path":  "web/src/pages/Security.tsx",
                       "sha256":  "f439e4c957ab2b9e5b8f006305f29d442c2ae35a26fba3b9c5888b9b319ff9da"
-                  },
-                  {
-                      "path":  "web/src/pages/Settings.tsx",
-                      "sha256":  "4a662d725290ba404b3fe0a47d998024ea13e44094e918c2b539859dff913eb7"
                   },
                   {
                       "path":  "web/src/pages/Support.tsx",
@@ -2266,10 +2258,6 @@
                       "sha256":  "003ae09b84b7fcd9cb569c45c6eb5eecdd6e50af48015c1189e01857582e3dd2"
                   },
                   {
-                      "path":  "web/src/pages/CompanySettings.tsx",
-                      "sha256":  "c55fb1ec2f5ceb304937b4f464eed23d45c640e9cdee9733f32020fe3a5a762a"
-                  },
-                  {
                       "path":  "mobile/src/screens/CompanySettingsScreen.tsx",
                       "sha256":  "f860d4d704fc6e7acd86eae3fe8d4e35a61cfbf4546fd1e606d0db4bbf66feb2"
                   },
@@ -2324,6 +2312,22 @@
                   {
                       "path":  "mobile/scripts/auditPatchedDependencies.cjs",
                       "sha256":  "a8346b2d536ee3da90eb28c2aa4d3f946b44dad1d8734c7867f858379a7c339f"
+                  },
+                  {
+                      "path":  "web/src/components/Layout.tsx",
+                      "sha256":  "063ea42ebf45a33e118689b5910166928fe79d9367985b48af45cc67e83fb63d"
+                  },
+                  {
+                      "path":  "web/src/pages/Settings.tsx",
+                      "sha256":  "c733d0f0cb4b9f6cf1e0dcc0b61d5bcdc1f9a34ed9f0ea9cb673c5288a65c5b0"
+                  },
+                  {
+                      "path":  "web/src/pages/CompanySettings.tsx",
+                      "sha256":  "fbde3c951f9e480c7145d4fe4fc64e8dbe0f9a3a71db0c476f500c0f91d27ecc"
+                  },
+                  {
+                      "path":  "web/src/components/CompanyPayrollCalendar.tsx",
+                      "sha256":  "4f7faddab8533cf6df0a7d5c9f060ad8c4c9e16e381cbfb69700d6881dde5c07"
                   }
               ]
 }

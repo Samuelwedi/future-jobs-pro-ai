@@ -6,6 +6,8 @@ import {
 } from '@mui/material';
 import { Save, ArrowBack, Upload, Business, Timer, Palette, Analytics, Lightbulb } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import VacationPolicyPanel from '../components/VacationPolicyPanel';
+import CompanyPayrollCalendar from '../components/CompanyPayrollCalendar';
 import { API_BASE } from '../services/api';
 
 interface CompanySettings {
@@ -28,7 +30,9 @@ interface CompanySettings {
 export default function CompanySettings() {
   const navigate = useNavigate();
   const token = localStorage.getItem('token') || '';
-  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  let user: any = {};
+  try { user = JSON.parse(localStorage.getItem('user') || '{}'); } catch {}
+  const canManage = ['boss','owner','manager','admin'].includes(String(user.role||'').toLowerCase());
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -57,7 +61,7 @@ export default function CompanySettings() {
   const [hourlyRateStr, setHourlyRateStr] = useState('20');
 
   useEffect(() => {
-    fetchSettings();
+    if (canManage) fetchSettings(); else setLoading(false);
   }, []);
 
   const fetchSettings = async () => {
@@ -183,6 +187,8 @@ export default function CompanySettings() {
   const exampleRegular = Math.max(0,Math.min(45,5*Math.min(9,dailyLimit),weeklyLimit));
   const example = Number.isFinite(exampleRegular) ? `Example: five 9-hour days = ${exampleRegular.toFixed(2)} regular hours + ${(45-exampleRegular).toFixed(2)} overtime hours.` : 'Enter valid thresholds to see an example.';
 
+  if (!canManage) return <Alert severity="info">Company policies are managed by your boss or manager.</Alert>;
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '70vh' }}>
@@ -208,7 +214,7 @@ export default function CompanySettings() {
           disabled={saving}
           sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? 'Saving...' : 'Save profile & overtime'}
         </Button>
       </Box>
 
@@ -221,9 +227,7 @@ export default function CompanySettings() {
           >
             {!settings.logo_url && <Business sx={{ fontSize: 48, color: '#888' }} />}
           </Avatar>
-          <Button startIcon={<Upload />} sx={{ mt: 1, color: '#00D4FF' }}>
-            Change Logo
-          </Button>
+
         </Box>
 
         {/* Profile Fields */}
@@ -319,7 +323,22 @@ export default function CompanySettings() {
         />
       </Paper>
 
-
+      <CompanyPayrollCalendar />
+      <Paper sx={{p:3,mb:3,bgcolor:'#1A1A1A',border:'1px solid #333',overflow:'auto'}}>
+        <VacationPolicyPanel />
+      </Paper>
+      <Paper sx={{p:3,mb:3,bgcolor:'#1A1A1A',border:'1px solid #333'}}>
+        <Typography variant="h6" mb={1}>More company controls</Typography>
+        <Typography color="text.secondary" mb={2}>Open the relevant workspace to configure and save these policies. Each section has its own save action.</Typography>
+        <Box sx={{display:'flex',gap:1,flexWrap:'wrap'}}>
+          <Button variant="outlined" onClick={()=>navigate('/payroll-rules')}>Country rules & deductions</Button>
+          <Button variant="outlined" onClick={()=>navigate('/team')}>Employee rates & roles</Button>
+          <Button variant="outlined" onClick={()=>navigate('/pto')}>Leave requests & approvals</Button>
+          <Button variant="outlined" onClick={()=>navigate('/operations')}>Operating budgets & limits</Button>
+          <Button variant="outlined" onClick={()=>navigate('/subscription')}>Company subscription</Button>
+          <Button variant="outlined" onClick={()=>navigate('/integrations')}>Accounting integrations</Button>
+        </Box>
+      </Paper>
     </Container>
   );
 }

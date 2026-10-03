@@ -1,3 +1,4 @@
+import { Link as RouterLink } from 'react-router-dom';
 import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Paper, TextField, Button, Avatar, Grid, Alert,
@@ -46,6 +47,8 @@ export default function Settings() {
         <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>
           Manage your profile and preferences
         </Typography>
+
+        {['boss','owner','manager','admin'].includes(String(user?.role||'').toLowerCase()) && <Button component={RouterLink} to="/company-settings" variant="contained" sx={{mb:3}}>Company Settings & Payroll Policies</Button>}
 
         <Paper sx={{ p: 4, bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 4 }}>

@@ -137,6 +137,7 @@ const navConfig = [
     category: 'Integrations & Settings',
     items: [
       { label: 'Integrations', icon: <LinkIcon />, path: '/integrations' },
+      { label: 'Company Settings', icon: <Settings />, path: '/company-settings' },
       { label: 'Settings', icon: <Settings />, path: '/settings' },
       { label: 'Security', icon: <LockIcon />, path: '/security' },
     ],
@@ -161,7 +162,7 @@ const navConfig = [
 
 // Flatten all items for the sidebar
 const allNavItems = navConfig.flatMap(group => group.items);
-const managerOnlyPaths=new Set(['/operations','/admin-dashboard','/payroll','/payroll-rules','/direct-deposit','/year-end','/year-end/finalized','/reports','/kiosk']);
+const managerOnlyPaths=new Set(['/company-settings','/operations','/admin-dashboard','/payroll','/payroll-rules','/direct-deposit','/year-end','/year-end/finalized','/reports','/kiosk']);
 
 export default function Layout() {
   const navigate = useNavigate();
