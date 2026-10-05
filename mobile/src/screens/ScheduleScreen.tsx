@@ -1,7 +1,8 @@
+import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
-  TouchableOpacity, Modal, Linking, ScrollView, Alert,
+  TouchableOpacity,  Linking, ScrollView, Alert,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -177,7 +178,7 @@ export default function ScheduleScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 16 }}>
@@ -273,7 +274,7 @@ export default function ScheduleScreen() {
       />
 
       {/* Shift Detail Modal */}
-      <Modal visible={!!selectedShift} animationType="slide" transparent>
+      <Modal visible={!!selectedShift} onRequestClose={() => setSelectedShift(null)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -343,7 +344,7 @@ export default function ScheduleScreen() {
       </Modal>
 
       {/* Employee Picker Modal */}
-      <Modal visible={showEmployeePicker} animationType="slide" transparent>
+      <Modal visible={showEmployeePicker} onRequestClose={() => setShowEmployeePicker(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -389,13 +390,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: 16,
     paddingBottom: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  headerTitle: { flexShrink: 1, color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   viewModes: {
     flexDirection: 'row',
     justifyContent: 'center',

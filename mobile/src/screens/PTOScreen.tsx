@@ -1,5 +1,6 @@
+import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, ActivityIndicator, RefreshControl, TextInput, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -67,7 +68,7 @@ export default function PTOScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Time Off</Text>
@@ -104,9 +105,9 @@ export default function PTOScreen() {
         ))}
         {visibleRequests.length === 0 && <Text style={styles.emptyText}>No {filter==='all'?'':filter} PTO requests</Text>}
       </ScrollView>
-      <Modal visible={modalVisible} animationType="slide" transparent>
+      <Modal visible={modalVisible} onRequestClose={() => setModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             <Text style={styles.modalTitle}>Request Time Off</Text>
             <Text style={styles.label}>Start Date (YYYY-MM-DD)</Text>
             <TextInput style={styles.input} value={startDate} onChangeText={setStartDate} placeholder="2025-07-01" placeholderTextColor="#888" />
@@ -126,20 +127,20 @@ export default function PTOScreen() {
               <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity>
               <TouchableOpacity onPress={handleSubmitRequest} style={styles.submitBtn}><Text style={styles.submitText}>Submit</Text></TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
       <Modal visible={Boolean(selected)&&!decision} animationType="fade" transparent onRequestClose={()=>setSelected(null)}>
-        <View style={styles.modalOverlay}><View style={styles.modalContent}>{selected&&<>
+        <View style={styles.modalOverlay}><ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">{selected&&<>
           <Text style={styles.modalTitle}>PTO request details</Text>
           <Text style={styles.detailName}>{selected.user_name||'My request'}</Text>
           {selected.user_email?<Text style={styles.detailMuted}>{selected.user_email}</Text>:null}
           <View style={styles.detailGrid}><Text style={styles.detailLabel}>Type</Text><Text style={styles.detailValue}>{selected.type}</Text><Text style={styles.detailLabel}>Dates</Text><Text style={styles.detailValue}>{selected.start_date} → {selected.end_date}</Text><Text style={styles.detailLabel}>Duration</Text><Text style={styles.detailValue}>{calendarDays(selected)} calendar day(s)</Text><Text style={styles.detailLabel}>Status</Text><Text style={styles.detailValue}>{selected.status}</Text><Text style={styles.detailLabel}>Reason</Text><Text style={styles.detailValue}>{selected.reason||'No reason supplied'}</Text><Text style={styles.detailLabel}>Submitted</Text><Text style={styles.detailValue}>{new Date(selected.created_at).toLocaleString()}</Text>{selected.manager_note?<><Text style={styles.detailLabel}>Manager note</Text><Text style={styles.detailValue}>{selected.manager_note}</Text></>:null}{selected.approved_by_name?<><Text style={styles.detailLabel}>Decided by</Text><Text style={styles.detailValue}>{selected.approved_by_name}</Text></>:null}</View>
           <TouchableOpacity onPress={()=>setSelected(null)} style={styles.submitBtn}><Text style={styles.submitText}>Close</Text></TouchableOpacity>
-        </>}</View></View>
+        </>}</ScrollView></View>
       </Modal>
       <Modal visible={Boolean(selected)&&Boolean(decision)} animationType="fade" transparent onRequestClose={()=>!saving&&setDecision(null)}>
-        <View style={styles.modalOverlay}><View style={styles.modalContent}><Text style={styles.modalTitle}>{decision==='approved'?'Approve':'Reject'} PTO request</Text><Text style={styles.detailMuted}>{selected?.user_name} · {selected?calendarDays(selected):0} day(s)</Text><Text style={styles.label}>{decision==='rejected'?'Reason (required)':'Manager note (optional)'}</Text><TextInput style={[styles.input,{minHeight:84}]} multiline value={managerNote} onChangeText={setManagerNote} placeholder="Add decision details" placeholderTextColor="#888"/><View style={styles.modalActions}><TouchableOpacity disabled={saving} onPress={()=>setDecision(null)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity><TouchableOpacity disabled={saving} onPress={decide} style={[styles.submitBtn,decision==='rejected'&&{backgroundColor:'#F44336'}]}><Text style={styles.submitText}>{saving?'Saving…':'Confirm'}</Text></TouchableOpacity></View></View></View>
+        <View style={styles.modalOverlay}><ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"><Text style={styles.modalTitle}>{decision==='approved'?'Approve':'Reject'} PTO request</Text><Text style={styles.detailMuted}>{selected?.user_name} · {selected?calendarDays(selected):0} day(s)</Text><Text style={styles.label}>{decision==='rejected'?'Reason (required)':'Manager note (optional)'}</Text><TextInput style={[styles.input,{minHeight:84}]} multiline value={managerNote} onChangeText={setManagerNote} placeholder="Add decision details" placeholderTextColor="#888"/><View style={styles.modalActions}><TouchableOpacity disabled={saving} onPress={()=>setDecision(null)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity><TouchableOpacity disabled={saving} onPress={decide} style={[styles.submitBtn,decision==='rejected'&&{backgroundColor:'#F44336'}]}><Text style={styles.submitText}>{saving?'Saving…':'Confirm'}</Text></TouchableOpacity></View></ScrollView></View>
       </Modal>
     </View>
   );
@@ -147,8 +148,8 @@ export default function PTOScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 60, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#333' },
-  headerTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#333' },
+  headerTitle: { flexShrink: 1, color: '#FFF', fontSize: 24, fontWeight: 'bold' },
   balanceRow: { flexDirection: 'row', padding: 16, gap: 10 },
   balanceCard: { flex: 1, backgroundColor: '#1A1A1A', borderRadius: 12, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: '#333' },
   balanceValue: { color: '#00D4FF', fontSize: 28, fontWeight: 'bold' },

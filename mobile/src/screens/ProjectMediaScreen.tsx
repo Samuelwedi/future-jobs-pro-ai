@@ -31,7 +31,7 @@ export default function ProjectMediaScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{projectName}</Text>
@@ -58,7 +58,7 @@ export default function ProjectMediaScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 60, paddingHorizontal: 20, paddingBottom: 20 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, paddingHorizontal: 20, paddingBottom: 20 },
   headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold', flex: 1, marginLeft: 12 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   monthCard: { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#1A1A1A', marginHorizontal: 16, marginVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#333' },

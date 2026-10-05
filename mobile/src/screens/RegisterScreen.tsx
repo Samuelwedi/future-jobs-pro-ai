@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function RegisterScreen() {
+  const safeInsets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { register } = useAuth();
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
@@ -23,7 +24,7 @@ export default function RegisterScreen() {
     catch (error: any) { Alert.alert('Sign up failed', error.response?.data?.message || 'Could not create your account.'); }
     finally { setLoading(false); }
   };
-  return <SafeAreaView style={styles.safe}><KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+  return <SafeAreaView edges={[]} style={styles.safe}><KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
     <Text style={styles.title}>Create your account</Text><Text style={styles.subtitle}>Start using Future Jobs Pro AI</Text>
     <View style={styles.row}><TextInput style={[styles.input, styles.half]} placeholder="First name" placeholderTextColor="#718096" value={form.firstName} onChangeText={v => update('firstName', v)} textContentType="givenName" /><TextInput style={[styles.input, styles.half]} placeholder="Last name" placeholderTextColor="#718096" value={form.lastName} onChangeText={v => update('lastName', v)} textContentType="familyName" /></View>
     <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#718096" value={form.email} onChangeText={v => update('email', v)} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} textContentType="emailAddress" />

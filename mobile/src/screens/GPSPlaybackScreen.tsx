@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Dimensions,
   Animated,
   ScrollView,
 } from 'react-native';
@@ -19,7 +18,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { format, intervalToDuration, formatDuration } from 'date-fns';
 import * as Haptics from 'expo-haptics';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 
 interface GPSPoint {
   id: string;
@@ -467,20 +466,20 @@ const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A', paddingHorizontal: 20 },
   loadingText: { color: '#888', marginTop: 16, fontSize: 14 },
   emptyText: { color: '#AAA', marginTop: 12, fontSize: 16, textAlign: 'center' },
-  backButton: { marginTop: 20, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#00D4FF', borderRadius: 10 },
+  backButton: { minWidth: 48, minHeight: 48, justifyContent: 'center', marginTop: 20, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: '#00D4FF', borderRadius: 10 },
   backButtonText: { color: '#0A0A0A', fontWeight: 'bold', fontSize: 16 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 60,
+    paddingTop: 16,
     paddingBottom: 12,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  backBtn: { padding: 4 },
-  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  backBtn: { minWidth: 48, minHeight: 48, justifyContent: 'center', padding: 4 },
+  headerTitle: { flexShrink: 1, color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   historySubtitle: { color: '#8FA0B5', fontSize: 11, marginTop: 2 },
   historyList: { padding: 14, paddingBottom: 50 },
   historyCard: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 14, marginBottom: 10, borderRadius: 16, backgroundColor: '#101E2D', borderWidth: 1, borderColor: '#263B50' },

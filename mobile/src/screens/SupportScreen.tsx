@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
@@ -19,6 +20,7 @@ interface ActiveTicket {
 }
 
 export default function SupportScreen() {
+  const safeInsets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const listRef = useRef<FlatList<SupportMessage>>(null);
   const [ticket, setTicket] = useState<ActiveTicket | null>(null);
@@ -98,7 +100,7 @@ export default function SupportScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
           <Ionicons name="arrow-back" size={23} color="#FFF" />
@@ -170,9 +172,9 @@ export default function SupportScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#07111F' },
-  header: { paddingTop: 58, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#17283A' },
+  header: { paddingTop: 16, paddingHorizontal: 16, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#17283A' },
   iconButton: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111C2B' },
-  headerCopy: { flex: 1, marginLeft: 12 }, headerTitle: { color: '#FFF', fontSize: 18, fontWeight: '900' },
+  headerCopy: { flex: 1, marginLeft: 12 }, headerTitle: { flexShrink: 1, color: '#FFF', fontSize: 18, fontWeight: '900' },
   statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 3 }, statusDot: { width: 7, height: 7, borderRadius: 4, marginRight: 6 }, headerMeta: { color: '#8FA0B5', fontSize: 11 },
   lucyButton: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#211A38' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' }, loadingText: { color: '#94A3B8', marginTop: 12, fontSize: 13 },

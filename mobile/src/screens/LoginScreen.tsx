@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // ============================================
 // LOGIN SCREEN
 // Future Jobs Pro AI – Created by Samuel B.
@@ -6,6 +7,7 @@
 import React, { useState } from 'react';
 import {
   View,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -22,6 +24,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
 export default function LoginScreen() {
+  const safeInsets = useSafeAreaInsets();
   const { login } = useAuth();
   const navigation = useNavigation<any>();
   const [email, setEmail] = useState('');
@@ -47,10 +50,10 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <StatusBar style="light" />
       <LinearGradient colors={['#07111F', '#0A0A0A', '#071827']} style={StyleSheet.absoluteFill} />
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <View style={styles.brandMark}>
           <MaterialIcons name="auto-awesome" size={32} color="#07111F" />
         </View>
@@ -105,14 +108,14 @@ export default function LoginScreen() {
           <Text style={styles.trustDot}>•</Text>
           <Text style={styles.trustText}>Payroll ready</Text>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  content: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
+  content: { flexGrow: 1, paddingVertical: 24, justifyContent: 'center', paddingHorizontal: 24 },
   brandMark: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#67E8F9', alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginBottom: 22, shadowColor: '#22D3EE', shadowOpacity: 0.35, shadowRadius: 20, shadowOffset: { width: 0, height: 8 } },
   eyebrow: { fontSize: 11, letterSpacing: 2.2, fontWeight: '800', color: '#67E8F9', textAlign: 'center', marginBottom: 10 },
   title: { fontSize: 34, fontWeight: '900', color: '#FFF', textAlign: 'center', letterSpacing: -0.8 },

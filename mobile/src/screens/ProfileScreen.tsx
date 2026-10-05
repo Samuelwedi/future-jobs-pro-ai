@@ -1,7 +1,8 @@
+import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView,
-  TextInput, Modal, ActivityIndicator, Image,
+  TextInput,  ActivityIndicator, Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -215,9 +216,9 @@ export default function ProfileScreen() {
       <Text style={styles.footer}>Future Jobs Pro AI – Samuel B.</Text>
 
       {/* Edit Name Modal */}
-      <Modal visible={editNameModalVisible} animationType="slide" transparent>
+      <Modal visible={editNameModalVisible} onRequestClose={() => setEditNameModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             <Text style={styles.modalTitle}>Edit Name</Text>
             <TextInput
               style={styles.input}
@@ -241,14 +242,14 @@ export default function ProfileScreen() {
                 <Text style={[styles.btnText, { color: '#0A0A0A' }]}>{editing ? 'Saving...' : 'Save'}</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
       {/* Change Password Modal */}
-      <Modal visible={passwordModalVisible} animationType="slide" transparent>
+      <Modal visible={passwordModalVisible} onRequestClose={() => setPasswordModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             <Text style={styles.modalTitle}>Change Password</Text>
             <TextInput
               style={styles.input}
@@ -282,7 +283,7 @@ export default function ProfileScreen() {
                 <Text style={[styles.btnText, { color: '#0A0A0A' }]}>{changingPassword ? 'Changing...' : 'Update'}</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </ScrollView>
@@ -291,8 +292,8 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
-  content: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 40 },
-  backBtn: { marginBottom: 20 },
+  content: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
+  backBtn: { minWidth: 48, minHeight: 48, justifyContent: 'center', marginBottom: 20 },
   userCard: { alignItems: 'center', marginBottom: 40 },
   avatarContainer: { position: 'relative', marginBottom: 12 },
   avatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#00D4FF', justifyContent: 'center', alignItems: 'center' },

@@ -1,3 +1,4 @@
+import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -8,7 +9,7 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
-  Modal,
+
   ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -288,7 +289,7 @@ export default function CrewClockScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
@@ -327,7 +328,7 @@ export default function CrewClockScreen() {
       />
 
       {/* ─── Bulk Actions Modal ─── */}
-      <Modal visible={bulkModalVisible} animationType="slide" transparent>
+      <Modal visible={bulkModalVisible} onRequestClose={() => setBulkModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -410,13 +411,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: 16,
     paddingBottom: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  headerTitle: { color: '#FFF', fontSize: 24, fontWeight: 'bold' },
+  headerTitle: { flexShrink: 1, color: '#FFF', fontSize: 24, fontWeight: 'bold' },
   headerSubtitle: { color: '#888', fontSize: 14, marginTop: 4 },
   bulkBtn: { paddingVertical: 8, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: '#15546A', borderRadius: 18 },
   bulkBtnText: { color: '#D9F8FF', fontWeight: '800', fontSize: 12 },

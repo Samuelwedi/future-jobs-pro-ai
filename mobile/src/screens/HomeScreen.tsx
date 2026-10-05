@@ -1,10 +1,11 @@
+import { homeGridLayout } from '../utils/responsiveLayout';
 import {DeviceEventEmitter} from 'react-native';
 import {startBackgroundLocation,stopBackgroundLocation} from '../services/backgroundLocation';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   Alert, ActivityIndicator, RefreshControl,
-  Dimensions, Animated,
+  useWindowDimensions, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
@@ -15,7 +16,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 
 interface AISuggestion {
   id: string;
@@ -35,6 +36,9 @@ interface Shift {
 }
 
 export default function HomeScreen() {
+  const { fontScale } = useWindowDimensions();
+  const [contentWidth, setContentWidth] = useState(0);
+  const grid = homeGridLayout(contentWidth, fontScale);
   const { user, logout } = useAuth();
   const { t } = useLang();
   const navigation = useNavigation<any>();
@@ -367,6 +371,7 @@ export default function HomeScreen() {
     <View style={investorStyles.screen}>
       <LinearGradient colors={['#071827', '#050A12', '#03070C']} style={StyleSheet.absoluteFill} />
       <ScrollView
+        onLayout={event => setContentWidth(event.nativeEvent.layout.width)}
         contentContainerStyle={investorStyles.scrollContent}
         refreshControl={<RefreshControl refreshing={false} onRefresh={() => { loadData(); loadSchedules(); loadAISuggestions(); loadActiveEntry(); }} tintColor="#67E8F9" />}
         showsVerticalScrollIndicator={false}
@@ -464,7 +469,7 @@ export default function HomeScreen() {
             { icon: 'route', label: 'GPS trail', meta: 'Verified path', color: '#FDE68A', screen: 'GPSPlayback' },
             { icon: 'folder-copy', label: 'Job files', meta: 'Media + docs', color: '#C4B5FD', screen: 'Folders' },
           ].map((action) => (
-            <TouchableOpacity key={action.label} style={investorStyles.captureCard} onPress={() => {
+            <TouchableOpacity key={action.label} style={[investorStyles.captureCard, { width: grid.captureWidth }]} onPress={() => {
               if (action.screen === 'Camera' || action.screen === 'VoiceNote') return handleQuickAction({ ...action, needsProject: true });
               if (action.screen === 'GPSPlayback') {
                 return navigation.navigate('GPSPlayback');
@@ -499,7 +504,7 @@ export default function HomeScreen() {
             </View>
             <View style={investorStyles.toolGrid}>
               {section.tools.map(([label, icon, screen, color]) => (
-                <TouchableOpacity key={label} style={investorStyles.toolCard} onPress={() => navigation.navigate(screen)}>
+                <TouchableOpacity key={label} style={[investorStyles.toolCard, { width: grid.toolWidth }]} onPress={() => navigation.navigate(screen)}>
                   <View style={[investorStyles.toolIcon, { backgroundColor: `${color}18` }]}><MaterialIcons name={icon as any} size={21} color={color} /></View>
                   <Text style={investorStyles.toolLabel}>{label}</Text>
                 </TouchableOpacity>
@@ -518,7 +523,7 @@ export default function HomeScreen() {
 const investorStyles = StyleSheet.create({
   loadingCenter: { justifyContent: 'center', alignItems: 'center' },
   screen: { flex: 1, backgroundColor: '#03070C' },
-  scrollContent: { paddingTop: 58, paddingHorizontal: 18, paddingBottom: 54 },
+  scrollContent: { paddingTop: 16, paddingHorizontal: 18, paddingBottom: 54 },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 },
   identity: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   avatar: { width: 45, height: 45, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginRight: 11 },
@@ -584,7 +589,7 @@ const investorStyles = StyleSheet.create({
   lucyPrimaryText: { color: '#181027', fontSize: 11, fontWeight: '900' },
   lucyVoice: { width: 45, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#2A2243', borderWidth: 1, borderColor: '#514371' },
   captureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
-  captureCard: { width: (SCREEN_WIDTH - 45) / 2, backgroundColor: '#09131D', borderRadius: 19, padding: 15, borderWidth: 1, borderColor: '#172A3C' },
+  captureCard: { backgroundColor: '#09131D', borderRadius: 19, padding: 15, borderWidth: 1, borderColor: '#172A3C' },
   captureIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   captureTitle: { color: '#EAF1F6', fontSize: 12, fontWeight: '900', marginTop: 12 },
   captureMeta: { color: '#72879A', fontSize: 9, marginTop: 3 },
@@ -600,7 +605,7 @@ const investorStyles = StyleSheet.create({
   toolSectionEyebrow: { color: '#67E8F9', fontSize: 8, fontWeight: '900', letterSpacing: 1.25 },
   toolSectionTitle: { color: '#9AACBC', fontSize: 10, fontWeight: '700', marginTop: 3 },
   toolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  toolCard: { width: (SCREEN_WIDTH - 52) / 3, minHeight: 92, backgroundColor: '#09131D', borderRadius: 17, padding: 11, borderWidth: 1, borderColor: '#172A3C' },
+  toolCard: { minHeight: 92, backgroundColor: '#09131D', borderRadius: 17, padding: 11, borderWidth: 1, borderColor: '#172A3C' },
   toolIcon: { width: 37, height: 37, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   toolLabel: { color: '#C9D5DF', fontSize: 9, lineHeight: 13, fontWeight: '800', marginTop: 9 },
   footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 26 },

@@ -157,7 +157,7 @@ export default function DemoScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#03070C' },
-  header: { paddingTop: 58, paddingHorizontal: 18, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#132536' },
+  header: { paddingTop: 16, paddingHorizontal: 18, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#132536' },
   iconButton: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0D1824', borderWidth: 1, borderColor: '#1B3044' },
   brandLockup: { flex: 1, flexDirection: 'row', alignItems: 'center', marginLeft: 11 }, brandMark: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: '#67E8F9', marginRight: 9 },
   brand: { color: '#F8FAFC', fontSize: 14, fontWeight: '900' }, brandMeta: { color: '#6F8499', fontSize: 9, marginTop: 2 },

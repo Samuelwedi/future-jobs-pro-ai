@@ -65,7 +65,12 @@ test('company overtime database and API integration',async t=>{
  const {PGlite}=require('@electric-sql/pglite');const fs=require('node:fs');const path=require('node:path');
  process.env.JWT_SECRET='overtime-isolated-test-only';process.env.DATABASE_URL='postgres://unused:unused@127.0.0.1:1/unused';
  const {pool}=require('../dist/config/database');const savedQuery=pool.query,savedConnect=pool.connect;
- const db=new PGlite();const query=async(sql,args)=>{const r=await db.query(sql,args);return{rows:r.rows,rowCount:r.rows.length||r.affectedRows||0};};
+ let completionClock=null;
+ const db=new PGlite();const query=async(sql,args)=>{
+  // Only this isolated test database gets a fixed clock. JavaScript timers stay real.
+  const text=completionClock===null?sql:sql.replace(/\bnow\(\)/gi,`TIMESTAMPTZ '${completionClock}'`);
+  const r=await db.query(text,args);return{rows:r.rows,rowCount:r.rows.length||r.affectedRows||0};
+ };
  let server;
  try{
   await db.exec(`CREATE TABLE companies(id uuid PRIMARY KEY,timezone text DEFAULT 'UTC',overtime_multiplier numeric DEFAULT 1.5);
@@ -147,12 +152,30 @@ test('company overtime database and API integration',async t=>{
   });
   await t.test('clock-out and kiosk completion use the same daily policy and subtract breaks',async()=>{
    await query('DELETE FROM time_entries');
-   await request(`/companies/${c}/settings`,boss,'PUT',{overtime_mode:'daily',overtime_daily_threshold_hours:8,overtime_multiplier:1.5});
-   for(const kiosk of [false,true]){
-    await query('DELETE FROM time_entries');
-    const id=(await query("INSERT INTO time_entries(user_id,clock_in,clock_out,break_minutes,status) VALUES($1,now()-interval '10 hours',null,60,'active') RETURNING id",[worker])).rows[0].id;
-    const entry=await completeTimeEntry(c,worker,id,0,0,kiosk);
-    close(Number(entry.regular_hours),8);assert.ok(Math.abs(Number(entry.overtime_hours)-1)<.01);assert.ok(Math.abs(Number(entry.total_wage)-190)<.1);assert.equal(entry.status,'completed');
+   const configured=await request(`/companies/${c}/settings`,boss,'PUT',{overtime_mode:'daily',overtime_daily_threshold_hours:8,overtime_multiplier:1.5,timezone:'UTC'});
+   assert.equal(configured.status,200,JSON.stringify(configured));
+   // A daily threshold resets at midnight; a ten-hour shift is not always one day.
+   // Overnight: 9h50m + 10m gross, apportioned break => 8.85h + 0.15h paid.
+   for(const scenario of [
+    {end:'2026-09-22T18:00:00.000Z',regular:8,overtime:1,wage:190},
+    {end:'2026-09-22T00:10:00.000Z',regular:8.15,overtime:.85,wage:188.5}
+   ])for(const kiosk of [false,true]){
+    completionClock=scenario.end;
+    try{
+     await query('DELETE FROM time_entries');
+     const id=(await query("INSERT INTO time_entries(user_id,clock_in,clock_out,break_minutes,status) VALUES($1,now()-interval '10 hours',null,60,'active') RETURNING id",[worker])).rows[0].id;
+     const entry=await completeTimeEntry(c,worker,id,0,0,kiosk);
+     assert.equal(new Date(entry.clock_out).toISOString(),scenario.end);
+     close(Number(entry.regular_hours),scenario.regular);
+     close(Number(entry.overtime_hours),scenario.overtime);
+     close(Number(entry.regular_hours)+Number(entry.overtime_hours),9);
+     close(Number(entry.total_wage),scenario.wage);
+     assert.equal(entry.status,'completed');
+     assert.notEqual(entry[kiosk?'clock_out_latitude':'latitude_out'],null);
+     assert.notEqual(entry[kiosk?'clock_out_longitude':'longitude_out'],null);
+     assert.equal(Number(entry[kiosk?'clock_out_latitude':'latitude_out']),0);
+     assert.equal(Number(entry[kiosk?'clock_out_longitude':'longitude_out']),0);
+    }finally{completionClock=null;}
    }
   });
   await t.test('a mid-period raise uses the rate effective on each shift',async()=>{

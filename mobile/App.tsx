@@ -1,3 +1,5 @@
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
+import { ScreenFrame } from './src/components/ScreenFrame';
 import React, { useEffect, useRef } from 'react';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -216,13 +218,15 @@ function AppNavigator() {
 
 export default function App() {
   return (
+    <SafeAreaProvider initialMetrics={initialWindowMetrics}>
     <AuthProvider>
       <LanguageProvider>
         <NavigationContainer ref={navigationRef}>
           <StatusBar style="light" />
-          <AppNavigator />
+          <ScreenFrame><AppNavigator /></ScreenFrame>
         </NavigationContainer>
       </LanguageProvider>
     </AuthProvider>
+    </SafeAreaProvider>
   );
 }

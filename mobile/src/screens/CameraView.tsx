@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Alert,
+  View,
+  ScrollView, Text, StyleSheet, TouchableOpacity, Alert,
   ActivityIndicator, Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -226,8 +227,8 @@ export default function CameraView() {
     setIsProcessing(true);
     try {
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: mode === 'photo' 
-          ? ImagePicker.MediaTypeOptions.Images 
+        mediaTypes: mode === 'photo'
+          ? ImagePicker.MediaTypeOptions.Images
           : ImagePicker.MediaTypeOptions.Videos,
         allowsEditing: false,
         quality: 0.9,
@@ -238,7 +239,7 @@ export default function CameraView() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         const isVideo = asset.type === 'video';
-        
+
         // Validate file exists and is not empty
         try {
           const fileInfo = await FileSystem.getInfoAsync(asset.uri);
@@ -252,7 +253,7 @@ export default function CameraView() {
           console.warn('Could not check file:', err);
           // Continue anyway – maybe it will work
         }
-        
+
         await uploadFile(asset.uri, isVideo);
       } else {
         // User cancelled
@@ -291,7 +292,7 @@ export default function CameraView() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.previewArea}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.previewArea} keyboardShouldPersistTaps="handled">
         <TouchableOpacity style={styles.backArrow} onPress={goBack}>
           <Ionicons name="arrow-back" size={28} color="#FFF" />
         </TouchableOpacity>
@@ -374,7 +375,7 @@ export default function CameraView() {
             </Text>
           </TouchableOpacity>
         )}
-      </View>
+      </ScrollView>
 
       <View style={styles.captureButtonContainer}>
         <TouchableOpacity
@@ -400,11 +401,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
   previewArea: {
-    flex: 1,
-    paddingTop: 60,
+    flexGrow: 1,
+    paddingTop: 16,
     paddingHorizontal: 20,
   },
-  backArrow: {
+  backArrow: { minWidth: 48, minHeight: 48, justifyContent: 'center',
     marginBottom: 20,
     padding: 8,
   },
@@ -496,10 +497,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   captureButtonContainer: {
-    position: 'absolute',
-    bottom: 50,
-    left: 0,
-    right: 0,
+    paddingVertical: 12,
     alignItems: 'center',
   },
   captureButton: {
@@ -528,6 +526,6 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   errorText: { color: '#FFF', fontSize: 18, marginBottom: 24, textAlign: 'center' },
-  backButton: { backgroundColor: '#00D4FF', paddingHorizontal: 32, paddingVertical: 12, borderRadius: 8 },
+  backButton: { minWidth: 48, minHeight: 48, justifyContent: 'center', backgroundColor: '#00D4FF', paddingHorizontal: 32, paddingVertical: 12, borderRadius: 8 },
   backButtonText: { color: '#0A0A0A', fontSize: 16, fontWeight: '600' },
 });

@@ -1,3 +1,5 @@
+import { albumThumbnailSize } from '../utils/responsiveLayout';
+import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -8,7 +10,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Modal,
+
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { api } from '../services/api';
@@ -16,7 +18,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 const NUM_COLUMNS = 3;
 const SPACING = 4;
-const ITEM_SIZE = (350 - SPACING * (NUM_COLUMNS + 1)) / NUM_COLUMNS;
+
 
 interface Photo {
   id: string;
@@ -34,6 +36,8 @@ export default function ProjectAlbumScreen() {
   const projectId: string = route?.params?.projectId || '';
   const projectName: string = route?.params?.projectName || 'Project Album';
 
+  const [gridWidth, setGridWidth] = useState(0);
+  const itemSize = albumThumbnailSize(gridWidth, NUM_COLUMNS, SPACING);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -68,7 +72,7 @@ export default function ProjectAlbumScreen() {
 
   const renderPhoto = ({ item }: { item: Photo }) => (
     <TouchableOpacity onPress={() => setSelectedPhoto(item)}>
-      <Image source={{ uri: item.s3_key }} style={styles.photoThumb} resizeMode="cover" />
+      <Image source={{ uri: item.s3_key }} style={[styles.photoThumb, { width: itemSize, height: itemSize }]} resizeMode="cover" />
       {item.compliance_score !== undefined && (
         <View
           style={[
@@ -93,7 +97,7 @@ export default function ProjectAlbumScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
             <MaterialIcons name="arrow-back" size={24} color="#FFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Project Album</Text>
@@ -113,7 +117,7 @@ export default function ProjectAlbumScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 16 }}>
@@ -126,6 +130,8 @@ export default function ProjectAlbumScreen() {
       </View>
 
       <FlatList
+        onLayout={event => setGridWidth(event.nativeEvent.layout.width)}
+        extraData={gridWidth}
         data={photos}
         renderItem={renderPhoto}
         keyExtractor={item => item.id}
@@ -140,9 +146,9 @@ export default function ProjectAlbumScreen() {
       />
 
       {/* Full‑screen photo modal */}
-      <Modal visible={!!selectedPhoto} animationType="fade" transparent>
+      <Modal visible={!!selectedPhoto} onRequestClose={() => setSelectedPhoto(null)} animationType="fade" transparent>
         <View style={styles.fullscreenOverlay}>
-          <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedPhoto(null)}>
+          <TouchableOpacity style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close photo preview" onPress={() => setSelectedPhoto(null)}>
             <MaterialIcons name="close" size={30} color="#FFF" />
           </TouchableOpacity>
           {selectedPhoto && (
@@ -166,18 +172,16 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: 16,
     paddingBottom: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  headerTitle: { flexShrink: 1, color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   headerSubtitle: { color: '#888', fontSize: 14, marginTop: 2 },
   grid: { padding: SPACING },
   photoThumb: {
-    width: ITEM_SIZE,
-    height: ITEM_SIZE,
     margin: SPACING / 2,
     borderRadius: 6,
   },
@@ -195,7 +199,7 @@ const styles = StyleSheet.create({
   empty: { color: '#888', textAlign: 'center', marginTop: 40, fontSize: 16 },
   emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   emptyText: { color: '#888', fontSize: 18, marginTop: 16, marginBottom: 24 },
-  backBtn: {
+  backBtn: { minWidth: 48, minHeight: 48, justifyContent: 'center',
     backgroundColor: '#00D4FF',
     paddingHorizontal: 32,
     paddingVertical: 12,
@@ -208,7 +212,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  closeBtn: { position: 'absolute', top: 60, right: 20, zIndex: 10 },
-  fullscreenImage: { width: '100%', height: '80%' },
+  closeBtn: { alignSelf: 'flex-end', width: 48, height: 48, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  fullscreenImage: { width: '100%', flex: 1, minHeight: 0 },
   fullscreenBy: { color: '#888', fontSize: 14, marginTop: 12 },
 });

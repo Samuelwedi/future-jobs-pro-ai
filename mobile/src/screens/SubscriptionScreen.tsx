@@ -368,7 +368,7 @@ function Promise({ icon, text }: { icon: React.ComponentProps<typeof Ionicons>['
 
 const styles = StyleSheet.create({
   background: { flex: 1 },
-  content: { paddingHorizontal: 18, paddingTop: 56, paddingBottom: 48 },
+  content: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 48 },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: 22 },
   iconButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
   headerCopy: { flex: 1, marginLeft: 13 },

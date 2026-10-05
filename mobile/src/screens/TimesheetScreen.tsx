@@ -1,7 +1,8 @@
+import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, SectionList, ActivityIndicator, RefreshControl,
-  TouchableOpacity, Modal, ScrollView, Alert, TextInput,
+  TouchableOpacity,  ScrollView, Alert, TextInput,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -260,7 +261,7 @@ export default function TimesheetScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Timesheet</Text>
@@ -320,7 +321,7 @@ export default function TimesheetScreen() {
       )}
 
       {/* Entry Detail Modal */}
-      <Modal visible={!!selectedEntry} animationType="slide" transparent>
+      <Modal visible={!!selectedEntry} onRequestClose={() => setSelectedEntry(null)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -377,7 +378,7 @@ export default function TimesheetScreen() {
       </Modal>
 
       {/* User Picker Modal */}
-      <Modal visible={showUserPicker} animationType="slide" transparent>
+      <Modal visible={showUserPicker} onRequestClose={() => setShowUserPicker(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -422,7 +423,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 60,
+    paddingTop: 16,
     paddingBottom: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,

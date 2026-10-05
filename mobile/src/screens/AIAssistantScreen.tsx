@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
@@ -44,6 +45,7 @@ const LUCY_RECORDING_OPTIONS = {
 };
 
 export default function AIAssistantScreen() {
+  const safeInsets = useSafeAreaInsets();
   const { user } = useAuth();
   const navigation = useNavigation();
   const route = useRoute<any>();
@@ -357,7 +359,7 @@ export default function AIAssistantScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
@@ -439,15 +441,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: 16,
     paddingBottom: 16,
     paddingHorizontal: 16,
     backgroundColor: '#0A0A0A',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  backButton: { padding: 8, marginLeft: 4 },
-  headerTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  backButton: { minWidth: 48, minHeight: 48, justifyContent: 'center', padding: 8, marginLeft: 4 },
+  headerTitle: { flexShrink: 1, color: '#FFF', fontSize: 20, fontWeight: 'bold' },
   headerIdentity: { alignItems: 'center' },
   sessionStatus: { color: '#64748B', fontSize: 8, fontWeight: '900', letterSpacing: 1.2, marginTop: 2 },
   sessionStatusLive: { color: '#67E8F9' },

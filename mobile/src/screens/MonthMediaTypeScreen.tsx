@@ -1,9 +1,9 @@
+import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator,
-  Image, Modal, Alert,
+  Image, ScrollView, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { api } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
@@ -207,7 +207,7 @@ export default function MonthMediaTypeScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={28} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
@@ -235,7 +235,7 @@ export default function MonthMediaTypeScreen() {
         statusBarTranslucent
         navigationBarTranslucent
       >
-        <SafeAreaView style={styles.modalContainer}>
+        <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <TouchableOpacity style={styles.closeModalBtn} onPress={closeModal} accessibilityRole="button" accessibilityLabel="Close media preview"><Ionicons name="arrow-back" size={28} color="#FFF" /></TouchableOpacity>
             <Text style={styles.modalTitle} numberOfLines={1}>Media preview</Text>
@@ -271,7 +271,7 @@ export default function MonthMediaTypeScreen() {
               )}
 
               {selectedMedia.type === 'voice_note' && (
-                <View style={styles.voicePlayer}>
+                <ScrollView style={{ flex: 1, width: '100%' }} contentContainerStyle={styles.voicePlayer}>
                   {selectedMedia.url && selectedMedia.url !== 'null' ? (
                     <>
                       <TouchableOpacity
@@ -297,20 +297,20 @@ export default function MonthMediaTypeScreen() {
                       <Text style={styles.noAudioText}>Audio file not available</Text>
                     </View>
                   )}
-                </View>
+                </ScrollView>
               )}
 
-              <View style={styles.modalMeta}>
+              <ScrollView style={{ maxHeight: '28%', flexGrow: 0, width: '100%' }} contentContainerStyle={styles.modalMeta}>
                 <Text style={styles.modalDate}>
                   {selectedMedia.taken_at ? new Date(selectedMedia.taken_at).toLocaleString() : 'Unknown date'}
                 </Text>
                 {selectedMedia.verification_hash && (
                   <Text style={styles.modalHash}>🔒 {selectedMedia.verification_hash}</Text>
                 )}
-              </View>
+              </ScrollView>
             </View>
           )}
-        </SafeAreaView>
+        </View>
       </Modal>
     </View>
   );
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 60,
+    paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 20,
   },
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.95)',
   },
-  modalHeader: { minHeight: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
+  modalHeader: { minHeight: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, flexShrink: 0 },
   closeModalBtn: {
     width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 24,
   },
@@ -380,10 +380,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
-  fullImage: { width: '100%', flex: 1, maxHeight: '82%' },
+  fullImage: { width: '100%', flex: 1, minHeight: 0 },
   videoContainer: {
     width: '100%',
-    height: '80%',
+    flex: 1, minHeight: 0,
     backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
   voiceDuration: { color: '#888', fontSize: 14 },
   noAudioContainer: { alignItems: 'center', padding: 20 },
   noAudioText: { color: '#888', fontSize: 18, marginTop: 12 },
-  modalMeta: { minHeight: 64, marginTop: 12, alignItems: 'center', justifyContent: 'center' },
+  modalMeta: { paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
   modalDate: { color: '#AAA', fontSize: 14 },
   modalHash: { color: '#4CAF50', fontSize: 13, marginTop: 4 },
 });

@@ -1,5 +1,6 @@
+import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Vibration, Modal, FlatList, TextInput, ActivityIndicator } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert, Vibration,  FlatList, TextInput, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -74,8 +75,11 @@ export default function KioskScreen() {
   const renderKey = (digit: string) => <TouchableOpacity key={digit} style={styles.key} onPress={() => pin.length < 6 && setPin(value => value + digit)}><Text style={styles.keyText}>{digit}</Text></TouchableOpacity>;
 
   return <View style={styles.container}>
+    <View style={styles.toolbar}>
     <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
     {manager && <TouchableOpacity style={styles.setupBtn} onPress={() => setSetupOpen(true)}><MaterialIcons name="manage-accounts" size={21} color="#00D4FF" /><Text style={styles.setupText}>Employee PINs</Text></TouchableOpacity>}
+    </View>
+    <ScrollView contentContainerStyle={styles.kioskContent} keyboardShouldPersistTaps="handled">
     <View style={styles.header}><Text style={styles.headerTitle}>Kiosk Clock</Text><Text style={styles.headerSubtitle}>Employee PIN clock in and clock out</Text></View>
     <View style={styles.modeRow}>
       <TouchableOpacity style={[styles.modeBtn, mode === 'clock-in' && styles.modeBtnActiveIn]} onPress={() => setMode('clock-in')}><Text style={styles.modeText}>Clock In</Text></TouchableOpacity>
@@ -90,6 +94,7 @@ export default function KioskScreen() {
       {renderKey('0')}
       <TouchableOpacity disabled={working} style={[styles.key, styles.keyAction]} onPress={handleAction}>{working ? <ActivityIndicator color="#07151D" /> : <MaterialIcons name={mode === 'clock-in' ? 'login' : 'logout'} size={28} color="#07151D" />}</TouchableOpacity>
     </View>
+    </ScrollView>
     <Modal visible={setupOpen} animationType="slide" transparent onRequestClose={() => setSetupOpen(false)}>
       <View style={styles.modalOverlay}><View style={styles.modal}>
         <View style={styles.modalHeader}><View><Text style={styles.modalTitle}>Employee kiosk PINs</Text><Text style={styles.modalCaption}>Choose an employee, then create a private PIN.</Text></View><TouchableOpacity onPress={() => setSetupOpen(false)}><MaterialIcons name="close" size={26} color="#FFF" /></TouchableOpacity></View>
@@ -105,8 +110,8 @@ export default function KioskScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#071018', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 18 }, backBtn: { position: 'absolute', top: 60, left: 20 }, setupBtn: { position: 'absolute', top: 56, right: 18, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: '#18566A', borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 }, setupText: { color: '#D8F8FF', fontWeight: '700' },
-  header: { alignItems: 'center', marginBottom: 22 }, headerTitle: { color: '#FFF', fontSize: 30, fontWeight: '900' }, headerSubtitle: { color: '#8EA5B5', marginTop: 6 }, modeRow: { flexDirection: 'row', gap: 12, marginBottom: 14 }, modeBtn: { paddingHorizontal: 30, paddingVertical: 12, borderRadius: 24, borderWidth: 1, borderColor: '#29404E' }, modeBtnActiveIn: { backgroundColor: '#168A52' }, modeBtnActiveOut: { backgroundColor: '#C43D4B' }, modeText: { color: '#FFF', fontWeight: '800' },
-  projectBtn: { width: 270, flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#10222E', borderWidth: 1, borderColor: '#244657', borderRadius: 12, padding: 12, marginBottom: 18 }, projectText: { color: '#FFF', fontWeight: '700' }, pinDisplay: { flexDirection: 'row', gap: 14, marginBottom: 18 }, pinDot: { width: 15, height: 15, borderRadius: 8, borderWidth: 2, borderColor: '#567080' }, pinDotFilled: { backgroundColor: '#00D4FF', borderColor: '#00D4FF' }, message: { color: '#61E6A2', fontWeight: '800', marginBottom: 12 }, keypad: { flexDirection: 'row', flexWrap: 'wrap', width: 280, gap: 12, justifyContent: 'center' }, key: { width: 80, height: 60, borderRadius: 14, backgroundColor: '#142631', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#294452' }, keyAction: { backgroundColor: '#00D4FF' }, keyText: { color: '#FFF', fontSize: 24, fontWeight: '700' },
+  container: { flex: 1, backgroundColor: '#071018' }, toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12 }, kioskContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, paddingBottom: 20 }, backBtn: { minWidth: 48, minHeight: 48, justifyContent: 'center' }, setupBtn: {  flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: '#18566A', borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 }, setupText: { color: '#D8F8FF', fontWeight: '700' },
+  header: { alignItems: 'center', marginBottom: 22 }, headerTitle: { flexShrink: 1, color: '#FFF', fontSize: 30, fontWeight: '900' }, headerSubtitle: { color: '#8EA5B5', marginTop: 6 }, modeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, marginBottom: 14 }, modeBtn: { paddingHorizontal: 30, paddingVertical: 12, borderRadius: 24, borderWidth: 1, borderColor: '#29404E' }, modeBtnActiveIn: { backgroundColor: '#168A52' }, modeBtnActiveOut: { backgroundColor: '#C43D4B' }, modeText: { color: '#FFF', fontWeight: '800' },
+  projectBtn: { width: '100%', maxWidth: 360, flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#10222E', borderWidth: 1, borderColor: '#244657', borderRadius: 12, padding: 12, marginBottom: 18 }, projectText: { color: '#FFF', fontWeight: '700' }, pinDisplay: { flexDirection: 'row', gap: 14, marginBottom: 18 }, pinDot: { width: 15, height: 15, borderRadius: 8, borderWidth: 2, borderColor: '#567080' }, pinDotFilled: { backgroundColor: '#00D4FF', borderColor: '#00D4FF' }, message: { color: '#61E6A2', fontWeight: '800', marginBottom: 12 }, keypad: { flexDirection: 'row', flexWrap: 'wrap', width: '100%', maxWidth: 300, gap: 12, justifyContent: 'center' }, key: { width: '29%', minHeight: 60, borderRadius: 14, backgroundColor: '#142631', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#294452' }, keyAction: { backgroundColor: '#00D4FF' }, keyText: { color: '#FFF', fontSize: 24, fontWeight: '700' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,.75)', justifyContent: 'flex-end' }, modal: { backgroundColor: '#101D27', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 38, maxHeight: '82%' }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 }, modalTitle: { color: '#FFF', fontSize: 22, fontWeight: '900' }, modalCaption: { color: '#8EA5B5', marginTop: 4 }, employee: { padding: 14, borderRadius: 12, backgroundColor: '#172A36', marginBottom: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, employeeSelected: { borderWidth: 2, borderColor: '#00D4FF' }, employeeName: { color: '#FFF', fontSize: 16, fontWeight: '800' }, employeeEmail: { color: '#8EA5B5', marginTop: 3 }, empty: { color: '#FFB4B4', padding: 20, textAlign: 'center' }, pinInput: { backgroundColor: '#09131A', borderWidth: 1, borderColor: '#335163', color: '#FFF', borderRadius: 12, padding: 15, fontSize: 18, letterSpacing: 4, marginTop: 12 }, saveBtn: { backgroundColor: '#00D4FF', borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 12 }, saveText: { color: '#06141C', fontWeight: '900', fontSize: 16 },
 });

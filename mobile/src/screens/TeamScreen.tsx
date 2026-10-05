@@ -1,7 +1,9 @@
+import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
-  TextInput, Modal, ActivityIndicator, RefreshControl,
+  View,
+  ScrollView, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
+  TextInput,  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -174,9 +176,9 @@ export default function TeamScreen() {
         <MaterialIcons name="person-add" size={28} color="#0A0A0A" />
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} animationType="slide" transparent>
+      <Modal visible={modalVisible} onRequestClose={() => setModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             <Text style={styles.modalTitle}>Invite Employee</Text>
             <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#888" value={formEmail} onChangeText={setFormEmail} autoCapitalize="none" />
             <TextInput style={styles.input} placeholder="First Name" placeholderTextColor="#888" value={formFirstName} onChangeText={setFormFirstName} />
@@ -197,7 +199,7 @@ export default function TeamScreen() {
                 <Text style={styles.submitText}>Invite</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -210,15 +212,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 60,
+    paddingTop: 16,
     paddingBottom: 20,
     paddingHorizontal: 16,
     backgroundColor: '#0A0A0A',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
   },
-  backButton: { padding: 8, marginLeft: 4 },
-  headerTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold' },
+  backButton: { minWidth: 48, minHeight: 48, justifyContent: 'center', padding: 8, marginLeft: 4 },
+  headerTitle: { flexShrink: 1, color: '#FFF', fontSize: 22, fontWeight: 'bold' },
   list: { paddingHorizontal: 20 },
   memberCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 12, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#333' },
   memberName: { color: '#FFF', fontSize: 16, fontWeight: '600' },
