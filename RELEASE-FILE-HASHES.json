@@ -1307,7 +1307,7 @@
     },
     {
       "path": "mobile/app.json",
-      "sha256": "ea06c0011c4e40dc02400deac4b9a82fdda99200634292ea9373c01e0dec64c1"
+      "sha256": "3e0b2d72f022956ec9000d400663a600b0f656b2372ba10398f06b8df6773de1"
     },
     {
       "path": "mobile/assets/icon.png",
@@ -1371,11 +1371,11 @@
     },
     {
       "path": "mobile/package-lock.json",
-      "sha256": "ca2e7d52ad7a4eb0fa607fda2f378b2615f12fbb3bcccb609d62dd0d3b4334ed"
+      "sha256": "62ee083faf9fb5ddf7aca341825b32768c946780017f49e7101138fdb1ea197f"
     },
     {
       "path": "mobile/package.json",
-      "sha256": "53e2b62f848df6c8e96eb10bd689ed00158aa76d9dc4b7a8378cde829a55c556"
+      "sha256": "12134f02a3ffa55f0017a19e0ed645c80b3cc5cd4a2d3cf36a56afe35e67ab20"
     },
     {
       "path": "mobile/scripts/enableLucyWakeWord.js",
@@ -1487,7 +1487,7 @@
     },
     {
       "path": "mobile/src/screens/HomeScreen.tsx",
-      "sha256": "32c668ece0a430a66bfb5cb6880b0c257d96ed458afd2d5bafd2b7d8172a4cca"
+      "sha256": "c361560f0986d6d1d727d7e935b340f6d09d9653711944a96f184270ef3a6a1e"
     },
     {
       "path": "mobile/src/screens/KioskScreen.tsx",
@@ -1599,7 +1599,7 @@
     },
     {
       "path": "mobile/src/services/backgroundLocation.ts",
-      "sha256": "a4503f70593c08b4163b775855d023c0c05256decd2ca47858e9d017d3a575b9"
+      "sha256": "51fd77b5b0fd2062de369eeded0e4d78f24ee3e8e5bbb32a2f92e9d9787e962b"
     },
     {
       "path": "mobile/src/services/i18n.ts",
@@ -2356,7 +2356,15 @@
     {
       "path": "mobile/tests/mobile-layout.test.cjs",
       "sha256": "e95c9159bd0bed6e9b16683ada86ff1f79738bb6ad33ed3af89132293d24c38f"
+    },
+    {
+      "path": "mobile/tests/background-location-consent.test.cjs",
+      "sha256": "fed3633e5cacda65b246e31e2d963e2f6c40773a245081bcf95874396f1292d6"
+    },
+    {
+      "path": "release-docs/PLAY-1.2.3-PERMISSION-REVIEW.md",
+      "sha256": "3182e00a4223e7bdd71c6253406a2d6db15dfcccfb9a90062af23148aa8dca45"
     }
   ],
-  "mobileVersion": "1.2.2"
+  "mobileVersion": "1.2.3"
 }

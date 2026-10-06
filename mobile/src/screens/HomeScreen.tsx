@@ -229,7 +229,7 @@ export default function HomeScreen() {
       const res = await api.post<any>('/time-entries/clock-in', payload);
       setActiveTimeEntry({ ...res, clock_in: res.clockIn });
       await loadActiveEntry();
-      Alert.alert('✅ Clocked In', 'You have clocked in successfully.');
+      // The active shift card confirms clock-in; do not cover the location disclosure.
     } catch (e: any) {
       if (e.response?.status === 400 && e.response?.data?.message?.includes('Already clocked in')) {
         Alert.alert('Already Clocked In', 'You are already clocked in. Refreshing status...');
