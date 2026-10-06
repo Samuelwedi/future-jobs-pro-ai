@@ -2,7 +2,7 @@
   "expo": {
     "name": "Future Jobs Pro AI",
     "slug": "future-jobs-pro-ai",
-    "version": "1.2.2",
+    "version": "1.2.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -59,7 +59,14 @@
           }
         }
       ],
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": false,
+          "enableBackgroundRecording": false,
+          "microphonePermission": "Future Jobs Pro AI uses the microphone for voice notes and to detect ‘Hey Lucy’ locally while the app is open and listening is enabled."
+        }
+      ],
       "expo-font",
       "expo-asset",
       [
