@@ -1307,7 +1307,7 @@
     },
     {
       "path": "mobile/app.json",
-      "sha256": "3e0b2d72f022956ec9000d400663a600b0f656b2372ba10398f06b8df6773de1"
+      "sha256": "c2a7a3e20313d237f430ec22b2b6aa05ce2a22fce0644b6bb62ee68a1ac8a31a"
     },
     {
       "path": "mobile/assets/icon.png",
@@ -1371,11 +1371,11 @@
     },
     {
       "path": "mobile/package-lock.json",
-      "sha256": "62ee083faf9fb5ddf7aca341825b32768c946780017f49e7101138fdb1ea197f"
+      "sha256": "fb3573fcd631a3b4f38452d503494c21d40d675e8cc435e76ea7fb056bdf0db8"
     },
     {
       "path": "mobile/package.json",
-      "sha256": "12134f02a3ffa55f0017a19e0ed645c80b3cc5cd4a2d3cf36a56afe35e67ab20"
+      "sha256": "ce377cf7f0062e84011a7c2c7a4481ee28e8e04051d50ba68b0c85e943dc6547"
     },
     {
       "path": "mobile/scripts/enableLucyWakeWord.js",
@@ -1487,7 +1487,7 @@
     },
     {
       "path": "mobile/src/screens/HomeScreen.tsx",
-      "sha256": "c361560f0986d6d1d727d7e935b340f6d09d9653711944a96f184270ef3a6a1e"
+      "sha256": "33472fabc7450c1bd77e737376d8fbf2974e5e3753a88ffc01f7d1117c07348b"
     },
     {
       "path": "mobile/src/screens/KioskScreen.tsx",
@@ -1599,7 +1599,7 @@
     },
     {
       "path": "mobile/src/services/backgroundLocation.ts",
-      "sha256": "51fd77b5b0fd2062de369eeded0e4d78f24ee3e8e5bbb32a2f92e9d9787e962b"
+      "sha256": "e7d5c407a75507d5a048df9acc7e1460ee49c217bb187e21ca305b27722dffec"
     },
     {
       "path": "mobile/src/services/i18n.ts",
@@ -2359,12 +2359,12 @@
     },
     {
       "path": "mobile/tests/background-location-consent.test.cjs",
-      "sha256": "fed3633e5cacda65b246e31e2d963e2f6c40773a245081bcf95874396f1292d6"
+      "sha256": "b1a7bdb982411eb89b0afcc760a68e7a8ce1d4e9adf2a001300284089e8d90b5"
     },
     {
       "path": "release-docs/PLAY-1.2.3-PERMISSION-REVIEW.md",
       "sha256": "3182e00a4223e7bdd71c6253406a2d6db15dfcccfb9a90062af23148aa8dca45"
     }
   ],
-  "mobileVersion": "1.2.3"
+  "mobileVersion": "1.2.4"
 }

@@ -9,7 +9,7 @@ const shift={userId:'worker',timeEntryId:'shift',projectId:'project'};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function setup(choice='Continue', permissions='granted') {
  const log=[],store=new Map([['authToken','token'],['userData',JSON.stringify({id:'worker'})]]);
- let task, buttons, running=false;
+ let task, buttons, running=false; const listeners=new Set();
  const modules={
   'expo-location':{Accuracy:{Balanced:3},hasStartedLocationUpdatesAsync:async()=>running,
    startLocationUpdatesAsync:async()=>{log.push('start');running=true},stopLocationUpdatesAsync:async()=>{log.push('stop');running=false},
@@ -17,12 +17,12 @@ function setup(choice='Continue', permissions='granted') {
    requestBackgroundPermissionsAsync:async()=>{log.push('background');return{status:permissions}}},
   'expo-task-manager':{defineTask:(_name,fn)=>task=fn},
   'expo-secure-store':{getItemAsync:async k=>store.get(k)||null,setItemAsync:async(k,v)=>store.set(k,v),deleteItemAsync:async k=>store.delete(k)},
-  'react-native':{AppState:{currentState:'active'},DeviceEventEmitter:{emit:()=>{}},Alert:{alert:(_title,body,b)=>{log.push('disclosure');assert.match(body,/closed or not in use/);buttons=b;if(choice)b.find(x=>x.text===choice).onPress()}}},
+  'react-native':{AppState:{currentState:'active',addEventListener:(_event,fn)=>{listeners.add(fn);return{remove:()=>listeners.delete(fn)}}},DeviceEventEmitter:{emit:()=>{}},Alert:{alert:(_title,body,b)=>{log.push('disclosure');assert.match(body,/closed or not in use/);buttons=b;if(choice)b.find(x=>x.text===choice).onPress()}}},
   './api':{API_URL:'https://example.invalid/api'},
  };
  const context={exports:{},require:n=>modules[n],fetch:async()=>{log.push('upload');return{ok:true,status:200}}};
  vm.runInNewContext(code,context);
- return{api:context.exports,log,store,task:args=>task(args),choose:name=>buttons.find(b=>b.text===name).onPress(),modules};
+ return{api:context.exports,log,store,task:args=>task(args),choose:name=>buttons.find(b=>b.text===name).onPress(),modules,resume:()=>{modules['react-native'].AppState.currentState='active';for(const fn of [...listeners])fn('active')},listeners};
 }
 test('disclosure precedes OS permissions and accepted active shift starts tracking',async()=>{
  const s=setup();await s.api.startBackgroundLocation(shift);
@@ -54,11 +54,25 @@ test('logout stops active tracking and later events cannot upload',async()=>{
  await s.task({data:{locations:[{coords:{latitude:1},timestamp:0}]}});
  assert.equal(s.log.includes('stop'),true);assert.equal(s.log.includes('upload'),false);
 });
-test('cannot prompt or start tracking from a background app',async()=>{
+test('startup waits for foreground and resumes without a second clock-in',async()=>{
+ const s=setup();s.modules['react-native'].AppState.currentState=null;
+ const start=s.api.startBackgroundLocation(shift);await tick();assert.deepEqual(s.log,[]);
+ s.resume();await start;assert.equal(s.log.at(-1),'start');assert.equal(s.listeners.size,0);
+});
+test('return from Android permission Settings waits for foreground before native start',async()=>{
+ const s=setup();s.modules['expo-location'].requestBackgroundPermissionsAsync=async()=>{
+  s.log.push('background');s.modules['react-native'].AppState.currentState='background';return{status:'granted'};
+ };
+ const start=s.api.startBackgroundLocation(shift);await tick();assert.equal(s.log.includes('start'),false);
+ s.resume();await start;assert.equal(s.log.at(-1),'start');
+});
+test('clock-out cancels a foreground wait and later resume cannot start tracking',async()=>{
  const s=setup();s.modules['react-native'].AppState.currentState='background';
- await assert.rejects(s.api.startBackgroundLocation(shift),/Open the app/);assert.deepEqual(s.log,[]);
+ const start=s.api.startBackgroundLocation(shift);await tick();await s.api.stopBackgroundLocation();await start;
+ s.resume();assert.deepEqual(s.log,[]);assert.equal(s.listeners.size,0);
 });
 test('same accepted active shift resumes without another disclosure',async()=>{
  const s=setup();await s.api.startBackgroundLocation(shift);await s.api.startBackgroundLocation(shift);
  assert.equal(s.log.filter(x=>x==='disclosure').length,1);assert.equal(s.log.filter(x=>x==='start').length,1);
 });
+
