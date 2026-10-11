@@ -104,9 +104,12 @@ export default function HomeScreen() {
   const [gpsStatus,setGpsStatus]=useState('GPS status unavailable');
   useEffect(()=>{const listener=DeviceEventEmitter.addListener('gps-tracking-status',setGpsStatus);return()=>listener.remove();},[]);
   useEffect(()=>{
+    let mounted=true;
     if(isClockedIn&&activeTimeEntry&&user?.id){
-      startBackgroundLocation({userId:user.id,timeEntryId:activeTimeEntry.id,projectId:activeTimeEntry.project_id}).then(()=>setGpsStatus('Background tracking enabled')).catch((e:Error)=>setGpsStatus(e.message));
+      setGpsStatus('Starting background tracking…');
+      startBackgroundLocation({userId:user.id,timeEntryId:activeTimeEntry.id,projectId:activeTimeEntry.project_id}).catch((e:Error)=>{if(mounted)setGpsStatus(e.message);});
     }else{void stopBackgroundLocation().catch(()=>undefined);setGpsStatus('Off clock');}
+    return()=>{mounted=false;};
   },[isClockedIn,activeTimeEntry?.id,user?.id]);
   // Foreground updates remain available if background permission is declined.
   // ─── GPS tracking ───
@@ -229,7 +232,7 @@ export default function HomeScreen() {
       const res = await api.post<any>('/time-entries/clock-in', payload);
       setActiveTimeEntry({ ...res, clock_in: res.clockIn });
       await loadActiveEntry();
-      Alert.alert('✅ Clocked In', 'You have clocked in successfully.');
+      // The active shift card confirms clock-in; do not cover the location disclosure.
     } catch (e: any) {
       if (e.response?.status === 400 && e.response?.data?.message?.includes('Already clocked in')) {
         Alert.alert('Already Clocked In', 'You are already clocked in. Refreshing status...');
@@ -612,3 +615,4 @@ const investorStyles = StyleSheet.create({
   footerLink: { color: '#6E8397', fontSize: 10, fontWeight: '700' },
   footerDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: '#3C5266', marginHorizontal: 10 },
 });
+
