@@ -3,9 +3,12 @@ import express, { Request, Response } from 'express';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
+import { employeeCompensation } from '../services/employeeCompensation';
+import { chatFileType } from '../services/chatFiles';
 import { pool } from '../config/database';
 
 const router = express.Router();
+router.use(async(req,res,next)=>{try{const id=verifyToken(req).id;const active=await pool.query('SELECT id FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE',[id]);if(!active.rowCount)return res.status(401).json({success:false,message:'This account is inactive'});next();}catch{res.status(401).json({success:false,message:'Sign in to view your profile'});}});
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -31,7 +34,7 @@ router.get('/company', async (req: Request, res: Response) => {
 
     // ✅ Select only columns that exist
     const result = await pool.query(
-      `SELECT id, first_name, last_name, email, role
+      `SELECT id, first_name, last_name, email, role, profile_pic
        FROM users
        WHERE company_id = $1
          AND COALESCE(is_active,TRUE)=TRUE
@@ -172,6 +175,8 @@ router.post('/profile-pic', upload.single('photo'), async (req: Request, res: Re
       return res.status(400).json({ success: false, message: 'No file uploaded' });
     }
 
+    const mime=chatFileType(req.file.originalname,req.file.buffer);
+    if(!mime.startsWith('image/'))return res.status(400).json({success:false,message:'Choose a JPG, PNG or WebP photo'});
     const uploadResult: any = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         { folder: `future-jobs-pro-ai/profile/${decoded.id}` },
@@ -211,7 +216,8 @@ router.get('/me', async (req: Request, res: Response) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    res.json({ success: true, user: result.rows[0] });
+    const compensation=await employeeCompensation(decoded.id);
+    res.set('Cache-Control','no-store').json({ success: true, user: {...result.rows[0],...compensation} });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
