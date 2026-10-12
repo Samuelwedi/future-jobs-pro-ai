@@ -60,19 +60,21 @@ export async function saveMessage(
   senderId: string,
   roomId: string,
   message: string,
-  companyId: string
+  companyId: string,
+  attachmentId: string | null = null
 ) {
   const result = await pool.query(
     `WITH inserted AS (
-       INSERT INTO chat_messages (sender_id, company_id, message, room_id)
-       VALUES ($1, $2, $3, $4) RETURNING *
+       INSERT INTO chat_messages (sender_id, company_id, message, room_id, attachment_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *
      ), touched AS (
        UPDATE chat_rooms SET updated_at = NOW() WHERE id = $4
      )
      SELECT inserted.*,
-            TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS sender_name
-     FROM inserted JOIN users u ON u.id = inserted.sender_id`,
-    [senderId, companyId, message, roomId]
+            TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS sender_name, u.profile_pic AS sender_avatar,
+            a.filename AS attachment_name, a.mime_type AS attachment_type, a.size_bytes AS attachment_size
+     FROM inserted JOIN users u ON u.id = inserted.sender_id LEFT JOIN chat_attachments a ON a.id = inserted.attachment_id`,
+    [senderId, companyId, message, roomId, attachmentId]
   );
   return result.rows[0];
 }
