@@ -209,10 +209,10 @@ router.get('/employees/compensation', async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT
          u.id, u.first_name, u.last_name,
-         (SELECT hourly_rate FROM compensation_history WHERE user_id = u.id AND effective_date <= CURRENT_DATE ORDER BY effective_date DESC LIMIT 1) as current_rate,
+         (SELECT hourly_rate FROM compensation_history WHERE user_id = u.id AND effective_date <= (CURRENT_TIMESTAMP AT TIME ZONE COALESCE(NULLIF(to_jsonb(c)->>'timezone',''),'UTC'))::date ORDER BY effective_date DESC, created_at DESC LIMIT 1) as current_rate,
          (SELECT json_agg(json_build_object('effective_date', effective_date, 'hourly_rate', hourly_rate) ORDER BY effective_date DESC)
           FROM compensation_history WHERE user_id = u.id) as history
-       FROM users u
+       FROM users u JOIN companies c ON c.id=u.company_id
        WHERE u.company_id = $1 AND u.role NOT IN ('boss', 'manager')
        ORDER BY u.first_name`,
       [companyId]
@@ -235,28 +235,31 @@ router.post('/employees/compensation', async (req: Request, res: Response) => {
     if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {
       return res.status(400).json({ success: false, message: 'employeeIds array required' });
     }
-    if (!raiseType || !raiseValue || raiseValue <= 0) {
+    if (!['percentage','fixed'].includes(raiseType) || !Number.isFinite(Number(raiseValue)) || Number(raiseValue) <= 0) {
       return res.status(400).json({ success: false, message: 'Valid raiseType and raiseValue required' });
     }
-    const effective = effectiveDate || new Date().toISOString().split('T')[0];
+    const timezone=await pool.query("SELECT COALESCE(NULLIF(to_jsonb(c)->>'timezone',''),'UTC') timezone FROM companies c WHERE id=$1",[companyId]);
+    const today=await pool.query('SELECT (CURRENT_TIMESTAMP AT TIME ZONE $1)::date::text today',[timezone.rows[0].timezone]);
+    const effective = effectiveDate || today.rows[0].today;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(effective)||!Number.isFinite(Date.parse(effective+'T00:00:00Z'))||new Date(effective+'T00:00:00Z').toISOString().slice(0,10)!==effective)return res.status(400).json({success:false,message:'Use a valid effective date (YYYY-MM-DD)'});
     const userId = (req as any).user.id;
     const permitted = await client.query('SELECT id FROM users WHERE company_id=$1 AND id=ANY($2::uuid[])', [companyId, employeeIds]);
     if (permitted.rowCount !== new Set(employeeIds).size) return res.status(403).json({success:false,message:'Employee is outside your company'});
     await client.query('BEGIN');
 
     let updatedCount = 0;
-    for (const empId of employeeIds) {
+    for (const empId of new Set<string>(employeeIds)) {
       const currentRes = await client.query(
-        `SELECT hourly_rate FROM compensation_history WHERE user_id = $1 AND effective_date <= $2 ORDER BY effective_date DESC LIMIT 1`,
+        `SELECT hourly_rate FROM compensation_history WHERE user_id = $1 AND effective_date <= $2 ORDER BY effective_date DESC, created_at DESC LIMIT 1`,
         [empId, effective]
       );
-      let currentRate = currentRes.rows[0]?.hourly_rate || 0;
+      const currentRate = Number(currentRes.rows[0]?.hourly_rate || 0);
 
       let newRate = currentRate;
       if (raiseType === 'percentage') {
         newRate = currentRate * (1 + raiseValue / 100);
       } else if (raiseType === 'fixed') {
-        newRate = currentRate + raiseValue;
+        newRate = currentRate + Number(raiseValue);
       } else {
         continue;
       }
@@ -313,7 +316,7 @@ router.post('/what-if', async (req: Request, res: Response) => {
     const currentRates: Record<string, number> = {};
     for (const emp of employeeList) {
       const rateRes = await pool.query(
-        `SELECT hourly_rate FROM compensation_history WHERE user_id = $1 AND effective_date <= CURRENT_DATE ORDER BY effective_date DESC LIMIT 1`,
+        `SELECT hourly_rate FROM compensation_history WHERE user_id = $1 AND effective_date <= CURRENT_DATE ORDER BY effective_date DESC, created_at DESC LIMIT 1`,
         [emp.id]
       );
       currentRates[emp.id] = rateRes.rows[0]?.hourly_rate || 0;
@@ -361,10 +364,13 @@ router.post('/employees/rate', async (req: Request, res: Response) => {
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const { employeeId, hourlyRate, effectiveDate } = req.body;
-    if (!employeeId || !hourlyRate || hourlyRate <= 0) {
+    if (!employeeId || !Number.isFinite(Number(hourlyRate)) || Number(hourlyRate) <= 0) {
       return res.status(400).json({ success: false, message: 'employeeId and hourlyRate required' });
     }
-    const effective = effectiveDate || new Date().toISOString().split('T')[0];
+    const timezone=await pool.query("SELECT COALESCE(NULLIF(to_jsonb(c)->>'timezone',''),'UTC') timezone FROM companies c WHERE id=$1",[companyId]);
+    const today=await pool.query('SELECT (CURRENT_TIMESTAMP AT TIME ZONE $1)::date::text today',[timezone.rows[0].timezone]);
+    const effective = effectiveDate || today.rows[0].today;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(effective)||!Number.isFinite(Date.parse(effective+'T00:00:00Z'))||new Date(effective+'T00:00:00Z').toISOString().slice(0,10)!==effective)return res.status(400).json({success:false,message:'Use a valid effective date (YYYY-MM-DD)'});
     const userId = (req as any).user.id;
 
     const empCheck = await pool.query('SELECT id FROM users WHERE id = $1 AND company_id = $2', [employeeId, companyId]);
