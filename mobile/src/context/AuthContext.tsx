@@ -21,6 +21,7 @@ interface User {
   trialEndsAt: string;
   companyId: string;
   hasPaymentMethod: boolean;
+  profilePic?: string | null;
 }
 
 interface AuthContextType {
