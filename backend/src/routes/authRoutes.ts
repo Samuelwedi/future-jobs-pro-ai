@@ -175,7 +175,7 @@ router.get('/session', async (req: Request, res: Response) => {
     const decoded = verifyToken(req);
     const result = await pool.query(
       `SELECT id,email,first_name,last_name,full_name,role,company_id,trial_ends_at,
-              COALESCE(is_active,TRUE) AS is_active, stripe_payment_method_id
+              COALESCE(is_active,TRUE) AS is_active, stripe_payment_method_id, profile_pic
        FROM users WHERE id=$1`,
       [decoded.id],
     );
@@ -185,7 +185,7 @@ router.get('/session', async (req: Request, res: Response) => {
       id:row.id,email:row.email,firstName:row.first_name,lastName:row.last_name,
       fullName:row.full_name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
       role:row.role,companyId:row.company_id,trialEndsAt:row.trial_ends_at,
-      hasPaymentMethod:Boolean(row.stripe_payment_method_id),
+      hasPaymentMethod:Boolean(row.stripe_payment_method_id), profilePic:row.profile_pic,
     }});
   } catch (error:any) {
     res.status(401).json({ success:false, message:error.message || 'Session is not valid' });
