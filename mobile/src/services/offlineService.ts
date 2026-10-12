@@ -18,7 +18,7 @@ async function read(id:string):Promise<any[]>{const raw=await AsyncStorage.getIt
 export async function checkOnlineStatus(){try{const state=await Network.getNetworkStateAsync();isOnline=Boolean(state.isConnected)&&state.isInternetReachable!==false;return isOnline;}catch{return isOnline;}}
 export function getOnlineStatus(){return isOnline;}
 export function listenToNetworkChanges(callback:(online:boolean)=>void){const timer=setInterval(async()=>callback(await checkOnlineStatus()),10000);return()=>clearInterval(timer);}
-export async function queueAction(action:{method:'POST'|'PUT'|'PATCH'|'DELETE';url:string;data?:any;fileUri?:string;fieldName?:string}){
+export async function queueAction(action:{method:'POST'|'PUT'|'PATCH'|'DELETE';url:string;data?:any;fileUri?:string;fieldName?:string;fileInfo?:{name:string;mimeType?:string}}){
  if(requiresOnlineConfirmation(action.url))throw new Error('This action needs an online connection');
  const id=await owner();await exclusive(async()=>{const queue=await read(id);queue.push({...action,id:`${Date.now()}-${Math.random().toString(36).slice(2)}`,timestamp:Date.now()});await AsyncStorage.setItem(key(id),JSON.stringify(queue));});
 }
