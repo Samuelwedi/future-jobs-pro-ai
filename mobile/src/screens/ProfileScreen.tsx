@@ -1,20 +1,21 @@
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView,
   TextInput,  ActivityIndicator, Image,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../context/LanguageContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import type { Lang } from '../services/i18n';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>(); // ✅ use any to avoid navigation type errors
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const { lang, setLang, t } = useLang();
   const [tempUnit, setTempUnit] = useState<'celsius' | 'fahrenheit'>('celsius');
   const [editNameModalVisible, setEditNameModalVisible] = useState(false);
@@ -22,6 +23,9 @@ export default function ProfileScreen() {
   const [firstName, setFirstName] = useState(user?.firstName || '');
   const [lastName, setLastName] = useState(user?.lastName || '');
   const [profilePic, setProfilePic] = useState((user as any)?.profilePic || null);
+  const [compensation,setCompensation]=useState<any>(null);
+  const [profileError,setProfileError]=useState('');
+  useFocusEffect(useCallback(()=>{let active=true;api.get<{user:any}>('/users/me').then(r=>{if(active){setCompensation(r.user);setProfilePic(r.user.profile_pic);setProfileError('');}}).catch(()=>{if(active)setProfileError('Pay rate could not be loaded. Try reopening your profile.');});return()=>{active=false;};},[user?.id]));
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -62,9 +66,10 @@ export default function ProfileScreen() {
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {
-      const uri = result.assets[0].uri;
       setUploading(true);
       try {
+        const photo=await ImageManipulator.manipulateAsync(result.assets[0].uri,[{resize:{width:512}}],{compress:.85,format:ImageManipulator.SaveFormat.JPEG});
+        const uri=photo.uri;
         const response = await api.uploadFileWithData<{ success: boolean; profilePic: string }>(
           '/users/profile-pic',
           uri,
@@ -72,7 +77,7 @@ export default function ProfileScreen() {
           'photo'
         );
         setProfilePic(response.profilePic);
-        (user as any).profilePic = response.profilePic;
+        await refreshUser();
         Alert.alert('Success', 'Profile picture updated');
       } catch (err) {
         Alert.alert('Error', 'Failed to upload profile picture');
@@ -90,9 +95,7 @@ export default function ProfileScreen() {
     setEditing(true);
     try {
       await api.put('/users/profile', { firstName: firstName.trim(), lastName: lastName.trim() });
-      (user as any).firstName = firstName.trim();
-      (user as any).lastName = lastName.trim();
-      (user as any).fullName = `${firstName.trim()} ${lastName.trim()}`;
+      await refreshUser();
       setEditNameModalVisible(false);
       Alert.alert('Success', 'Name updated');
     } catch (err) {
@@ -164,6 +167,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.actionBtn}><View style={{flex:1}}><Text style={styles.userName}>My pay rate</Text><Text style={{color:'#00D4FF',fontSize:20,marginTop:8}}>{compensation?.current_rate == null ? 'Not set - contact your manager' : `$${Number(compensation.current_rate).toFixed(2)}/hr`}</Text>{compensation?.rate_effective_date && <Text style={styles.userEmail}>Effective {String(compensation.rate_effective_date).slice(0,10)}</Text>}<Text style={styles.userEmail}>Payroll uses the rate effective on each work date.</Text>{compensation?.scheduled_rates?.map((r:any,i:number)=><Text key={i} style={styles.userEmail}>Scheduled: ${Number(r.hourly_rate).toFixed(2)}/hr from {String(r.effective_date).slice(0,10)}</Text>)}{profileError?<Text style={{color:'#FF718B'}}>{profileError}</Text>:null}</View></View>
       <Text style={styles.sectionTitle}>{t('language')}</Text>
       <View style={styles.languageRow}>
         {(['en','es','fr'] as Lang[]).map(l => (
