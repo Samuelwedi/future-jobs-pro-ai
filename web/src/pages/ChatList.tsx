@@ -12,6 +12,8 @@ interface Room {
   name: string | null;
   is_group: boolean;
   other_user_name?: string;
+  avatar_url?:string;
+  other_user_avatar?:string;
 }
 
 export default function ChatList() {
@@ -62,7 +64,7 @@ export default function ChatList() {
             <List disablePadding>{visibleRooms.map((room) => {
               const title = room.is_group ? room.name || 'Unnamed group' : room.other_user_name || 'Direct message';
               return <ListItemButton key={room.id} onClick={() => navigate(`/chat/${encodeURIComponent(room.id)}`, { state: { roomName: title } })} sx={{ py: 2, px: 2.5, borderBottom: '1px solid #1B2733', '&:hover': { bgcolor: '#14212C' } }}>
-                <ListItemAvatar><Avatar sx={{ bgcolor: room.is_group ? '#7357FF' : '#00D4FF', color: '#061017', fontWeight: 800 }}>{room.is_group ? <GroupOutlined sx={{ color: '#FFF' }} /> : title.charAt(0).toUpperCase()}</Avatar></ListItemAvatar>
+                <ListItemAvatar><Avatar src={room.is_group?room.avatar_url:room.other_user_avatar} sx={{ bgcolor: room.is_group ? '#7357FF' : '#00D4FF', color: '#061017', fontWeight: 800 }}>{room.is_group ? <GroupOutlined sx={{ color: '#FFF' }} /> : title.charAt(0).toUpperCase()}</Avatar></ListItemAvatar>
                 <ListItemText primary={title} secondary={room.is_group ? 'Team group' : 'Direct message'} primaryTypographyProps={{ color: '#FFF', fontWeight: 700 }} secondaryTypographyProps={{ color: '#7D8FA2' }} />
                 <Chip size="small" label={room.is_group ? 'Group' : 'Direct'} sx={{ color: '#8FA5B8', bgcolor: '#182330' }} />
               </ListItemButton>;
