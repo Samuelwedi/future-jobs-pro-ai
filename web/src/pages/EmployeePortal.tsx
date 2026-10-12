@@ -46,7 +46,10 @@ interface UserProfile {
   last_name: string;
   email: string;
   role: string;
-  current_rate: number;
+  current_rate: number | null;
+  profile_pic?: string;
+  rate_effective_date?: string;
+  scheduled_rates?: {hourly_rate:number;effective_date:string}[];
 }
 
 // ─── Main Component ──────────────────────────────────────────────
@@ -76,19 +79,9 @@ export default function EmployeePortal() {
       });
       const data = await res.json();
       if (data.success) {
-        // Get current rate
-        const rateRes = await fetch(`${API_BASE}/api/payroll/employees/compensation`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const rateData = await rateRes.json();
-        let currentRate = 0;
-        if (rateData.success && rateData.employees) {
-          const me = rateData.employees.find((e: any) => e.id === data.user.id);
-          if (me) currentRate = me.current_rate || 0;
-        }
-        setProfile({ ...data.user, current_rate: currentRate });
+        setProfile({ ...data.user, current_rate: data.user.current_rate === null ? null : Number(data.user.current_rate) });
       }
-    } catch (e) { console.error(e); }
+    } catch (e: any) { setError(e.message || "Could not load your profile"); }
   };
 
   const fetchPayStubs = async () => {
@@ -174,6 +167,8 @@ export default function EmployeePortal() {
     <Box>
       <Typography variant="h5" sx={{ color: '#FFF', mb: 2 }}>My Profile</Typography>
       <Paper sx={{ p: 3, bgcolor: '#1A1A1A', border: '1px solid #333' }}>
+        <Avatar src={profile?.profile_pic} sx={{width:80,height:80,mb:2}} />
+        <Button component="label" sx={{mb:2}}>Change profile photo<input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={async e=>{const file=e.target.files?.[0];if(!file)return;try{const form=new FormData();form.append('photo',file);const r=await fetch(`${API_BASE}/api/users/profile-pic`,{method:'POST',headers:{Authorization:`Bearer ${token}`},body:form});const data=await r.json();if(!r.ok)throw Error(data.message);await fetchProfile();}catch(err:any){setError(err.message);}finally{e.target.value='';}}} /></Button>
         <Grid container spacing={3}>
           <Grid item xs={12} md={6}>
             <Typography variant="body2" sx={{ color: '#888' }}>Name</Typography>
@@ -189,9 +184,12 @@ export default function EmployeePortal() {
           </Grid>
           <Grid item xs={12} md={6}>
             <Typography variant="body2" sx={{ color: '#888' }}>Current Hourly Rate</Typography>
-            <Typography variant="h6" sx={{ color: '#00D4FF' }}>${profile?.current_rate?.toFixed(2) || '0.00'}/hr</Typography>
+            <Typography variant="h6" sx={{ color: '#00D4FF' }}>{profile?.current_rate == null ? 'Not set - contact your manager' : `$${Number(profile.current_rate).toFixed(2)}/hr`}</Typography>
           </Grid>
         </Grid>
+        {profile?.rate_effective_date && <Typography sx={{color:'#888',mt:2}}>Effective {String(profile.rate_effective_date).slice(0,10)}. Payroll uses the rate effective on each work date.</Typography>}
+        {profile?.scheduled_rates?.map((r,i)=><Typography key={i} sx={{color:'#888',mt:1}}>Scheduled: ${r.hourly_rate.toFixed(2)}/hr from {String(r.effective_date).slice(0,10)}</Typography>)}
+        <Button onClick={()=>void fetchProfile()} sx={{mt:2}}>Refresh profile</Button>
       </Paper>
     </Box>
   );
@@ -338,6 +336,7 @@ export default function EmployeePortal() {
         Your profile, pay stubs, time entries, and PTO requests.
       </Typography>
 
+      {error && <Alert severity="error">{error}</Alert>}
       <Tabs
         value={activeTab}
         onChange={(_, v) => setActiveTab(v)}
