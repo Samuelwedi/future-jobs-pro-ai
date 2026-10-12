@@ -96,7 +96,7 @@ class ApiService {
   }
 
   async replayQueued(action:any):Promise<void>{
-    if(action.fileUri){await this.uploadFileWithData(action.url,action.fileUri,action.data||{},action.fieldName||'file',true);return;}
+    if(action.fileUri){await this.uploadFileWithData(action.url,action.fileUri,action.data||{},action.fieldName||'file',true,action.fileInfo);return;}
     await this.client.request({method:action.method,url:action.url,data:action.data});
   }
   async get<T>(url: string): Promise<T> {
@@ -164,27 +164,28 @@ class ApiService {
     fileUri: string,
     extraFields: Record<string, string>,
     fieldName = 'photo',
-    replay = false
+    replay = false,
+    fileInfo?: { name: string; mimeType?: string }
   ): Promise<T> {
     const online = getOnlineStatus();
     if (!online && !replay) {
 
       const permanentUri = (FileSystem as any).documentDirectory + `offline-${Date.now()}-${fileUri.split('/').pop()||'upload'}`;
       await FileSystem.copyAsync({ from: fileUri, to: permanentUri });
-      await queueAction({ method: 'POST', url, data: extraFields, fileUri: permanentUri, fieldName });
+      await queueAction({ method: 'POST', url, data: extraFields, fileUri: permanentUri, fieldName, fileInfo });
       throw new Error('Offline – upload queued for later');
     }
 
     const formData = new FormData();
-    const filename = fileUri.split('/').pop() || 'photo.jpg';
+    const filename = fileInfo?.name || fileUri.split('/').pop() || 'photo.jpg';
     const match = /\.(\w+)$/.exec(filename);
     const extension = match?.[1]?.toLowerCase();
-    const type = fieldName === 'audio'
+    const type = fileInfo?.mimeType || (fieldName === 'audio'
       ? extension === 'wav' ? 'audio/wav'
         : extension === 'mp3' ? 'audio/mpeg'
         : extension === 'caf' ? 'audio/x-caf'
         : 'audio/mp4'
-      : extension ? `image/${extension}` : 'image/jpeg';
+      : extension ? `image/${extension}` : 'image/jpeg');
     formData.append(fieldName, { uri: fileUri, name: filename, type } as any);
     Object.entries(extraFields).forEach(([key, value]) => formData.append(key, value));
 
