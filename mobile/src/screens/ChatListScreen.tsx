@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Image,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -12,6 +12,8 @@ interface Room {
   name: string | null;
   is_group: boolean;
   other_user_name?: string;
+  avatar_url?:string;
+  other_user_avatar?:string;
 }
 
 export default function ChatListScreen() {
@@ -40,9 +42,9 @@ export default function ChatListScreen() {
         style={styles.roomCard}
         onPress={() => navigation.navigate('Chat', { roomId: item.id, roomName: title })}
       >
-        <View style={styles.avatar}>
+        {(item.avatar_url||item.other_user_avatar)?<Image source={{uri:item.is_group?item.avatar_url:item.other_user_avatar}} style={[styles.avatar,{backgroundColor:'transparent'}]} />:<View style={styles.avatar}>
           <Text style={styles.avatarText}>{item.is_group ? '#' : title.charAt(0).toUpperCase()}</Text>
-        </View>
+        </View>}
         <View style={styles.roomInfo}>
           <Text style={styles.roomName}>{title}</Text>
           <Text style={styles.roomSubtitle}>{item.is_group ? 'Group' : 'Direct message'}</Text>
