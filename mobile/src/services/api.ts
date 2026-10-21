@@ -5,7 +5,7 @@
 
 import axios, { AxiosInstance } from 'axios';
 import * as SecureStore from 'expo-secure-store';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { getOnlineStatus, queueAction } from './offlineService';
 
@@ -165,7 +165,9 @@ class ApiService {
     const online = getOnlineStatus();
     if (!online) {
       console.log('📴 Offline – queuing upload:', url);
-      const permanentUri = (FileSystem as any).documentDirectory + `offline-${Date.now()}.jpg`;
+      const extension = /\.([a-z0-9]+)(?:\?.*)?$/i.exec(fileUri)?.[1] || (fieldName === 'audio' ? 'm4a' : 'jpg');
+      if (!FileSystem.documentDirectory) throw new Error('Local storage is unavailable. Please retry when online.');
+      const permanentUri = FileSystem.documentDirectory + `offline-${Date.now()}.${extension}`;
       await FileSystem.copyAsync({ from: fileUri, to: permanentUri });
       await queueAction({ method: 'POST', url, data: extraFields, fileUri: permanentUri, fieldName });
       throw new Error('Offline – upload queued for later');

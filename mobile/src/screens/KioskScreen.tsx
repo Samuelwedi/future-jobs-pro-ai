@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Vibration, Modal, FlatList, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Vibration, Modal, FlatList, TextInput, ActivityIndicator, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -73,10 +73,14 @@ export default function KioskScreen() {
 
   const renderKey = (digit: string) => <TouchableOpacity key={digit} style={styles.key} onPress={() => pin.length < 6 && setPin(value => value + digit)}><Text style={styles.keyText}>{digit}</Text></TouchableOpacity>;
 
-  return <View style={styles.container}>
+  return <ScrollView style={{ flex: 1, backgroundColor: '#071018' }} contentContainerStyle={[styles.container, { flex: undefined, flexGrow: 1, paddingTop: 110, paddingBottom: 24 }]}>
     <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
     {manager && <TouchableOpacity style={styles.setupBtn} onPress={() => setSetupOpen(true)}><MaterialIcons name="manage-accounts" size={21} color="#00D4FF" /><Text style={styles.setupText}>Employee PINs</Text></TouchableOpacity>}
-    <View style={styles.header}><Text style={styles.headerTitle}>Kiosk Clock</Text><Text style={styles.headerSubtitle}>Employee PIN clock in and clock out</Text></View>
+    <View style={styles.header}><Text style={styles.headerTitle}>Kiosk Clock</Text><Text style={styles.headerSubtitle}>Employee PIN clock in and clock out</Text>
+      <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>Use your employee PIN, not a project PIN. Projects do not need a PIN.</Text>
+      {manager ? <TouchableOpacity accessibilityRole="button" onPress={() => setSetupOpen(true)} style={{ padding: 12 }}><Text style={styles.setupText}>No PIN yet? Set up employee PINs</Text></TouchableOpacity>
+        : <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>Ask your manager to create your employee PIN before using the kiosk.</Text>}
+    </View>
     <View style={styles.modeRow}>
       <TouchableOpacity style={[styles.modeBtn, mode === 'clock-in' && styles.modeBtnActiveIn]} onPress={() => setMode('clock-in')}><Text style={styles.modeText}>Clock In</Text></TouchableOpacity>
       <TouchableOpacity style={[styles.modeBtn, mode === 'clock-out' && styles.modeBtnActiveOut]} onPress={() => setMode('clock-out')}><Text style={styles.modeText}>Clock Out</Text></TouchableOpacity>
@@ -101,7 +105,7 @@ export default function KioskScreen() {
         <TouchableOpacity disabled={working} style={styles.saveBtn} onPress={savePin}><Text style={styles.saveText}>{working ? 'Saving…' : `Save PIN${selectedEmployee ? ` for ${selectedEmployee.first_name}` : ''}`}</Text></TouchableOpacity>
       </View></View>
     </Modal>
-  </View>;
+  </ScrollView>;
 }
 
 const styles = StyleSheet.create({
