@@ -47,10 +47,16 @@ export default function VoiceNoteScreen() {
   const [result, setResult] = useState<VoiceNoteResponse | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mounted = useRef(true);
+  const busy = useRef(false);
+  const [retryUri, setRetryUri] = useState<string | null>(null);
 
   useEffect(() => {
+    mounted.current = true;
     (async () => {
+      try {
       const { status } = await requestRecordingPermissionsAsync();
+      if (!mounted.current) return;
       setHasPermission(status === 'granted');
       if (status === 'granted') {
         await setAudioModeAsync({
@@ -60,21 +66,33 @@ export default function VoiceNoteScreen() {
       } else {
         Alert.alert('Permission Denied', 'Microphone access is required to record voice notes.');
       }
+      } catch {
+        if (mounted.current) {
+          setHasPermission(false);
+          Alert.alert('Audio unavailable', 'Could not initialize the microphone. Please reopen this screen.');
+        }
+      }
     })();
     return () => {
+      mounted.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
+      try { if (audioRecorder.isRecording) void audioRecorder.stop().catch(() => {}); } catch {}
     };
   }, []);
 
   const startRecording = async () => {
+    if (busy.current || audioRecorder.isRecording) return;
     if (!hasPermission) {
       Alert.alert('Permission Required', 'Please grant microphone permission in settings.');
       return;
     }
+    busy.current = true;
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       await audioRecorder.prepareToRecordAsync();
+      if (!mounted.current) { await audioRecorder.stop().catch(() => {}); return; }
       audioRecorder.record();
+      setRetryUri(null);
       setIsRecording(true);
       const startTime = Date.now();
       timerRef.current = setInterval(() => {
@@ -82,12 +100,15 @@ export default function VoiceNoteScreen() {
       }, 1000);
     } catch (error: any) {
       console.error('Start recording error:', error);
-      Alert.alert('Error', `Could not start recording: ${error.message}`);
+      if (mounted.current) Alert.alert('Error', `Could not start recording: ${error.message}`);
+    } finally {
+      busy.current = false;
     }
   };
 
   const stopRecording = async () => {
-    if (!audioRecorder.isRecording) return;
+    if (!audioRecorder.isRecording || busy.current) return;
+    busy.current = true;
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -96,6 +117,7 @@ export default function VoiceNoteScreen() {
     setRecordingDuration(0);
     try {
       await audioRecorder.stop();
+      if (!mounted.current) return;
       const uri = audioRecorder.uri;
       if (uri) {
         await processRecording(uri);
@@ -103,7 +125,9 @@ export default function VoiceNoteScreen() {
         Alert.alert('Error', 'No audio file was created.');
       }
     } catch (error: any) {
-      Alert.alert('Error', `Could not stop recording: ${error.message}`);
+      if (mounted.current) Alert.alert('Error', `Could not stop recording: ${error.message}`);
+    } finally {
+      busy.current = false;
     }
   };
 
@@ -121,6 +145,8 @@ export default function VoiceNoteScreen() {
         extraFields,
         'audio'
       );
+      if (!mounted.current) return;
+      if (!response.success) throw new Error('Could not process voice note');
       // SAFETY FALLBACK: ensure structuredData exists with empty arrays
       if (!response.structuredData) {
         response.structuredData = {
@@ -133,16 +159,20 @@ export default function VoiceNoteScreen() {
         };
       }
       setResult(response);
+      setRetryUri(null);
       api.recordAIEvent('voice_note', {
         transcript: response.transcript,
         duration: response.duration,
         projectId,
       }).catch(() => {});
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (error: any) {
-      Alert.alert('Processing Failed', error.message || 'Could not process voice note');
+      if (!mounted.current) return;
+      const queued = /queued for later/i.test(error.message || '');
+      setRetryUri(queued ? null : audioUri);
+      Alert.alert(queued ? 'Upload queued' : 'Processing Failed', error.response?.data?.message || error.message || 'Could not process voice note');
     } finally {
-      setIsProcessing(false);
+      if (mounted.current) setIsProcessing(false);
     }
   };
 
@@ -256,6 +286,11 @@ export default function VoiceNoteScreen() {
       </View>
 
       <View style={styles.recordButtonContainer}>
+        {retryUri && !isRecording && <TouchableOpacity accessibilityRole="button" style={styles.secondaryButton} onPress={() => {
+          if (busy.current) return;
+          busy.current = true;
+          void processRecording(retryUri).finally(() => { busy.current = false; });
+        }}><Text style={styles.secondaryButtonText}>Retry saved recording</Text></TouchableOpacity>}
         <TouchableOpacity onPress={isRecording ? stopRecording : startRecording}>
           <View style={[styles.recordButton, { backgroundColor: isRecording ? '#F44336' : '#00D4FF' }]}>
             <MaterialIcons name={isRecording ? 'stop' : 'mic'} size={40} color="#FFF" />

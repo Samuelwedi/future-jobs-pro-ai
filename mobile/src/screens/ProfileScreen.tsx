@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLang } from '../context/LanguageContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
-import type { Lang } from '../services/i18n';
+import { Lang, t as translate } from '../services/i18n';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 
@@ -40,15 +40,19 @@ export default function ProfileScreen() {
   }, []);
 
   const handleLanguageChange = async (newLang: Lang) => {
-    await setLang(newLang);
-    Alert.alert(t('language_changed'), t('language_changed'));
+    try {
+      await setLang(newLang);
+      Alert.alert(translate('language_changed', newLang));
+    } catch {
+      Alert.alert(t('error'), t('Could not save language'));
+    }
   };
 
   const handleUnitChange = async (unit: 'celsius' | 'fahrenheit') => {
     try {
       await api.put(`/companies/${user?.companyId}/temperature-unit`, { unit });
       setTempUnit(unit);
-    } catch (e: any) { Alert.alert('Error', e.message); }
+    } catch (e: any) { Alert.alert(t("Error"), e.message); }
   };
 
   const handleLogout = () => {
@@ -78,9 +82,9 @@ export default function ProfileScreen() {
         );
         setProfilePic(response.profilePic);
         await refreshUser();
-        Alert.alert('Success', 'Profile picture updated');
+        Alert.alert(t("Success"), t("Profile picture updated"));
       } catch (err) {
-        Alert.alert('Error', 'Failed to upload profile picture');
+        Alert.alert(t("Error"), t("Failed to upload profile picture"));
       } finally {
         setUploading(false);
       }
@@ -89,7 +93,7 @@ export default function ProfileScreen() {
 
   const saveName = async () => {
     if (!firstName.trim() || !lastName.trim()) {
-      Alert.alert('Error', 'First and last name are required');
+      Alert.alert(t("Error"), t("First and last name are required"));
       return;
     }
     setEditing(true);
@@ -97,9 +101,9 @@ export default function ProfileScreen() {
       await api.put('/users/profile', { firstName: firstName.trim(), lastName: lastName.trim() });
       await refreshUser();
       setEditNameModalVisible(false);
-      Alert.alert('Success', 'Name updated');
+      Alert.alert(t("Success"), t("Name updated"));
     } catch (err) {
-      Alert.alert('Error', 'Failed to update name');
+      Alert.alert(t("Error"), t("Failed to update name"));
     } finally {
       setEditing(false);
     }
@@ -107,27 +111,27 @@ export default function ProfileScreen() {
 
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
-      Alert.alert('Error', 'All fields are required');
+      Alert.alert(t("Error"), t("All fields are required"));
       return;
     }
     if (newPassword !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      Alert.alert(t("Error"), t("Passwords do not match"));
       return;
     }
     if (newPassword.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      Alert.alert(t("Error"), t("Password must be at least 6 characters"));
       return;
     }
     setChangingPassword(true);
     try {
       await api.post('/auth/change-password', { currentPassword, newPassword });
-      Alert.alert('Success', 'Password changed successfully');
+      Alert.alert(t("Success"), t("Password changed successfully"));
       setPasswordModalVisible(false);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to change password');
+      Alert.alert(t("Error"), err.message || t("Failed to change password"));
     } finally {
       setChangingPassword(false);
     }
@@ -163,7 +167,7 @@ export default function ProfileScreen() {
         </View>
         <TouchableOpacity style={styles.editNameBtn} onPress={() => setEditNameModalVisible(true)}>
           <MaterialIcons name="edit" size={16} color="#00D4FF" />
-          <Text style={styles.editNameText}>Edit Name</Text>
+          <Text style={styles.editNameText}>{t("Edit Name")}</Text>
         </TouchableOpacity>
       </View>
 
@@ -177,7 +181,7 @@ export default function ProfileScreen() {
         ))}
       </View>
 
-      <Text style={styles.sectionTitle}>Temperature Unit</Text>
+      <Text style={styles.sectionTitle}>{t("Temperature Unit")}</Text>
       <View style={styles.languageRow}>
         <TouchableOpacity style={[styles.langBtn, tempUnit === 'celsius' && styles.langBtnActive]} onPress={() => handleUnitChange('celsius')}>
           <Text style={[styles.langBtnText, tempUnit === 'celsius' && styles.langBtnTextActive]}>°C</Text>
@@ -189,27 +193,27 @@ export default function ProfileScreen() {
 
       <TouchableOpacity style={styles.actionBtn} onPress={() => setPasswordModalVisible(true)}>
         <MaterialIcons name="lock-outline" size={20} color="#FFF" />
-        <Text style={styles.actionText}>Change Password</Text>
+        <Text style={styles.actionText}>{t("Change Password")}</Text>
       </TouchableOpacity>
 
       {/* ----- Subscription Button (boss/manager only) ----- */}
       {(user?.role === 'boss' || user?.role === 'manager') && (
-        <TouchableOpacity style={[styles.actionBtn, { borderColor: '#00D4FF', marginTop: 8 }]} onPress={() => navigation.navigate('Subscription')}>
+        <TouchableOpacity style={[styles.actionBtn, { borderColor: '#00D4FF', marginTop: 8 }]} onPress={() => navigation.navigate(t("Subscription"))}>
           <MaterialIcons name="stars" size={20} color="#00D4FF" />
-          <Text style={[styles.actionText, { color: '#00D4FF' }]}>Subscription Plans</Text>
+          <Text style={[styles.actionText, { color: '#00D4FF' }]}>{t("Subscription Plans")}</Text>
         </TouchableOpacity>
       )}
 
       {/* ----- Privacy Policy (required by Apple) ----- */}
-      <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('WebView', { url: 'https://futurejobsproai.com/privacy', title: 'Privacy Policy' })}>
+      <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('WebView', { url: 'https://futurejobsproai.com/privacy', title: t("Privacy Policy") })}>
         <MaterialIcons name="privacy-tip" size={20} color="#00D4FF" />
-        <Text style={[styles.actionText, { color: '#00D4FF' }]}>Privacy Policy</Text>
+        <Text style={[styles.actionText, { color: '#00D4FF' }]}>{t("Privacy Policy")}</Text>
       </TouchableOpacity>
 
       {/* ----- Terms of Use (required by Apple) ----- */}
-      <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('WebView', { url: 'https://futurejobsproai.com/terms', title: 'Terms of Use' })}>
+      <TouchableOpacity style={styles.actionBtn} onPress={() => navigation.navigate('WebView', { url: 'https://futurejobsproai.com/terms', title: t("Terms of Use") })}>
         <MaterialIcons name="description" size={20} color="#00D4FF" />
-        <Text style={[styles.actionText, { color: '#00D4FF' }]}>Terms of Use</Text>
+        <Text style={[styles.actionText, { color: '#00D4FF' }]}>{t("Terms of Use")}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
@@ -223,27 +227,27 @@ export default function ProfileScreen() {
       <Modal visible={editNameModalVisible} onRequestClose={() => setEditNameModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-            <Text style={styles.modalTitle}>Edit Name</Text>
+            <Text style={styles.modalTitle}>{t("Edit Name")}</Text>
             <TextInput
               style={styles.input}
-              placeholder="First Name"
+              placeholder={t("First Name")}
               placeholderTextColor="#888"
               value={firstName}
               onChangeText={setFirstName}
             />
             <TextInput
               style={styles.input}
-              placeholder="Last Name"
+              placeholder={t("Last Name")}
               placeholderTextColor="#888"
               value={lastName}
               onChangeText={setLastName}
             />
             <View style={styles.modalActions}>
               <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setEditNameModalVisible(false)}>
-                <Text style={styles.btnText}>Cancel</Text>
+                <Text style={styles.btnText}>{t("Cancel")}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.btn, styles.saveBtn]} onPress={saveName} disabled={editing}>
-                <Text style={[styles.btnText, { color: '#0A0A0A' }]}>{editing ? 'Saving...' : 'Save'}</Text>
+                <Text style={[styles.btnText, { color: '#0A0A0A' }]}>{editing ? t("Saving...") : t("Save")}</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -254,10 +258,10 @@ export default function ProfileScreen() {
       <Modal visible={passwordModalVisible} onRequestClose={() => setPasswordModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-            <Text style={styles.modalTitle}>Change Password</Text>
+            <Text style={styles.modalTitle}>{t("Change Password")}</Text>
             <TextInput
               style={styles.input}
-              placeholder="Current Password"
+              placeholder={t("Current Password")}
               placeholderTextColor="#888"
               secureTextEntry
               value={currentPassword}
@@ -265,7 +269,7 @@ export default function ProfileScreen() {
             />
             <TextInput
               style={styles.input}
-              placeholder="New Password (min 6 chars)"
+              placeholder={t("New Password (min 6 chars)")}
               placeholderTextColor="#888"
               secureTextEntry
               value={newPassword}
@@ -273,7 +277,7 @@ export default function ProfileScreen() {
             />
             <TextInput
               style={styles.input}
-              placeholder="Confirm New Password"
+              placeholder={t("Confirm New Password")}
               placeholderTextColor="#888"
               secureTextEntry
               value={confirmPassword}
@@ -281,10 +285,10 @@ export default function ProfileScreen() {
             />
             <View style={styles.modalActions}>
               <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setPasswordModalVisible(false)}>
-                <Text style={styles.btnText}>Cancel</Text>
+                <Text style={styles.btnText}>{t("Cancel")}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.btn, styles.saveBtn]} onPress={handleChangePassword} disabled={changingPassword}>
-                <Text style={[styles.btnText, { color: '#0A0A0A' }]}>{changingPassword ? 'Changing...' : 'Update'}</Text>
+                <Text style={[styles.btnText, { color: '#0A0A0A' }]}>{changingPassword ? t("Changing...") : t("Update")}</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>

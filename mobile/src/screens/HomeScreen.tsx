@@ -40,7 +40,7 @@ export default function HomeScreen() {
   const [contentWidth, setContentWidth] = useState(0);
   const grid = homeGridLayout(contentWidth, fontScale);
   const { user, logout } = useAuth();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const navigation = useNavigation<any>();
   const [projects, setProjects] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<any>(null);
@@ -323,13 +323,13 @@ export default function HomeScreen() {
     { icon: 'construction', color: '#67E8F9', gradient: ['#67E8F9', '#0891B2'], label: 'Tools', screen: 'WorkerTools', needsProject: false, IconSet: MaterialIcons },
   ];
 
-  const todayLabel = format(new Date(), 'EEEE, MMMM d');
+  const todayLabel = new Intl.DateTimeFormat(lang, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
   const firstProject = selectedProject || projects[0];
   const primaryShift = selectedSchedule || schedules[0];
   const readinessItems = [
-    { icon: 'location-on', label: currentLocation ? 'Location ready' : 'Locating…', color: currentLocation ? '#34D399' : '#FBBF24' },
-    { icon: 'event-available', label: `${schedules.length} shift${schedules.length === 1 ? '' : 's'} today`, color: '#67E8F9' },
-    { icon: 'folder-open', label: `${projects.length} active project${projects.length === 1 ? '' : 's'}`, color: '#C4B5FD' },
+    { icon: 'location-on', label: currentLocation ? t("Location ready") : t("Locating…"), color: currentLocation ? '#34D399' : '#FBBF24' },
+    { icon: 'event-available', label: t('{count} shifts today', { count: String(schedules.length) }), color: '#67E8F9' },
+    { icon: 'folder-open', label: t('{count} active projects', { count: String(projects.length) }), color: '#C4B5FD' },
   ];
   const toolSections = [
     {
@@ -389,7 +389,7 @@ export default function HomeScreen() {
               <Text style={investorStyles.greeting}>{greeting}</Text>
             </View>
           </View>
-          <TouchableOpacity accessibilityLabel="Open profile" style={investorStyles.profileButton} onPress={() => navigation.navigate('Profile')}>
+          <TouchableOpacity accessibilityLabel={t("Open profile")} style={investorStyles.profileButton} onPress={() => navigation.navigate('Profile')}>
             <MaterialIcons name="tune" size={20} color="#C7D3DE" />
           </TouchableOpacity>
         </View>
@@ -398,50 +398,50 @@ export default function HomeScreen() {
           <View style={investorStyles.heroTopRow}>
             <View style={[investorStyles.statusPill, isClockedIn && investorStyles.statusPillActive]}>
               <View style={[investorStyles.statusDot, isClockedIn && investorStyles.statusDotActive]} />
-              <Text style={[investorStyles.statusText, isClockedIn && investorStyles.statusTextActive]}>{isClockedIn ? 'SHIFT IN PROGRESS' : 'READY FOR THE DAY'}</Text>
+              <Text style={[investorStyles.statusText, isClockedIn && investorStyles.statusTextActive]}>{isClockedIn ? t("SHIFT IN PROGRESS") : t("READY FOR THE DAY")}</Text>
             </View>
             <MaterialIcons name={isClockedIn ? 'verified' : 'shield'} size={20} color={isClockedIn ? '#A7F3D0' : '#67E8F9'} />
           </View>
 
           {isClockedIn ? (
             <>
-              <Text style={investorStyles.heroEyebrow}>CURRENT SESSION</Text>
+              <Text style={investorStyles.heroEyebrow}>{t("CURRENT SESSION")}</Text>
               <Text style={investorStyles.liveTimer}>{formatElapsed(elapsedSeconds)}</Text>
-              <Text style={investorStyles.heroTitle}>{activeTimeEntry.project_name || firstProject?.name || 'Work in progress'}</Text>
-              <Text style={investorStyles.heroCopy}>Your clock session is active. GPS availability is shown below.</Text>
+              <Text style={investorStyles.heroTitle}>{activeTimeEntry.project_name || firstProject?.name || t("Work in progress")}</Text>
+              <Text style={investorStyles.heroCopy}>{t("Your clock session is active. GPS availability is shown below.")}</Text>
               <View style={investorStyles.sessionSignals}>
                 <View style={investorStyles.signal}><MaterialIcons name="my-location" size={16} color="#A7F3D0" /><Text style={investorStyles.signalText}>{gpsStatus}</Text></View>
-                <View style={investorStyles.signal}><MaterialIcons name="lock-clock" size={16} color="#A7F3D0" /><Text style={investorStyles.signalText}>Evidence live</Text></View>
+                <View style={investorStyles.signal}><MaterialIcons name="lock-clock" size={16} color="#A7F3D0" /><Text style={investorStyles.signalText}>{t("Evidence live")}</Text></View>
               </View>
-              <TouchableOpacity style={investorStyles.clockOutButton} onPress={handleClockOut}><MaterialIcons name="stop-circle" size={21} color="#FFF" /><Text style={investorStyles.clockOutText}>Finish shift</Text></TouchableOpacity>
+              <TouchableOpacity style={investorStyles.clockOutButton} onPress={handleClockOut}><MaterialIcons name="stop-circle" size={21} color="#FFF" /><Text style={investorStyles.clockOutText}>{t("Finish shift")}</Text></TouchableOpacity>
             </>
           ) : (
             <>
-              <Text style={investorStyles.heroEyebrow}>YOUR WORKDAY</Text>
-              <Text style={investorStyles.heroTitle}>Everything ready.{`\n`}Start with confidence.</Text>
-              <Text style={investorStyles.heroCopy}>Choose today’s project or scheduled shift. Future Jobs will connect time, GPS, media, and job context automatically.</Text>
+              <Text style={investorStyles.heroEyebrow}>{t("YOUR WORKDAY")}</Text>
+              <Text style={investorStyles.heroTitle}>{t('Everything ready.\nStart with confidence.')}</Text>
+              <Text style={investorStyles.heroCopy}>{t("Choose today’s project or scheduled shift. Future Jobs will connect time, GPS, media, and job context automatically.")}</Text>
               <View style={investorStyles.modeSwitch}>
-                <TouchableOpacity style={[investorStyles.modeButton, selectionMode === 'project' && investorStyles.modeButtonActive]} onPress={() => setSelectionMode('project')}><Text style={[investorStyles.modeText, selectionMode === 'project' && investorStyles.modeTextActive]}>Projects</Text></TouchableOpacity>
-                <TouchableOpacity style={[investorStyles.modeButton, selectionMode === 'schedule' && investorStyles.modeButtonActive]} onPress={() => setSelectionMode('schedule')}><Text style={[investorStyles.modeText, selectionMode === 'schedule' && investorStyles.modeTextActive]}>Today’s schedule</Text></TouchableOpacity>
+                <TouchableOpacity style={[investorStyles.modeButton, selectionMode === 'project' && investorStyles.modeButtonActive]} onPress={() => setSelectionMode('project')}><Text style={[investorStyles.modeText, selectionMode === 'project' && investorStyles.modeTextActive]}>{t("Projects")}</Text></TouchableOpacity>
+                <TouchableOpacity style={[investorStyles.modeButton, selectionMode === 'schedule' && investorStyles.modeButtonActive]} onPress={() => setSelectionMode('schedule')}><Text style={[investorStyles.modeText, selectionMode === 'schedule' && investorStyles.modeTextActive]}>{t("Today’s schedule")}</Text></TouchableOpacity>
               </View>
 
               {selectionMode === 'project' ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={investorStyles.selectorScroll}>
-                  {projects.length === 0 ? <Text style={investorStyles.emptySelector}>No active projects</Text> : projects.map((project, index) => {
+                  {projects.length === 0 ? <Text style={investorStyles.emptySelector}>{t("No active projects")}</Text> : projects.map((project, index) => {
                     const selected = selectedProject?.id === project.id || (!selectedProject && index === 0);
-                    return <TouchableOpacity key={project.id || index} onPress={() => setSelectedProject(project)} style={[investorStyles.selectorCard, selected && investorStyles.selectorCardActive]}><View style={[investorStyles.selectorIcon, selected && investorStyles.selectorIconActive]}><MaterialIcons name="business-center" size={18} color={selected ? '#06121D' : '#67E8F9'} /></View><Text numberOfLines={1} style={[investorStyles.selectorTitle, selected && investorStyles.selectorTitleActive]}>{project.name}</Text><Text numberOfLines={1} style={investorStyles.selectorMeta}>{project.client_name || 'Active project'}</Text></TouchableOpacity>;
+                    return <TouchableOpacity key={project.id || index} onPress={() => setSelectedProject(project)} style={[investorStyles.selectorCard, selected && investorStyles.selectorCardActive]}><View style={[investorStyles.selectorIcon, selected && investorStyles.selectorIconActive]}><MaterialIcons name="business-center" size={18} color={selected ? '#06121D' : '#67E8F9'} /></View><Text numberOfLines={1} style={[investorStyles.selectorTitle, selected && investorStyles.selectorTitleActive]}>{project.name}</Text><Text numberOfLines={1} style={investorStyles.selectorMeta}>{project.client_name || t("Active project")}</Text></TouchableOpacity>;
                   })}
                 </ScrollView>
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={investorStyles.selectorScroll}>
-                  {schedules.length === 0 ? <Text style={investorStyles.emptySelector}>No scheduled shifts today</Text> : schedules.map((shift) => {
+                  {schedules.length === 0 ? <Text style={investorStyles.emptySelector}>{t("No scheduled shifts today")}</Text> : schedules.map((shift) => {
                     const selected = selectedSchedule?.id === shift.id;
-                    return <TouchableOpacity key={shift.id} onPress={() => { setSelectedSchedule(shift); if (shift.project_id) setSelectedProject(projects.find(p => p.id === shift.project_id)); }} style={[investorStyles.selectorCard, selected && investorStyles.selectorCardActive]}><View style={[investorStyles.selectorIcon, selected && investorStyles.selectorIconActive]}><MaterialIcons name="event" size={18} color={selected ? '#06121D' : '#67E8F9'} /></View><Text numberOfLines={1} style={[investorStyles.selectorTitle, selected && investorStyles.selectorTitleActive]}>{shift.name || 'Scheduled shift'}</Text><Text numberOfLines={1} style={investorStyles.selectorMeta}>{shift.start_time} · {shift.project_name || 'Project'}</Text></TouchableOpacity>;
+                    return <TouchableOpacity key={shift.id} onPress={() => { setSelectedSchedule(shift); if (shift.project_id) setSelectedProject(projects.find(p => p.id === shift.project_id)); }} style={[investorStyles.selectorCard, selected && investorStyles.selectorCardActive]}><View style={[investorStyles.selectorIcon, selected && investorStyles.selectorIconActive]}><MaterialIcons name="event" size={18} color={selected ? '#06121D' : '#67E8F9'} /></View><Text numberOfLines={1} style={[investorStyles.selectorTitle, selected && investorStyles.selectorTitleActive]}>{shift.name || t("Scheduled shift")}</Text><Text numberOfLines={1} style={investorStyles.selectorMeta}>{shift.start_time} · {shift.project_name || t("Project")}</Text></TouchableOpacity>;
                   })}
                 </ScrollView>
               )}
               <TouchableOpacity style={investorStyles.clockInButton} onPress={handleClockIn}>
-                <LinearGradient colors={['#67E8F9', '#22D3EE']} style={investorStyles.clockInGradient}><View style={investorStyles.clockIcon}><MaterialIcons name="play-arrow" size={21} color="#06121D" /></View><Text style={investorStyles.clockInText}>Start verified shift</Text><MaterialIcons name="arrow-forward" size={20} color="#06121D" /></LinearGradient>
+                <LinearGradient colors={['#67E8F9', '#22D3EE']} style={investorStyles.clockInGradient}><View style={investorStyles.clockIcon}><MaterialIcons name="play-arrow" size={21} color="#06121D" /></View><Text style={investorStyles.clockInText}>{t("Start verified shift")}</Text><MaterialIcons name="arrow-forward" size={20} color="#06121D" /></LinearGradient>
               </TouchableOpacity>
             </>
           )}
@@ -451,20 +451,20 @@ export default function HomeScreen() {
           {readinessItems.map((item) => <View key={item.label} style={investorStyles.readinessItem}><MaterialIcons name={item.icon as any} size={17} color={item.color} /><Text style={investorStyles.readinessText} numberOfLines={1}>{item.label}</Text></View>)}
         </View>
 
-        <View style={investorStyles.sectionHeader}><View><Text style={investorStyles.sectionEyebrow}>LUCY · WORKSPACE INTELLIGENCE</Text><Text style={investorStyles.sectionTitle}>Your next best move</Text></View><TouchableOpacity onPress={() => navigation.navigate('AIAssistant')}><Text style={investorStyles.viewAll}>Open Lucy</Text></TouchableOpacity></View>
+        <View style={investorStyles.sectionHeader}><View><Text style={investorStyles.sectionEyebrow}>{t("LUCY · WORKSPACE INTELLIGENCE")}</Text><Text style={investorStyles.sectionTitle}>{t("Your next best move")}</Text></View><TouchableOpacity onPress={() => navigation.navigate('AIAssistant')}><Text style={investorStyles.viewAll}>{t("Open Lucy")}</Text></TouchableOpacity></View>
         <LinearGradient colors={['#2A2050', '#151225']} style={investorStyles.lucyCard}>
           <View style={investorStyles.lucyTop}>
             <LinearGradient colors={['#C4B5FD', '#8B5CF6']} style={investorStyles.lucyOrb}><MaterialIcons name="graphic-eq" size={26} color="#181027" /></LinearGradient>
-            <View style={investorStyles.lucyHeading}><View style={investorStyles.lucyNameRow}><Text style={investorStyles.lucyName}>Lucy</Text><View style={investorStyles.memoryPill}><View style={investorStyles.memoryDot} /><Text style={investorStyles.memoryText}>CONTEXT ON</Text></View></View><Text style={investorStyles.lucyMeta}>Connected across your workspace</Text></View>
+            <View style={investorStyles.lucyHeading}><View style={investorStyles.lucyNameRow}><Text style={investorStyles.lucyName}>Lucy</Text><View style={investorStyles.memoryPill}><View style={investorStyles.memoryDot} /><Text style={investorStyles.memoryText}>{t("CONTEXT ON")}</Text></View></View><Text style={investorStyles.lucyMeta}>{t("Connected across your workspace")}</Text></View>
           </View>
-          <Text style={investorStyles.lucyBrief}>{aiSuggestions[0]?.description || (primaryShift ? `You have ${schedules.length} scheduled shift${schedules.length === 1 ? '' : 's'} today. I can brief you on priorities and conflicts.` : 'I can summarize active work, find exceptions, and prepare your next actions for approval.')}</Text>
+          <Text style={investorStyles.lucyBrief}>{aiSuggestions[0]?.description || (primaryShift ? t('You have {count} scheduled shifts today. I can brief you on priorities and conflicts.', { count: String(schedules.length) }) : t("I can summarize active work, find exceptions, and prepare your next actions for approval."))}</Text>
           <View style={investorStyles.lucyActions}>
-            <TouchableOpacity style={investorStyles.lucyPrimary} onPress={() => navigation.navigate('AIAssistant')}><MaterialIcons name="auto-awesome" size={17} color="#181027" /><Text style={investorStyles.lucyPrimaryText}>Brief my day</Text></TouchableOpacity>
+            <TouchableOpacity style={investorStyles.lucyPrimary} onPress={() => navigation.navigate('AIAssistant')}><MaterialIcons name="auto-awesome" size={17} color="#181027" /><Text style={investorStyles.lucyPrimaryText}>{t("Brief my day")}</Text></TouchableOpacity>
             <TouchableOpacity style={investorStyles.lucyVoice} onPress={() => navigation.navigate('AIAssistant', { autoRecord: true })}><MaterialIcons name="mic" size={20} color="#DDD6FE" /></TouchableOpacity>
           </View>
         </LinearGradient>
 
-        <View style={investorStyles.sectionHeader}><View><Text style={investorStyles.sectionEyebrow}>CAPTURE THE WORK</Text><Text style={investorStyles.sectionTitle}>Create trusted evidence</Text></View></View>
+        <View style={investorStyles.sectionHeader}><View><Text style={investorStyles.sectionEyebrow}>{t("CAPTURE THE WORK")}</Text><Text style={investorStyles.sectionTitle}>{t("Create trusted evidence")}</Text></View></View>
         <View style={investorStyles.captureGrid}>
           {[
             { icon: 'photo-camera', label: 'Site photo', meta: 'AI review', color: '#67E8F9', screen: 'Camera' },
@@ -480,43 +480,43 @@ export default function HomeScreen() {
               return navigation.navigate(action.screen);
             }}>
               <View style={[investorStyles.captureIcon, { backgroundColor: `${action.color}18` }]}><MaterialIcons name={action.icon as any} size={23} color={action.color} /></View>
-              <Text style={investorStyles.captureTitle}>{action.label}</Text><Text style={investorStyles.captureMeta}>{action.meta}</Text>
+              <Text style={investorStyles.captureTitle}>{t(action.label)}</Text><Text style={investorStyles.captureMeta}>{t(action.meta)}</Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <View style={investorStyles.sectionHeader}><View><Text style={investorStyles.sectionEyebrow}>YOUR WORKSPACE</Text><Text style={investorStyles.sectionTitle}>Run the operation</Text></View></View>
+        <View style={investorStyles.sectionHeader}><View><Text style={investorStyles.sectionEyebrow}>{t("YOUR WORKSPACE")}</Text><Text style={investorStyles.sectionTitle}>{t("Run the operation")}</Text></View></View>
         <View style={investorStyles.workspaceCard}>
           {[
-            ['Projects', 'work', 'Projects', `${projects.length} active`], ['Schedule', 'calendar-month', 'Schedule', `${schedules.length} today`],
+            ['Projects', 'work', 'Projects', t('{count} active', { count: String(projects.length) })], ['Schedule', 'calendar-month', 'Schedule', t('{count} today', { count: String(schedules.length) })],
             ['Timesheet', 'schedule', 'Timesheet', 'Review time'], ['Team', 'groups', 'Team', 'People & pay'],
             ['Messages', 'forum', 'ChatList', 'Crew chat'], ['Support', 'support-agent', 'Support', 'Customer care'],
           ].filter(([label]) => label !== 'Team' || user?.role === 'boss' || user?.role === 'manager').map(([label, icon, screen, meta], index, list) => (
             <TouchableOpacity key={label} style={[investorStyles.workspaceRow, index === list.length - 1 && investorStyles.workspaceRowLast]} onPress={() => navigation.navigate(screen)}>
-              <View style={investorStyles.workspaceIcon}><MaterialIcons name={icon as any} size={20} color="#8FDFF0" /></View><View style={investorStyles.workspaceCopy}><Text style={investorStyles.workspaceTitle}>{label}</Text><Text style={investorStyles.workspaceMeta}>{meta}</Text></View><MaterialIcons name="chevron-right" size={23} color="#52677A" />
+              <View style={investorStyles.workspaceIcon}><MaterialIcons name={icon as any} size={20} color="#8FDFF0" /></View><View style={investorStyles.workspaceCopy}><Text style={investorStyles.workspaceTitle}>{t(label)}</Text><Text style={investorStyles.workspaceMeta}>{t(meta)}</Text></View><MaterialIcons name="chevron-right" size={23} color="#52677A" />
             </TouchableOpacity>
           ))}
         </View>
 
-        <View style={investorStyles.sectionHeader}><View><Text style={investorStyles.sectionEyebrow}>ALL TOOLS</Text><Text style={investorStyles.sectionTitle}>Everything in one place</Text></View></View>
+        <View style={investorStyles.sectionHeader}><View><Text style={investorStyles.sectionEyebrow}>{t("ALL TOOLS")}</Text><Text style={investorStyles.sectionTitle}>{t("Everything in one place")}</Text></View></View>
         {toolSections.map(section => (
           <View key={section.eyebrow} style={investorStyles.toolSection}>
             <View style={investorStyles.toolSectionHeading}>
-              <Text style={investorStyles.toolSectionEyebrow}>{section.eyebrow}</Text>
-              <Text style={investorStyles.toolSectionTitle}>{section.title}</Text>
+              <Text style={investorStyles.toolSectionEyebrow}>{t(section.eyebrow)}</Text>
+              <Text style={investorStyles.toolSectionTitle}>{t(section.title)}</Text>
             </View>
             <View style={investorStyles.toolGrid}>
               {section.tools.map(([label, icon, screen, color]) => (
                 <TouchableOpacity key={label} style={[investorStyles.toolCard, { width: grid.toolWidth }]} onPress={() => navigation.navigate(screen)}>
                   <View style={[investorStyles.toolIcon, { backgroundColor: `${color}18` }]}><MaterialIcons name={icon as any} size={21} color={color} /></View>
-                  <Text style={investorStyles.toolLabel}>{label}</Text>
+                  <Text style={investorStyles.toolLabel}>{t(label)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
         ))}
 
-        <View style={investorStyles.footerRow}>{(user?.role === 'boss' || user?.role === 'manager') && <><TouchableOpacity onPress={() => navigation.navigate('CompanySettings')}><Text style={investorStyles.footerLink}>Company settings</Text></TouchableOpacity><TouchableOpacity onPress={() => navigation.navigate('PayrollRules')}><Text style={investorStyles.footerLink}>Payroll rules</Text></TouchableOpacity><View style={investorStyles.footerDot} /></>}<TouchableOpacity onPress={logout}><Text style={investorStyles.footerLink}>Sign out</Text></TouchableOpacity></View>
+        <View style={investorStyles.footerRow}>{(user?.role === 'boss' || user?.role === 'manager') && <><TouchableOpacity onPress={() => navigation.navigate('CompanySettings')}><Text style={investorStyles.footerLink}>{t("Company settings")}</Text></TouchableOpacity><TouchableOpacity onPress={() => navigation.navigate('PayrollRules')}><Text style={investorStyles.footerLink}>{t("Payroll rules")}</Text></TouchableOpacity><View style={investorStyles.footerDot} /></>}<TouchableOpacity onPress={logout}><Text style={investorStyles.footerLink}>{t("Sign out")}</Text></TouchableOpacity></View>
       </ScrollView>
     </View>
   );

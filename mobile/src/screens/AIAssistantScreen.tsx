@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
   KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
-  DeviceEventEmitter,
+  DeviceEventEmitter, AppState,
 } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -109,8 +109,46 @@ export default function AIAssistantScreen() {
     DeviceEventEmitter.emit('lucyWakeWordPreferenceChanged', enabled);
     setVoiceStatus(enabled ? 'Starting foreground Hey Lucy…' : 'Hey Lucy disabled');
   };
+  const active = useRef(true);
+  const generation = useRef(0);
+  const startingRecording = useRef(false);
+  const current = (epoch: number) => active.current && generation.current === epoch;
+
+  useEffect(() => {
+    const leave = () => {
+      active.current = false;
+      generation.current += 1;
+      conversationActiveRef.current = false;
+      for (const timer of [followUpTimer, conversationTimer, maximumRecordingTimer]) {
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = null;
+      }
+      isSpeaking.current = false;
+      try { void Speech.stop().catch(() => {}); } catch {}
+      const pending = recorderRef.current;
+      if (pending) {
+        try { if (pending.isRecording) void pending.stop().catch(() => {}); } catch {}
+      }
+      DeviceEventEmitter.emit('lucyConversationEnded');
+    };
+    const enter = () => {
+      active.current = true;
+      setIsRecording(false);
+      setLoading(false);
+      setConversationActive(false);
+      setVoiceStatus('');
+    };
+    const blur = navigation.addListener('blur', leave);
+    const focus = navigation.addListener('focus', enter);
+    const appState = AppState.addEventListener('change', state => {
+      if (state !== 'active') leave();
+      else if (navigation.isFocused()) enter();
+    });
+    return () => { blur(); focus(); appState.remove(); leave(); };
+  }, [navigation]);
 
   const setConversation = (active: boolean) => {
+    if (!current(generation.current)) return;
     conversationActiveRef.current = active;
     setConversationActive(active);
     if (conversationTimer.current) clearTimeout(conversationTimer.current);
@@ -133,33 +171,26 @@ export default function AIAssistantScreen() {
   useEffect(() => {
     if (route.params?.autoRecord) {
       let cancelled = false;
+      const epoch = generation.current;
       const beginWakeConversation = async () => {
+        if (cancelled || !current(epoch)) return;
         setConversation(true);
         const greeting = "I'm here. What would you like me to take care of?";
         setMessages(prev => [...prev, { text: greeting, isUser: false }]);
         await speakText(greeting);
-        if (!cancelled) queueFollowUp(350);
+        if (!cancelled && current(epoch)) queueFollowUp(350);
       };
       const timer = setTimeout(() => void beginWakeConversation(), 900);
       return () => { cancelled = true; clearTimeout(timer); };
     }
   }, [route.params?.autoRecord, route.params?.wakeEvent]);
 
-  useEffect(() => () => {
-    if (followUpTimer.current) clearTimeout(followUpTimer.current);
-    if (conversationTimer.current) clearTimeout(conversationTimer.current);
-    if (maximumRecordingTimer.current) clearTimeout(maximumRecordingTimer.current);
-    if (recorderRef.current?.isRecording) void recorderRef.current.stop().catch(() => undefined);
-    Speech.stop();
-    DeviceEventEmitter.emit('lucyConversationEnded');
-  }, []);
-
   // Load conversation history
   useEffect(() => {
     if (!user) return;
     api.get('/lucy/history')
       .then((data: any) => {
-        if (data.messages) {
+        if (active.current && data.messages) {
           const history = data.messages.map((m: any) => ({
             text: m.content,
             isUser: m.role === 'user',
@@ -172,13 +203,18 @@ export default function AIAssistantScreen() {
 
   // Speak Lucy's response
   const speakText = async (text: string): Promise<void> => {
-    if (isSpeaking.current) Speech.stop();
+    const epoch = generation.current;
+    if (!current(epoch)) return;
+    try {
+    if (isSpeaking.current) await Speech.stop();
+    if (!current(epoch)) return;
     await setAudioModeAsync({
       allowsRecording: false,
       playsInSilentMode: true,
       interruptionMode: 'duckOthers',
     });
     const voices = await Speech.getAvailableVoicesAsync().catch(() => []);
+    if (!current(epoch)) return;
     const preferred = voices.find(voice =>
       /samantha|zira|ava|victoria|female|serena|karen/i.test(`${voice.name} ${voice.identifier}`)
       && /^en/i.test(voice.language)
@@ -194,14 +230,20 @@ export default function AIAssistantScreen() {
       onStopped: () => { isSpeaking.current = false; resolve(); },
       onError: () => { isSpeaking.current = false; resolve(); },
     }));
+    } catch {
+      // Speech is optional: native audio failures must not reject UI handlers.
+      if (current(epoch)) isSpeaking.current = false;
+    }
   };
 
   const sendMessage = async (text: string, fromVoice = false) => {
-    if (!text.trim() || loading) return;
+    const epoch = generation.current;
+    if (!text.trim() || loading || !current(epoch)) return;
     setMessages(prev => [...prev, { text: text.trim(), isUser: true }]);
     setLoading(true);
     try {
       const data = await api.post<any>('/lucy-v2', { message: text.trim(), conversationMode: conversationActiveRef.current });
+      if (!current(epoch)) return;
       const botText = data?.text || data?.[0]?.text || "I'm not sure how to respond to that.";
       const approvalId = data?.approvalId || null;
       const actions: ActionReceipt[] = Array.isArray(data?.actions) ? data.actions : [];
@@ -209,15 +251,17 @@ export default function AIAssistantScreen() {
       consecutiveMisses.current = 0;
       if (conversationActiveRef.current) setConversation(true);
       if (!data?.ignored && botText) await speakText(approvalId ? `${botText} Please approve or reject the protected action on screen.` : botText);
+      if (!current(epoch)) return;
       if (fromVoice && data?.continueListening !== false && !approvalId && conversationActiveRef.current) queueFollowUp();
       else if (approvalId) setVoiceStatus('Waiting for your approval');
     } catch (err: any) {
+      if (!current(epoch)) return;
       const errorMsg = err?.response?.data?.message || err?.message || 'Lucy could not complete this request. Please retry.';
       setMessages(prev => [...prev, { text: errorMsg, isUser: false }]);
       await speakText(errorMsg);
-      if (fromVoice && conversationActiveRef.current) queueFollowUp(900);
+      if (current(epoch) && fromVoice && conversationActiveRef.current) queueFollowUp(900);
     } finally {
-      setLoading(false);
+      if (current(epoch)) setLoading(false);
     }
   };
 
@@ -240,16 +284,19 @@ export default function AIAssistantScreen() {
 
   // ----- Voice recording with metering-based silence detection -----
   const finishRecording = async (activeRecording: AudioRecorder | null) => {
-    if (!activeRecording || finishingRecording.current) return;
+    const epoch = generation.current;
+    if (!current(epoch) || !activeRecording || finishingRecording.current) return;
     finishingRecording.current = true;
     if (maximumRecordingTimer.current) clearTimeout(maximumRecordingTimer.current);
     setIsRecording(false);
     setVoiceStatus('Processing your request…');
     try {
       await activeRecording.stop();
+      if (!current(epoch)) return;
       const uri = activeRecording.uri;
       if (!uri) throw new Error('Recording file was not created');
       const transcript = await transcribeAudio(uri);
+      if (!current(epoch)) return;
       const endConversation = /^(thanks|thank you|that's all|that is all|goodbye|stop listening|cancel)$/i.test(transcript.trim());
       if (endConversation) {
         setConversation(false);
@@ -270,12 +317,12 @@ export default function AIAssistantScreen() {
         }
       }
     } catch (err) {
-      Alert.alert('Error', 'Failed to process recording.');
+      if (current(epoch)) Alert.alert('Error', 'Failed to process recording.');
     } finally {
       finishingRecording.current = false;
       heardSpeech.current = false;
       silenceStartedAt.current = null;
-      setVoiceStatus('');
+      if (current(epoch)) setVoiceStatus('');
     }
   };
   finishRecordingRef.current = (activeRecording) => {
@@ -283,8 +330,12 @@ export default function AIAssistantScreen() {
   };
 
   const startRecording = async () => {
+    const epoch = generation.current;
+    if (!current(epoch) || startingRecording.current || recorderRef.current?.isRecording) return;
+    startingRecording.current = true;
     try {
       const permission = await requestRecordingPermissionsAsync();
+      if (!current(epoch)) return;
       if (!permission.granted) {
         Alert.alert('Permission required', 'Please grant microphone access.');
         return;
@@ -293,8 +344,10 @@ export default function AIAssistantScreen() {
         allowsRecording: true,
         playsInSilentMode: true,
       });
+      if (!current(epoch)) return;
 
       await audioRecorder.prepareToRecordAsync();
+      if (!current(epoch)) { await audioRecorder.stop().catch(() => {}); return; }
       audioRecorder.record();
       setIsRecording(true);
       setVoiceStatus('Listening… speak now');
@@ -302,7 +355,9 @@ export default function AIAssistantScreen() {
       silenceStartedAt.current = null;
       maximumRecordingTimer.current = setTimeout(() => void finishRecording(audioRecorder), 15000);
     } catch (err) {
-      Alert.alert('Error', 'Could not start recording. Please check microphone permissions.');
+      if (current(epoch)) Alert.alert('Error', 'Could not start recording. Please check microphone permissions.');
+    } finally {
+      startingRecording.current = false;
     }
   };
 
@@ -311,6 +366,7 @@ export default function AIAssistantScreen() {
   };
 
   const transcribeAudio = async (uri: string): Promise<string> => {
+    const epoch = generation.current;
     try {
       const response = await api.uploadFileWithData<{ transcript: string }>(
         '/voice/assistant-transcribe',
@@ -320,6 +376,7 @@ export default function AIAssistantScreen() {
       );
       return response.transcript || '';
     } catch (err: any) {
+      if (!current(epoch)) return '';
       console.error('Transcription error:', err);
       if (err.response?.status === 422) {
         return '';
@@ -333,28 +390,32 @@ export default function AIAssistantScreen() {
   };
 
   const handleApprove = async (approvalId: string) => {
+    const epoch = generation.current;
     try {
       const response = await api.post<any>(`/approvals/${approvalId}/approve`);
+      if (!current(epoch)) return;
       const action = response?.action as ActionReceipt | undefined;
       const confirmation = action?.summary || 'The approved action was completed.';
       setMessages(prev => [...prev.map(msg => msg.approvalId === approvalId ? { ...msg, approvalId: undefined } : msg), { text: confirmation, isUser: false, actions: action ? [action] : [] }]);
       await speakText(confirmation);
       if (conversationActiveRef.current) queueFollowUp();
     } catch (err) {
-      Alert.alert('Error', 'Could not approve.');
+      if (current(epoch)) Alert.alert('Error', 'Could not approve.');
     }
   };
 
   const handleReject = async (approvalId: string) => {
+    const epoch = generation.current;
     try {
       await api.post(`/approvals/${approvalId}/reject`);
+      if (!current(epoch)) return;
       Alert.alert('Rejected', 'Action cancelled.');
       speakText('Action rejected.');
       setMessages(prev => prev.map(msg =>
         msg.approvalId === approvalId ? { ...msg, approvalId: undefined } : msg
       ));
     } catch (err) {
-      Alert.alert('Error', 'Could not reject.');
+      if (current(epoch)) Alert.alert('Error', 'Could not reject.');
     }
   };
 

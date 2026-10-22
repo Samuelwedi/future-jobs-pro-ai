@@ -80,7 +80,11 @@ export default function KioskScreen() {
     {manager && <TouchableOpacity style={styles.setupBtn} onPress={() => setSetupOpen(true)}><MaterialIcons name="manage-accounts" size={21} color="#00D4FF" /><Text style={styles.setupText}>Employee PINs</Text></TouchableOpacity>}
     </View>
     <ScrollView contentContainerStyle={styles.kioskContent} keyboardShouldPersistTaps="handled">
-    <View style={styles.header}><Text style={styles.headerTitle}>Kiosk Clock</Text><Text style={styles.headerSubtitle}>Employee PIN clock in and clock out</Text></View>
+    <View style={styles.header}><Text style={styles.headerTitle}>Kiosk Clock</Text><Text style={styles.headerSubtitle}>Employee PIN clock in and clock out</Text>
+      <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>Use your employee PIN, not a project PIN. Projects do not need a PIN.</Text>
+      {manager ? <TouchableOpacity accessibilityRole="button" onPress={() => setSetupOpen(true)} style={{ padding: 12 }}><Text style={styles.setupText}>No PIN yet? Set up employee PINs</Text></TouchableOpacity>
+        : <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>Ask your manager to create your employee PIN before using the kiosk.</Text>}
+    </View>
     <View style={styles.modeRow}>
       <TouchableOpacity style={[styles.modeBtn, mode === 'clock-in' && styles.modeBtnActiveIn]} onPress={() => setMode('clock-in')}><Text style={styles.modeText}>Clock In</Text></TouchableOpacity>
       <TouchableOpacity style={[styles.modeBtn, mode === 'clock-out' && styles.modeBtnActiveOut]} onPress={() => setMode('clock-out')}><Text style={styles.modeText}>Clock Out</Text></TouchableOpacity>

@@ -169,8 +169,10 @@ class ApiService {
   ): Promise<T> {
     const online = getOnlineStatus();
     if (!online && !replay) {
-
-      const permanentUri = (FileSystem as any).documentDirectory + `offline-${Date.now()}-${fileUri.split('/').pop()||'upload'}`;
+      console.log('📴 Offline – queuing upload:', url);
+      const extension = /\.([a-z0-9]+)(?:\?.*)?$/i.exec(fileUri)?.[1] || (fieldName === 'audio' ? 'm4a' : 'jpg');
+      if (!FileSystem.documentDirectory) throw new Error('Local storage is unavailable. Please retry when online.');
+      const permanentUri = FileSystem.documentDirectory + `offline-${Date.now()}.${extension}`;
       await FileSystem.copyAsync({ from: fileUri, to: permanentUri });
       await queueAction({ method: 'POST', url, data: extraFields, fileUri: permanentUri, fieldName, fileInfo });
       throw new Error('Offline – upload queued for later');

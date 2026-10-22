@@ -3,7 +3,13 @@
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
+import { screenCopy } from './screenTranslations';
 export type Lang = 'en' | 'es' | 'fr';
+
+export function deviceLanguage(locale?: string): Lang {
+  const language = locale?.toLowerCase().split(/[-_]/)[0];
+  return language === 'es' || language === 'fr' ? language : 'en';
+}
 
 const translations: Record<Lang, Record<string, string>> = {
   en: {
@@ -285,7 +291,7 @@ const translations: Record<Lang, Record<string, string>> = {
 };
 
 export function t(key: string, lang: Lang, vars?: Record<string, string>): string {
-  const text = translations[lang]?.[key] ?? translations.en[key] ?? key;
+  const text = translations[lang]?.[key] ?? (lang === 'en' ? undefined : screenCopy[key]?.[lang === 'es' ? 0 : 1]) ?? translations.en[key] ?? key;
   if (!vars) return text;
   return Object.entries(vars).reduce((acc, [k, v]) => acc.replace(`{${k}}`, v), text);
 }
