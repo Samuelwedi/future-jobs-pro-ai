@@ -12,7 +12,8 @@
     "type-check": "tsc --noEmit",
     "clean": "rimraf dist",
     "test:release": "npm run build && node --test --test-concurrency=1 tests/release.test.cjs tests/native-payout.test.cjs tests/native-payout-migration.test.cjs tests/local-sandbox-payout.test.cjs tests/google-billing.test.cjs tests/apple-billing.test.cjs tests/release-upgrade.test.cjs tests/payroll-rules.test.cjs tests/worldwide-payroll.test.cjs tests/complimentary-access.test.cjs",
-    "test:native-payout": "npm run build && node --test tests/native-payout.test.cjs"
+    "test:native-payout": "npm run build && node --test tests/native-payout.test.cjs",
+    "migrate:voice-notes": "node scripts/runVoiceNoteMigration.js"
   },
   "keywords": [],
   "author": "Samuel B.",

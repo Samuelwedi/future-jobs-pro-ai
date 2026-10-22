@@ -5,8 +5,17 @@ import { v2 as cloudinary } from 'cloudinary';
 import { pool } from '../config/database';
 import { processVoiceNote, processTranscriptOnly, transcribeAudio } from '../services/voiceService';
 import * as fs from 'fs';
+import { randomUUID } from 'crypto';
+import { tmpdir } from 'os';
+import { join, extname } from 'path';
 
 const router = express.Router();
+
+function audioTempPath(originalName: string): string {
+  const extension = extname(originalName).toLowerCase();
+  const supported = ['.m4a', '.mp4', '.mp3', '.wav', '.webm', '.ogg', '.flac'];
+  return join(tmpdir(), `voice-${randomUUID()}${supported.includes(extension) ? extension : '.m4a'}`);
+}
 
 async function authenticatedActor(req: Request): Promise<{ userId: string; companyId: string }> {
   const decoded = verifyToken(req);
@@ -54,7 +63,7 @@ router.post('/assistant-transcribe', upload.single('audio'), async (req: Request
   try {
     await authenticatedActor(req);
     if (!req.file) return res.status(400).json({ success: false, message: 'No audio file provided' });
-    tempFile = `/tmp/lucy-${Date.now()}.m4a`;
+    tempFile = audioTempPath(req.file.originalname);
     fs.writeFileSync(tempFile, req.file.buffer);
     const transcript = (await transcribeAudio(tempFile)).trim();
     if (!transcript) return res.status(422).json({ success: false, message: 'No speech detected' });
@@ -73,6 +82,9 @@ router.post('/assistant-transcribe', upload.single('audio'), async (req: Request
 //    POST /voice/process
 // ============================================================
 router.post('/process', upload.single('audio'), async (req: Request, res: Response) => {
+  let tempFile = '';
+  let stage = 'validation';
+  const requestId = randomUUID();
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'No audio file provided' });
@@ -84,6 +96,14 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
       return res.status(400).json({ success: false, message: 'Missing projectId' });
     }
     await assertProjectAccess(String(projectId), actor.companyId);
+    if (timeEntryId) {
+      const entry = await pool.query('SELECT id FROM time_entries WHERE id = $1 AND user_id = $2 AND project_id = $3', [timeEntryId, actor.userId, projectId]);
+      if (!entry.rowCount) return res.status(400).json({ success: false, message: 'The selected shift does not belong to this user and project.' });
+    }
+    if (!process.env.OPENAI_API_KEY || /^your[-_]/i.test(process.env.OPENAI_API_KEY) ||
+        !process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+      return res.status(503).json({ success: false, message: 'Voice processing is not configured on the server. Contact support; your recording can be retried.' });
+    }
 
     // Upload audio to Cloudinary
     const now = new Date();
@@ -91,28 +111,28 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const folderPath = `future-jobs-pro-ai/projects/${projectId}/${year}-${month}/voice-notes`;
 
+    stage = 'audio upload';
     const uploadResult = await cloudinary.uploader.upload(
-      `data:audio/m4a;base64,${req.file.buffer.toString('base64')}`,
+      `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
       {
         folder: folderPath,
         resource_type: 'video',
-        public_id: `audio_${Date.now()}`,
+        public_id: `audio_${requestId}`,
       }
     );
 
     const audioUrl = uploadResult.secure_url;
 
-    // Process transcription (saves voice note record internally)
-    const tempFile = `/tmp/voice-${Date.now()}.m4a`;
+    stage = 'transcription';
+    tempFile = audioTempPath(req.file.originalname);
     fs.writeFileSync(tempFile, req.file.buffer);
     const result = await processVoiceNote(tempFile, actor.userId, projectId, timeEntryId);
-    fs.unlinkSync(tempFile);
 
     // Insert into voice_notes with company_id and audio_url
     const query = `
       INSERT INTO voice_notes
-      (company_id, user_id, project_id, time_entry_id, audio_url, transcript, duration_seconds, taken_at, folder_path, metadata)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)
+      (company_id, user_id, project_id, time_entry_id, audio_url, transcript, duration_seconds, taken_at, folder_path, metadata, structured_data, client_summary)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9, $10, $11)
       RETURNING id
     `;
     const values = [
@@ -124,8 +144,11 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
       result.transcript,
       result.duration,
       folderPath,
-      JSON.stringify({ structured: result.structuredData, tags: result.tags })
+      JSON.stringify({ structured: result.structuredData, tags: result.tags }),
+      JSON.stringify(result.structuredData),
+      result.clientSummary,
     ];
+    stage = 'database save';
     const dbResult = await pool.query(query, values);
 
     res.json({
@@ -138,9 +161,12 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
       duration: result.duration,
     });
 
-  } catch (error) {
-    console.error('❌ Voice processing error:', error);
-    res.status(500).json({ success: false, message: 'Failed to process voice note' });
+  } catch (error: any) {
+    console.error('Voice processing failed', { requestId, stage, code: error.code, message: error.message });
+    const status = error.message === 'Not authenticated' ? 401 : error.message === 'Project not found in your company' ? 404 : 500;
+    res.status(status).json({ success: false, requestId, message: status !== 500 ? error.message : `Voice processing failed during ${stage}. Please retry your saved recording or contact support with reference ${requestId}.` });
+  } finally {
+    if (tempFile) await fs.promises.unlink(tempFile).catch(() => {});
   }
 });
 
