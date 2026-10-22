@@ -1,0 +1,10 @@
+name: Submit iOS 1.2.6 to TestFlight
+on:
+  workflow_dispatch:
+jobs:
+  submit_ios:
+    name: Submit completed iOS build 52
+    type: submit
+    params:
+      build_id: 650f1169-1acb-4c31-9a1e-daf6607fc3da
+      profile: production
