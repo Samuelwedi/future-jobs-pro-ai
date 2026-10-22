@@ -1,6 +1,6 @@
 name: Submit iOS 1.2.6 to TestFlight
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
 jobs:
   submit_ios:
     name: Submit completed iOS build 52
