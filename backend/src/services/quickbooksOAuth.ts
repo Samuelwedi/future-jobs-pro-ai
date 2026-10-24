@@ -26,19 +26,27 @@ function clientAuthorization(): string {
   return `Basic ${credentials}`;
 }
 
-function responseError(status: number, payload: any): Error {
+export class QuickBooksRequestError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly providerCode: string,
+    public readonly intuitTid: string | null,
+  ) {
+    super(providerCode === 'invalid_grant'
+      ? 'QuickBooks authorization has expired or been revoked; reconnect QuickBooks'
+      : `QuickBooks request failed (HTTP ${status}, code ${providerCode})${intuitTid ? `; reference ${intuitTid}` : ''}`);
+    this.name = 'QuickBooksRequestError';
+  }
+}
+
+function responseError(response: Response, payload: any): Error {
   const fault = payload?.Fault?.Error?.[0];
-  const providerCode = String(
-    fault?.code || payload?.error || payload?.code || status,
-  ).slice(0, 80);
-  const providerMessage = String(
-    fault?.Message ||
-      fault?.Detail ||
-      payload?.error_description ||
-      payload?.message ||
-      'QuickBooks request failed',
-  ).slice(0, 300);
-  return new Error(`QuickBooks request failed (${providerCode}): ${providerMessage}`);
+  const rawCode = String(fault?.code || payload?.error || payload?.code || response.status);
+  const providerCode = /^[a-zA-Z0-9_-]{1,80}$/.test(rawCode) ? rawCode : String(response.status);
+  const rawTid = response.headers.get('intuit_tid');
+  const tid = rawTid && /^[a-zA-Z0-9_-]{1,128}$/.test(rawTid) ? rawTid : null;
+  // Provider descriptions can contain customer data. Keep only diagnostic IDs.
+  return new QuickBooksRequestError(response.status, providerCode, tid);
 }
 
 async function readJson(response: Response): Promise<any> {
@@ -53,7 +61,7 @@ async function readJson(response: Response): Promise<any> {
 
 async function checkedJson(response: Response): Promise<any> {
   const payload = await readJson(response);
-  if (!response.ok) throw responseError(response.status, payload);
+  if (!response.ok) throw responseError(response, payload);
   return payload;
 }
 
