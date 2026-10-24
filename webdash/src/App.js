@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import './App.css';
+import OwnerOperations from './OwnerOperations';
 
 const API_BASE = (process.env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app').replace(/\/$/, '');
 
@@ -165,6 +166,7 @@ function App() {
       <header className="sidebar-header"><div><span className="eyebrow">Future Jobs Pro AI</span><h1>Customer support</h1></div></header>
       <div className="agent-card"><strong>{agent.firstName} {agent.lastName}</strong><span>{agent.role}</span></div>
       <nav className="portal-nav">
+        {agent.role === 'owner' && <button className={view === 'operations' ? 'selected' : ''} onClick={() => setView('operations')}>Lucy Operations</button>}
         <button className={view === 'queue' ? 'selected' : ''} onClick={() => setView('queue')}>Support queue</button>
         {manager && <button className={view === 'agents' ? 'selected' : ''} onClick={() => void loadAgents()}>Agent management</button>}
         <button className={view === 'reliability' ? 'selected' : ''} onClick={() => void loadIncidents()}>System health</button>
@@ -178,7 +180,7 @@ function App() {
     </aside>
     <section className="conversation-panel">
       {error && <div className="error-banner portal-error">{error}<button onClick={() => setError('')}>×</button></div>}
-      {view === 'reliability' ? <section className="management-panel"><h2>System health</h2><p>Lucy groups repeated failures into incidents. Automated actions are limited to approved, reversible playbooks.</p>
+      {view === 'operations' && agent.role === 'owner' ? <OwnerOperations client={client}/> : view === 'reliability' ? <section className="management-panel"><h2>System health</h2><p>Lucy groups repeated failures into incidents. Automated actions are limited to approved, reversible playbooks.</p>
         <button className="secondary-button" onClick={() => void client().post('/api/system-reliability/diagnostics').then(loadIncidents)}>Run diagnostics</button>
         <div className="agent-list">{incidents.length === 0 ? <article><div><strong>No open incidents</strong><span>The monitored services are quiet.</span></div></article> : incidents.map((item) => <article key={item.id}><div><strong>{item.severity.toUpperCase()} · {item.component}</strong><span>{item.summary} · {item.occurrences} occurrence(s) · {new Date(item.lastSeenAt).toLocaleString()}</span></div><div><button className="secondary-button" onClick={() => void updateIncident(item.id, 'acknowledged')}>Acknowledge</button><button className="resolve-button" onClick={() => void updateIncident(item.id, 'resolved')}>Resolve</button></div></article>)}</div>
       </section> : view === 'agents' ? <section className="management-panel"><h2>Agent management</h2><p>Create credentials for Future Jobs Pro AI support staff. These accounts cannot enter customer companies.</p>

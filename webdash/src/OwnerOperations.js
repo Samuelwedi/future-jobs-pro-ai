@@ -1,0 +1,21 @@
+import React, {useCallback,useEffect,useState} from 'react';
+const roles=['lucy','sales','support','it'];
+export default function OwnerOperations({client}) {
+ const [data,setData]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[department,setDepartment]=useState('lucy'),[instruction,setInstruction]=useState('');
+ const load=useCallback(async()=>{try{setData((await client().get('/api/owner-operations')).data);setError('');}catch(e){setError(e.response?.data?.message||'Cannot load operations');}},[client]);
+ useEffect(()=>{void load();const timer=setInterval(()=>void load(),15000);return()=>clearInterval(timer);},[load]);
+ const action=async(fn)=>{setBusy(true);try{await fn();await load();}catch(e){setError(e.response?.data?.message||'Request failed');}finally{setBusy(false);}};
+ return <section className="owner-operations">
+ <header><span className="eyebrow">PRIVATE • PLATFORM OWNER</span><h1>Lucy Operations</h1><p>Your internal Sales, Support and IT review team.</p><button className="secondary-button" onClick={load}>Refresh</button></header>
+ {error&&<div role="alert" className="error-banner">{error}</div>}
+ <p className="lucy-summary">Agents analyze aggregate platform evidence and prepare internal recommendations. Accepting a report records your review; it does not send messages, change accounts or deploy code.</p>
+ {data&&<><p>Worker: <strong>{data.workerEnabled?'Enabled':'Disabled'}</strong> · AI configuration: {data.apiConfigured?'Present':'Missing'} · Limit: {data.dailyRunLimit} runs per rolling 24 hours</p>
+ <div className="ops-grid">{roles.map(role=>{const s=data.schedules.find(x=>x.department===role);return <article className="ops-card" key={role}><h2>{role==='lucy'?'Lucy · Coordinator':role.toUpperCase()}</h2><p>{role==='sales'?'Subscription funnel reviews and sales drafts':role==='support'?'Ticket workload and triage recommendations':role==='it'?'Incident reviews and investigation plans':'Priorities across all departments'}</p><label><input type="checkbox" checked={Boolean(s?.enabled)} disabled={busy||!data.workerEnabled} onChange={e=>void action(()=>client().put(`/api/owner-operations/schedules/${role}`,{enabled:e.target.checked,intervalHours:24}))}/> Daily review</label>{s?.enabled&&<p>Next: {new Date(s.next_run_at).toLocaleString()}</p>}</article>})}</div>
+ <form onSubmit={e=>{e.preventDefault();void action(async()=>{await client().post('/api/owner-operations/jobs',{department,instruction});setInstruction('');});}}>
+ <h2>Assign an internal review</h2><label>Department <select value={department} onChange={e=>setDepartment(e.target.value)}>{roles.map(r=><option key={r}>{r}</option>)}</select></label>
+ <label>Task<textarea required maxLength={4000} rows={4} value={instruction} onChange={e=>setInstruction(e.target.value)} placeholder="Review the support backlog and suggest priorities"/></label><button className="primary-button" disabled={busy||!data.workerEnabled||!data.apiConfigured||!instruction.trim()}>Queue review</button></form>
+ <h2>Work queue and results</h2>{!data.jobs.length&&<p>No tasks yet. Assign a review or enable a daily review.</p>}{data.jobs.map(j=><article className="ops-card" key={j.id}><strong>{j.department.toUpperCase()} · {j.status}</strong><p>{j.instruction}</p><small>{new Date(j.created_at).toLocaleString()} {j.model&&`· ${j.model} · ${j.input_tokens||0} input / ${j.output_tokens||0} output tokens`}</small>{j.result&&<pre className="ops-result">{j.result}</pre>}{j.error&&<p role="alert">{j.error}</p>}{(j.status==='review'?['accepted','dismissed']:j.status==='queued'?['cancelled']:[]).map(decision=><button className="secondary-button" key={decision} disabled={busy} onClick={()=>void action(()=>client().post(`/api/owner-operations/jobs/${j.id}/review`,{decision}))}>{decision==='accepted'?'Accept report':decision==='dismissed'?'Dismiss report':'Cancel queued task'}</button>)}</article>)}
+ <details><summary>Platform evidence</summary><pre className="ops-result">{JSON.stringify(data.snapshot,null,2)}</pre></details>
+ <details><summary>Audit history</summary>{data.audit.map(a=><p key={a.id}>{new Date(a.created_at).toLocaleString()} · {a.action} · {a.job_id}</p>)}</details></>}
+ </section>;
+}
