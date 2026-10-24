@@ -3,6 +3,7 @@ import { decrypt, encrypt } from './encryptionService';
 import {
   callQuickBooksApi,
   refreshQuickBooksAccessToken,
+  QuickBooksRequestError,
 } from './quickbooksOAuth';
 
 type QuickBooksTokens = {
@@ -42,98 +43,71 @@ function environment(): 'sandbox' | 'production' {
     : 'sandbox';
 }
 
-async function getValidToken(
-  companyId: string,
-): Promise<QuickBooksTokens> {
-  const result = await pool.query(
-    `SELECT
-       access_token,
-       refresh_token,
-       realm_id,
-       token_expires_at
-     FROM integrations
-     WHERE company_id = $1
-       AND provider = 'quickbooks'
-       AND is_active = TRUE
-       AND environment = $2`,
-    [companyId, environment()],
-  );
-
-  if (!result.rowCount) {
-    throw new Error(
-      'Connect QuickBooks before running a sync',
+async function getValidToken(companyId: string): Promise<QuickBooksTokens> {
+  const client = await pool.connect();
+  const currentEnvironment = environment();
+  let transactionOpen = false;
+  try {
+    await client.query('BEGIN');
+    transactionOpen = true;
+    // Serialize refreshes across replicas: never reuse a token another request
+    // has already replaced, or overwrite a concurrently reconnected account.
+    const result = await client.query(
+      `SELECT access_token, refresh_token, realm_id, token_expires_at
+       FROM integrations
+       WHERE company_id = $1 AND provider = 'quickbooks'
+         AND is_active = TRUE AND environment = $2
+       FOR UPDATE`,
+      [companyId, currentEnvironment],
     );
-  }
-
-  let accessToken = decrypt(
-    result.rows[0].access_token,
-  );
-
-  let refreshToken = result.rows[0].refresh_token
-    ? decrypt(result.rows[0].refresh_token)
-    : null;
-
-  const realmId = String(
-    result.rows[0].realm_id || '',
-  );
-
-  if (!realmId) {
-    throw new Error(
-      'The QuickBooks company ID is missing; reconnect QuickBooks',
-    );
-  }
-
-  const expiresAt = result.rows[0].token_expires_at
-    ? new Date(
-        result.rows[0].token_expires_at,
-      ).getTime()
-    : 0;
-
-  // Refresh five minutes early to prevent expiry
-  // during an API request.
-  if (expiresAt <= Date.now() + 5 * 60 * 1000) {
-    if (!refreshToken) {
-      throw new Error(
-        'QuickBooks authorization has expired; reconnect QuickBooks',
-      );
+    if (!result.rowCount) throw new Error('Connect QuickBooks before running a sync');
+    const row = result.rows[0];
+    let accessToken = decrypt(row.access_token);
+    let refreshToken = row.refresh_token ? decrypt(row.refresh_token) : null;
+    const realmId = String(row.realm_id || '');
+    if (!realmId) throw new Error('The QuickBooks company ID is missing; reconnect QuickBooks');
+    const expiresAt = row.token_expires_at ? new Date(row.token_expires_at).getTime() : 0;
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now() + 5 * 60 * 1000) {
+      try {
+        if (!refreshToken) {
+          throw new QuickBooksRequestError(401, 'invalid_grant', null);
+        }
+        const refreshed = await refreshQuickBooksAccessToken(refreshToken);
+        accessToken = refreshed.access_token;
+        refreshToken = refreshed.refresh_token || refreshToken;
+        const lifetime = Number(refreshed.expires_in || 3600);
+        if (!Number.isFinite(lifetime) || lifetime <= 0) {
+          throw new Error('QuickBooks returned an invalid access-token lifetime');
+        }
+        await client.query(
+          `UPDATE integrations
+           SET access_token = $1, refresh_token = $2, token_expires_at = $3, updated_at = NOW()
+           WHERE company_id = $4 AND provider = 'quickbooks' AND environment = $5`,
+          [encrypt(accessToken), encrypt(refreshToken),
+            new Date(Date.now() + lifetime * 1000), companyId, currentEnvironment],
+        );
+      } catch (error) {
+        if (error instanceof QuickBooksRequestError && error.providerCode === 'invalid_grant') {
+          await client.query(
+            `UPDATE integrations SET is_active = FALSE, updated_at = NOW()
+             WHERE company_id = $1 AND provider = 'quickbooks' AND environment = $2`,
+            [companyId, currentEnvironment],
+          );
+          await client.query('COMMIT');
+          transactionOpen = false;
+        }
+        throw error;
+      }
     }
-
-    const refreshed =
-      await refreshQuickBooksAccessToken(
-        refreshToken,
-      );
-
-    accessToken = refreshed.access_token;
-    refreshToken =
-      refreshed.refresh_token || refreshToken;
-
-    const newExpiresAt = new Date(
-      Date.now() +
-        Number(refreshed.expires_in || 3600) *
-          1000,
-    );
-
-    await pool.query(
-      `UPDATE integrations
-       SET access_token = $1,
-           refresh_token = $2,
-           token_expires_at = $3,
-           updated_at = NOW()
-       WHERE company_id = $4
-         AND provider = 'quickbooks'`,
-      [
-        encrypt(accessToken),
-        encrypt(refreshToken),
-        newExpiresAt,
-        companyId,
-      ],
-    );
+    await client.query('COMMIT');
+    transactionOpen = false;
+    return { accessToken, realmId };
+  } catch (error) {
+    if (transactionOpen) await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
-
-  return {
-    accessToken,
-    realmId,
-  };
 }
 
 async function makeApiCall(
