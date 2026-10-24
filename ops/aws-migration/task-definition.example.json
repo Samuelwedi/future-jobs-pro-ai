@@ -1,0 +1,72 @@
+{
+  "family": "futurejobs-migration-preview",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "REPLACE_EXECUTION_ROLE_ARN",
+  "taskRoleArn": "REPLACE_TASK_ROLE_ARN",
+  "containerDefinitions": [
+    {
+      "name": "futurejobs",
+      "image": "REPLACE_ECR_IMAGE_DIGEST",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "8080"
+        },
+        {
+          "name": "OPERATIONS_REPORT_WORKER",
+          "value": "false"
+        },
+        {
+          "name": "DB_SSL",
+          "value": "true"
+        },
+        {
+          "name": "DB_SSL_REJECT_UNAUTHORIZED",
+          "value": "true"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "REPLACE_SECRET_ARN_FOR_DATABASE_URL"
+        },
+        {
+          "name": "REDIS_URL",
+          "valueFrom": "REPLACE_SECRET_ARN_FOR_REDIS_URL"
+        },
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "REPLACE_SECRET_ARN_FOR_JWT_SECRET"
+        },
+        {
+          "name": "ENCRYPTION_KEY",
+          "valueFrom": "REPLACE_SECRET_ARN_FOR_ENCRYPTION_KEY"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "REPLACE_LOG_GROUP",
+          "awslogs-region": "REPLACE_REGION",
+          "awslogs-stream-prefix": "futurejobs"
+        }
+      }
+    }
+  ]
+}
