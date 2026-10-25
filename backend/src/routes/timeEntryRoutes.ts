@@ -1,3 +1,4 @@
+import { companyDate } from '../services/payPeriodCalendar';
 import { completeTimeEntry, employeeOvertime } from '../services/overtimeService';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
@@ -59,6 +60,7 @@ router.get('/', async (req: Request, res: Response) => {
 
       return {
         id: row.id,
+        work_date: companyDate(computed.policy.timezone, clockIn),
         project_name: row.project_name || 'Unknown',
         project_address: row.project_address || '',
         clock_in: row.clock_in,
@@ -76,7 +78,7 @@ router.get('/', async (req: Request, res: Response) => {
       };
     });
 
-    res.json({ success: true, entries });
+    res.json({ success: true, entries, timezone: computed.policy.timezone });
   } catch (error: any) {
     console.error('Error fetching time entries:', error);
     res.status(500).json({ success: false, message: error.message });

@@ -1,5 +1,5 @@
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, SectionList, ActivityIndicator, RefreshControl,
   TouchableOpacity,  ScrollView, Alert, TextInput,
@@ -10,14 +10,16 @@ import { API_URL, api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import { format, startOfWeek, endOfWeek, parseISO } from 'date-fns';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { timesheetDay, sumTimesheetHours } from '../utils/timesheetTotals';
 
 interface TimeEntry {
   id: string;
   project_name: string;
   project_address: string;
   clock_in: string;
+  work_date?: string;
   clock_out: string | null;
   break_minutes: number;
   hours: string;
@@ -68,6 +70,8 @@ export default function TimesheetScreen() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [editForm,setEditForm]=useState({clockIn:'',clockOut:'',breakMinutes:'0',reason:''});
   const [editing,setEditing]=useState(false);
+  const requestSequence = useRef(0);
+  const [timezone, setTimezone] = useState<string | undefined>();
 
   const isBossOrManager = user?.role === 'boss' || user?.role === 'manager';
 
@@ -84,28 +88,35 @@ export default function TimesheetScreen() {
     }
   }, []);
 
-  const fetchEntries = async () => {
+  const fetchEntries = useCallback(async () => {
+    const sequence = ++requestSequence.current;
     try {
       const userId = selectedUserId || user?.id;
-      const res = await api.get<{ success: boolean; entries: TimeEntry[] }>(
+      const res = await api.get<{ success: boolean; entries: TimeEntry[]; timezone?: string }>(
         `/time-entries?userId=${userId}&start=${weekStart}&end=${weekEnd}`
       );
       let entriesData = res.entries || [];
       if (!entriesData.length && (res as any).data?.entries) {
         entriesData = (res as any).data.entries;
       }
+      if (sequence !== requestSequence.current) return;
       setEntries(entriesData);
+      setTimezone(res.timezone);
       setErrorMsg(null);
     } catch (e: any) {
+      if (sequence !== requestSequence.current) return;
       console.error('Timesheet error:', e);
       setErrorMsg(e.message || 'Failed to load entries');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (sequence === requestSequence.current) { setLoading(false); setRefreshing(false); }
     }
-  };
+  }, [selectedUserId, user?.id, weekStart, weekEnd]);
 
-  useEffect(() => { fetchEntries(); }, [weekOffset, selectedUserId]);
+  useEffect(() => {
+    setEntries([]); setSelectedEntry(null); setLoading(true);
+    void fetchEntries();
+    return () => { requestSequence.current += 1; };
+  }, [fetchEntries]);
 
   const onRefresh = () => { setRefreshing(true); fetchEntries(); };
 
@@ -126,24 +137,13 @@ export default function TimesheetScreen() {
         throw new Error(`Export failed: ${response.status} ${errorText}`);
       }
 
-      const blob = await response.blob();
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = reader.result as string;
-        const base64Data = base64.split(',')[1] || base64;
-
-        // ✅ Safe fallback for documentDirectory
-        const fileSystemAny = FileSystem as any;
-        const docDir = fileSystemAny.documentDirectory || fileSystemAny.cacheDirectory || '';
-        const fileUri = `${docDir}timesheet_${weekStart}_${weekEnd}.csv`;
-
-        // ✅ Use 'base64' string literal – avoids all type issues
-        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-          encoding: 'base64' as any,
-        });
-        await Sharing.shareAsync(fileUri);
-      };
-      reader.readAsDataURL(blob);
+      const csv = await response.text();
+      const directory = FileSystem.cacheDirectory;
+      if (!directory) throw new Error('File storage is unavailable');
+      const fileUri = `${directory}timesheet_${weekStart}_${weekEnd}.csv`;
+      await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is unavailable on this device');
+      await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', UTI: 'public.comma-separated-values-text' });
     } catch (e) {
       console.error('Export error:', e);
       Alert.alert('Error', 'Could not export timesheet: ' + (e instanceof Error ? e.message : ''));
@@ -154,15 +154,12 @@ export default function TimesheetScreen() {
   const groupByDay = (items: TimeEntry[]): DaySection[] => {
     const map = new Map<string, { entries: TimeEntry[]; totalMs: number; totalOTMs: number }>();
     items.forEach(entry => {
-      const dayKey = format(parseISO(entry.clock_in), 'yyyy-MM-dd');
+      const dayKey = timesheetDay(entry, timezone);
       const existing = map.get(dayKey) || { entries: [], totalMs: 0, totalOTMs: 0 };
       existing.entries.push(entry);
-      if (entry.clock_out) {
-        const ms = new Date(entry.clock_out).getTime() - new Date(entry.clock_in).getTime();
-        existing.totalMs += ms;
-        const hours = ms / 3600000;
-        if (hours > 8) existing.totalOTMs += (hours - 8) * 3600000;
-      }
+      const hours = sumTimesheetHours([entry]);
+      existing.totalMs += hours.total * 3600000;
+      existing.totalOTMs += hours.overtime * 3600000;
       map.set(dayKey, existing);
     });
 
@@ -184,8 +181,9 @@ export default function TimesheetScreen() {
   };
 
   const sections = groupByDay(entries);
-  const weeklyTotal = entries.reduce((sum, e) => sum + parseFloat(e.hours || '0'), 0);
-  const weeklyOT = entries.reduce((sum, e) => sum + parseFloat(e.overtimeHours || '0'), 0);
+  const weekly = sumTimesheetHours(entries);
+  const weeklyTotal = weekly.regular;
+  const weeklyOT = weekly.overtime;
 
   const handleAttachFile = async (timeEntryId: string) => {
     try {
@@ -286,6 +284,7 @@ export default function TimesheetScreen() {
         </TouchableOpacity>
       </View>
 
+      {timezone && <Text style={{ color: '#AAA', textAlign: 'center' }}>Company timezone: {timezone}</Text>}
       <View style={styles.weeklySummary}>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryValue}>{weeklyTotal.toFixed(1)}h</Text>

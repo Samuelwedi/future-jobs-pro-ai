@@ -1,4 +1,5 @@
 import React from 'react';
+import { nativeApplicationVersion, nativeBuildVersion } from 'expo-application';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -17,7 +18,7 @@ export default function AboutScreen() {
       </View>
       <ScrollView style={styles.body}>
         <Text style={styles.appName}>🚀 Future Jobs Pro AI</Text>
-        <Text style={styles.version}>Version 1.0.0</Text>
+        <Text style={styles.version}>Version {nativeApplicationVersion || 'Unknown'} · Build {nativeBuildVersion || 'Unknown'}</Text>
         <Text style={styles.paragraph}>
           Future Jobs Pro AI was created by Samuel B. to help field service businesses protect their revenue with AI‑powered photo compliance, GPS tracking, and automatic dispute evidence.
         </Text>

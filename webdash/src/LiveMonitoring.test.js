@@ -42,3 +42,13 @@ test('shows IT recommendations as review activity rather than completed fixes', 
   expect(screen.getByText(/Accepted recommendations do not execute code/)).toBeInTheDocument();
   expect(screen.getByText('Recording interrupted')).toBeInTheDocument();
 });
+
+test('shows installed build details and queues an incident-bound investigation', async () => {
+  const recorded={...incident,details:{context:{platform:'android',appVersion:'1.2.8',buildVersion:'9',componentStack:'RecorderScreen'}}};
+  const api={get:jest.fn(url=>Promise.resolve({data:url.includes('incidents')?{incidents:[recorded]}:{workerEnabled:true,apiConfigured:true,jobs:[]}})),post:jest.fn().mockResolvedValue({})};
+  render(<LiveMonitoring client={()=>api} isOwner onUnauthorized={jest.fn()}/>);
+  await screen.findByText('Device and error details');
+  expect(screen.getByText(/App: 1.2.8/)).toHaveTextContent('Build: 9');
+  fireEvent.click(screen.getByText('Request IT investigation'));
+  await waitFor(()=>expect(api.post).toHaveBeenCalledWith('/api/owner-operations/jobs',expect.objectContaining({incidentId:incident.id,department:'it'})));
+});

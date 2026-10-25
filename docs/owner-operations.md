@@ -20,3 +20,5 @@ Deploy the existing production branch, enable OWNER_OPERATIONS_WORKER=true, sign
 Model output cannot execute shell commands, deploy code, alter billing, reset passwords, rotate keys or send messages. Those require separately scoped integrations and explicit approval workflows; they are not implemented here. Lead follow-ups are tracked, not automatically emailed. HubSpot, Salesforce, Calendly and external ticket systems are not connected.
 
 Verification must include backend/staff builds, worker and authorization tests, live health, login and a real completed model review. Mocked tests do not establish live operation.
+
+Incident-bound IT reviews now include bounded technical stacks and installed app/build identifiers when provided by the client. Arbitrary client context and customer identifiers are excluded from model incident evidence. Older clients may report no version; do not infer their installed binary from the latest store submission.

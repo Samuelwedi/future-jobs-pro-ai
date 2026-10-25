@@ -16,7 +16,7 @@ before(async()=>{
  CREATE TABLE support_tickets(id text,status text,priority text);
  CREATE TABLE platform_support_messages(ticket_id text,sender_type text,message text,created_at timestamptz default now());
  CREATE TABLE diagnostic_snapshots(source text,status text,metrics jsonb);
- CREATE TABLE system_incidents(status text,component text,severity text);`);
+ CREATE TABLE system_incidents(id uuid,status text,component text,severity text,summary text,details jsonb,occurrences integer,first_seen_at timestamptz,last_seen_at timestamptz);`);
  await db.exec(fs.readFileSync('migrations/20261024_owner_operations.sql','utf8'));
  pool.query=async(sql,args)=>{const r=await db.query(sql,args);return {...r,rowCount:r.affectedRows||r.rows.length};};
  pool.connect=async()=>({query:async(sql,args)=>{
@@ -61,9 +61,19 @@ test('closed tickets fail without a model call',async()=>{
  await runOwnerOperationsTick();assert.equal(requests,2);
  assert.equal((await db.query("SELECT count(*)::int AS n FROM owner_operations_jobs WHERE ticket_id='ticket-1' AND status='failed'")).rows[0].n,1);
 });
+test('incident investigations receive the matching technical evidence without customer identifiers',async()=>{
+ const id='00000000-0000-4000-8000-000000000002';
+ await db.query("INSERT INTO system_incidents(id,status,component,severity,summary,details) VALUES($1,'open','mobile-ui','critical','Released recorder',$2)",[id,JSON.stringify({userId:'private-user',context:{platform:'android',appVersion:'1.2.7',buildVersion:'8',componentStack:'RecorderScreen',token:'private-token'}})]);
+ await db.query("INSERT INTO owner_operations_jobs(owner_id,department,instruction,incident_id) VALUES($1,'it','Investigate',$2)",[owner,id]);
+ await runOwnerOperationsTick();
+ assert.equal(lastInput.incidentContext.context.buildVersion,'8');
+ assert.equal(lastInput.incidentContext.context.componentStack,'RecorderScreen');
+ assert.equal(JSON.stringify(lastInput).includes('private-user'),false);
+ assert.equal(JSON.stringify(lastInput).includes('private-token'),false);
+});
 test('daily budget includes failures and prevents further calls',async()=>{
  await db.query("INSERT INTO owner_operations_jobs(owner_id,department,instruction,status,started_at) SELECT $1,'it','test','failed',now() FROM generate_series(1,12)",[owner]);
- await runOwnerOperationsTick();assert.equal(requests,2);
+ await runOwnerOperationsTick();assert.equal(requests,3);
 });
 
 test('owner APIs use dedicated authentication rather than customer subscription tokens',()=>{

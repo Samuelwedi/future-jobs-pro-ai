@@ -51,6 +51,7 @@ import CreateShiftScreen from './src/screens/CreateShiftScreen';
 import CompanySettingsScreen from './src/screens/CompanySettingsScreen';
 import WorkerToolsScreen from './src/screens/WorkerToolsScreen';
 import PayrollRulesScreen from './src/screens/PayrollRulesScreen';
+import { mobileDiagnosticContext } from './src/services/mobileDiagnostics';
 import { WakeWordService } from './src/services/wakeWordService';
 
 const Stack = createStackNavigator();
@@ -70,7 +71,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
       component: 'mobile-ui',
       severity: 'critical',
       summary: error.message || 'Unhandled mobile interface error',
-      context: { componentStack: info.componentStack?.slice(0, 4000) },
+      context: { ...mobileDiagnosticContext(), componentStack: info.componentStack?.slice(0, 4000), errorStack: error.stack?.slice(0, 4000) },
     }).catch(() => undefined);
   }
   render() {

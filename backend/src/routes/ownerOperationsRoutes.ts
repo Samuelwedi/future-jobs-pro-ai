@@ -22,6 +22,8 @@ router.post('/jobs',async(req:AgentRequest,res)=>{
  const {department,instruction}=req.body||{};
  if(!departments.includes(department)||typeof instruction!=='string'||!instruction.trim()||instruction.length>4000) return res.status(400).json({message:'Choose a department and enter 1–4000 characters.'});
  if(process.env.OWNER_OPERATIONS_WORKER!=='true'||!process.env.OPENAI_API_KEY?.trim())return res.status(503).json({message:'Operations worker is not enabled and configured.'});
+ const incidentId=req.body.incidentId;
+ if(incidentId!==undefined&&(department!=='it'||typeof incidentId!=='string'||!validId(incidentId)))return res.status(400).json({message:'Invalid incident'});
  const ticketId=req.body.ticketId;
  if(ticketId!==undefined&&(department!=='support'||typeof ticketId!=='string'||ticketId.length>100))return res.status(400).json({message:'Invalid support ticket'});
  const db=await pool.connect();
@@ -31,7 +33,13 @@ router.post('/jobs',async(req:AgentRequest,res)=>{
  const pending=await db.query("SELECT count(*)::int AS n FROM owner_operations_jobs WHERE owner_id=$1 AND status IN ('queued','running')",[req.supportAgent!.id]);
  if(pending.rows[0].n>=12){await db.query('ROLLBACK');return res.status(429).json({message:'Your queue is full. Wait for a review or cancel a task.'});}
  if(ticketId){const ticket=await db.query("SELECT id FROM support_tickets WHERE id::text=$1 AND status='open'",[ticketId]);if(!ticket.rowCount){await db.query('ROLLBACK');return res.status(404).json({message:'Open ticket not found'});}}
- const result=await db.query('INSERT INTO owner_operations_jobs(owner_id,department,instruction,ticket_id) VALUES($1,$2,$3,$4) RETURNING *',[req.supportAgent!.id,department,instruction.trim(),ticketId||null]);
+ if(incidentId){
+ const incident=await db.query("SELECT id FROM system_incidents WHERE id=$1 AND status<>'resolved' FOR UPDATE",[incidentId]);
+ if(!incident.rowCount){await db.query('ROLLBACK');return res.status(409).json({message:'Incident is unavailable or already resolved'});}
+ const pendingIncident=await db.query("SELECT id FROM owner_operations_jobs WHERE incident_id=$1 AND status IN ('queued','running')",[incidentId]);
+ if(pendingIncident.rowCount){await db.query('ROLLBACK');return res.status(409).json({message:'An investigation is already queued or running for this incident'});}
+ }
+ const result=await db.query('INSERT INTO owner_operations_jobs(owner_id,department,instruction,ticket_id,incident_id) VALUES($1,$2,$3,$4,$5) RETURNING *',[req.supportAgent!.id,department,instruction.trim(),ticketId||null,incidentId||null]);
  await db.query("INSERT INTO owner_operations_audit(owner_id,job_id,action) VALUES($1,$2,'queued')",[req.supportAgent!.id,result.rows[0].id]);
  await db.query('COMMIT');
  res.status(201).json({job:result.rows[0]});

@@ -9,7 +9,10 @@ let monitorTimer: NodeJS.Timeout | undefined;
 let consecutiveUnhealthy = 0;
 
 function fingerprint(input: IncidentInput): string {
-  return crypto.createHash('sha256').update(`${input.component}:${input.summary}`).digest('hex');
+  const context = input.details?.context as Record<string, unknown> | undefined;
+  // Different installed binaries must not overwrite each other's evidence.
+  const release = context ? [context.platform, context.appVersion, context.buildVersion].filter(Boolean).join(':') : '';
+  return crypto.createHash('sha256').update(`${input.component}:${input.summary}${release ? ':' + release : ''}`).digest('hex');
 }
 
 export async function reportSystemIncident(input: IncidentInput) {

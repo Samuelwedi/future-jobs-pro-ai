@@ -32,4 +32,5 @@ CREATE TABLE IF NOT EXISTS owner_sales_leads (
  stage TEXT NOT NULL DEFAULT 'new' CHECK(stage IN ('new','qualified','proposal','won','lost')),
  next_follow_up TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE owner_operations_jobs ADD COLUMN IF NOT EXISTS incident_id UUID;
 COMMIT;

@@ -1,3 +1,4 @@
+import { sanitizeIncidentContext } from '../services/incidentContext';
 import express, { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/database';
@@ -32,7 +33,7 @@ router.post('/client-events', async (req, res) => {
     const severity = ['info', 'warning', 'critical'].includes(req.body?.severity) ? req.body.severity : 'warning';
     const incident = await reportSystemIncident({
       component, severity, summary,
-      details: { userId: actor.id, companyId: actor.companyId, context: req.body?.context || {} },
+      details: { userId: actor.id, companyId: actor.companyId, context: sanitizeIncidentContext(req.body?.context) },
     });
     res.status(202).json({ success: true, incidentId: incident.id });
   } catch (error: any) {
