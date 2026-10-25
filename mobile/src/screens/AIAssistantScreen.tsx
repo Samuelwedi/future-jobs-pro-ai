@@ -11,13 +11,12 @@ import { api, API_URL } from '../services/api';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import type { AudioRecorder } from 'expo-audio';
+import type { RecorderSession } from '../services/RecorderSession';
+import { useRecorderSession } from '../hooks/useRecorderSession';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
-  useAudioRecorder,
-  useAudioRecorderState,
 } from 'expo-audio';
 import * as Speech from 'expo-speech';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -69,15 +68,14 @@ export default function AIAssistantScreen() {
   const conversationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const conversationActiveRef = useRef(false);
   const consecutiveMisses = useRef(0);
-  const recorderRef = useRef<AudioRecorder | null>(null);
-  const finishRecordingRef = useRef<(recorder: AudioRecorder) => void>(() => undefined);
-  const audioRecorder = useAudioRecorder(LUCY_RECORDING_OPTIONS);
-  const recorderState = useAudioRecorderState(audioRecorder, 200);
+  const recorderRef = useRef<RecorderSession | null>(null);
+  const finishRecordingRef = useRef<(recorder: RecorderSession) => void>(() => undefined);
+  const { session: audioRecorder, state: recorderState, error: recorderError } = useRecorderSession(LUCY_RECORDING_OPTIONS, true);
   recorderRef.current = audioRecorder;
 
   useEffect(() => {
     const activeRecorder = recorderRef.current;
-    if (!activeRecorder || !recorderState.isRecording || typeof recorderState.metering !== 'number') return;
+    if (!activeRecorder || !recorderState?.isRecording || typeof recorderState.metering !== 'number') return;
     if (recorderState.metering > -42) {
       heardSpeech.current = true;
       silenceStartedAt.current = null;
@@ -87,7 +85,7 @@ export default function AIAssistantScreen() {
         finishRecordingRef.current(activeRecorder);
       }
     }
-  }, [recorderState.isRecording, recorderState.metering]);
+  }, [recorderState?.isRecording, recorderState?.metering]);
 
   useEffect(() => {
     let mounted = true;
@@ -126,9 +124,7 @@ export default function AIAssistantScreen() {
       isSpeaking.current = false;
       try { void Speech.stop().catch(() => {}); } catch {}
       const pending = recorderRef.current;
-      if (pending) {
-        try { if (pending.isRecording) void pending.stop().catch(() => {}); } catch {}
-      }
+      pending?.cancel();
       DeviceEventEmitter.emit('lucyConversationEnded');
     };
     const enter = () => {
@@ -146,6 +142,14 @@ export default function AIAssistantScreen() {
     });
     return () => { blur(); focus(); appState.remove(); leave(); };
   }, [navigation]);
+
+  useEffect(() => {
+    if (!recorderError || !active.current) return;
+    conversationActiveRef.current = false;
+    setConversationActive(false);
+    setIsRecording(false);
+    setVoiceStatus('Microphone interrupted. Tap the microphone to try again.');
+  }, [recorderError]);
 
   const setConversation = (active: boolean) => {
     if (!current(generation.current)) return;
@@ -283,7 +287,7 @@ export default function AIAssistantScreen() {
   };
 
   // ----- Voice recording with metering-based silence detection -----
-  const finishRecording = async (activeRecording: AudioRecorder | null) => {
+  const finishRecording = async (activeRecording: RecorderSession | null) => {
     const epoch = generation.current;
     if (!current(epoch) || !activeRecording || finishingRecording.current) return;
     finishingRecording.current = true;
@@ -291,10 +295,8 @@ export default function AIAssistantScreen() {
     setIsRecording(false);
     setVoiceStatus('Processing your request…');
     try {
-      await activeRecording.stop();
-      if (!current(epoch)) return;
-      const uri = activeRecording.uri;
-      if (!uri) throw new Error('Recording file was not created');
+      const uri = await activeRecording.stop();
+      if (!current(epoch) || !uri) return;
       const transcript = await transcribeAudio(uri);
       if (!current(epoch)) return;
       const endConversation = /^(thanks|thank you|that's all|that is all|goodbye|stop listening|cancel)$/i.test(transcript.trim());
@@ -346,9 +348,9 @@ export default function AIAssistantScreen() {
       });
       if (!current(epoch)) return;
 
-      await audioRecorder.prepareToRecordAsync();
-      if (!current(epoch)) { await audioRecorder.stop().catch(() => {}); return; }
-      audioRecorder.record();
+      const started = await audioRecorder.start();
+      if (!current(epoch)) { audioRecorder.cancel(); return; }
+      if (!started) return;
       setIsRecording(true);
       setVoiceStatus('Listening… speak now');
       heardSpeech.current = false;

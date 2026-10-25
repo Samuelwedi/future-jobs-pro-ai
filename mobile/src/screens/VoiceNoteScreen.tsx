@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ActivityIndicator, Platform, ScrollView,
+  ActivityIndicator, Platform, ScrollView, AppState,
 } from 'react-native';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
-  useAudioRecorder,
 } from 'expo-audio';
+import { useRecorderSession } from '../hooks/useRecorderSession';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -42,13 +42,16 @@ export default function VoiceNoteScreen() {
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const { session: audioRecorder } = useRecorderSession(RecordingPresets.HIGH_QUALITY);
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<VoiceNoteResponse | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mounted = useRef(true);
   const busy = useRef(false);
+  const generation = useRef(0);
+  const focused = useRef(true);
+  const current = (epoch: number) => mounted.current && focused.current && generation.current === epoch;
   const [retryUri, setRetryUri] = useState<string | null>(null);
 
   useEffect(() => {
@@ -76,12 +79,34 @@ export default function VoiceNoteScreen() {
     return () => {
       mounted.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
-      try { if (audioRecorder.isRecording) void audioRecorder.stop().catch(() => {}); } catch {}
+      generation.current += 1;
+      audioRecorder.cancel();
     };
   }, []);
 
+  useEffect(() => {
+    const leave = () => {
+      focused.current = false;
+      generation.current += 1;
+      audioRecorder.cancel();
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = null;
+      setIsRecording(false);
+      setRecordingDuration(0);
+    };
+    const enter = () => { focused.current = true; };
+    const blur = navigation.addListener('blur', leave);
+    const focus = navigation.addListener('focus', enter);
+    const appState = AppState.addEventListener('change', state => {
+      if (state !== 'active') leave();
+      else if (navigation.isFocused()) enter();
+    });
+    return () => { blur(); focus(); appState.remove(); };
+  }, [navigation, audioRecorder]);
+
   const startRecording = async () => {
-    if (busy.current || audioRecorder.isRecording) return;
+    const epoch = generation.current;
+    if (!current(epoch) || busy.current || audioRecorder.isRecording) return;
     if (!hasPermission) {
       Alert.alert('Permission Required', 'Please grant microphone permission in settings.');
       return;
@@ -89,9 +114,11 @@ export default function VoiceNoteScreen() {
     busy.current = true;
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      await audioRecorder.prepareToRecordAsync();
-      if (!mounted.current) { await audioRecorder.stop().catch(() => {}); return; }
-      audioRecorder.record();
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      if (!current(epoch)) return;
+      const started = await audioRecorder.start();
+      if (!current(epoch)) { audioRecorder.cancel(); return; }
+      if (!started) return;
       setRetryUri(null);
       setIsRecording(true);
       const startTime = Date.now();
@@ -107,7 +134,8 @@ export default function VoiceNoteScreen() {
   };
 
   const stopRecording = async () => {
-    if (!audioRecorder.isRecording || busy.current) return;
+    const epoch = generation.current;
+    if (!current(epoch) || !audioRecorder.isRecording || busy.current) return;
     busy.current = true;
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -116,9 +144,8 @@ export default function VoiceNoteScreen() {
     setIsRecording(false);
     setRecordingDuration(0);
     try {
-      await audioRecorder.stop();
-      if (!mounted.current) return;
-      const uri = audioRecorder.uri;
+      const uri = await audioRecorder.stop();
+      if (!current(epoch)) return;
       if (uri) {
         await processRecording(uri);
       } else {

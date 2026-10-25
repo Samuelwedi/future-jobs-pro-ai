@@ -22,6 +22,18 @@ export default function MonthMediaTypeScreen() {
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const soundRef = useRef<AudioPlayer | null>(null);
+  const soundListenerRef = useRef<{ remove(): void } | null>(null);
+  const mounted = useRef(true);
+
+  const releaseAudio = () => {
+    // Detach callbacks and clear ownership before native teardown (which can throw).
+    const sound = soundRef.current;
+    soundRef.current = null;
+    const listener = soundListenerRef.current;
+    soundListenerRef.current = null;
+    try { listener?.remove(); } catch {}
+    try { sound?.remove(); } catch {}
+  };
   const videoPlayer = useVideoPlayer(null);
 
   useEventListener(videoPlayer, 'statusChange', ({ status, error }) => {
@@ -33,31 +45,38 @@ export default function MonthMediaTypeScreen() {
   });
 
   useEffect(() => {
-    if (selectedMedia?.type !== 'video' || !selectedMedia.url) {
-      videoPlayer.pause();
-      return;
-    }
-    setVideoError(false);
-    setVideoLoading(true);
-    videoPlayer.replaceAsync(selectedMedia.url)
-      .then(() => videoPlayer.play())
-      .catch((error) => {
-        setVideoLoading(false);
-        setVideoError(true);
-        console.error('Video error:', error);
-      });
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (selectedMedia?.type !== 'video' || !selectedMedia.url) {
+          videoPlayer.pause();
+          return;
+        }
+        setVideoError(false);
+        setVideoLoading(true);
+        await videoPlayer.replaceAsync(selectedMedia.url);
+        if (!cancelled && mounted.current) videoPlayer.play();
+      } catch (error) {
+        if (!cancelled && mounted.current) {
+          setVideoLoading(false);
+          setVideoError(true);
+        }
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
   }, [selectedMedia?.id, selectedMedia?.type, selectedMedia?.url, videoPlayer]);
 
   useEffect(() => {
+    mounted.current = true;
     if (projectId && yearMonth && mediaType) {
       fetchMedia();
     } else {
       setLoading(false);
     }
     return () => {
-      if (soundRef.current) {
-        soundRef.current.remove();
-      }
+      mounted.current = false;
+      releaseAudio();
     };
   }, []);
 
@@ -81,32 +100,28 @@ export default function MonthMediaTypeScreen() {
       return;
     }
     try {
-      if (soundRef.current) {
-        soundRef.current.remove();
-        soundRef.current = null;
-        setIsPlaying(false);
-      }
+      if (!mounted.current) return;
+      releaseAudio();
+      setIsPlaying(false);
       const sound = createAudioPlayer({ uri: url });
       soundRef.current = sound;
       setIsPlaying(true);
-      sound.addListener('playbackStatusUpdate', (status) => {
-        if (status.didJustFinish) {
+      soundListenerRef.current = sound.addListener('playbackStatusUpdate', (status) => {
+        if (mounted.current && soundRef.current === sound && status.didJustFinish) {
           setIsPlaying(false);
         }
       });
       sound.play();
     } catch (error) {
-      Alert.alert('Error', 'Could not play audio');
+      releaseAudio();
+      setIsPlaying(false);
+      if (mounted.current) Alert.alert('Error', 'Could not play audio');
     }
   };
 
   const handleStopAudio = async () => {
-    if (soundRef.current) {
-      soundRef.current.pause();
-      soundRef.current.remove();
-      soundRef.current = null;
-      setIsPlaying(false);
-    }
+    releaseAudio();
+    if (mounted.current) setIsPlaying(false);
   };
 
   const renderMediaItem = ({ item }: { item: any }) => {
@@ -182,12 +197,8 @@ export default function MonthMediaTypeScreen() {
     setSelectedMedia(null);
     setVideoLoading(false);
     setVideoError(false);
-    if (soundRef.current) {
-      soundRef.current.pause();
-      soundRef.current.remove();
-      soundRef.current = null;
-      setIsPlaying(false);
-    }
+    releaseAudio();
+    if (mounted.current) setIsPlaying(false);
   };
 
   if (loading) {
