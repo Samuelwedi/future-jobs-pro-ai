@@ -7,7 +7,9 @@ async function main() {
   try {
     const sql = fs.readFileSync(path.join(__dirname, '../migrations/20261024_owner_operations.sql'), 'utf8');
     await client.query(sql);
-    console.log('Owner operations schema is ready.');
+    await client.query('SELECT incident_id FROM owner_operations_jobs LIMIT 0');
+    await client.query('SELECT id, incident_id, status FROM owner_repair_jobs LIMIT 0');
+    console.log('Owner operations schema is ready and verified.');
   } finally { client.release(); await pool.end(); }
 }
 
