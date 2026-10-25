@@ -1,0 +1,15 @@
+name: Submit selected iOS build to TestFlight
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        type: string
+        required: true
+        description: Completed iOS production build ID to upload
+jobs:
+  submit_ios:
+    name: Upload selected iOS build
+    type: submit
+    params:
+      build_id: ${{ inputs.build_id }}
+      profile: production
