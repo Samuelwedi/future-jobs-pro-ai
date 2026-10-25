@@ -124,3 +124,23 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .owner-operations, .management-panel { flex: none; overflow: visible; padding: 20px; }
   .messages { min-height: 320px; }
 }
+
+.monitor-header { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; }
+.monitor-header h1 { margin:8px 0; font-size:28px; }
+.monitor-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin:24px 0; }
+.monitor-metrics article { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; }
+.monitor-metrics span,.monitor-metrics strong { display:block; }
+.monitor-metrics span { color:var(--muted); font-size:13px; }
+.monitor-metrics strong { color:var(--cyan); font-size:26px; margin-top:8px; }
+.monitor-filters,.monitor-actions { display:flex; gap:12px; flex-wrap:wrap; margin:16px 0; }
+.monitor-filters label { display:grid; gap:8px; flex:1; min-width:180px; }
+.monitor-filters input,.monitor-filters select { padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--panel); color:#fff; }
+.monitor-incident { padding:22px; border:1px solid var(--line); background:var(--panel); border-radius:14px; margin:16px 0; overflow-wrap:anywhere; }
+.monitor-incident h3 { font-size:16px; line-height:1.5; }
+.monitor-incident p,.monitor-header p { color:var(--muted); line-height:1.6; }
+.incident-badge { border:1px solid var(--line); border-radius:20px; padding:6px 12px; font-size:12px; text-transform:uppercase; }
+.severity-critical { color:#ff9b9b; border-color:#b04545; }.severity-warning { color:#ffdc90; border-color:#927332; }
+.feed-dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--green); margin-right:8px; }.feed-warning { background:#ffce70; }
+.monitor-verification { padding:16px; border:1px solid var(--green); border-radius:12px; }.monitor-verification label { display:block; margin-bottom:16px; }
+.monitor-diagnostics { border-top:1px solid var(--line); margin:28px 0; padding-top:12px; }
+.live-monitor summary { cursor:pointer; color:var(--cyan); padding:12px 0; }
