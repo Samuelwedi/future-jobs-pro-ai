@@ -22,6 +22,7 @@ const PUBLIC_API_PREFIXES = [
   '/api/kiosk-public',
   '/api/support',
   '/api/support-agent',
+  '/api/owner-operations', // Dedicated platform-owner authentication is enforced by its router.
   '/api/system-reliability',
   '/api/admin',
 ];
