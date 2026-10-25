@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import './App.css';
 import OwnerOperations from './OwnerOperations';
@@ -20,8 +20,21 @@ function App() {
   const [newAgent, setNewAgent] = useState({ firstName: '', lastName: '', email: '', password: '', role: 'agent' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
+  const activeTicket = useRef(null);
+  const messageRequest = useRef(0);
+  const queueRequest = useRef(0);
+  const sessionVersion = useRef(0);
+  const sendLock = useRef(false);
 
   const expireAgentSession = useCallback(() => {
+    sessionVersion.current += 1;
+    messageRequest.current += 1;
+    queueRequest.current += 1;
+    activeTicket.current = null;
+    setReply('');
+    setAgents([]);
+    setView('queue');
     localStorage.removeItem('supportAgentToken');
     setToken('');
     setAgent(null);
@@ -33,48 +46,75 @@ function App() {
   const handlePollingError = useCallback((requestError) => {
     if (requestError?.response?.status === 401) {
       expireAgentSession();
+    } else {
+      setError('Support updates unavailable. Your last loaded data is shown; retry shortly.');
     }
   }, [expireAgentSession]);
 
   const client = useCallback(() => axios.create({
     baseURL: API_BASE,
+    timeout: 15000,
     headers: { Authorization: `Bearer ${token}` },
   }), [token]);
 
   const loadTickets = useCallback(async () => {
     if (!token) return;
+    const request = ++queueRequest.current;
     const response = await client().get('/api/support-agent/tickets');
-    setTickets(response.data.tickets || []);
+    if (request !== queueRequest.current) return;
+    const nextTickets = response.data.tickets || [];
+    setTickets(nextTickets);
+    if (activeTicket.current) {
+      const current = nextTickets.find(ticket => ticket.ticketId === activeTicket.current);
+      setSelected(current || null);
+      if (!current) {
+        activeTicket.current = null;
+        messageRequest.current += 1;
+        setMessages([]);
+        setReply('');
+      }
+    }
   }, [client, token]);
 
   const loadMessages = useCallback(async (ticketId) => {
     if (!token || !ticketId) return;
+    const request = ++messageRequest.current;
     const response = await client().get(`/api/support-agent/tickets/${ticketId}/messages`);
-    setMessages(response.data.messages || []);
+    if (request === messageRequest.current && activeTicket.current === ticketId) {
+      setMessages(response.data.messages || []);
+    }
   }, [client, token]);
 
-  const restore = useCallback(async () => {
-    if (!token) return;
-    try {
-      const response = await client().get('/api/support-agent/me');
-      setAgent(response.data.agent);
-      if(response.data.agent.role==='owner')setView('operations');
-      await loadTickets();
-    } catch (requestError) {
-      localStorage.removeItem('supportAgentToken');
-      setToken('');
-      setAgent(null);
-    }
-  }, [client, loadTickets, token]);
-
-  useEffect(() => { void restore(); }, [restore]);
+  useEffect(() => {
+    if (!token) return undefined;
+    let cancelled = false;
+    const version = sessionVersion.current;
+    const restore = async () => {
+      try {
+        const response = await client().get('/api/support-agent/me');
+        if (cancelled || version !== sessionVersion.current) return;
+        setAgent(response.data.agent);
+        if (response.data.agent.role === 'owner') setView('operations');
+        await loadTickets();
+      } catch (requestError) {
+        if (!cancelled && version === sessionVersion.current) handlePollingError(requestError);
+      }
+    };
+    void restore();
+    return () => { cancelled = true; };
+  }, [client, handlePollingError, loadTickets, token]);
   useEffect(() => {
     if (!agent) return undefined;
+    let cancelled = false;
+    const version = sessionVersion.current;
+    const onError = (requestError) => {
+      if (!cancelled && version === sessionVersion.current) handlePollingError(requestError);
+    };
     const timer = setInterval(() => {
-      void loadTickets().catch(handlePollingError);
-      if (selected) void loadMessages(selected.ticketId).catch(handlePollingError);
+      void loadTickets().catch(onError);
+      if (selected) void loadMessages(selected.ticketId).catch(onError);
     }, 15000);
-    return () => clearInterval(timer);
+    return () => { cancelled = true; clearInterval(timer); };
   }, [agent, handlePollingError, loadMessages, loadTickets, selected]);
 
   const login = async (event) => {
@@ -88,30 +128,43 @@ function App() {
   };
 
   const selectTicket = async (ticket) => {
-    setSelected(ticket); setError('');
-    try { await loadMessages(ticket.ticketId); }
-    catch (requestError) { setError(requestError.response?.data?.message || 'Could not load the conversation'); }
+    activeTicket.current = ticket.ticketId;
+    setSelected(ticket); setMessages([]); setReply(''); setError('');
+    try { await loadMessages(ticket.ticketId); return activeTicket.current === ticket.ticketId; }
+    catch (requestError) { if (activeTicket.current === ticket.ticketId) setError(requestError.response?.data?.message || 'Could not load the conversation'); }
   };
 
   const accept = async () => {
     try {
       await client().post(`/api/support-agent/tickets/${selected.ticketId}/accept`);
-      await loadTickets(); setSelected({ ...selected, assignedAgentId: agent.id, assignedAgentName: `${agent.firstName} ${agent.lastName}`, status: 'open' });
+      await loadTickets();
     } catch (requestError) { setError(requestError.response?.data?.message || 'Could not accept ticket'); }
   };
 
   const send = async () => {
-    const message = reply.trim(); if (!message || !selected) return;
+    const message = reply.trim();
+    if (!message || message.length > 5000 || !selected || sendLock.current) return;
+    const ticketId = selected.ticketId;
+    const version = sessionVersion.current;
+    sendLock.current = true; setSending(true); setError('');
     try {
-      await client().post(`/api/support-agent/tickets/${selected.ticketId}/reply`, { message });
-      setReply(''); await loadMessages(selected.ticketId);
-    } catch (requestError) { setError(requestError.response?.data?.message || 'Could not send reply'); }
+      await client().post(`/api/support-agent/tickets/${ticketId}/reply`, { message });
+      if (activeTicket.current === ticketId && version === sessionVersion.current) {
+        setReply('');
+        await loadMessages(ticketId);
+      }
+    } catch (requestError) {
+      if (activeTicket.current === ticketId && version === sessionVersion.current) {
+        if (requestError.response?.status === 401) expireAgentSession();
+        else setError(requestError.response?.data?.message || 'Could not confirm reply delivery. Refresh the conversation before retrying.');
+      }
+    } finally { sendLock.current = false; setSending(false); }
   };
 
   const resolve = async () => {
     try {
       await client().post(`/api/support-agent/tickets/${selected.ticketId}/resolve`);
-      setSelected(null); setMessages([]); await loadTickets();
+      await loadTickets();
     } catch (requestError) { setError(requestError.response?.data?.message || 'Could not resolve ticket'); }
   };
 
@@ -135,7 +188,7 @@ function App() {
     catch (requestError) { setError(requestError.response?.data?.message || 'Could not update agent'); }
   };
 
-  const logout = () => { localStorage.removeItem('supportAgentToken'); setToken(''); setAgent(null); setTickets([]); setSelected(null); };
+  const logout = expireAgentSession;
 
   if (!agent) return (
     <main className="login-shell"><form className="login-card" onSubmit={login}>
@@ -169,7 +222,7 @@ function App() {
     </aside>
     <section className="conversation-panel">
       {error && <div className="error-banner portal-error">{error}<button onClick={() => setError('')}>×</button></div>}
-      {view === 'operations' && agent.role === 'owner' ? <OwnerOperations client={client} onUseDraft={async(job)=>{try{const ticket=tickets.find(t=>String(t.ticketId)===job.ticket_id);if(!ticket){setError('This ticket is no longer in the open queue.');return;}await selectTicket(ticket);setReply(job.result);setView('queue');}catch{setError('Could not open draft.');}}}/> : view === 'reliability' ? <LiveMonitoring client={client} isOwner={agent.role === 'owner'} onUnauthorized={expireAgentSession} /> : view === 'agents' ? <section className="management-panel"><h2>Agent management</h2><p>Create credentials for Future Jobs Pro AI support staff. These accounts cannot enter customer companies.</p>
+      {view === 'operations' && agent.role === 'owner' ? <OwnerOperations client={client} onUseDraft={async(job)=>{try{const ticket=tickets.find(t=>String(t.ticketId)===job.ticket_id);if(!ticket){setError('This ticket is no longer in the open queue.');return;}if(await selectTicket(ticket)){setReply(job.result.slice(0,5000));setView('queue');}}catch{setError('Could not open draft.');}}}/> : view === 'reliability' ? <LiveMonitoring client={client} isOwner={agent.role === 'owner'} onUnauthorized={expireAgentSession} /> : view === 'agents' ? <section className="management-panel"><h2>Agent management</h2><p>Create credentials for Future Jobs Pro AI support staff. These accounts cannot enter customer companies.</p>
         <form className="agent-form" onSubmit={createAgent}>
           <input placeholder="First name" value={newAgent.firstName} onChange={(e) => setNewAgent({ ...newAgent, firstName: e.target.value })} required />
           <input placeholder="Last name" value={newAgent.lastName} onChange={(e) => setNewAgent({ ...newAgent, lastName: e.target.value })} required />
@@ -187,7 +240,7 @@ function App() {
         {selected.lucySummary && <div className="lucy-summary"><strong>Lucy handoff summary</strong><p>{selected.lucySummary}</p></div>}
         <div className="messages">{messages.map((message) => <article key={message.id} className={`message ${message.senderType === 'agent' ? 'mine' : ''}`}><span>{message.senderName}</span><p>{message.message}</p><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></article>)}</div>
         {agent.role==='owner'&&<button className="secondary-button" disabled={busy} onClick={async()=>{setBusy(true);try{await client().post('/api/owner-operations/jobs',{department:'support',ticketId:String(selected.ticketId),instruction:'Prepare a helpful reply draft based on this ticket. Do not send it.'});setView('operations');}catch(e){setError(e.response?.data?.message||'Could not queue draft');}finally{setBusy(false);}}}>Prepare AI reply draft</button>}
-        <footer className="composer"><textarea rows="3" value={reply} onChange={(e) => setReply(e.target.value)} placeholder={selected.assignedAgentId === agent.id ? 'Write a reply…' : 'Accept the ticket before replying'} disabled={selected.assignedAgentId !== agent.id} /><button className="primary-button send-button" onClick={() => void send()} disabled={!reply.trim() || selected.assignedAgentId !== agent.id}>Send reply</button></footer>
+        <footer className="composer"><textarea rows="3" maxLength={5000} value={reply} onChange={(e) => setReply(e.target.value)} placeholder={selected.assignedAgentId === agent.id ? 'Write a reply…' : 'Accept the ticket before replying'} disabled={sending || selected.assignedAgentId !== agent.id} /><button className="primary-button send-button" onClick={() => void send()} disabled={sending || !reply.trim() || selected.assignedAgentId !== agent.id}>{sending ? 'Sending…' : 'Send reply'}</button></footer>
       </>}
     </section>
   </main>;
