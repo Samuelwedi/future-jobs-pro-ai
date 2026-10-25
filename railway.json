@@ -2,5 +2,8 @@
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "Dockerfile"
+  },
+  "deploy": {
+    "preDeployCommand": "node scripts/migrate-chat-media.cjs && node scripts/runVoiceNoteMigration.js && node scripts/run-owner-operations-migration.js"
   }
 }

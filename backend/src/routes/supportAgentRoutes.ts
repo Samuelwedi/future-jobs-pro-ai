@@ -6,7 +6,7 @@ import { pool } from '../config/database';
 const router = express.Router();
 type AgentRole = 'agent' | 'supervisor' | 'owner';
 type Agent = { id: string; email: string; firstName: string; lastName: string; role: AgentRole };
-type AgentRequest = Request & { supportAgent?: Agent };
+export type AgentRequest = Request & { supportAgent?: Agent };
 
 function secret(): string {
   const value = process.env.SUPPORT_AGENT_JWT_SECRET?.trim();
@@ -20,7 +20,7 @@ function tokenFrom(req: Request): string {
   return header.slice(7);
 }
 
-async function authenticateAgent(req: AgentRequest, res: Response, next: NextFunction) {
+export async function authenticateAgent(req: AgentRequest, res: Response, next: NextFunction) {
   try {
     const decoded = jwt.verify(tokenFrom(req), secret()) as any;
     if (decoded.tokenType !== 'platform_support_agent' || !decoded.agentId) throw new Error('Invalid agent token');

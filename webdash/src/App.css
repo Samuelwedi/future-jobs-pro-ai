@@ -114,3 +114,4 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .composer { padding: 14px 16px 20px; }
   .agent-form { grid-template-columns: 1fr; }
 }
+.owner-operations{padding:32px;overflow:auto;max-width:1200px;width:100%;box-sizing:border-box}.ops-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px}.ops-card{padding:20px;margin:16px 0;border:1px solid #33465d;border-radius:14px;background:#101e30}.ops-card h2{color:#71d8ee}.ops-result{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.6}.owner-operations textarea{display:block;width:100%;box-sizing:border-box;margin:12px 0}.owner-operations select{margin:12px;padding:8px}.owner-operations details{padding:16px;border-top:1px solid #33465d}.owner-operations label{display:block}.owner-operations input[type=checkbox]{width:auto;margin-right:8px}

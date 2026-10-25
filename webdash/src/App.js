@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import './App.css';
+import OwnerOperations from './OwnerOperations';
 
 const API_BASE = (process.env.REACT_APP_API_BASE || 'https://future-jobs-pro-ai-production.up.railway.app').replace(/\/$/, '');
 
@@ -57,6 +58,7 @@ function App() {
     try {
       const response = await client().get('/api/support-agent/me');
       setAgent(response.data.agent);
+      if(response.data.agent.role==='owner')setView('operations');
       await loadTickets();
     } catch (requestError) {
       localStorage.removeItem('supportAgentToken');
@@ -149,8 +151,8 @@ function App() {
 
   if (!agent) return (
     <main className="login-shell"><form className="login-card" onSubmit={login}>
-      <div className="brand-mark">FJ</div><h1>Support Agent Portal</h1>
-      <p>This login is only for Future Jobs Pro AI customer-service agents.</p>
+      <div className="brand-mark">FJ</div><h1>Future Jobs Pro AI Operations</h1>
+      <p>Private workspace for the platform owner and authorized support staff.</p>
       {error && <div className="error-banner">{error}</div>}
       <label>Email address</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
       <label>Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
@@ -162,9 +164,10 @@ function App() {
   const manager = ['owner', 'supervisor'].includes(agent.role);
   return <main className="portal-shell">
     <aside className="ticket-sidebar">
-      <header className="sidebar-header"><div><span className="eyebrow">Future Jobs Pro AI</span><h1>Customer support</h1></div></header>
+      <header className="sidebar-header"><div><span className="eyebrow">Future Jobs Pro AI</span><h1>Operations</h1></div></header>
       <div className="agent-card"><strong>{agent.firstName} {agent.lastName}</strong><span>{agent.role}</span></div>
       <nav className="portal-nav">
+        {agent.role === 'owner' && <button className={view === 'operations' ? 'selected' : ''} onClick={() => setView('operations')}>Lucy Operations</button>}
         <button className={view === 'queue' ? 'selected' : ''} onClick={() => setView('queue')}>Support queue</button>
         {manager && <button className={view === 'agents' ? 'selected' : ''} onClick={() => void loadAgents()}>Agent management</button>}
         <button className={view === 'reliability' ? 'selected' : ''} onClick={() => void loadIncidents()}>System health</button>
@@ -178,7 +181,7 @@ function App() {
     </aside>
     <section className="conversation-panel">
       {error && <div className="error-banner portal-error">{error}<button onClick={() => setError('')}>×</button></div>}
-      {view === 'reliability' ? <section className="management-panel"><h2>System health</h2><p>Lucy groups repeated failures into incidents. Automated actions are limited to approved, reversible playbooks.</p>
+      {view === 'operations' && agent.role === 'owner' ? <OwnerOperations client={client} onUseDraft={async(job)=>{try{const ticket=tickets.find(t=>String(t.ticketId)===job.ticket_id);if(!ticket){setError('This ticket is no longer in the open queue.');return;}await selectTicket(ticket);setReply(job.result);setView('queue');}catch{setError('Could not open draft.');}}}/> : view === 'reliability' ? <section className="management-panel"><h2>System health</h2><p>Lucy groups repeated failures into incidents. Automated actions are limited to approved, reversible playbooks.</p>
         <button className="secondary-button" onClick={() => void client().post('/api/system-reliability/diagnostics').then(loadIncidents)}>Run diagnostics</button>
         <div className="agent-list">{incidents.length === 0 ? <article><div><strong>No open incidents</strong><span>The monitored services are quiet.</span></div></article> : incidents.map((item) => <article key={item.id}><div><strong>{item.severity.toUpperCase()} · {item.component}</strong><span>{item.summary} · {item.occurrences} occurrence(s) · {new Date(item.lastSeenAt).toLocaleString()}</span></div><div><button className="secondary-button" onClick={() => void updateIncident(item.id, 'acknowledged')}>Acknowledge</button><button className="resolve-button" onClick={() => void updateIncident(item.id, 'resolved')}>Resolve</button></div></article>)}</div>
       </section> : view === 'agents' ? <section className="management-panel"><h2>Agent management</h2><p>Create credentials for Future Jobs Pro AI support staff. These accounts cannot enter customer companies.</p>
@@ -198,6 +201,7 @@ function App() {
         </div></header>
         {selected.lucySummary && <div className="lucy-summary"><strong>Lucy handoff summary</strong><p>{selected.lucySummary}</p></div>}
         <div className="messages">{messages.map((message) => <article key={message.id} className={`message ${message.senderType === 'agent' ? 'mine' : ''}`}><span>{message.senderName}</span><p>{message.message}</p><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></article>)}</div>
+        {agent.role==='owner'&&<button className="secondary-button" disabled={busy} onClick={async()=>{setBusy(true);try{await client().post('/api/owner-operations/jobs',{department:'support',ticketId:String(selected.ticketId),instruction:'Prepare a helpful reply draft based on this ticket. Do not send it.'});setView('operations');}catch(e){setError(e.response?.data?.message||'Could not queue draft');}finally{setBusy(false);}}}>Prepare AI reply draft</button>}
         <footer className="composer"><textarea rows="3" value={reply} onChange={(e) => setReply(e.target.value)} placeholder={selected.assignedAgentId === agent.id ? 'Write a reply…' : 'Accept the ticket before replying'} disabled={selected.assignedAgentId !== agent.id} /><button className="primary-button send-button" onClick={() => void send()} disabled={!reply.trim() || selected.assignedAgentId !== agent.id}>Send reply</button></footer>
       </>}
     </section>
