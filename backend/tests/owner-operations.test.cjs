@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {PGlite}=require('@electric-sql/pglite');
 const {pool}=require('../dist/config/database');
+const {isPublicSubscriptionPath}=require('../dist/middleware/trialMiddleware');
 const {requireOwner}=require('../dist/routes/ownerOperationsRoutes');
 const {runOwnerOperationsTick}=require('../dist/services/ownerOperationsService');
 const db=new PGlite(); let requests=0; let lastInput;
@@ -63,4 +64,9 @@ test('closed tickets fail without a model call',async()=>{
 test('daily budget includes failures and prevents further calls',async()=>{
  await db.query("INSERT INTO owner_operations_jobs(owner_id,department,instruction,status,started_at) SELECT $1,'it','test','failed',now() FROM generate_series(1,12)",[owner]);
  await runOwnerOperationsTick();assert.equal(requests,2);
+});
+
+test('owner APIs use dedicated authentication rather than customer subscription tokens',()=>{
+ for(const path of ['/api/owner-operations','/api/owner-operations/jobs','/api/owner-operations/schedules/it'])assert.equal(isPublicSubscriptionPath({method:'GET',originalUrl:path}),true);
+ assert.equal(isPublicSubscriptionPath({method:'GET',originalUrl:'/api/owner-operations-other'}),false);
 });
