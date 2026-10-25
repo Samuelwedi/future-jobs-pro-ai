@@ -45,6 +45,10 @@ async function deployPortal(sha) {
     if(['ERROR','CANCELED'].includes(deployment.readyState))return false;
   },'Portal deployment');
 }
+async function verifyHealth() {
+  const response=await fetch('https://future-jobs-pro-ai-production.up.railway.app/api/health',{signal:AbortSignal.timeout(15000)});
+  if(!response.ok || (await response.json()).status!=='healthy')throw new Error('Post-deployment health failed');
+}
 // Credential checks happen before any publication or deployment.
 for(const key of ['GH_TOKEN',...(scope==='support-portal'?['RAILWAY_API_TOKEN','RAILWAY_SERVICE_ID','RAILWAY_ENVIRONMENT_ID','VERCEL_TOKEN','VERCEL_PROJECT_ID','VERCEL_TEAM_ID']:[])]){
   if(!process.env[key])throw new Error(`Missing ${key}`);
@@ -72,8 +76,7 @@ if(scope==='mobile-audio') {
   try {
     const outcomes=await Promise.allSettled([deployRailway(commit.sha),deployPortal(commit.sha)]);
     if(outcomes.some(r=>r.status==='rejected'))throw new Error('Deployment did not complete successfully');
-    const response=await fetch('https://future-jobs-pro-ai-production.up.railway.app/api/health',{signal:AbortSignal.timeout(15000)});
-    if(!response.ok || (await response.json()).status!=='healthy')throw new Error('Post-deployment health failed');
+    await verifyHealth();
     console.log(`Verified deployment: ${commit.sha}. Incident requires affected-workflow verification.`);
   } catch(error) {
     // Roll back only refs still pointing at this repair. Never overwrite a later human change.
@@ -81,6 +84,7 @@ if(scope==='mobile-audio') {
       git(['push','--atomic',...branches.map(b=>`--force-with-lease=refs/heads/${b}:${commit.sha}`),'origin',...branches.map(b=>`${base}:refs/heads/${b}`)]);
       const rollback=await Promise.allSettled([deployRailway(base),deployPortal(base)]);
       if(rollback.some(r=>r.status==='rejected'))throw new Error('Rollback failed');
+      await verifyHealth();
       console.error('Repair deployment failed; previous source redeployed successfully.');
     } catch {console.error('Rollback could not be verified. Manual recovery is required.');}
     process.exitCode=1;

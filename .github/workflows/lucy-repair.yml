@@ -40,6 +40,7 @@ jobs:
           BASE_SHA: ${{ inputs.base_sha }}
           REQUEST_ID: ${{ inputs.request_id }}
         run: |
+          node --experimental-vm-modules --test scripts/lucy-repair/policy.test.mjs scripts/lucy-repair/deploy.test.mjs
           node -e "if(!/^[a-f0-9]{40}$/.test(process.env.BASE_SHA)||!/^[a-f0-9-]{36}$/.test(process.env.REQUEST_ID)||!['mobile-audio','support-portal'].includes(process.env.REPAIR_SCOPE))process.exit(1)"
           curl --fail --silent --show-error https://docs.expo.dev/versions/v55.0.0/sdk/audio/ -o /tmp/expo-sdk55-audio.html
       - name: Generate bounded repair

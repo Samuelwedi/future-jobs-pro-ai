@@ -20,8 +20,13 @@ Owner authorization, active-incident uniqueness, a global two-attempt daily limi
 1. Register `.github/workflows/lucy-repair.yml` on the repository default branch. Dispatch uses `fix/tester-release-20261022`, which must contain the workflow and scripts.
 2. With explicit approval for the new credential destination, set GitHub Actions secrets `LUCY_OPENAI_API_KEY`, `LUCY_RAILWAY_API_TOKEN`, `LUCY_VERCEL_TOKEN`. Reuse approved credentials; do not rotate keys. Use least-privilege credentials. Never put values in source, logs or chat.
 3. Set repository variables: `LUCY_RAILWAY_SERVICE_ID`, `LUCY_RAILWAY_ENVIRONMENT_ID`, `LUCY_VERCEL_PROJECT_ID`, `LUCY_VERCEL_TEAM_ID`, and `LUCY_VERIFIED_PRODUCTION_SHA`. The last must be the exact verified commit currently deployed to both targets and at both release branch heads. It intentionally requires updating after each independently verified release; mismatches block deployment.
-4. Confirm the backend's existing `GH_TOKEN` can dispatch/read this workflow. Do not broaden its access silently.
+4. Set a dedicated backend `LUCY_GITHUB_TOKEN` with repository-scoped Actions read/write and Contents read permissions, and confirm it can dispatch/read this workflow. Existing `GH_TOKEN` is a compatibility fallback; leave it unchanged. Temporary Secrets/Variables write permissions used during approved setup can be removed after provisioning.
 5. Run controlled acceptance against non-production targets first: generated patch policy rejection, real regression test failure, successful deployment, failed deployment/rollback, stale branch rejection, ambiguous dispatch recovery. The deployment script currently fixes the production health URL and branch names, so a reviewed staging variant is required for that exercise. Then verify one approved production run end to end.
 6. Only after acceptance, set backend `LUCY_REPAIR_ENABLED=true` and redeploy. Set false to stop new dispatch/reconciliation; cancel an already-running GitHub workflow separately if required.
 
 No secrets were transferred and no automatic repair was executed while preparing this release. Broad whole-system autonomous repair is not delivered by this bounded workflow.
+
+## Deployment control regression checks
+
+Run `node --experimental-vm-modules --test scripts/lucy-repair/deploy.test.mjs scripts/lucy-repair/policy.test.mjs`.
+These exercise the actual deployment script with simulated provider responses: missing credentials, baseline mismatch, stale source, atomic publication, provider failure rollback, rollback lease conflicts, unhealthy rollback, and mobile candidate-only publication. Rollback is reported successful only after the backend health check succeeds. These tests run before model invocation in the repair workflow. They do not replace real staging/provider acceptance or native device testing.
