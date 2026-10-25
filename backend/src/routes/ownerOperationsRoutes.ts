@@ -1,3 +1,4 @@
+import { repairEnabled, repairScope } from '../services/ownerRepairService';
 import express, { Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import { authenticateAgent, AgentRequest } from './supportAgentRoutes';
@@ -8,15 +9,36 @@ export function requireOwner(req:AgentRequest,res:Response,next:NextFunction) {
  next();
 }
 router.use(authenticateAgent,requireOwner,(_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
-const validId=(v:string)=>/^[0-9a-f-]{36}$/i.test(v);
+const validId=(v:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 router.get('/',async(req:AgentRequest,res)=>{
  try {
- const [jobs,schedules,audit,snapshot,leads]=await Promise.all([
+ const [jobs,schedules,audit,snapshot,leads,repairs]=await Promise.all([
  pool.query('SELECT * FROM owner_operations_jobs WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 100',[req.supportAgent!.id]),
  pool.query('SELECT * FROM owner_operations_schedules WHERE owner_id=$1',[req.supportAgent!.id]),
- pool.query('SELECT * FROM owner_operations_audit WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 100',[req.supportAgent!.id]), operationsSnapshot(),pool.query('SELECT * FROM owner_sales_leads WHERE owner_id=$1 ORDER BY updated_at DESC LIMIT 200',[req.supportAgent!.id])]);
- res.json({leads:leads.rows,jobs:jobs.rows,schedules:schedules.rows,audit:audit.rows,snapshot,workerEnabled:process.env.OWNER_OPERATIONS_WORKER==='true',apiConfigured:Boolean(process.env.OPENAI_API_KEY?.trim()),dailyRunLimit:12});
+ pool.query('SELECT * FROM owner_operations_audit WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 100',[req.supportAgent!.id]), operationsSnapshot(),pool.query('SELECT * FROM owner_sales_leads WHERE owner_id=$1 ORDER BY updated_at DESC LIMIT 200',[req.supportAgent!.id]),pool.query('SELECT * FROM owner_repair_jobs WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 50',[req.supportAgent!.id])]);
+ res.json({repairEnabled:repairEnabled(),repairs:repairs.rows,leads:leads.rows,jobs:jobs.rows,schedules:schedules.rows,audit:audit.rows,snapshot,workerEnabled:process.env.OWNER_OPERATIONS_WORKER==='true',apiConfigured:Boolean(process.env.OPENAI_API_KEY?.trim()),dailyRunLimit:12});
  }catch{res.status(503).json({message:'Operations schema or data sources unavailable. Run the owner operations migration.'});}
+});
+router.post('/repairs',async(req:AgentRequest,res)=>{
+ const id=req.body?.incidentId;
+ if(typeof id!=='string'||!validId(id))return res.status(400).json({message:'Invalid incident'});
+ if(!repairEnabled())return res.status(503).json({message:'Repair execution is not activated. Configure and verify the isolated GitHub repair worker first.'});
+ const db=await pool.connect();
+ try {
+  await db.query('BEGIN');
+  await db.query('SELECT pg_advisory_xact_lock(7241027)');
+  const incident=(await db.query("SELECT component,summary FROM system_incidents WHERE id=$1 AND status<>'resolved' FOR UPDATE",[id])).rows[0];
+  if(!incident){await db.query('ROLLBACK');return res.status(409).json({message:'Incident is unavailable or resolved'});}
+  const scope=repairScope(incident.component,incident.summary);
+  if(!scope){await db.query('ROLLBACK');return res.status(422).json({message:'This incident needs a reviewed repair outside the supported audio/portal scope.'});}
+  const count=(await db.query("SELECT count(*)::int AS n FROM owner_repair_jobs WHERE created_at>now()-interval '24 hours'")).rows[0].n;
+  if(count>=2){await db.query('ROLLBACK');return res.status(429).json({message:'Daily repair limit reached (2).'});}
+  const existing=await db.query("SELECT id FROM owner_repair_jobs WHERE incident_id=$1 AND status IN ('queued','dispatching','running')",[id]);
+  if(existing.rowCount){await db.query('ROLLBACK');return res.status(409).json({message:'A repair is already in progress'});}
+  const result=await db.query('INSERT INTO owner_repair_jobs(owner_id,incident_id,scope) VALUES($1,$2,$3) RETURNING *',[req.supportAgent!.id,id,scope]);
+  await db.query("INSERT INTO owner_operations_audit(owner_id,action) VALUES($1,$2)",[req.supportAgent!.id,'repair_requested:'+result.rows[0].id]);
+  await db.query('COMMIT');res.status(201).json({repair:result.rows[0]});
+ }catch{await db.query('ROLLBACK').catch(()=>{});res.status(503).json({message:'Could not queue repair'});}finally{db.release();}
 });
 router.post('/jobs',async(req:AgentRequest,res)=>{
  const {department,instruction}=req.body||{};

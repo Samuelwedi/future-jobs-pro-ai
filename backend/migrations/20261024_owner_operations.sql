@@ -33,4 +33,14 @@ CREATE TABLE IF NOT EXISTS owner_sales_leads (
  next_follow_up TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE owner_operations_jobs ADD COLUMN IF NOT EXISTS incident_id UUID;
+CREATE TABLE IF NOT EXISTS owner_repair_jobs (
+ id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+ owner_id UUID NOT NULL REFERENCES platform_support_agents(id),
+ incident_id UUID NOT NULL,
+ scope TEXT NOT NULL CHECK(scope IN ('mobile-audio','support-portal')),
+ status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','dispatching','running','deployed','awaiting_store','failed','blocked')),
+ base_sha TEXT, workflow_run_id BIGINT, workflow_url TEXT, error TEXT,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(), completed_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS owner_repair_active_incident ON owner_repair_jobs(incident_id) WHERE status IN ('queued','dispatching','running');
 COMMIT;

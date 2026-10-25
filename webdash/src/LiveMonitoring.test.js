@@ -52,3 +52,19 @@ test('shows installed build details and queues an incident-bound investigation',
   fireEvent.click(screen.getByText('Request IT investigation'));
   await waitFor(()=>expect(api.post).toHaveBeenCalledWith('/api/owner-operations/jobs',expect.objectContaining({incidentId:incident.id,department:'it'})));
 });
+
+test('repair execution is disabled until configured and never implies incident resolution', async () => {
+  const api={get:jest.fn(url=>Promise.resolve({data:url.includes('incidents')?response.data:{repairEnabled:false,repairs:[{id:'repair',status:'awaiting_store',scope:'mobile-audio'}]}}))};
+  render(<LiveMonitoring client={()=>api} isOwner onUnauthorized={jest.fn()}/>);
+  await screen.findByText('Fix with Lucy');
+  expect(screen.getByText('Fix with Lucy')).toBeDisabled();
+  expect(screen.getByText(/Code prepared — native build/)).toBeInTheDocument();
+  expect(screen.getByText('Verify resolution')).toBeInTheDocument();
+});
+
+test('queues an enabled repair with only the incident identifier', async () => {
+  const api={get:jest.fn(url=>Promise.resolve({data:url.includes('incidents')?response.data:{repairEnabled:true,repairs:[]}})),post:jest.fn().mockResolvedValue({})};
+  render(<LiveMonitoring client={()=>api} isOwner onUnauthorized={jest.fn()}/>);
+  fireEvent.click(await screen.findByText('Fix with Lucy'));
+  await waitFor(()=>expect(api.post).toHaveBeenCalledWith('/api/owner-operations/repairs',{incidentId:incident.id}));
+});

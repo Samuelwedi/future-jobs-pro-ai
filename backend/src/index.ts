@@ -1,3 +1,4 @@
+import { startOwnerRepairWorker } from './services/ownerRepairService';
 import lucyJarvisRoutes from './routes/lucyJarvisRoutes';
 // ============================================
 // FUTURE JOBS PRO AI â€“ MAIN SERVER
@@ -858,6 +859,7 @@ app.set('io', io);
 server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   startLucyReliabilityMonitor();
   startOwnerOperationsWorker();
+startOwnerRepairWorker();
   if(process.env.OPERATIONS_REPORT_WORKER==='true'){
     let reporting=false;
     const tick=async()=>{if(reporting)return;reporting=true;try{await runDueReports();}catch(e){console.error('Scheduled report generation failed',e);}finally{reporting=false;}};
