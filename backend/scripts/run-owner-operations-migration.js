@@ -1,17 +1,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { Client } = require('pg');
+const { pool } = require('../dist/config/database');
 
 async function main() {
-  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not configured');
-  const local = /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL);
-  const client = new Client({ connectionString: process.env.DATABASE_URL, ssl: local ? false : { rejectUnauthorized: false } });
-  await client.connect();
+  const client = await pool.connect();
   try {
     const sql = fs.readFileSync(path.join(__dirname, '../migrations/20261024_owner_operations.sql'), 'utf8');
     await client.query(sql);
     console.log('Owner operations schema is ready.');
-  } finally { await client.end(); }
+  } finally { client.release(); await pool.end(); }
 }
 
-main().catch((error) => { console.error(error.message); process.exit(1); });
+main().catch((error) => { console.error('Owner operations migration failed; verify database connectivity and prerequisites.'); process.exit(1); });

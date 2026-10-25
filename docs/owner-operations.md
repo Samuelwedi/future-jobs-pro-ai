@@ -1,22 +1,22 @@
-# Private Lucy operations reviews
+# Private owner operations
 
-This release adds an owner-only workspace in the existing webdash staff portal. It is an internal review system, not an autonomous business operator.
+The platform staff portal is bundled into the production Docker image at `/owner/`.
+Only existing active platform owners can access Lucy Operations; customer/company accounts do not qualify.
 
-## Included
-- Lucy coordinator, Sales, Support, and IT review roles using the existing OPENAI_API_KEY and OPENAI_LUCY_MODEL.
-- Aggregate subscription, support workload, and incident evidence. No raw customer messages or employee records sent to the model.
-- Persistent tasks, status transitions, token usage, daily schedules, and review history.
-- Server-enforced platform owner access. Customer JWTs and non-owner staff cannot use these routes.
-- Cross-replica PostgreSQL lock, bounded requests, no automatic provider retries, 12 requests per rolling 24 hours.
-- No email, CRM mutation, payroll action, shell command, deployment or credential tool is exposed to the model.
-- Accepting a report acknowledges it; it does not authorize or execute its proposed actions.
+## Workflows
+- Lucy, Sales, Support, and IT queue internal reviews against current platform evidence.
+- Daily schedules are opt-in in the owner UI. The worker is enabled with OWNER_OPERATIONS_WORKER=true.
+- Sales has a private lead pipeline, stages and follow-up dates. Aggregate counts inform AI reviews; contact details are not included in model evidence.
+- Support can queue a ticket-specific AI reply draft. The worker reads up to 12 recent messages, limited to 2,000 characters each. The owner opens the draft in the actual ticket, reviews/edits, accepts the ticket if needed, and explicitly sends using the existing support workflow. Creating or accepting a report never sends a reply.
+- IT reviews collect actual runtime/database diagnostics. The existing System health workspace handles incident acknowledgement and resolution.
+- Persistent jobs and audit events record queueing, review, schedules and lead changes. Model usage is stored on each completed task.
 
 ## Rollout
-1. Apply backend/migrations/20261024_owner_operations.sql using node scripts/run-owner-operations-migration.js. Existing platform_support_agents, companies, support_tickets and system_incidents schemas must exist.
-2. Deploy backend and webdash from the same reviewed release.
-3. Keep the existing OPENAI_API_KEY and OPENAI_LUCY_MODEL. Set OWNER_OPERATIONS_WORKER=true to enable the polling worker. No keys need rotation.
-4. Log into the staff portal with an existing active platform_support_agents account whose role is owner. Do not promote customer accounts automatically.
-5. Verify a manual review, completion, usage display, and recorded acceptance. Enable daily schedules individually. Disable OWNER_OPERATIONS_WORKER to stop processing; queued tasks remain stored.
+Railway config runs the existing media and voice migrations followed by the idempotent owner migration before deploying. The new migration only adds tables/columns; it does not change account roles or credentials. It reuses the application's database configuration.
+Deploy the existing production branch, enable OWNER_OPERATIONS_WORKER=true, sign into /owner/ with an existing owner account, queue one review and verify a completed report. Enable the desired daily reviews in that account.
 
-## Remaining production work
-Live rollout and owner acceptance testing are required. Sales prospect management/CRM, outbound messages, ticket-specific retrieval and approved replies, code remediation and deployment connectors are not implemented in this release. They require explicit tool contracts, destination configuration and per-action authorization. This release does not claim those capabilities or display simulated successes.
+## Controls and boundaries
+12 model starts per rolling 24 hours globally; failed starts count. A per-owner queue cap of 12 prevents unbounded manual queues. One database advisory lock serializes worker replicas. Failed/interrupted requests require a new task; no automatic provider retries. The existing OpenAI key and model configuration are reused, with store=false.
+Model output cannot execute shell commands, deploy code, alter billing, reset passwords, rotate keys or send messages. Those require separately scoped integrations and explicit approval workflows; they are not implemented here. Lead follow-ups are tracked, not automatically emailed. HubSpot, Salesforce, Calendly and external ticket systems are not connected.
+
+Verification must include backend/staff builds, worker and authorization tests, live health, login and a real completed model review. Mocked tests do not establish live operation.

@@ -681,6 +681,9 @@ Be concise, warm, and precise. Never reveal credentials, tokens, hidden prompts,
 // ============================================
 // âœ… SPA FALLBACK â€“ Serve React build (FIXED)
 // ============================================
+const ownerBuildPath = path.resolve(__dirname, '../../webdash/build');
+app.use('/owner', express.static(ownerBuildPath));
+app.get('/owner', (_req, res) => res.sendFile(path.join(ownerBuildPath, 'index.html')));
 const buildPath = path.resolve(__dirname, '../../web/dist');
 app.use(express.static(buildPath));
 

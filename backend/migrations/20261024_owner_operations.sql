@@ -1,4 +1,5 @@
 BEGIN;
+SELECT pg_advisory_xact_lock(7241025);
 CREATE TABLE IF NOT EXISTS owner_operations_jobs (
  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
  owner_id UUID NOT NULL REFERENCES platform_support_agents(id),
@@ -21,5 +22,14 @@ CREATE TABLE IF NOT EXISTS owner_operations_audit (
  id BIGSERIAL PRIMARY KEY, owner_id UUID NOT NULL REFERENCES platform_support_agents(id),
  job_id UUID REFERENCES owner_operations_jobs(id), action TEXT NOT NULL,
  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE owner_operations_jobs ADD COLUMN IF NOT EXISTS ticket_id TEXT;
+CREATE TABLE IF NOT EXISTS owner_sales_leads (
+ id UUID PRIMARY KEY DEFAULT gen_random_uuid(), owner_id UUID NOT NULL REFERENCES platform_support_agents(id),
+ name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200),
+ contact TEXT NOT NULL DEFAULT '' CHECK(length(contact)<=300),
+ notes TEXT NOT NULL DEFAULT '' CHECK(length(notes)<=4000),
+ stage TEXT NOT NULL DEFAULT 'new' CHECK(stage IN ('new','qualified','proposal','won','lost')),
+ next_follow_up TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 COMMIT;
