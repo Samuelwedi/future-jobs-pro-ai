@@ -2,7 +2,8 @@ import { pool } from '../config/database';
 const repository = 'Samuelwedi/future-jobs-pro-ai';
 const branch = 'fix/tester-release-20261022';
 const workflow = 'lucy-repair.yml';
-export function repairEnabled() { return process.env.LUCY_REPAIR_ENABLED === 'true' && !!process.env.GH_TOKEN?.trim(); }
+const githubToken = () => process.env.LUCY_GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim();
+export function repairEnabled() { return process.env.LUCY_REPAIR_ENABLED === 'true' && !!githubToken(); }
 export function repairScope(component: string, summary: string): string | null {
   if(component === 'mobile-ui' && /AudioRecorder|shared object|native.*audio/i.test(summary)) return 'mobile-audio';
   if(['support-portal','webdash'].includes(component)) return 'support-portal';
@@ -10,7 +11,7 @@ export function repairScope(component: string, summary: string): string | null {
 }
 async function github(path: string, method = 'GET', body?: unknown): Promise<any> {
  const response=await fetch(`https://api.github.com/repos/${repository}/${path}`,{
-  method,headers:{Authorization:`Bearer ${process.env.GH_TOKEN}`,Accept:'application/vnd.github+json','Content-Type':'application/json'},
+  method,headers:{Authorization:`Bearer ${githubToken()}`,Accept:'application/vnd.github+json','Content-Type':'application/json'},
   ...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000),
  });
  if(!response.ok)throw new Error(`GitHub HTTP ${response.status}`);
