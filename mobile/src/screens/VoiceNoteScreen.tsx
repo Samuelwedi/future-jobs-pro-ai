@@ -93,6 +93,7 @@ export default function VoiceNoteScreen() {
       timerRef.current = null;
       setIsRecording(false);
       setRecordingDuration(0);
+      setIsProcessing(false);
     };
     const enter = () => { focused.current = true; };
     const blur = navigation.addListener('blur', leave);
@@ -159,6 +160,8 @@ export default function VoiceNoteScreen() {
   };
 
   const processRecording = async (audioUri: string) => {
+    const epoch = generation.current;
+    if (!current(epoch)) return;
     setIsProcessing(true);
     try {
       const extraFields: Record<string, string> = {
@@ -172,7 +175,7 @@ export default function VoiceNoteScreen() {
         extraFields,
         'audio'
       );
-      if (!mounted.current) return;
+      if (!current(epoch)) return;
       if (!response.success) throw new Error('Could not process voice note');
       // SAFETY FALLBACK: ensure structuredData exists with empty arrays
       if (!response.structuredData) {
@@ -194,12 +197,12 @@ export default function VoiceNoteScreen() {
       }).catch(() => {});
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (error: any) {
-      if (!mounted.current) return;
+      if (!current(epoch)) return;
       const queued = /queued for later/i.test(error.message || '');
       setRetryUri(queued ? null : audioUri);
       Alert.alert(queued ? 'Upload queued' : 'Processing Failed', error.response?.data?.message || error.message || 'Could not process voice note');
     } finally {
-      if (mounted.current) setIsProcessing(false);
+      if (current(epoch)) setIsProcessing(false);
     }
   };
 
