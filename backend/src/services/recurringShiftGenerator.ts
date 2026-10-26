@@ -33,15 +33,16 @@ export async function generateShiftsForRecurringRule({
   const dates: Date[] = [];
   let current = new Date(startDate);
   const end = new Date(endDate);
-  // Normalize time to midnight for comparison
-  current.setHours(0, 0, 0, 0);
-  end.setHours(0, 0, 0, 0);
+  // ISO date-only inputs and SQL date values use UTC calendar dates.
+  // Keep weekday selection and iteration independent of the server timezone.
+  current.setUTCHours(0, 0, 0, 0);
+  end.setUTCHours(0, 0, 0, 0);
 
   while (current <= end) {
-    if (current.getDay() === rule.day_of_week) {
+    if (current.getUTCDay() === rule.day_of_week) {
       dates.push(new Date(current));
     }
-    current.setDate(current.getDate() + 1);
+    current.setUTCDate(current.getUTCDate() + 1);
   }
 
   if (dates.length === 0) return 0;
