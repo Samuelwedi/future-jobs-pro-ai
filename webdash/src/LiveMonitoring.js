@@ -18,20 +18,19 @@ export default function LiveMonitoring({ client, isOwner, onUnauthorized }) {
   const [verify, setVerify] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
   const mounted = useRef(false);
-  const inFlight = useRef(false);
   const controller = useRef(null);
   const actionLock = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
+    if (controller.current) return;
     const abort = new AbortController(); controller.current = abort;
     const api = client();
     const results = await Promise.allSettled([
       api.get('/api/system-reliability/incidents?status=all', { signal: abort.signal, timeout: 12000 }),
       ...(isOwner ? [api.get('/api/owner-operations', { signal: abort.signal, timeout: 12000 })] : []),
     ]);
-    inFlight.current = false;
+    if (controller.current !== abort) return;
+    controller.current = null;
     if (!mounted.current || abort.signal.aborted) return;
     if (results.some(r => r.status === 'rejected' && r.reason?.response?.status === 401)) { onUnauthorized(); return; }
     if (results[0].status === 'fulfilled') {
@@ -49,7 +48,7 @@ export default function LiveMonitoring({ client, isOwner, onUnauthorized }) {
     const timer = setInterval(() => { if (!paused && document.visibilityState === 'visible') void refresh(); }, 5000);
     const visible = () => { if (!paused && document.visibilityState === 'visible') void refresh(); };
     document.addEventListener('visibilitychange', visible);
-    return () => { mounted.current = false; clearInterval(timer); document.removeEventListener('visibilitychange', visible); controller.current?.abort(); };
+    return () => { mounted.current = false; clearInterval(timer); document.removeEventListener('visibilitychange', visible); controller.current?.abort(); controller.current = null; };
   }, [refresh, paused]);
 
   const action = async (fn, message) => {
