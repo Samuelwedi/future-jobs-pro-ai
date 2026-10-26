@@ -43,4 +43,7 @@ CREATE TABLE IF NOT EXISTS owner_repair_jobs (
  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), completed_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX IF NOT EXISTS owner_repair_active_incident ON owner_repair_jobs(incident_id) WHERE status IN ('queued','dispatching','running');
+ALTER TABLE owner_repair_jobs ADD COLUMN IF NOT EXISTS feature TEXT NOT NULL DEFAULT 'general';
+ALTER TABLE owner_repair_jobs DROP CONSTRAINT IF EXISTS owner_repair_jobs_scope_check;
+ALTER TABLE owner_repair_jobs ADD CONSTRAINT owner_repair_jobs_scope_check CHECK(scope IN ('mobile-audio','support-portal','backend','customer-web','mobile','portal-app','application'));
 COMMIT;

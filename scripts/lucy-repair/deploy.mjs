@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { validatePatch } from './policy.mjs';
+import { validatePatch, requiresReview } from './policy.mjs';
 const repo = 'Samuelwedi/future-jobs-pro-ai';
 const sourceBranch = 'fix/tester-release-20261022';
 const portalBranch = 'release/lucy-verified-dashboard';
@@ -8,6 +8,9 @@ const base = process.env.BASE_SHA;
 const scope = process.env.REPAIR_SCOPE;
 if (!/^[a-f0-9]{40}$/.test(base || '')) throw new Error('Invalid source commit');
 const patch = validatePatch(fs.readFileSync('/tmp/verified-repair/lucy-repair-patch.json','utf8'), scope);
+const review = requiresReview(patch, scope);
+const native = scope === 'mobile-audio' || scope === 'mobile';
+const autoDeploy = !review && !native;
 const wait = ms => new Promise(resolve => setTimeout(resolve,ms));
 async function request(url, token, method='GET', body) {
   const response = await fetch(url, {method, headers:{Authorization:`Bearer ${token}`, 'Content-Type':'application/json', Accept:'application/json'}, body:body ? JSON.stringify(body):undefined, signal:AbortSignal.timeout(30000)});
@@ -50,7 +53,7 @@ async function verifyHealth() {
   if(!response.ok || (await response.json()).status!=='healthy')throw new Error('Post-deployment health failed');
 }
 // Credential checks happen before any publication or deployment.
-for(const key of ['GH_TOKEN',...(scope==='support-portal'?['RAILWAY_API_TOKEN','RAILWAY_SERVICE_ID','RAILWAY_ENVIRONMENT_ID','VERCEL_TOKEN','VERCEL_PROJECT_ID','VERCEL_TEAM_ID']:[])]){
+for(const key of ['GH_TOKEN',...(autoDeploy?['RAILWAY_API_TOKEN','RAILWAY_SERVICE_ID','RAILWAY_ENVIRONMENT_ID','VERCEL_TOKEN','VERCEL_PROJECT_ID','VERCEL_TEAM_ID']:[])]){
   if(!process.env[key])throw new Error(`Missing ${key}`);
 }
 // Read the actual live baseline on every repair. This permits successive
@@ -65,8 +68,8 @@ async function verifyProductionBaseline() {
   }
   await verifyHealth();
 }
-if(scope==='support-portal')await verifyProductionBaseline();
-const branches=scope==='support-portal'?[sourceBranch,portalBranch]:[sourceBranch];
+if(autoDeploy)await verifyProductionBaseline();
+const branches=autoDeploy?[sourceBranch,portalBranch]:[sourceBranch];
 for(const branch of branches){const ref=await gh(`git/ref/heads/${branch}`);if(ref.object.sha!==base)throw new Error('Source changed since repair was requested; request a new repair');}
 const parent=await gh(`git/commits/${base}`);
 const tree=await gh('git/trees','POST',{base_tree:parent.tree.sha,tree:patch.files.map(f=>({path:f.path,mode:'100644',type:'blob',content:f.content}))});
@@ -77,11 +80,13 @@ const auth=Buffer.from(`x-access-token:${process.env.GH_TOKEN}`).toString('base6
 const env={...process.env,GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'http.https://github.com/.extraheader',GIT_CONFIG_VALUE_0:`AUTHORIZATION: basic ${auth}`};
 const git=args=>execFileSync('git',args,{env,stdio:'pipe'});
 git(['fetch','--no-tags','origin',commit.sha]);
-if(scope==='support-portal')git(['push','--atomic',...branches.map(b=>`--force-with-lease=refs/heads/${b}:${base}`),'origin',...branches.map(b=>`${commit.sha}:refs/heads/${b}`)]);
-if(scope==='mobile-audio') {
-  const candidate=`lucy-repair/mobile-${commit.sha.slice(0,12)}`;
+if(autoDeploy)git(['push','--atomic',...branches.map(b=>`--force-with-lease=refs/heads/${b}:${base}`),'origin',...branches.map(b=>`${commit.sha}:refs/heads/${b}`)]);
+if(native || review) {
+  const candidate=`lucy-repair/${review?'review': 'mobile'}-${commit.sha.slice(0,12)}`;
   await gh('git/refs','POST',{ref:`refs/heads/${candidate}`,sha:commit.sha});
-  console.log(`Mobile repair candidate ${candidate} committed: ${commit.sha}. Native build, device acceptance and store submission still required.`);
+  if(process.env.GITHUB_OUTPUT)fs.appendFileSync(process.env.GITHUB_OUTPUT,`review_required=${review}\n`);
+  console.log(`${review?'Owner review required.':'Native build required.'} Candidate ${candidate} committed: ${commit.sha}. No production deployment or store submission performed.`);
+
 } else {
   try {
     const outcomes=await Promise.allSettled([deployRailway(commit.sha),deployPortal(commit.sha)]);

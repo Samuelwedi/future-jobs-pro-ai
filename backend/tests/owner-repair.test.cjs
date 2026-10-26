@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {PGlite}=require('@electric-sql/pglite');
 const {pool}=require('../dist/config/database');
-const {repairEnabled,repairScope,runOwnerRepairTick}=require('../dist/services/ownerRepairService');
+const {repairEnabled,repairScope,repairFeature,runOwnerRepairTick}=require('../dist/services/ownerRepairService');
 const db=new PGlite();const originalFetch=global.fetch;const owner='00000000-0000-4000-8000-000000000001';
 let dispatches=0,run,requestId,jobs=[{name:'deploy',conclusion:'success'}];const sha='a'.repeat(40);
 before(async()=>{
@@ -13,14 +13,14 @@ before(async()=>{
  pool.connect=async()=>({query:async(sql,args)=>sql.includes('pg_try_advisory_lock')?{rows:[{locked:true}]}:sql.includes('pg_advisory_unlock')?{rows:[]}:pool.query(sql,args),release(){}});
  global.fetch=async(url,options)=>{
   assert.match(url,/^https:\/\/api.github.com\/repos\/Samuelwedi\/future-jobs-pro-ai\//);
-  if(url.includes('/dispatches')){dispatches++;const body=JSON.parse(options.body);requestId=body.inputs.request_id;assert.deepEqual(Object.keys(body.inputs).sort(),['base_sha','request_id','scope']);throw new Error('ambiguous timeout');}
+  if(url.includes('/dispatches')){dispatches++;const body=JSON.parse(options.body);requestId=body.inputs.request_id;assert.deepEqual(Object.keys(body.inputs).sort(),['base_sha','feature','request_id','scope']);throw new Error('ambiguous timeout');}
   return new Response(JSON.stringify(url.includes('/jobs?')?{jobs}:url.includes('git/ref')?{object:{sha}}:url.includes('actions/runs/')?run:{workflow_runs:run?[run]:[]}));
  };
 });
 after(async()=>{global.fetch=originalFetch;delete process.env.GH_TOKEN;delete process.env.LUCY_REPAIR_ENABLED;await db.close();await pool.end();});
 test('feature fails closed and only supported incident scopes qualify',()=>{
  delete process.env.LUCY_REPAIR_ENABLED;assert.equal(repairEnabled(),false);process.env.LUCY_REPAIR_ENABLED='true';assert.equal(repairEnabled(),false);process.env.GH_TOKEN='fake-test-token';assert.equal(repairEnabled(),true);
- assert.equal(repairScope('mobile-ui','Cannot use shared object that was already released'),'mobile-audio');assert.equal(repairScope('billing','AudioRecorder'),null);assert.equal(repairScope('mobile-ui','Payment failed'),null);assert.equal(repairScope('support-portal','scrolling'),'support-portal');
+ assert.equal(repairScope('mobile-ui','Cannot use shared object that was already released'),'mobile-audio');assert.equal(repairScope('billing','AudioRecorder'),'application');assert.equal(repairScope('mobile-ui','Payment failed'),'mobile');assert.equal(repairScope('support-portal','scrolling'),'portal-app');
 });
 test('ambiguous dispatch reconciles once without duplicate runs or incident resolution',async()=>{
  await db.query("INSERT INTO owner_repair_jobs(owner_id,incident_id,scope) VALUES($1,$2,'mobile-audio')",[owner,'00000000-0000-4000-8000-000000000002']);
@@ -39,10 +39,25 @@ test('successful no-op cannot be reported as a deployment',async()=>{
  assert.equal(row.status,'blocked');assert.match(row.error,/No safe additional repair found/);assert.ok(row.completed_at);
  jobs=[{name:'deploy',conclusion:'success'}];
 });
+test('review candidates are never reported as deployed',async()=>{
+ const incident='00000000-0000-4000-8000-000000000005';
+ await db.query("INSERT INTO owner_repair_jobs(owner_id,incident_id,scope,status,workflow_run_id) VALUES($1,$2,'backend','running','123')",[owner,incident]);
+ jobs=[{name:'deploy',conclusion:'success'},{name:'review-required',conclusion:'success'}];
+ await runOwnerRepairTick();
+ const row=(await db.query('SELECT * FROM owner_repair_jobs WHERE incident_id=$1',[incident])).rows[0];
+ assert.equal(row.status,'blocked');assert.match(row.error,/Owner approval required/);
+ jobs=[{name:'deploy',conclusion:'success'}];
+});
 test('disabled owner is blocked before dispatch and active duplicate incidents are rejected',async()=>{
  await db.query('UPDATE platform_support_agents SET is_active=false');
  const incident='00000000-0000-4000-8000-000000000003';
  await db.query("INSERT INTO owner_repair_jobs(owner_id,incident_id,scope) VALUES($1,$2,'support-portal')",[owner,incident]);
  await assert.rejects(db.query("INSERT INTO owner_repair_jobs(owner_id,incident_id,scope) VALUES($1,$2,'support-portal')",[owner,incident]));
  await runOwnerRepairTick();assert.equal(dispatches,1);assert.equal((await db.query('SELECT status FROM owner_repair_jobs WHERE incident_id=$1',[incident])).rows[0].status,'blocked');
+});
+
+test('routing sends fixed categories instead of raw incident text',()=>{
+ assert.equal(repairFeature('web','Calendar failed for private@example.test'),'scheduling');
+ assert.equal(repairFeature('api','unclassified failure'),'general');
+ for(const area of ['payroll','billing','quickbooks','scheduling','timesheets','gps','chat','invoices','support','database'])assert.notEqual(repairScope(area,'error'),null);
 });

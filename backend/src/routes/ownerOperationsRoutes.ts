@@ -1,4 +1,4 @@
-import { repairEnabled, repairScope } from '../services/ownerRepairService';
+import { repairEnabled, repairScope, repairFeature } from '../services/ownerRepairService';
 import express, { Response, NextFunction } from 'express';
 import { pool } from '../config/database';
 import { authenticateAgent, AgentRequest } from './supportAgentRoutes';
@@ -30,12 +30,12 @@ router.post('/repairs',async(req:AgentRequest,res)=>{
   const incident=(await db.query("SELECT component,summary FROM system_incidents WHERE id=$1 AND status<>'resolved' FOR UPDATE",[id])).rows[0];
   if(!incident){await db.query('ROLLBACK');return res.status(409).json({message:'Incident is unavailable or resolved'});}
   const scope=repairScope(incident.component,incident.summary);
-  if(!scope){await db.query('ROLLBACK');return res.status(422).json({message:'This incident needs a reviewed repair outside the supported audio/portal scope.'});}
+  if(!scope){await db.query('ROLLBACK');return res.status(422).json({message:'This incident could not be routed to an application repair scope.'});}
   const count=(await db.query("SELECT count(*)::int AS n FROM owner_repair_jobs WHERE created_at>now()-interval '24 hours'")).rows[0].n;
   if(count>=2){await db.query('ROLLBACK');return res.status(429).json({message:'Daily repair limit reached (2).'});}
   const existing=await db.query("SELECT id FROM owner_repair_jobs WHERE incident_id=$1 AND status IN ('queued','dispatching','running')",[id]);
   if(existing.rowCount){await db.query('ROLLBACK');return res.status(409).json({message:'A repair is already in progress'});}
-  const result=await db.query('INSERT INTO owner_repair_jobs(owner_id,incident_id,scope) VALUES($1,$2,$3) RETURNING *',[req.supportAgent!.id,id,scope]);
+  const result=await db.query('INSERT INTO owner_repair_jobs(owner_id,incident_id,scope,feature) VALUES($1,$2,$3,$4) RETURNING *',[req.supportAgent!.id,id,scope,repairFeature(incident.component,incident.summary)]);
   await db.query("INSERT INTO owner_operations_audit(owner_id,action) VALUES($1,$2)",[req.supportAgent!.id,'repair_requested:'+result.rows[0].id]);
   await db.query('COMMIT');res.status(201).json({repair:result.rows[0]});
  }catch{await db.query('ROLLBACK').catch(()=>{});res.status(503).json({message:'Could not queue repair'});}finally{db.release();}

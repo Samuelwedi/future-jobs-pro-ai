@@ -6,8 +6,17 @@ const githubToken = () => process.env.LUCY_GITHUB_TOKEN?.trim() || process.env.G
 export function repairEnabled() { return process.env.LUCY_REPAIR_ENABLED === 'true' && !!githubToken(); }
 export function repairScope(component: string, summary: string): string | null {
   if(component === 'mobile-ui' && /AudioRecorder|shared object|native.*audio/i.test(summary)) return 'mobile-audio';
-  if(['support-portal','webdash'].includes(component)) return 'support-portal';
-  return null;
+  if(['support-portal','webdash'].includes(component)) return 'portal-app';
+  if(/^(mobile|android|ios)/i.test(component)) return 'mobile';
+  if(/^(web|frontend|customer)/i.test(component)) return 'customer-web';
+  if(/^(portal|support)/i.test(component)) return 'portal-app';
+  if(/^(backend|api|runtime|database|server|worker)/i.test(component)) return 'backend';
+  return 'application';
+}
+export function repairFeature(component:string,summary:string) {
+ const text=component+' '+summary;
+ const categories:[string,RegExp][]=[['audio',/audio|record|voice/i],['payroll',/payroll|paystub|overtime|wage|tax/i],['billing',/bill|payment|stripe|subscription|payout/i],['authentication',/auth|login|permission|tenant/i],['integrations',/quickbook|integration|oauth/i],['scheduling',/schedul|shift|calendar/i],['time-tracking',/timesheet|clock|time.entry/i],['gps',/gps|location|tracking|map/i],['chat-media',/chat|message|media|upload|attachment/i],['invoices',/invoice|estimate/i],['support',/support|ticket/i],['runtime',/database|runtime|memory|server/i]];
+ return categories.find(([,pattern])=>pattern.test(text))?.[0] || 'general';
 }
 async function github(path: string, method = 'GET', body?: unknown): Promise<any> {
  const response=await fetch(`https://api.github.com/repos/${repository}/${path}`,{
@@ -33,7 +42,7 @@ export async function runOwnerRepairTick() {
     // Record dispatch intent first. A timeout is reconciled, never blindly retried.
     await db.query("UPDATE owner_repair_jobs SET status='dispatching',base_sha=$2 WHERE id=$1",[job.id,head.object.sha]);
     try {
-     await github(`actions/workflows/${workflow}/dispatches`,'POST',{ref:branch,inputs:{request_id:job.id,base_sha:head.object.sha,scope:job.scope}});
+     await github(`actions/workflows/${workflow}/dispatches`,'POST',{ref:branch,inputs:{request_id:job.id,base_sha:head.object.sha,scope:job.scope,feature:job.feature||'general'}});
     } catch { /* The provider may have accepted it. Reconcile by run name. */ }
    } else {
     const result=job.workflow_run_id?await github(`actions/runs/${job.workflow_run_id}`):null;
@@ -50,8 +59,10 @@ export async function runOwnerRepairTick() {
      // publication job to succeed before claiming a deployment or native patch.
      const result=await github(`actions/runs/${run.id}/jobs?per_page=100`);
      const jobs=Array.isArray(result.jobs)?result.jobs:[];
-     if(jobs.some((j:any)=>j.name==='deploy' && j.conclusion==='success')) {
-      status=job.scope==='mobile-audio'?'awaiting_store':'deployed';error=null;
+     if(jobs.some((j:any)=>j.name==='review-required' && j.conclusion==='success')) {
+      status='blocked';error='Owner approval required: a tested repair candidate is ready. Open the workflow for the candidate branch and review its exact changes before production. No deployment occurred.';
+     } else if(jobs.some((j:any)=>j.name==='deploy' && j.conclusion==='success')) {
+      status=['mobile-audio','mobile'].includes(job.scope)?'awaiting_store':'deployed';error=null;
      } else {
       status='blocked';
       error=jobs.some((j:any)=>j.name==='no-repair' && j.conclusion==='success')

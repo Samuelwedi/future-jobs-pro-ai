@@ -34,7 +34,7 @@ async function scenario(options={}) {
   const mocks={
     'node:fs':{default:{readFileSync:()=>'{"files":[]}'}},
     'node:child_process':{execFileSync:(_command,args)=>{if(args[0]==='push'){pushes.push(args);if(options.rollbackConflict&&pushes.length===2)throw new Error('Lease rejected');}}},
-    './policy.mjs':{validatePatch:()=>({files:[{path:'webdash/src/App.css',content:'body {}'}]})},
+    './policy.mjs':{requiresReview:()=>options.review||false,validatePatch:()=>({files:[{path:'webdash/src/App.css',content:'body {}'}]})},
   };
   const module=new vm.SourceTextModule(source,{context});
   await module.link(specifier=>{const exports=mocks[specifier];assert.ok(exports,`Unexpected import ${specifier}`);return new vm.SyntheticModule(Object.keys(exports),function(){for(const [k,v]of Object.entries(exports))this.setExport(k,v);},{context});});
@@ -74,4 +74,14 @@ test('repository metadata uses canonical URL without trailing slash',async()=>{
  assert.equal(r.exitCode,0);
  assert.ok(r.calls.some(c=>c.url==='https://api.github.com/repos/Samuelwedi/future-jobs-pro-ai'));
  assert.ok(!r.calls.some(c=>c.url==='https://api.github.com/repos/Samuelwedi/future-jobs-pro-ai/'));
+});
+test('broader backend and sensitive candidates never invoke production providers',async()=>{
+ const r=await scenario({scope:'backend',review:true});
+ assert.equal(r.error,undefined);assert.equal(r.pushes.length,0);
+ assert.ok(r.calls.every(c=>c.url.startsWith('https://api.github.com/')));
+ assert.ok(r.calls.some(c=>c.body?.ref===`refs/heads/lucy-repair/review-${next.slice(0,12)}`));
+ assert.match(r.logs.join('\n'),/Owner review required/);
+});
+test('customer web repairs use verified atomic deployment path',async()=>{
+ const r=await scenario({scope:'customer-web'});assert.equal(r.error,undefined);assert.equal(r.exitCode,0);assert.equal(r.pushes.length,1);assert.equal(r.healthCalls,2);
 });

@@ -14,3 +14,12 @@ test('malformed, repeated and oversized changes fail closed',()=>{
  assert.throws(()=>validatePatch(JSON.stringify({files:[file,file]}),'support-portal'));
  assert.throws(()=>validatePatch(JSON.stringify({files:[{...file,content:'x'.repeat(100001)}]}),'support-portal'));
 });
+test('all application areas can prepare bounded source repairs',async()=>{
+ const {requiresReview,regressionPaths}=await import('./policy.mjs');
+ const expanded=(file,scope)=>JSON.stringify({files:[{path:file,content:'export const fixed=true;'},{path:regressionPaths[scope],content:'// regression test'}]});
+ for(const [scope,file] of [['backend','backend/src/services/payrollService.ts'],['customer-web','web/src/pages/Schedule.tsx'],['mobile','mobile/src/screens/ChatScreen.tsx'],['portal-app','webdash/src/App.js'],['application','backend/src/services/quickbookService.ts']]) assert.equal(validatePatch(expanded(file,scope),scope).files[0].path,file);
+ assert.equal(requiresReview(validatePatch(expanded('backend/src/controllers/chatController.ts','backend'),'backend'),'backend'),true);
+ assert.equal(requiresReview(validatePatch(expanded('web/src/pages/Payroll.tsx','customer-web'),'customer-web'),'customer-web'),true);
+ assert.equal(requiresReview(validatePatch(expanded('web/src/components/Calendar.css','customer-web'),'customer-web'),'customer-web'),false);
+ for(const file of ['web/src/../secrets.ts','web/src/.env.ts','backend/src/services/ownerRepairService.ts','backend/src/routes/supportAgentRoutes.ts','web/src/a.test.ts','mobile/package.json','.github/workflows/lucy-repair.yml'])assert.throws(()=>validatePatch(patch(file),'application'));
+});
