@@ -141,7 +141,6 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.LUCY_VERCEL_TOKEN }}
           REPAIR_SCOPE: ${{ inputs.scope }}
           BASE_SHA: ${{ inputs.base_sha }}
-          VERIFIED_PRODUCTION_SHA: ${{ vars.LUCY_VERIFIED_PRODUCTION_SHA }}
           RAILWAY_SERVICE_ID: ${{ vars.LUCY_RAILWAY_SERVICE_ID }}
           RAILWAY_ENVIRONMENT_ID: ${{ vars.LUCY_RAILWAY_ENVIRONMENT_ID }}
           VERCEL_PROJECT_ID: ${{ vars.LUCY_VERCEL_PROJECT_ID }}

@@ -53,9 +53,19 @@ async function verifyHealth() {
 for(const key of ['GH_TOKEN',...(scope==='support-portal'?['RAILWAY_API_TOKEN','RAILWAY_SERVICE_ID','RAILWAY_ENVIRONMENT_ID','VERCEL_TOKEN','VERCEL_PROJECT_ID','VERCEL_TEAM_ID']:[])]){
   if(!process.env[key])throw new Error(`Missing ${key}`);
 }
-// Activation pins a verified production baseline. A human must advance this after
-// a release; this prevents rolling back to code that was never live and verified.
-if(scope==='support-portal' && process.env.VERIFIED_PRODUCTION_SHA!==base)throw new Error('Production baseline has not been verified for this repair');
+// Read the actual live baseline on every repair. This permits successive
+// verified repairs without granting the worker repository-variable write access.
+// A newer, failed or unfinished deployment blocks publication conservatively.
+async function verifyProductionBaseline() {
+  const {serviceInstance}=await railway('query($serviceId:String!,$environmentId:String!){serviceInstance(serviceId:$serviceId,environmentId:$environmentId){latestDeployment{id status meta}}}',{serviceId:process.env.RAILWAY_SERVICE_ID,environmentId:process.env.RAILWAY_ENVIRONMENT_ID});
+  const active=serviceInstance?.latestDeployment;
+  const portal=await vercel('/v13/deployments/future-jobs-pro-ai-z32m.vercel.app');
+  if(active?.status!=='SUCCESS' || active.meta?.commitHash!==base || portal.readyState!=='READY' || portal.meta?.githubCommitSha!==base || portal.projectId!==process.env.VERCEL_PROJECT_ID) {
+    throw new Error('Production baseline differs from requested source or is not healthy');
+  }
+  await verifyHealth();
+}
+if(scope==='support-portal')await verifyProductionBaseline();
 const branches=scope==='support-portal'?[sourceBranch,portalBranch]:[sourceBranch];
 for(const branch of branches){const ref=await gh(`git/ref/heads/${branch}`);if(ref.object.sha!==base)throw new Error('Source changed since repair was requested; request a new repair');}
 const parent=await gh(`git/commits/${base}`);

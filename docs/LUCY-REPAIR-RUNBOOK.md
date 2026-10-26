@@ -1,4 +1,4 @@
-# Lucy repair execution — prepared, not activated
+# Lucy repair execution
 
 This release adds the owner-only Fix with Lucy queue and a manual GitHub Actions workflow. Production execution remains OFF until credentials and acceptance checks below are completed. Existing IT recommendations remain separate and do not execute changes.
 
@@ -11,7 +11,7 @@ This release adds the owner-only Fix with Lucy queue and a manual GitHub Actions
 
 ## Isolation and limits
 
-The model runs in a restricted, network-disabled workspace with no deployment credentials. Its JSON output is checked against exact file and size allowlists. Baseline dependencies install before patch application. Generated code is tested in a container with no network or production credentials. The privileged publication job is a fresh runner and executes only the original deployment script, never generated code. Existing tests cannot be edited by the repair.
+The model runs in a restricted, network-disabled workspace with no deployment credentials. Its JSON file is screened for the credentials available to the proposal job, encoded credential forms, provider-token patterns and masked output using a fresh trusted checkout before artifact transfer. Its replacement files are checked against exact file and size allowlists on both sides of the transfer. Baseline dependencies install before patch application. Generated code is tested in a container with no network or production credentials. The privileged publication job is a fresh runner and executes only the original deployment script, never generated code. Existing tests cannot be edited by the repair.
 
 Owner authorization, active-incident uniqueness, a global two-attempt daily limit, dispatch reconciliation and a serial workflow limit duplicate work. Completed jobs never resolve an incident automatically. Tests and a health endpoint do not prove a behavioral repair or rule out every generated-code risk.
 
@@ -19,7 +19,7 @@ Owner authorization, active-incident uniqueness, a global two-attempt daily limi
 
 1. Register `.github/workflows/lucy-repair.yml` on the repository default branch. Dispatch uses `fix/tester-release-20261022`, which must contain the workflow and scripts.
 2. With explicit approval for the new credential destination, set GitHub Actions secrets `LUCY_OPENAI_API_KEY`, `LUCY_RAILWAY_API_TOKEN`, `LUCY_VERCEL_TOKEN`. Reuse approved credentials; do not rotate keys. Use least-privilege credentials. Never put values in source, logs or chat.
-3. Set repository variables: `LUCY_RAILWAY_SERVICE_ID`, `LUCY_RAILWAY_ENVIRONMENT_ID`, `LUCY_VERCEL_PROJECT_ID`, `LUCY_VERCEL_TEAM_ID`, and `LUCY_VERIFIED_PRODUCTION_SHA`. The last must be the exact verified commit currently deployed to both targets and at both release branch heads. It intentionally requires updating after each independently verified release; mismatches block deployment.
+3. Set repository variables: `LUCY_RAILWAY_SERVICE_ID`, `LUCY_RAILWAY_ENVIRONMENT_ID`, `LUCY_VERCEL_PROJECT_ID`, `LUCY_VERCEL_TEAM_ID`. Before every web repair, the deployment script independently verifies Railway’s latest successful deployment commit, the live Vercel alias commit and project, backend health, and both release branch heads against the requested base. A mismatch, pending deployment or unhealthy response blocks publication. No repository-variable write token or manual baseline advancement is required.
 4. Set a dedicated backend `LUCY_GITHUB_TOKEN` with repository-scoped Actions read/write and Contents read permissions, and confirm it can dispatch/read this workflow. Existing `GH_TOKEN` is a compatibility fallback; leave it unchanged. Temporary Secrets/Variables write permissions used during approved setup can be removed after provisioning.
 5. Run controlled acceptance against non-production targets first: generated patch policy rejection, real regression test failure, successful deployment, failed deployment/rollback, stale branch rejection, ambiguous dispatch recovery. The deployment script currently fixes the production health URL and branch names, so a reviewed staging variant is required for that exercise. Then verify one approved production run end to end.
 6. Only after acceptance, set backend `LUCY_REPAIR_ENABLED=true` and redeploy. Set false to stop new dispatch/reconciliation; cancel an already-running GitHub workflow separately if required.
@@ -30,3 +30,7 @@ No secrets were transferred and no automatic repair was executed while preparing
 
 Run `node --experimental-vm-modules --test scripts/lucy-repair/deploy.test.mjs scripts/lucy-repair/policy.test.mjs`.
 These exercise the actual deployment script with simulated provider responses: missing credentials, baseline mismatch, stale source, atomic publication, provider failure rollback, rollback lease conflicts, unhealthy rollback, and mobile candidate-only publication. Rollback is reported successful only after the backend health check succeeds. These tests run before model invocation in the repair workflow. They do not replace real staging/provider acceptance or native device testing.
+
+## File-handoff acceptance, 2026-10-25
+
+Run 40271667086 completed proposal screening, isolated mobile and portal checks, and mobile candidate publication successfully. Candidate: `a0ef307c1466b629a0263ef6e1fa87ed13de4e73`. This is code-level acceptance; it is not physical-device acceptance or a store release. The handoff no longer relies on large GitHub job outputs.
