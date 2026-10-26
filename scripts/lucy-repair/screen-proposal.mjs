@@ -7,7 +7,7 @@ export function screenProposal(raw, scope, secrets) {
   if (!secrets.length || secrets.some(value => typeof value !== 'string' || value.length < 16)) {
     throw new Error('Credential screening is not configured');
   }
-  const patch = validatePatch(raw, scope);
+  const patch = validatePatch(raw, scope, { allowEmpty: true });
   const text = [raw, ...patch.files.map(file => file.content)].join('\n');
   for (const secret of secrets) {
     const forms = [secret, Buffer.from(secret).toString('base64'), Buffer.from(secret).toString('hex'), encodeURIComponent(secret)];
@@ -25,5 +25,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (!fs.lstatSync(input).isFile() || fs.statSync(input).size > 250000) throw new Error('Invalid proposal file');
   const patch=screenProposal(fs.readFileSync(input,'utf8'),process.env.REPAIR_SCOPE,[process.env.SCAN_OPENAI_KEY,process.env.SCAN_GITHUB_TOKEN]);
   fs.writeFileSync('/tmp/lucy-screened-proposal.json',JSON.stringify(patch),{mode:0o600});
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `has_patch=${patch.files.length > 0}\n`);
   console.log(`Credential screening and path validation passed for ${patch.files.length} files`);
 }

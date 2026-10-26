@@ -17,3 +17,10 @@ test('malformed and out-of-scope proposal rejected before upload',()=>{
  assert.throws(()=>screenProposal('', 'support-portal',[secret]));
  assert.throws(()=>screenProposal(patch('body {}'),'mobile-audio',[secret]));
 });
+
+test('empty proposal is a safe no-op but never a publishable patch',async()=>{
+ assert.deepEqual(screenProposal('{"files":[]}','mobile-audio',[secret]),{files:[]});
+ const {validatePatch}=await import('./policy.mjs');
+ assert.throws(()=>validatePatch('{"files":[]}','mobile-audio'),/Expected/);
+ assert.throws(()=>screenProposal(JSON.stringify({files:[],extra:secret}),'mobile-audio',[secret]),/credential/);
+});

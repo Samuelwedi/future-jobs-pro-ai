@@ -22,6 +22,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   propose:
+    outputs:
+      has_patch: ${{ steps.screen.outputs.has_patch }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -69,6 +71,7 @@ jobs:
           path: trusted-validator
           persist-credentials: false
       - name: Reject credential-bearing or invalid proposals before transfer
+        id: screen
         env:
           REPAIR_SCOPE: ${{ inputs.scope }}
           SCAN_OPENAI_KEY: ${{ secrets.LUCY_OPENAI_API_KEY }}
@@ -80,8 +83,16 @@ jobs:
           path: /tmp/lucy-screened-proposal.json
           if-no-files-found: error
           retention-days: 1
+  no-repair:
+    needs: propose
+    if: needs.propose.outputs.has_patch == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: No safe repair found
+        run: echo 'No safe justified patch was found. No code was published or deployed. Incident remains open.' >> "$GITHUB_STEP_SUMMARY"
   verify:
     needs: propose
+    if: needs.propose.outputs.has_patch == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

@@ -43,10 +43,25 @@ export async function runOwnerRepairTick() {
      continue;
     }
     const complete=run.status==='completed';
-    const status=complete?(run.conclusion==='success'?(job.scope==='mobile-audio'?'awaiting_store':'deployed'):'failed'):'running';
+    let status=complete?'failed':'running';
+    let error:string|null=complete?'Repair did not pass all checks. Review the workflow; no resolution has been recorded.':null;
+    if(complete && run.conclusion==='success') {
+     // A successful workflow can be a deliberate no-op. Require the actual
+     // publication job to succeed before claiming a deployment or native patch.
+     const result=await github(`actions/runs/${run.id}/jobs?per_page=100`);
+     const jobs=Array.isArray(result.jobs)?result.jobs:[];
+     if(jobs.some((j:any)=>j.name==='deploy' && j.conclusion==='success')) {
+      status=job.scope==='mobile-audio'?'awaiting_store':'deployed';error=null;
+     } else {
+      status='blocked';
+      error=jobs.some((j:any)=>j.name==='no-repair' && j.conclusion==='success')
+       ?'No safe additional repair found. No code was published or deployed. The incident remains open; inspect the affected build and reproduce it on a device.'
+       :'No successful publication job was verified. Review the workflow before retrying.';
+     }
+    }
     const url=`https://github.com/${repository}/actions/runs/${run.id}`;
     await db.query('UPDATE owner_repair_jobs SET status=$2,workflow_run_id=$3,workflow_url=$4,error=$5,completed_at=CASE WHEN $6 THEN now() ELSE NULL END WHERE id=$1',
-     [job.id,status,String(run.id),url,status==='failed'?'Repair did not pass all checks. Review the workflow; no resolution has been recorded.':null,complete]);
+     [job.id,status,String(run.id),url,error,complete]);
    }
   }
  } finally {

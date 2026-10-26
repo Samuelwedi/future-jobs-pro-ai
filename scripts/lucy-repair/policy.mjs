@@ -8,11 +8,11 @@ export const allowed = {
   ],
   'support-portal': ['webdash/src/LiveMonitoring.js', 'webdash/src/App.css', 'webdash/src/LiveMonitoring.repair.test.js'],
 };
-export function validatePatch(raw, scope) {
+export function validatePatch(raw, scope, { allowEmpty = false } = {}) {
   if (!allowed[scope]) throw new Error('Unsupported repair scope');
   if (Buffer.byteLength(raw) > 250000) throw new Error('Repair exceeds size limit');
   const patch = JSON.parse(raw);
-  if (!patch || !Array.isArray(patch.files) || patch.files.length < 1 || patch.files.length > 5) throw new Error('Expected 1–5 replacement files');
+  if (!patch || !Array.isArray(patch.files) || patch.files.length < (allowEmpty ? 0 : 1) || patch.files.length > 5) throw new Error('Expected 1–5 replacement files');
   const seen = new Set();
   for (const file of patch.files) {
     if (!allowed[scope].includes(file.path) || seen.has(file.path)) throw new Error('Repair touches an unapproved or repeated path');
