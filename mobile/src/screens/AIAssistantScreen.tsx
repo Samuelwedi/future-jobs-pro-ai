@@ -85,7 +85,7 @@ export default function AIAssistantScreen() {
         finishRecordingRef.current(activeRecorder);
       }
     }
-  }, [recorderState?.isRecording, recorderState?.metering]);
+  }, [recorderState]);
 
   useEffect(() => {
     let mounted = true;
