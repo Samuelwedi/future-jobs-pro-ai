@@ -14,6 +14,7 @@ async function scenario(options={}) {
   const context=vm.createContext({process,Buffer,AbortSignal,setTimeout:resolve=>resolve(),console:{log:s=>logs.push(s),error:s=>logs.push(s)},fetch:async(url,init={})=>{
     const body=init.body?JSON.parse(init.body):undefined;
     calls.push({url,method:init.method||'GET',body});
+    if(url==='https://api.github.com/repos/Samuelwedi/future-jobs-pro-ai/')return {ok:false,status:404};
     let data;
     if(url.includes('/api/health')){healthCalls++;data={status:options.unhealthy&&healthCalls>1?'unhealthy':'healthy'};}
     else if(url.includes('backboard.railway.com')) {
@@ -66,4 +67,11 @@ test('unhealthy rollback cannot be reported as successful recovery',async()=>{
 });
 test('mobile repair publishes only a candidate branch and never deploys or submits',async()=>{
   const r=await scenario({scope:'mobile-audio'});assert.equal(r.error,undefined);assert.equal(r.pushes.length,0);assert.equal(r.healthCalls,0);assert.ok(r.calls.every(c=>c.url.startsWith('https://api.github.com/')));assert.ok(r.calls.some(c=>c.body?.ref===`refs/heads/lucy-repair/mobile-${next.slice(0,12)}`));
+});
+
+test('repository metadata uses canonical URL without trailing slash',async()=>{
+ const r=await scenario();
+ assert.equal(r.exitCode,0);
+ assert.ok(r.calls.some(c=>c.url==='https://api.github.com/repos/Samuelwedi/future-jobs-pro-ai'));
+ assert.ok(!r.calls.some(c=>c.url==='https://api.github.com/repos/Samuelwedi/future-jobs-pro-ai/'));
 });

@@ -14,7 +14,7 @@ async function request(url, token, method='GET', body) {
   if (!response.ok) throw new Error(`Provider request failed: HTTP ${response.status}`);
   return response.status===204 ? null : response.json();
 }
-const gh = (url,method,body)=>request(`https://api.github.com/repos/${repo}/${url}`,process.env.GH_TOKEN,method,body);
+const gh = (url,method,body)=>request(`https://api.github.com/repos/${repo}${url ? `/${url}` : ''}`,process.env.GH_TOKEN,method,body);
 const vercel = (url,method,body)=>request(`https://api.vercel.com${url}${url.includes('?')?'&':'?'}teamId=${encodeURIComponent(process.env.VERCEL_TEAM_ID)}`,process.env.VERCEL_TOKEN,method,body);
 async function railway(query,variables) {
   const result=await request('https://backboard.railway.com/graphql/v2',process.env.RAILWAY_API_TOKEN,'POST',{query,variables});
@@ -85,6 +85,7 @@ if(scope==='mobile-audio') {
 } else {
   try {
     const outcomes=await Promise.allSettled([deployRailway(commit.sha),deployPortal(commit.sha)]);
+    outcomes.forEach((r,i)=>{if(r.status==='rejected')console.error(`${i===0?'Railway':'Vercel'} deployment failed: ${r.reason?.message || 'provider error'}`);});
     if(outcomes.some(r=>r.status==='rejected'))throw new Error('Deployment did not complete successfully');
     await verifyHealth();
     console.log(`Verified deployment: ${commit.sha}. Incident requires affected-workflow verification.`);
@@ -93,6 +94,7 @@ if(scope==='mobile-audio') {
     try {
       git(['push','--atomic',...branches.map(b=>`--force-with-lease=refs/heads/${b}:${commit.sha}`),'origin',...branches.map(b=>`${base}:refs/heads/${b}`)]);
       const rollback=await Promise.allSettled([deployRailway(base),deployPortal(base)]);
+      rollback.forEach((r,i)=>{if(r.status==='rejected')console.error(`${i===0?'Railway':'Vercel'} rollback failed: ${r.reason?.message || 'provider error'}`);});
       if(rollback.some(r=>r.status==='rejected'))throw new Error('Rollback failed');
       await verifyHealth();
       console.error('Repair deployment failed; previous source redeployed successfully.');
