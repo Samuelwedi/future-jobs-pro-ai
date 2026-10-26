@@ -89,7 +89,7 @@ jobs:
         run: |
           docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges --memory 6g --cpus 2 --pids-limit 512 \
             -v "$PWD:/source:ro" node:24-bookworm sh -c '
-              cp -a /source /tmp/app && cd /tmp/app/mobile &&
+              cp -a --no-preserve=ownership /source /tmp/app && cd /tmp/app/mobile &&
               ./node_modules/.bin/tsc --noEmit && node --test tests/*.test.cjs &&
               cd ../webdash && CI=true ./node_modules/.bin/react-scripts test --watchAll=false --runInBand &&
               ./node_modules/.bin/react-scripts build'
