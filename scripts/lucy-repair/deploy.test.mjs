@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { requiresReview } from './policy.mjs';
 const base='a'.repeat(40), next='b'.repeat(40);
 const source=fs.readFileSync(new URL('./deploy.mjs',import.meta.url),'utf8');
 async function scenario(options={}) {
@@ -34,7 +35,7 @@ async function scenario(options={}) {
   const mocks={
     'node:fs':{default:{readFileSync:()=>'{"files":[]}'}},
     'node:child_process':{execFileSync:(_command,args)=>{if(args[0]==='push'){pushes.push(args);if(options.rollbackConflict&&pushes.length===2)throw new Error('Lease rejected');}}},
-    './policy.mjs':{requiresReview:()=>options.review||false,validatePatch:()=>({files:[{path:'webdash/src/App.css',content:'body {}'}]})},
+    './policy.mjs':{requiresReview:(patch,scope)=>options.review||requiresReview(patch,scope),validatePatch:()=>({files:[{path:'webdash/src/App.css',content:'body {}'}]})},
   };
   const module=new vm.SourceTextModule(source,{context});
   await module.link(specifier=>{const exports=mocks[specifier];assert.ok(exports,`Unexpected import ${specifier}`);return new vm.SyntheticModule(Object.keys(exports),function(){for(const [k,v]of Object.entries(exports))this.setExport(k,v);},{context});});
@@ -82,6 +83,10 @@ test('broader backend and sensitive candidates never invoke production providers
  assert.ok(r.calls.some(c=>c.body?.ref===`refs/heads/lucy-repair/review-${next.slice(0,12)}`));
  assert.match(r.logs.join('\n'),/Owner review required/);
 });
-test('customer web repairs use verified atomic deployment path',async()=>{
- const r=await scenario({scope:'customer-web'});assert.equal(r.error,undefined);assert.equal(r.exitCode,0);assert.equal(r.pushes.length,1);assert.equal(r.healthCalls,2);
+test('customer web repairs cannot publish to the support portal project',async()=>{
+ const r=await scenario({scope:'customer-web'});
+ assert.equal(r.error,undefined);assert.equal(r.exitCode,0);
+ assert.equal(r.pushes.length,0);assert.equal(r.healthCalls,0);
+ assert.ok(r.calls.every(c=>c.url.startsWith('https://api.github.com/')));
+ assert.ok(r.calls.some(c=>c.body?.ref===`refs/heads/lucy-repair/review-${next.slice(0,12)}`));
 });

@@ -54,3 +54,18 @@ test('recurring generation preserves ISO calendar dates across server timezones 
     else process.env.TZ = previousTimezone;
   }
 });
+
+test('recurring generation cannot use a rule belonging to another company', async () => {
+  let queries = 0;
+  const pool = { async query(sql, values) {
+    queries++;
+    assert.match(sql, /company_id = \$2/);
+    assert.deepEqual(Array.from(values), ['other-company-rule', 'current-company']);
+    return { rows: [] };
+  } };
+  const generate = loadRecurringGenerator(pool);
+  await assert.rejects(generate({ recurringShiftId: 'other-company-rule',
+    startDate: new Date('2026-10-26'), endDate: new Date('2026-10-26'),
+    companyId: 'current-company', createdBy: 'manager' }), /not found or inactive/);
+  assert.equal(queries, 1);
+});

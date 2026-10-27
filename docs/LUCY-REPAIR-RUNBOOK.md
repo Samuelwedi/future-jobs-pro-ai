@@ -1,5 +1,19 @@
 # Lucy repair execution
 
+## Release review corrections
+
+The expanded workflow can diagnose backend, customer-web, mobile, portal-app
+and application scopes. Backend, application and customer-web repairs publish
+review candidates. Customer-web candidates must use the customer website
+project when explicitly released; the automatic publisher below targets only
+the support portal. Mobile candidates still require a native build and device
+acceptance. Sensitive changes remain review candidates. Portal CSS changes
+remain eligible for the bounded portal publisher; JavaScript/TypeScript app
+entry points require review.
+
+The current deployment tests use the actual review policy so the tests cannot
+mask a mismatch between scope routing and the production publisher.
+
 This release adds the owner-only Fix with Lucy queue and a manual GitHub Actions workflow. Production execution remains OFF until credentials and acceptance checks below are completed. Existing IT recommendations remain separate and do not execute changes.
 
 ## Supported scope

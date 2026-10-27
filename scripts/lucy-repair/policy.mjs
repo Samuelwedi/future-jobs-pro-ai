@@ -36,8 +36,10 @@ export function pathAllowed(file, scope) {
 // Broad or security-sensitive changes are published for owner review, not
 // silently promoted through the narrow, previously verified auto-deploy path.
 export function requiresReview(patch, scope) {
-  if (scope === 'application' || scope === 'backend') return true;
-  return patch.files.some(f=>/(?:auth|login|sign.?in|permission|tenant|company|payroll|paystub|payment|payout|billing|stripe|quickbook|subscription|tax|bank|token|secure|\/modules\/|(?:^|\/)App\.)/i.test(f.path)
+  // The automatic publisher targets the support portal project only. Customer
+  // website changes need their own release target and must stay review candidates.
+  if (scope === 'application' || scope === 'backend' || scope === 'customer-web') return true;
+  return patch.files.some(f=>/(?:auth|login|sign.?in|permission|tenant|company|payroll|paystub|payment|payout|billing|stripe|quickbook|subscription|tax|bank|token|secure|\/modules\/|(?:^|\/)App\.[jt]sx?$)/i.test(f.path)
     || /(?:Authorization|Bearer |localStorage|sessionStorage|jwt|access_token|refresh_token|company_id|tenant_id)/i.test(f.content));
 }
 export function validatePatch(raw, scope, { allowEmpty = false } = {}) {

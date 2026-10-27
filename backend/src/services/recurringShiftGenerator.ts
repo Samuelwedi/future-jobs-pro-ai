@@ -21,8 +21,8 @@ export async function generateShiftsForRecurringRule({
 }: GenerateOptions): Promise<number> {
   // Fetch the recurring rule
   const ruleResult = await pool.query(
-    `SELECT * FROM recurring_shifts WHERE id = $1 AND is_active = true`,
-    [recurringShiftId]
+    `SELECT * FROM recurring_shifts WHERE id = $1 AND company_id = $2 AND is_active = true`,
+    [recurringShiftId, companyId]
   );
   if (ruleResult.rows.length === 0) {
     throw new Error('Recurring shift rule not found or inactive');
