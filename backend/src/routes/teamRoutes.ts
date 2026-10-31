@@ -49,8 +49,9 @@ router.post('/invite', async (req: Request, res: Response) => {
     res.status(201).json({
       success: true,
       user: result.user,
+      emailSent: result.emailSent,
       tempPassword: result.tempPassword,
-      message: `Employee created. Temporary password: ${result.tempPassword}`
+      message: `${result.emailSent ? 'Employee created and invitation sent.' : 'Employee created, but email delivery failed. Share the temporary password securely.'} Temporary password: ${result.tempPassword}`
     });
   } catch (error: any) {
     console.error('Invite error:', error);

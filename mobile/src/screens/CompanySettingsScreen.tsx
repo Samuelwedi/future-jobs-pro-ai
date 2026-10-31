@@ -1,3 +1,4 @@
+import TimezonePicker from '../components/TimezonePicker';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -156,7 +157,7 @@ export default function CompanySettingsScreen() {
         overtime_mode: settings.overtime_mode,
         overtime_daily_threshold_hours: daily,
         overtime_week_start: settings.overtime_week_start,
-        timezone: settings.timezone.trim(),
+        timezone: /^(utc|gmt)$/i.test(settings.timezone.trim()) ? 'UTC' : settings.timezone.trim(),
         overtime_enabled: settings.overtime_enabled,
         overtime_threshold_hours: threshold,
         overtime_multiplier: multiplier,
@@ -183,8 +184,8 @@ export default function CompanySettingsScreen() {
         const formData = new FormData();
         formData.append('logo', {
           uri: logoFile.uri,
-          name: 'logo.png',
-          type: 'image/png',
+          name: logoFile.name,
+          type: logoFile.type,
         } as any);
         await api.post(`/companies/${user?.companyId}/logo`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
@@ -210,7 +211,8 @@ export default function CompanySettingsScreen() {
     });
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const asset = result.assets[0];
-      setLogoFile({ uri: asset.uri, name: 'logo.png', type: 'image/png' });
+      if (/svg/i.test(asset.mimeType || asset.fileName || asset.uri)) { Alert.alert('Unsupported logo', 'Choose a PNG or JPEG image.'); return; }
+      setLogoFile({ uri: asset.uri, name: asset.fileName || 'logo.jpg', type: asset.mimeType || 'image/jpeg' });
       setSettings({ ...settings, logo_url: asset.uri });
     }
   };
@@ -316,7 +318,7 @@ export default function CompanySettingsScreen() {
             </View>
           </>
         )}
-        <InputField label="Company time zone (IANA)" value={settings.timezone} onChange={(timezone:string)=>setSettings({...settings,timezone})}/>
+        <TimezonePicker value={settings.timezone} onChange={timezone=>setSettings({...settings,timezone})}/>
         <Text style={{color:'#CCC',lineHeight:21,marginBottom:12}}>{example}</Text>
         <Text style={{color:'#AAA',lineHeight:21}}>Combined mode uses the greater of daily or weekly overtime for each week, without counting an hour twice. 44.5 hours means 44 hours 30 minutes. Unpaid breaks are excluded; overnight breaks are allocated proportionally between days.</Text>
         <Text style={{color:'#AAA',lineHeight:21,marginTop:12}}>Changes apply to unlocked time and new payroll drafts. Previously approved entries whose pay changes return for manager review. Existing payroll stays unchanged. Use rules that meet applicable employment requirements.</Text>

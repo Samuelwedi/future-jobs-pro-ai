@@ -1,3 +1,4 @@
+import {nativeMapsAvailable} from '../utils/nativeMaps';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator, RefreshControl,
@@ -167,7 +168,7 @@ export default function CrewTrackingScreen() {
         </TouchableOpacity>
       </View>
 
-      {region ? (
+      {region && nativeMapsAvailable ? (
         <MapView
           style={styles.map}
           region={region}
@@ -191,7 +192,7 @@ export default function CrewTrackingScreen() {
         </MapView>
       ) : (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No active employees to track</Text>
+          <Text style={styles.emptyText}>{region ? 'Map unavailable in this Android build. Crew details remain available below.' : 'No active employees to track'}</Text>
         </View>
       )}
 

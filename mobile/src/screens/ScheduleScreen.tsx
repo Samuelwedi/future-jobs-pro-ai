@@ -1,11 +1,12 @@
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
   TouchableOpacity,  Linking, ScrollView, Alert,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import { calendarDate } from '../utils/calendarDate';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import {
@@ -66,13 +67,16 @@ export default function ScheduleScreen() {
     }
   };
 
+  const requestNumber = useRef(0);
+  const canManage = ['boss','manager','admin'].includes(user?.role || '');
   const fetchShifts = async () => {
+    const request = ++requestNumber.current;
     let start: string, end: string;
     const d = selectedDate;
     switch (viewMode) {
       case 'month':
-        start = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
-        end = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
+        start = format(startOfWeek(startOfMonth(currentMonth), {weekStartsOn:1}), 'yyyy-MM-dd');
+        end = format(endOfWeek(endOfMonth(currentMonth), {weekStartsOn:1}), 'yyyy-MM-dd');
         break;
       case 'week':
         start = format(startOfWeek(d, { weekStartsOn: 1 }), 'yyyy-MM-dd');
@@ -99,14 +103,14 @@ export default function ScheduleScreen() {
           fetchedShifts = data.shifts || [];
         }
       }
+      if (request !== requestNumber.current) return;
       setShifts(fetchedShifts);
       console.log(`📊 Fetched ${fetchedShifts.length} shifts`);
     } catch (e) {
       console.error('Error fetching shifts:', e);
       Alert.alert('Error', 'Could not load shifts');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if(request === requestNumber.current) { setLoading(false); setRefreshing(false); }
     }
   };
 
@@ -122,8 +126,8 @@ export default function ScheduleScreen() {
   // Calendar helpers
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
-  const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const calEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const calStart = viewMode === 'month' ? startOfWeek(monthStart, {weekStartsOn:1}) : viewMode === 'week' ? startOfWeek(selectedDate,{weekStartsOn:1}) : selectedDate;
+  const calEnd = viewMode === 'month' ? endOfWeek(monthEnd,{weekStartsOn:1}) : viewMode === 'week' ? endOfWeek(selectedDate,{weekStartsOn:1}) : viewMode === '3days' ? addDays(selectedDate,2) : selectedDate;
 
   const calendarDays: Date[] = [];
   let d = calStart;
@@ -132,10 +136,7 @@ export default function ScheduleScreen() {
     d = addDays(d, 1);
   }
 
-  // UTC helpers
-  const getUTCDateString = (date: Date) => {
-    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-  };
+  const getUTCDateString = calendarDate;
 
   const getShiftDateString = (iso: string) => iso.split('T')[0];
 
@@ -168,7 +169,7 @@ export default function ScheduleScreen() {
   };
 
   const openCreateShift = () => {
-    navigation.navigate('CreateShift', { date: selectedDate.toISOString() });
+    navigation.navigate('CreateShift', { date: calendarDate(selectedDate) });
   };
 
   if (loading) {
@@ -186,7 +187,7 @@ export default function ScheduleScreen() {
             <Text style={styles.headerTitle}>{selectedEmployeeName}</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={openCreateShift} style={{ padding: 4 }}>
+        <TouchableOpacity disabled={!canManage} onPress={openCreateShift} style={{ padding: 4 }}>
           <MaterialIcons name="add" size={28} color="#00D4FF" />
         </TouchableOpacity>
       </View>
@@ -252,7 +253,7 @@ export default function ScheduleScreen() {
       </View>
 
       <FlatList
-        data={shiftsForSelectedDate}
+        data={viewMode === 'month' || viewMode === 'day' ? shiftsForSelectedDate : shifts}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.shiftCard} onPress={() => setSelectedShift(item)}>
             <Text style={styles.shiftDate}>{item.date ? formatShiftDate(item.date) : ''}</Text>
@@ -285,6 +286,10 @@ export default function ScheduleScreen() {
             </View>
             {selectedShift && (
               <ScrollView>
+                {canManage && <View style={{flexDirection:'row', gap:20, paddingBottom:16}}>
+                  <TouchableOpacity onPress={() => { navigation.navigate('CreateShift', {shift:selectedShift, date:selectedShift.date}); setSelectedShift(null); }}><Text style={{color:'#00D4FF'}}>Edit shift</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => Alert.alert('Delete shift','Remove this scheduled shift?', [{text:'Cancel'},{text:'Delete',style:'destructive',onPress:async()=>{try { await api.delete(`/schedule/shifts/${selectedShift.id}`); setSelectedShift(null); await fetchShifts(); } catch(e:any) {Alert.alert('Delete failed',e.response?.data?.message || e.message);} }}])}><Text style={{color:'#F44336'}}>Delete shift</Text></TouchableOpacity>
+                </View>}
                 <Text style={styles.detailLabel}>Shift</Text>
                 <Text style={styles.detailValue}>{selectedShift.name}</Text>
                 <Text style={styles.detailLabel}>Project</Text>

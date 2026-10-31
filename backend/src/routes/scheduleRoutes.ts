@@ -3,6 +3,13 @@ import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 
 const router = express.Router();
+async function scheduleTransaction<T>(work: (client: any) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try { await client.query('BEGIN'); const result = await work(client); await client.query('COMMIT'); return result; }
+  catch(error) { await client.query('ROLLBACK'); throw error; }
+  finally { client.release(); }
+}
+
 
 // Public build information only. Operational schedule data always requires authentication.
 router.get('/version', (req: Request, res: Response) => {
@@ -37,7 +44,7 @@ router.get('/shifts', async (req: Request, res: Response) => {
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
     const { start, end } = req.query;
     let query = `
-      SELECT s.* 
+      SELECT s.*, s.date::date::text AS date
       FROM shifts s
       JOIN projects p ON s.project_id = p.id
       WHERE p.company_id = $1
@@ -88,7 +95,7 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     }
 
     const result = await pool.query(
-      `SELECT s.*, 
+      `SELECT s.*, s.date::date::text AS date,
               array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
               p.name as project_name,
               p.address as project_address
@@ -166,37 +173,41 @@ router.post('/shifts', async (req: Request, res: Response) => {
       } catch { /* ignore */ }
     }
 
-    // Insert shift with optional recurring_shift_id
-    const shiftResult = await pool.query(
-      `INSERT INTO shifts
-       (name, date, start_time, end_time, project_id, notes, created_by,
-        attachment_url, attachment_type, user_id, recurring_shift_id)
-       VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING *`,
-      [
-        name,
-        date,
-        start,
-        end,
-        projectId || null,
-        notes || null,
-        userId,
-        attachmentUrl || null,
-        attachmentType || null,
-        userId,
-        recurringShiftId || null,
-      ]
-    );
-    const shift = shiftResult.rows[0];
+    const shift = await scheduleTransaction(async client => {
+      // Insert shift with optional recurring_shift_id
+      const shiftResult = await client.query(
+        `INSERT INTO shifts
+         (name, date, start_time, end_time, project_id, notes, created_by,
+          attachment_url, attachment_type, user_id, recurring_shift_id)
+         VALUES ($1, $2::date, $3::time, $4::time, $5, $6, $7, $8, $9, $10, $11)
+         RETURNING *`,
+        [
+          name,
+          date,
+          start,
+          end,
+          projectId || null,
+          notes || null,
+          userId,
+          attachmentUrl || null,
+          attachmentType || null,
+          userId,
+          recurringShiftId || null,
+        ]
+      );
+      const shift = shiftResult.rows[0];
 
-    if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
-      for (const empId of employeeIds) {
-        await pool.query(
-          `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [shift.id, empId]
-        );
+      if (employeeIds && Array.isArray(employeeIds) && employeeIds.length > 0) {
+        for (const empId of employeeIds) {
+          await client.query(
+            `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [shift.id, empId]
+          );
+        }
       }
-    }
+
+      return shift;
+    });
 
     res.status(201).json({ success: true, shift });
   } catch (error: any) {
@@ -219,6 +230,7 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
       startTime,
       endTime,
       notes,
+      projectId,
       employeeIds,
       attachmentUrl,
       attachmentType,
@@ -226,7 +238,7 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
     } = req.body;
 
     const checkResult = await pool.query(
-      `SELECT s.id 
+      `SELECT s.id
        FROM shifts s
        JOIN projects p ON s.project_id = p.id
        WHERE s.id = $1 AND p.company_id = $2`,
@@ -236,36 +248,50 @@ router.put('/shifts/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Shift not found or unauthorized' });
     }
 
-    const result = await pool.query(
-      `UPDATE shifts
-       SET name=$1, date=$2::date, start_time=$3::time, end_time=$4::time,
-           notes=$5, attachment_url=$6, attachment_type=$7, recurring_shift_id=$8
-       WHERE id=$9 RETURNING *`,
-      [
-        name,
-        date,
-        startTime,
-        endTime,
-        notes,
-        attachmentUrl || null,
-        attachmentType || null,
-        recurringShiftId || null,
-        req.params.id,
-      ]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Shift not found' });
-
-    if (employeeIds && Array.isArray(employeeIds)) {
-      await pool.query('DELETE FROM shift_assignments WHERE shift_id = $1', [req.params.id]);
-      for (const empId of employeeIds) {
-        await pool.query(
-          `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [req.params.id, empId]
-        );
-      }
+    if (!name || !date || !startTime || !endTime) return res.status(400).json({success:false,message:'Missing required fields'});
+    if (projectId) {
+      const project = await pool.query('SELECT id FROM projects WHERE id=$1 AND company_id=$2',[projectId,companyId]);
+      if (!project.rowCount) return res.status(403).json({success:false,message:'Project not found in your company'});
     }
+    if (Array.isArray(employeeIds)) {
+      const unique = [...new Set(employeeIds.map(String))];
+      const employees = await pool.query('SELECT id FROM users WHERE company_id=$1 AND id=ANY($2::uuid[])',[companyId,unique]);
+      if (employees.rowCount !== unique.length) return res.status(403).json({success:false,message:'Every assigned employee must belong to your company'});
+    }
+    const savedShift = await scheduleTransaction(async client => {
+      const result = await client.query(
+        `UPDATE shifts
+         SET name=$1, date=$2::date, start_time=$3::time, end_time=$4::time,
+             notes=$5, attachment_url=$6, attachment_type=$7, recurring_shift_id=$8, project_id=COALESCE($10::uuid,project_id)
+         WHERE id=$9 RETURNING *`,
+        [
+          name,
+          date,
+          startTime,
+          endTime,
+          notes,
+          attachmentUrl || null,
+          attachmentType || null,
+          recurringShiftId || null,
+          req.params.id,
+          projectId || null,
+        ]
+      );
+      if (result.rows.length === 0) throw new Error('Shift not found');
 
-    res.json({ success: true, shift: result.rows[0] });
+      if (employeeIds && Array.isArray(employeeIds)) {
+        await client.query('DELETE FROM shift_assignments WHERE shift_id = $1', [req.params.id]);
+        for (const empId of employeeIds) {
+          await client.query(
+            `INSERT INTO shift_assignments (shift_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [req.params.id, empId]
+          );
+        }
+      }
+
+      return result.rows[0];
+    });
+    res.json({ success: true, shift: savedShift });
   } catch (error: any) {
     console.error('❌ Update shift error:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -281,7 +307,7 @@ router.delete('/shifts/:id', async (req: Request, res: Response) => {
     if (!canManageSchedule(current.role)) return res.status(403).json({ success: false, message: 'Manager access is required to delete shifts' });
 
     const checkResult = await pool.query(
-      `SELECT s.id 
+      `SELECT s.id
        FROM shifts s
        JOIN projects p ON s.project_id = p.id
        WHERE s.id = $1 AND p.company_id = $2`,
@@ -314,7 +340,7 @@ router.get('/calendar', async (req: Request, res: Response) => {
 
     // 1. Fetch all one‑off shifts (non‑recurring) in the date range
     const shiftsResult = await pool.query(
-      `SELECT s.*,
+      `SELECT s.*, s.date::date::text AS date,
               array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
               p.name as project_name,
               u.first_name || ' ' || u.last_name as employee_name

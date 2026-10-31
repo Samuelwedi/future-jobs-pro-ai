@@ -1,3 +1,4 @@
+import {nativeMapsAvailable} from '../utils/nativeMaps';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -339,7 +340,7 @@ export default function GPSPlaybackScreen() {
       </View>
 
       <View style={styles.mapContainer}>
-        <MapView
+        {nativeMapsAvailable ? <MapView
           ref={mapRef}
           style={styles.map}
           region={mapRegion}
@@ -380,7 +381,10 @@ export default function GPSPlaybackScreen() {
               </React.Fragment>
             );
           })}
-        </MapView>
+        </MapView> : <View style={[styles.map, {alignItems:'center',justifyContent:'center',padding:24}]}>
+          <Text style={{color:'#FFF',textAlign:'center'}}>Map unavailable in this Android build. Route history and playback coordinates remain available below.</Text>
+          {currentPoint && <Text style={{color:'#00D4FF',marginTop:12}}>{currentPoint.latitude.toFixed(6)}, {currentPoint.longitude.toFixed(6)}</Text>}
+        </View>}
         <View style={styles.currentPointBadge}>
           <Text style={styles.currentPointText}>{currentIndex + 1} / {points.length}</Text>
         </View>

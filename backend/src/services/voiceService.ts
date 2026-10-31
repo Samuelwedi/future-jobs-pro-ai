@@ -1,3 +1,4 @@
+import {requireVoiceTranscript} from '../utils/voiceTranscript';
 // ============================================
 // AI VOICE NOTES SERVICE
 // Transcribes voice notes and extracts structured data
@@ -50,7 +51,7 @@ export async function processVoiceNote(
 ): Promise<VoiceNoteResult> {
   console.log(`\n🎙️  [Samuel B. AI] Processing voice note: ${path.basename(audioPath)}`);
 
-  const transcript = await transcribeAudio(audioPath);
+  const transcript = requireVoiceTranscript(await transcribeAudio(audioPath));
   console.log(`📝 Transcript: "${transcript.substring(0, 100)}${transcript.length > 100 ? '...' : ''}"`);
 
   const extractedData = await extractStructuredData(transcript);
@@ -78,6 +79,7 @@ export async function processTranscriptOnly(
   projectId: string,
   timeEntryId: string
 ): Promise<Omit<VoiceNoteResult, 'id'>> {
+  transcript = requireVoiceTranscript(transcript);
   console.log(`\n📝 [Samuel B. AI] Processing transcript-only: "${transcript.substring(0, 100)}..."`);
 
   const extractedData = await extractStructuredData(transcript);
@@ -115,7 +117,7 @@ export async function transcribeAudio(audioPath: string): Promise<string> {
       language: 'en',
       response_format: 'text'
     });
-    return response as string;
+    return requireVoiceTranscript(response);
   } catch (error) {
     console.error('❌ Transcription error:', error);
     throw error;

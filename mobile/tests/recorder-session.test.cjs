@@ -60,6 +60,7 @@ test('polling a native failure retires the object instead of repeatedly accessin
   const {session,calls}=setup({statusError:true}); await session.start();
   assert.throws(()=>session.status(),/native object unavailable/);
   assert.equal(session.status(),null); assert.equal(session.isRecording,false);
+  await new Promise(resolve=>setImmediate(resolve));
   assert.equal(calls.filter(x=>x==='release').length,1);
 });
 test('focus cannot start a second recorder while cancelled preparation is still pending', async () => {
@@ -72,4 +73,13 @@ test('unmounted session cannot allocate audio when a delayed callback fires', as
   const {session,calls}=setup(); session.dispose();
   assert.equal(await session.start(),false); assert.equal(await session.stop(),null); assert.equal(session.status(),null);
   assert.deepEqual(calls,[]);
+});
+
+test('cancel active audio waits for native stop before releasing and blocks restart', async () => {
+ const pending=deferred(); const {session,calls}=setup({stop:pending.promise});
+ await session.start(); session.cancel(); session.cancel();
+ assert.equal(calls.includes('release'),false);
+ assert.equal(await session.start(),false);
+ pending.resolve(); await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(calls,['create','prepare','record','stop','release']);
 });

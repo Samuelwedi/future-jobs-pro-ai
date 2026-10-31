@@ -148,9 +148,9 @@ export default function HomeScreen() {
   const loadData = async () => {
     try {
       const res = await api.get<any>('/projects');
-      const loadedProjects = res.projects || [];
+      const loadedProjects = (res.projects || []).filter((p:any) => !p.status || p.status === 'active');
       setProjects(loadedProjects);
-      setSelectedProject((current: any) => current || loadedProjects[0] || null);
+      setSelectedProject((current: any) => loadedProjects.find((p:any) => p.id === current?.id) || loadedProjects[0] || null);
       setLivePulse(prev => ({ ...prev, activeProjects: loadedProjects.length }));
     } catch (e) {
       console.error('Failed to load projects:', e);
@@ -169,10 +169,10 @@ export default function HomeScreen() {
       const res = await api.get(`/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`);
       const data = (res as any).data || res;
       const shifts = data.shifts || [];
-      const todayUTC = new Date().toISOString().split('T')[0];
+      const todayUTC = format(new Date(), 'yyyy-MM-dd');
       const todayShifts = shifts.filter((s: Shift) => s.date && s.date.startsWith(todayUTC));
       setSchedules(todayShifts);
-      if (todayShifts.length > 0) setSelectedSchedule(todayShifts[0]);
+      setSelectedSchedule(todayShifts[0] || null);
     } catch (e) {
       console.error('Failed to load schedules:', e);
     }
@@ -220,6 +220,7 @@ export default function HomeScreen() {
       projectId = selectedProject.id;
     } else {
       if (!selectedSchedule) { Alert.alert('Select a schedule first'); return; }
+      if (selectedSchedule.date?.slice(0,10) !== format(new Date(),'yyyy-MM-dd')) { Alert.alert('Schedule unavailable', 'Choose a shift scheduled for today.'); return; }
       if (!selectedSchedule.project_id) { Alert.alert('This schedule has no project'); return; }
       projectId = selectedSchedule.project_id;
     }
@@ -440,7 +441,7 @@ export default function HomeScreen() {
                   })}
                 </ScrollView>
               )}
-              <TouchableOpacity style={investorStyles.clockInButton} onPress={handleClockIn}>
+              <TouchableOpacity style={[investorStyles.clockInButton, {opacity: (selectionMode === 'project' ? selectedProject : selectedSchedule) ? 1 : 0.45}]} disabled={!(selectionMode === 'project' ? selectedProject : selectedSchedule)} onPress={handleClockIn}>
                 <LinearGradient colors={['#67E8F9', '#22D3EE']} style={investorStyles.clockInGradient}><View style={investorStyles.clockIcon}><MaterialIcons name="play-arrow" size={21} color="#06121D" /></View><Text style={investorStyles.clockInText}>{t("Start verified shift")}</Text><MaterialIcons name="arrow-forward" size={20} color="#06121D" /></LinearGradient>
               </TouchableOpacity>
             </>

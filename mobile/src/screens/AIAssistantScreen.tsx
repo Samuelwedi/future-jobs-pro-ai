@@ -189,21 +189,24 @@ export default function AIAssistantScreen() {
     }
   }, [route.params?.autoRecord, route.params?.wakeEvent]);
 
+  const sending = useRef(false);
+  const interacted = useRef(false);
+
   // Load conversation history
   useEffect(() => {
     if (!user) return;
     api.get('/lucy/history')
       .then((data: any) => {
-        if (active.current && data.messages) {
-          const history = data.messages.map((m: any) => ({
+        if (active.current && !interacted.current && data.messages) {
+          const history = [...data.messages].reverse().map((m: any) => ({
             text: m.content,
             isUser: m.role === 'user',
           }));
-          setMessages(prev => [...prev, ...history]);
+          setMessages(history);
         }
       })
       .catch(() => {});
-  }, [user]);
+  }, [user?.id]);
 
   // Speak Lucy's response
   const speakText = async (text: string): Promise<void> => {
@@ -242,7 +245,9 @@ export default function AIAssistantScreen() {
 
   const sendMessage = async (text: string, fromVoice = false) => {
     const epoch = generation.current;
-    if (!text.trim() || loading || !current(epoch)) return;
+    if (!text.trim() || sending.current || !current(epoch)) return;
+    sending.current = true;
+    interacted.current = true;
     setMessages(prev => [...prev, { text: text.trim(), isUser: true }]);
     setLoading(true);
     try {
@@ -265,6 +270,7 @@ export default function AIAssistantScreen() {
       await speakText(errorMsg);
       if (current(epoch) && fromVoice && conversationActiveRef.current) queueFollowUp(900);
     } finally {
+      sending.current = false;
       if (current(epoch)) setLoading(false);
     }
   };
@@ -422,7 +428,7 @@ export default function AIAssistantScreen() {
   };
 
   return (
-    <KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />

@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {checkOnlineStatus} from '../services/offlineService';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect } from 'react';
 import {
@@ -18,6 +20,9 @@ export default function ProjectsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingProject, setEditingProject] = useState<any>(null);
+  const [saving,setSaving] = useState(false);
+  const [draftLoaded,setDraftLoaded] = useState(false);
+  const draftKey = `project-draft:${user?.id || 'signed-out'}`;
   const [projectName, setProjectName] = useState('');
   const [clientName, setClientName] = useState('');
   const [projectAddress, setProjectAddress] = useState(''); // NEW
@@ -29,7 +34,7 @@ export default function ProjectsScreen() {
   const fetchProjects = async () => {
     try {
       const res: any = await api.get('/projects');
-      setProjects(res.projects || []);
+      setProjects((res.projects || []).filter((p:any) => p.status !== 'completed'));
     } catch (error) {
       console.error(error);
     } finally {
@@ -43,12 +48,22 @@ export default function ProjectsScreen() {
     fetchProjects();
   };
 
+  useEffect(() => {
+    let live=true;
+    AsyncStorage.getItem(draftKey).then(raw=>{if(live&&raw){const d=JSON.parse(raw);setProjectName(d.name||'');setClientName(d.client||'');setProjectAddress(d.address||'');}}).catch(()=>{}).finally(()=>{if(live)setDraftLoaded(true);});
+    return()=>{live=false;};
+  },[draftKey]);
+  useEffect(()=>{if(draftLoaded&&!editingProject)void AsyncStorage.setItem(draftKey,JSON.stringify({name:projectName,client:clientName,address:projectAddress}));},[draftLoaded,editingProject,projectName,clientName,projectAddress,draftKey]);
   const handleSaveProject = async () => {
+    if(saving)return;
+
     if (!projectName.trim()) {
       Alert.alert('Error', 'Project name is required');
       return;
     }
+    setSaving(true);
     try {
+      if(!await checkOnlineStatus()) throw new Error('You are offline. Your project draft is kept on this device. Reconnect and tap Save.');
       const payload = {
         name: projectName.trim(),
         client_name: clientName.trim() || null,
@@ -69,20 +84,20 @@ export default function ProjectsScreen() {
       setEditingProject(null);
       fetchProjects();
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to save project');
-    }
+      Alert.alert('Project not saved', error.response?.data?.message || error.message || 'Failed to save project');
+    } finally {setSaving(false);}
   };
 
   const handleDelete = (project: any) => {
-    Alert.alert('Delete Project', `Delete "${project.name}"?`, [
+    Alert.alert('Archive Project', `Archive "${project.name}"?`, [
       { text: 'Cancel' },
       {
-        text: 'Delete',
+        text: 'Archive',
         style: 'destructive',
         onPress: async () => {
           try {
             await api.delete(`/projects/${project.id}`);
-            Alert.alert('Deleted', 'Project removed');
+            Alert.alert('Archived', 'Project removed from active work. Its historical records are preserved.');
             fetchProjects();
           } catch (err: any) {
             Alert.alert('Error', err.message);
@@ -147,7 +162,7 @@ export default function ProjectsScreen() {
 
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => { setEditingProject(null); setProjectName(''); setClientName(''); setProjectAddress(''); setModalVisible(true); }}
+        onPress={() => { setEditingProject(null); setModalVisible(true); }}
       >
         <MaterialIcons name="add" size={28} color="#0A0A0A" />
       </TouchableOpacity>
@@ -185,8 +200,8 @@ export default function ProjectsScreen() {
                 <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setModalVisible(false)}>
                   <Text style={styles.btnText}>Cancel</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.btn, styles.saveBtn]} onPress={handleSaveProject}>
-                  <Text style={[styles.btnText, { color: '#0A0A0A' }]}>Save</Text>
+                <TouchableOpacity style={[styles.btn, styles.saveBtn]} disabled={saving} onPress={handleSaveProject}>
+                  <Text style={[styles.btnText, { color: '#0A0A0A' }]}>{saving?'Saving…':'Save'}</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>

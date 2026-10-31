@@ -8,7 +8,8 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import { format, parseISO } from 'date-fns';
+import { calendarDate, parseCalendarDate } from '../utils/calendarDate';
+import { format } from 'date-fns';
 
 interface Project {
   id: string;
@@ -22,19 +23,20 @@ export default function CreateShiftScreen() {
   const { user } = useAuth();
 
   // Parse the date from the route params (now a string)
-  const date = route.params?.date ? new Date(route.params.date) : new Date();
+  const editing = route.params?.shift;
+  const date = route.params?.date ? parseCalendarDate(route.params.date) : new Date();
 
   // Form fields
-  const [shiftName, setShiftName] = useState('');
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('17:00');
-  const [notes, setNotes] = useState('');
+  const [shiftName, setShiftName] = useState(editing?.name || '');
+  const [startTime, setStartTime] = useState(editing?.start_time?.slice(0,5) || '09:00');
+  const [endTime, setEndTime] = useState(editing?.end_time?.slice(0,5) || '17:00');
+  const [notes, setNotes] = useState(editing?.notes || '');
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState('');
-  const [projectSearchText, setProjectSearchText] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState(editing?.project_id || '');
+  const [projectSearchText, setProjectSearchText] = useState(editing?.project_name || '');
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
-  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>((editing?.assigned_user_ids || [editing?.user_id]).filter(Boolean));
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -99,6 +101,8 @@ export default function CreateShiftScreen() {
 
   // ---- Create shift ----
   const handleCreate = async () => {
+    if (uploading) return;
+    if (!selectedProjectId) { Alert.alert('Project required', 'Select a project before saving this shift.'); return; }
     if (!shiftName.trim()) {
       Alert.alert('Required', 'Please enter a shift name.');
       return;
@@ -109,34 +113,28 @@ export default function CreateShiftScreen() {
     }
     setUploading(true);
     try {
-      let attachmentUrl: string | null = null;
-      let attachmentType: string | null = null;
+      let attachmentUrl: string | null = editing?.attachment_url || null;
+      let attachmentType: string | null = editing?.attachment_type || null;
       if (selectedFile) {
         try {
-          const formData = new FormData();
-          formData.append('file', {
-            uri: selectedFile.uri,
-            name: selectedFile.name,
-            type: selectedFile.type,
-          } as any);
-          formData.append('purpose', 'shift_attachment');
           const uploadRes = await api.uploadFileWithData<{ url: string; type: string }>(
             '/upload',
             selectedFile.uri,
             { purpose: 'shift_attachment' },
-            'file'
+            'file', false, {name:selectedFile.name,mimeType:selectedFile.type}
           );
           attachmentUrl = uploadRes.url;
           attachmentType = uploadRes.type || selectedFile.type;
         } catch (err) {
           console.error('File upload failed:', err);
-          Alert.alert('Warning', 'Could not upload file, continuing without attachment.');
+          throw new Error('Attachment upload failed. Your shift has not been saved. Please retry.');
         }
       }
 
-      await api.post('/schedule/shifts', {
+      const save = editing ? api.put.bind(api) : api.post.bind(api);
+      const response:any = await save(editing ? `/schedule/shifts/${editing.id}` : '/schedule/shifts', {
         name: shiftName,
-        date: format(date, 'yyyy-MM-dd'),
+        date: calendarDate(date),
         startTime,
         endTime,
         notes,
@@ -145,7 +143,8 @@ export default function CreateShiftScreen() {
         attachmentUrl,
         attachmentType,
       });
-      Alert.alert('✅ Created', 'Shift has been added.');
+      if (!response.success) throw new Error('Shift was not saved. Please retry.');
+      Alert.alert('Saved', 'Shift has been saved.');
       navigation.goBack();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Could not create shift.');
@@ -160,7 +159,7 @@ export default function CreateShiftScreen() {
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create Shift</Text>
+        <Text style={styles.headerTitle}>{editing ? 'Edit Shift' : 'Create Shift'}</Text>
         <View style={{ width: 24 }} />
       </View>
 

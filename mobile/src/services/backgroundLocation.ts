@@ -48,8 +48,10 @@ function readSession(raw: string | null): TrackingSession | null {
   } catch { return null; }
 }
 async function clearTracking() {
-  await SecureStore.deleteItemAsync(SESSION);
-  if (await Location.hasStartedLocationUpdatesAsync(TASK)) await Location.stopLocationUpdatesAsync(TASK);
+  try { await SecureStore.deleteItemAsync(SESSION); }
+  finally {
+    if (await Location.hasStartedLocationUpdatesAsync(TASK)) await Location.stopLocationUpdatesAsync(TASK);
+  }
 }
 function disclose(): Promise<boolean> {
   return new Promise(resolve => {

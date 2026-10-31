@@ -1,3 +1,4 @@
+import { passwordPolicyError } from '../utils/passwordPolicy';
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
@@ -40,7 +41,8 @@ router.post('/register', authenticationLimit, async (req: Request, res: Response
       return res.status(400).json({ success: false, message: 'All fields are required' });
     }
     if (!EMAIL_PATTERN.test(email)) return res.status(400).json({ success: false, message: 'Enter a valid email address' });
-    if (String(password).length < 8) return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
+    const policyError = passwordPolicyError(password);
+    if (policyError) return res.status(400).json({success:false,message:policyError});
 
     const passwordHash = await bcrypt.hash(password, 10);
     const fullName = `${firstName} ${lastName}`;
@@ -161,6 +163,7 @@ router.post('/login', authenticationLimit, async (req: Request, res: Response) =
         trialEndsAt: user.trial_ends_at,
         companyId: user.company_id,
         hasPaymentMethod: !!user.stripe_payment_method_id,
+        mustChangePassword: Boolean(user.must_change_password),
       },
     });
   } catch (error: any) {
@@ -175,7 +178,7 @@ router.get('/session', async (req: Request, res: Response) => {
     const decoded = verifyToken(req);
     const result = await pool.query(
       `SELECT id,email,first_name,last_name,full_name,role,company_id,trial_ends_at,
-              COALESCE(is_active,TRUE) AS is_active, stripe_payment_method_id, profile_pic
+              COALESCE(is_active,TRUE) AS is_active, stripe_payment_method_id, profile_pic, must_change_password
        FROM users WHERE id=$1`,
       [decoded.id],
     );
@@ -185,7 +188,7 @@ router.get('/session', async (req: Request, res: Response) => {
       id:row.id,email:row.email,firstName:row.first_name,lastName:row.last_name,
       fullName:row.full_name || `${row.first_name || ''} ${row.last_name || ''}`.trim(),
       role:row.role,companyId:row.company_id,trialEndsAt:row.trial_ends_at,
-      hasPaymentMethod:Boolean(row.stripe_payment_method_id), profilePic:row.profile_pic,
+      mustChangePassword:Boolean(row.must_change_password), hasPaymentMethod:Boolean(row.stripe_payment_method_id), profilePic:row.profile_pic,
     }});
   } catch (error:any) {
     res.status(401).json({ success:false, message:error.message || 'Session is not valid' });
@@ -200,6 +203,9 @@ router.post('/change-password', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Current and new password required' });
     }
 
+    const policyError = passwordPolicyError(newPassword);
+    if (policyError) return res.status(400).json({success:false,message:policyError});
+    if (currentPassword === newPassword) return res.status(400).json({success:false,message:'Choose a different password.'});
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
@@ -214,10 +220,10 @@ router.post('/change-password', async (req: Request, res: Response) => {
     }
     const valid = await bcrypt.compare(currentPassword, userRes.rows[0].password_hash);
     if (!valid) {
-      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+      return res.status(400).json({ success: false, message: 'Current password is incorrect' });
     }
     const newHash = await bcrypt.hash(newPassword, 10);
-    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, userId]);
+    await pool.query('UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2', [newHash, userId]);
     res.json({ success: true, message: 'Password changed successfully' });
   } catch (error: any) {
     console.error('Change password error:', error.message);
@@ -260,9 +266,8 @@ router.post('/reset-password', resetPasswordLimit, async (req: Request, res: Res
     if (typeof token !== 'string' || typeof newPassword !== 'string' || Buffer.byteLength(newPassword, 'utf8') > 72 || !token || !newPassword) {
       return res.status(400).json({ success: false, message: 'Token and new password required' });
     }
-    if (newPassword.length < 8) {
-      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters' });
-    }
+    const policyError = passwordPolicyError(newPassword);
+    if (policyError) return res.status(400).json({success:false,message:policyError});
 
     const decoded = jwt.verify(token, JWT_SECRET, { issuer: 'future-jobs-pro-ai', audience: 'password-reset' }) as { userId: string; purpose?: string; fingerprint?: string };
     const account = await pool.query('SELECT password_hash FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE', [decoded.userId]);

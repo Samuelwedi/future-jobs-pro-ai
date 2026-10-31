@@ -6,7 +6,9 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Speech from 'expo-speech';
+import { DeviceEventEmitter } from 'react-native';
 import { requestRecordingPermissionsAsync } from 'expo-audio';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -165,8 +167,9 @@ export default function CameraView() {
         '/photos/upload',
         uri,
         extraFields,
-        'file'
+        'file', false, {name: isVideo ? 'evidence.mp4' : 'evidence.jpg', mimeType: isVideo ? 'video/mp4' : 'image/jpeg'}
       );
+      if (!response.success) throw new Error('Evidence was not saved. Please retry.');
 
       const score = response?.compliance?.score ?? 0;
       const passed = response?.compliance?.passed ?? false;
@@ -182,7 +185,9 @@ export default function CameraView() {
         fileType: isVideo ? 'video' : 'image',
       }, loc ? { lat: loc.coords.latitude, lng: loc.coords.longitude } : undefined).catch(() => {});
 
-      if (passed) {
+      if (isVideo && response.compliance?.score == null) {
+        Alert.alert('Video saved', 'Your video has been uploaded.', [{text:'Done',onPress:goBack}]);
+      } else if (passed) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         Alert.alert(`✅ ${isVideo ? 'Video' : 'Photo'} Approved`, `Compliance Score: ${score}/100\n\nThis will hold up in any dispute.`, [
           { text: 'Take Another', style: 'cancel' },
@@ -226,6 +231,8 @@ export default function CameraView() {
 
     setIsProcessing(true);
     try {
+      await Speech.stop();
+      DeviceEventEmitter.emit('lucyMicrophoneBusy',true);
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: mode === 'photo'
           ? ImagePicker.MediaTypeOptions.Images
@@ -262,7 +269,7 @@ export default function CameraView() {
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to launch camera.');
       if (isMounted.current) setIsProcessing(false);
-    }
+    } finally { DeviceEventEmitter.emit('lucyMicrophoneBusy',false); }
   };
 
   if (hasCameraPermission === null) {

@@ -159,6 +159,7 @@ export default function VoiceNoteScreen() {
   };
 
   const processRecording = async (audioUri: string) => {
+    setResult(null);
     setIsProcessing(true);
     try {
       const extraFields: Record<string, string> = {
@@ -173,7 +174,7 @@ export default function VoiceNoteScreen() {
         'audio'
       );
       if (!mounted.current) return;
-      if (!response.success) throw new Error('Could not process voice note');
+      if (!response.success || !response.transcript?.trim()) throw new Error('No speech was detected. Please retry your voice note.');
       // SAFETY FALLBACK: ensure structuredData exists with empty arrays
       if (!response.structuredData) {
         response.structuredData = {

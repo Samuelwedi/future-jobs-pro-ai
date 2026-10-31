@@ -118,8 +118,8 @@ export default function ProfileScreen() {
       Alert.alert(t("Error"), t("Passwords do not match"));
       return;
     }
-    if (newPassword.length < 6) {
-      Alert.alert(t("Error"), t("Password must be at least 6 characters"));
+    if (newPassword.length < 8 || newPassword.length > 72 || !/[a-zA-Z]/.test(newPassword) || !/[^a-zA-Z]/.test(newPassword)) {
+      Alert.alert(t("Error"), t("Use 8 to 72 characters with letters and a number or symbol"));
       return;
     }
     setChangingPassword(true);
@@ -131,7 +131,7 @@ export default function ProfileScreen() {
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: any) {
-      Alert.alert(t("Error"), err.message || t("Failed to change password"));
+      Alert.alert(t("Error"), err.response?.data?.message || err.message || t("Failed to change password"));
     } finally {
       setChangingPassword(false);
     }

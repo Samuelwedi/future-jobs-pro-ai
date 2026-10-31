@@ -13,6 +13,8 @@ export default function KioskScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const manager = ['boss', 'manager'].includes(String(user?.role || '').toLowerCase());
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [toggling, setToggling] = useState(false);
   const [pin, setPin] = useState('');
   const [mode, setMode] = useState<'clock-in' | 'clock-out'>('clock-in');
   const [message, setMessage] = useState('');
@@ -27,6 +29,7 @@ export default function KioskScreen() {
 
   useEffect(() => {
     void Promise.all([
+      manager && user?.companyId ? api.get<any>(`/kiosk/status/${user.companyId}`).then(result => setEnabled(result.kiosk_enabled)) : Promise.resolve(),
       api.get<any>('/projects').then(result => {
         const rows = result.projects || result || [];
         setProjects(rows);
@@ -72,6 +75,16 @@ export default function KioskScreen() {
     } finally { setWorking(false); }
   };
 
+  const toggleKiosk = async () => {
+    if (toggling || enabled === null) return;
+    setToggling(true);
+    try {
+      await api.post('/kiosk/toggle', { enabled: !enabled });
+      const result = await api.get<any>(`/kiosk/status/${user?.companyId}`);
+      setEnabled(result.kiosk_enabled);
+    } catch (error: any) { Alert.alert('Kiosk settings', error.message || 'Could not save settings'); }
+    finally { setToggling(false); }
+  };
   const renderKey = (digit: string) => <TouchableOpacity key={digit} style={styles.key} onPress={() => pin.length < 6 && setPin(value => value + digit)}><Text style={styles.keyText}>{digit}</Text></TouchableOpacity>;
 
   return <View style={styles.container}>
@@ -80,6 +93,7 @@ export default function KioskScreen() {
     {manager && <TouchableOpacity style={styles.setupBtn} onPress={() => setSetupOpen(true)}><MaterialIcons name="manage-accounts" size={21} color="#00D4FF" /><Text style={styles.setupText}>Employee PINs</Text></TouchableOpacity>}
     </View>
     <ScrollView contentContainerStyle={styles.kioskContent} keyboardShouldPersistTaps="handled">
+    {manager && <TouchableOpacity accessibilityRole="button" disabled={toggling || enabled === null} onPress={() => void toggleKiosk()} style={{padding:16}}><Text style={styles.setupText}>{enabled === null ? 'Loading kiosk settings…' : `Kiosk is ${enabled ? 'enabled' : 'disabled'} · Tap to ${enabled ? 'disable' : 'enable'}`}</Text></TouchableOpacity>}
     <View style={styles.header}><Text style={styles.headerTitle}>Kiosk Clock</Text><Text style={styles.headerSubtitle}>Employee PIN clock in and clock out</Text>
       <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>Use your employee PIN, not a project PIN. Projects do not need a PIN.</Text>
       {manager ? <TouchableOpacity accessibilityRole="button" onPress={() => setSetupOpen(true)} style={{ padding: 12 }}><Text style={styles.setupText}>No PIN yet? Set up employee PINs</Text></TouchableOpacity>
