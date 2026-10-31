@@ -52,7 +52,7 @@ See `SCREENSHOT-FOLLOWUP-20261031.md` for media playback, compatible Lucy infere
 
 ## Current source follow-up
 
-Email verification and web profile persistence are implemented in source, validated locally and pending release. Email links are random, hashed at rest, expire after one hour, and are consumed atomically; old links cannot verify a changed email. Existing accounts are not falsely marked verified or locked out of billing. Mobile Profile and web Settings expose status and email resend; confirmation uses the public verification page. SMTP failure is returned explicitly. Live delivery acceptance remains open.
+Email verification and web profile persistence shipped with the approved PR #5 release recorded below. Email links are random, hashed at rest, expire after one hour, and are consumed atomically; old links cannot verify a changed email. Existing accounts are not falsely marked verified or locked out of billing. Mobile Profile and web Settings expose status and email resend; confirmation uses the public verification page. SMTP failure is returned explicitly. Live delivery acceptance remains open.
 
 Validation for this source follow-up: backend build and all 215 tests passed; mobile TypeScript and 34 tests passed; customer web production build passed. Physical devices, SMTP delivery and store acceptance remain open.
 
@@ -68,3 +68,11 @@ Validation for this source follow-up: backend build and all 215 tests passed; mo
 Expo Doctor in the signed build reported 19/20 checks: four patch updates became recommended (expo 55.0.32 vs 55.0.31, expo-dev-client 55.0.41 vs 55.0.40, expo-location 55.1.15 vs 55.1.14, expo-sharing 55.0.25 vs 55.0.24). Native compilation continued and iOS succeeded. Record these for the next reviewed dependency update; this release uses the exact tested commit.
 
 Approved release result: PR #5 merge, Railway backend, customer website, separate portal, iOS signed build and App Store Connect upload, and Android signed build all completed successfully. Only one paid build per platform was started. Full parity and physical/device/store/live integration acceptance in the retained groups above remain open; release success does not close them automatically.
+
+## Work-screen localization source follow-up — 2026-10-31
+
+Projects, Schedule, Timesheet, Tasks and Create/Edit Shift now consume the saved language context for display copy, validation, alerts, placeholders and accessibility text. Spanish/French status, calendar and task-count labels are translated; names, task descriptions, notes, IDs, enum values and serialized API dates remain unchanged. Calendar labels preserve date-only values, and clock displays honor the returned company timezone. Interpolation replaces repeated placeholders without recursively interpreting inserted user text.
+
+Validation: all 38 mobile tests and mobile TypeScript passed. Seven real React/LanguageContext checks passed in a browser using explicit native-to-DOM adapters and synthetic local HTTP records. This is source/React evidence, not physical React Native acceptance. Full mobile/web translation coverage remains open. See WORK-SCREEN-LOCALIZATION-20261031.md.
+
+This follow-up is later than iOS build 56 / Android version code 10 and is not in those binaries. The approved USD 3 plus tax pair already completed. No additional paid build was started or authorized by this source follow-up; include these changes in the next reviewed native release after remaining work is ready.

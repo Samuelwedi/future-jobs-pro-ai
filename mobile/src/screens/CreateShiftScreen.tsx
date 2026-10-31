@@ -1,3 +1,5 @@
+import { dateLabel } from '../services/i18n';
+import { useLang } from '../context/LanguageContext';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
@@ -18,6 +20,7 @@ interface Project {
 }
 
 export default function CreateShiftScreen() {
+  const { t, lang } = useLang();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { user } = useAuth();
@@ -95,20 +98,20 @@ export default function CreateShiftScreen() {
         type: asset.mimeType || 'application/octet-stream',
       });
     } catch (err) {
-      Alert.alert('Error', 'Failed to pick file');
+      Alert.alert(t("Error"), t("Failed to pick file"));
     }
   };
 
   // ---- Create shift ----
   const handleCreate = async () => {
     if (uploading) return;
-    if (!selectedProjectId) { Alert.alert('Project required', 'Select a project before saving this shift.'); return; }
+    if (!selectedProjectId) { Alert.alert(t("Project required"), t("Select a project before saving this shift.")); return; }
     if (!shiftName.trim()) {
-      Alert.alert('Required', 'Please enter a shift name.');
+      Alert.alert(t("Required"), t("Please enter a shift name."));
       return;
     }
     if (selectedEmployeeIds.length === 0) {
-      Alert.alert('Required', 'Please select at least one employee.');
+      Alert.alert(t("Required"), t("Please select at least one employee."));
       return;
     }
     setUploading(true);
@@ -127,7 +130,7 @@ export default function CreateShiftScreen() {
           attachmentType = uploadRes.type || selectedFile.type;
         } catch (err) {
           console.error('File upload failed:', err);
-          throw new Error('Attachment upload failed. Your shift has not been saved. Please retry.');
+          throw new Error(t("Attachment upload failed. Your shift has not been saved. Please retry."));
         }
       }
 
@@ -143,11 +146,11 @@ export default function CreateShiftScreen() {
         attachmentUrl,
         attachmentType,
       });
-      if (!response.success) throw new Error('Shift was not saved. Please retry.');
-      Alert.alert('Saved', 'Shift has been saved.');
+      if (!response.success) throw new Error(t("Shift was not saved. Please retry."));
+      Alert.alert(t("Saved"), t("Shift has been saved."));
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Could not create shift.');
+      Alert.alert(t("Error"), err.message || t("Could not create shift."));
     } finally {
       setUploading(false);
     }
@@ -156,18 +159,18 @@ export default function CreateShiftScreen() {
   return (
     <ScrollView automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag" style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{editing ? 'Edit Shift' : 'Create Shift'}</Text>
+        <Text style={styles.headerTitle}>{editing ? t("Edit Shift") : t("Create Shift")}</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <Text style={styles.dateLabel}>Date: {format(date, 'EEE, MMM d, yyyy')}</Text>
+      <Text style={styles.dateLabel}>{t("Date: ")}{dateLabel(date,lang,{weekday:'short',month:'short',day:'numeric',year:'numeric'})}</Text>
 
       <TextInput
         style={styles.input}
-        placeholder="Shift Name"
+        placeholder={t("Shift Name")}
         placeholderTextColor="#888"
         value={shiftName}
         onChangeText={setShiftName}
@@ -176,14 +179,14 @@ export default function CreateShiftScreen() {
       <View style={styles.row}>
         <TextInput
           style={[styles.input, { flex: 1 }]}
-          placeholder="Start (HH:MM)"
+          placeholder={t("Start (HH:MM)")}
           placeholderTextColor="#888"
           value={startTime}
           onChangeText={setStartTime}
         />
         <TextInput
           style={[styles.input, { flex: 1, marginLeft: 8 }]}
-          placeholder="End (HH:MM)"
+          placeholder={t("End (HH:MM)")}
           placeholderTextColor="#888"
           value={endTime}
           onChangeText={setEndTime}
@@ -194,7 +197,7 @@ export default function CreateShiftScreen() {
       <View style={styles.projectSearchContainer}>
         <TextInput
           style={styles.input}
-          placeholder="Search project..."
+          placeholder={t("Search project...")}
           placeholderTextColor="#888"
           value={projectSearchText}
           onChangeText={setProjectSearchText}
@@ -224,7 +227,7 @@ export default function CreateShiftScreen() {
         )}
         {showProjectDropdown && projectSearchText.length > 0 && filteredProjects.length === 0 && (
           <View style={styles.projectDropdown}>
-            <Text style={styles.noProjectsText}>No projects found</Text>
+            <Text style={styles.noProjectsText}>{t("No projects found")}</Text>
           </View>
         )}
       </View>
@@ -234,14 +237,14 @@ export default function CreateShiftScreen() {
         <MaterialIcons name="people" size={20} color="#00D4FF" />
         <Text style={styles.employeeSelectText}>
           {selectedEmployeeIds.length === 0
-            ? 'Select Employees'
-            : `${selectedEmployeeIds.length} employee${selectedEmployeeIds.length > 1 ? 's' : ''} selected`}
+            ? t("Select Employees")
+            : t('Employees selected: {count}',{count:String(selectedEmployeeIds.length)})}
         </Text>
       </TouchableOpacity>
 
       <TextInput
         style={styles.input}
-        placeholder="Notes (optional)"
+        placeholder={t("Notes (optional)")}
         placeholderTextColor="#888"
         value={notes}
         onChangeText={setNotes}
@@ -254,7 +257,7 @@ export default function CreateShiftScreen() {
         <TouchableOpacity style={styles.attachBtn} onPress={pickFile}>
           <MaterialIcons name="attach-file" size={20} color="#00D4FF" />
           <Text style={styles.attachBtnText}>
-            {selectedFile ? `Attached: ${selectedFile.name}` : 'Attach file (PDF, Word, Excel)'}
+            {selectedFile ? t('Attached: {name}',{name:selectedFile.name}) : t("Attach file (PDF, Word, Excel)")}
           </Text>
         </TouchableOpacity>
         {selectedFile && (
@@ -269,7 +272,7 @@ export default function CreateShiftScreen() {
         onPress={handleCreate}
         disabled={uploading}
       >
-        <Text style={styles.createBtnText}>{uploading ? 'Creating...' : 'Create Shift'}</Text>
+        <Text style={styles.createBtnText}>{uploading ? t('Saving...') : editing ? t('Save shift') : t('Create Shift')}</Text>
       </TouchableOpacity>
     </ScrollView>
   );
