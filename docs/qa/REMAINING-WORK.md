@@ -52,7 +52,7 @@ See `SCREENSHOT-FOLLOWUP-20261031.md` for media playback, compatible Lucy infere
 
 ## Current source follow-up
 
-Email verification and web profile persistence are implemented in source, validated locally and pending release. Email links are random, hashed at rest, expire after one hour, and are consumed atomically; old links cannot verify a changed email. Existing accounts are not falsely marked verified or locked out of billing. Mobile Profile and web Settings expose status and email resend; confirmation uses the public verification page. SMTP failure is returned explicitly. Live delivery acceptance remains open.
+Email verification and web profile persistence were deployed in PR #5. Email links are random, hashed at rest, expire after one hour, and are consumed atomically; old links cannot verify a changed email. Existing accounts are not falsely marked verified or locked out of billing. Mobile Profile and web Settings expose status and email resend; confirmation uses the public verification page. SMTP failure is returned explicitly. Live delivery acceptance remains open.
 
 Validation for this source follow-up: backend build and all 215 tests passed; mobile TypeScript and 34 tests passed; customer web production build passed. Physical devices, SMTP delivery and store acceptance remain open.
 
@@ -68,3 +68,7 @@ Validation for this source follow-up: backend build and all 215 tests passed; mo
 Expo Doctor in the signed build reported 19/20 checks: four patch updates became recommended (expo 55.0.32 vs 55.0.31, expo-dev-client 55.0.41 vs 55.0.40, expo-location 55.1.15 vs 55.1.14, expo-sharing 55.0.25 vs 55.0.24). Native compilation continued and iOS succeeded. Record these for the next reviewed dependency update; this release uses the exact tested commit.
 
 Approved release result: PR #5 merge, Railway backend, customer website, separate portal, iOS signed build and App Store Connect upload, and Android signed build all completed successfully. Only one paid build per platform was started. Full parity and physical/device/store/live integration acceptance in the retained groups above remain open; release success does not close them automatically.
+
+## Mobile/web audit continuation
+
+See `MOBILE-WEB-PARITY.md` for the source inventory and explicit native workflow gaps. A native Expenses screen now implements claims, receipt attachment/extraction and manager review in the QA branch. It is not part of the already signed iOS build 56 or Android version code 10. Native payroll, direct deposit, year-end, invoices/estimates, reports, integrations, work preferences and evidence review still need coverage. Existing publishing/paid-build limits remain in force.
