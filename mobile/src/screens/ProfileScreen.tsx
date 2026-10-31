@@ -25,6 +25,23 @@ export default function ProfileScreen() {
   const [profilePic, setProfilePic] = useState((user as any)?.profilePic || null);
   const [compensation,setCompensation]=useState<any>(null);
   const [profileError,setProfileError]=useState('');
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [verificationBusy, setVerificationBusy] = useState(false);
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setEmailVerified(null);
+    api.get<{verified:boolean}>('/auth/email-verification').then(result => { if (active) setEmailVerified(result.verified); }).catch(() => {});
+    return () => { active = false; };
+  }, [user?.id]));
+  const sendVerification = async () => {
+    setVerificationBusy(true);
+    try {
+      const result = await api.post<{message:string}>('/auth/email-verification', {});
+      Alert.alert('Email verification', result.message);
+    } catch (cause: any) { Alert.alert('Email verification', cause.message || 'Unable to send verification email.'); }
+    finally { setVerificationBusy(false); }
+  };
+
   useFocusEffect(useCallback(()=>{let active=true;api.get<{user:any}>('/users/me').then(r=>{if(active){setCompensation(r.user);setProfilePic(r.user.profile_pic);setProfileError('');}}).catch(()=>{if(active)setProfileError('Pay rate could not be loaded. Try reopening your profile.');});return()=>{active=false;};},[user?.id]));
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -162,6 +179,10 @@ export default function ProfileScreen() {
         </TouchableOpacity>
         <Text style={styles.userName}>{user?.firstName} {user?.lastName}</Text>
         <Text style={styles.userEmail}>{user?.email}</Text>
+        <Text style={styles.userEmail}>{emailVerified === null ? 'Email verification status unavailable' : emailVerified ? 'Email verified' : 'Email not verified'}</Text>
+        {emailVerified === false && <TouchableOpacity accessibilityRole="button" disabled={verificationBusy} style={styles.editNameBtn} onPress={sendVerification}>
+          <Text style={styles.editNameText}>{verificationBusy ? 'Sending…' : 'Send verification email'}</Text>
+        </TouchableOpacity>}
         <View style={styles.roleBadge}>
           <Text style={styles.roleText}>{t(`role_${user?.role}`)}</Text>
         </View>
