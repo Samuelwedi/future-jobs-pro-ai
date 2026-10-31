@@ -18,6 +18,8 @@ export const API_URL = (process.env.EXPO_PUBLIC_API_URL || (__DEV__ ? DEV_API_UR
 class ApiService {
   private client: AxiosInstance;
   private token: string | null = null;
+  private onSubscriptionRequired: (() => void) | null = null;
+  setSubscriptionRequiredHandler(handler:()=>void){this.onSubscriptionRequired=handler;}
   private onUnauthorized: (() => void) | null = null;
 
   constructor() {
@@ -59,6 +61,7 @@ class ApiService {
     this.client.interceptors.response.use(
       (response) => response,
       async (error) => {
+        if (error.response?.status === 402) this.onSubscriptionRequired?.();
         if (error.response?.status === 401) {
           console.warn('🔑 Token expired – redirecting to login');
           try { await this.clearToken(); } finally { this.onUnauthorized?.(); }

@@ -175,6 +175,7 @@ export async function getSubscriptionStatus(companyId?: string) {
   if (!result.rowCount) throw new Error('Company was not found');
   const company = result.rows[0];
   return {
+    tier: company.subscription_tier || 'trial',
     plan: company.subscription_tier || 'trial',
     status: company.subscription_status || 'inactive',
     provider: company.subscription_provider || null,

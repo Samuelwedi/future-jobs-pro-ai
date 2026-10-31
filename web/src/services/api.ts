@@ -32,7 +32,7 @@ const handleSessionStatus = (status: number) => {
     localStorage.removeItem('user');
     if (window.location.pathname !== '/login') window.location.assign('/login');
   }
-  if (status === 402 && window.location.pathname !== '/payment-required') {
+  if (status === 402 && !['/payment-required','/pricing','/subscription','/support'].includes(window.location.pathname)) {
     window.location.assign('/payment-required');
   }
 };

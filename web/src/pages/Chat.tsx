@@ -1,3 +1,4 @@
+import MediaAttachment from '../components/MediaAttachment';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -22,16 +23,7 @@ interface Message {
   attachment_size?: number;
 }
 
-function ChatAttachment({message}:{message:Message}) {
- const [url,setUrl]=useState('');
- const [error,setError]=useState('');
- const [loading,setLoading]=useState(false);
- const load=async()=>{setLoading(true);try{const blob=await api.download(`/api/chat/attachments/${message.attachment_id}/content`);setUrl(URL.createObjectURL(blob));setError('');}catch(e:any){setError(e.message);}finally{setLoading(false);}};
- useEffect(()=>()=>{if(url)URL.revokeObjectURL(url);},[url]);
- return <Box sx={{mt:1}}>{!url&&<Button onClick={()=>void load()} disabled={loading} sx={{color:'inherit'}}> {loading?'Loading…':`Open ${message.attachment_name}`}</Button>}
- {url&&<>{message.attachment_type?.startsWith('image/')&&<Box component="img" src={url} alt={message.attachment_name} sx={{display:'block',maxWidth:'100%',maxHeight:320}}/>}{message.attachment_type?.startsWith('video/')&&<video src={url} controls style={{maxWidth:'100%',maxHeight:320}}/>}{message.attachment_type?.startsWith('audio/')&&<audio src={url} controls/>}<Button component="a" href={url} download={message.attachment_name} sx={{color:'inherit'}}>Save {message.attachment_name}</Button></>}
- <Typography variant="caption" display="block">{(Number(message.attachment_size)/1024/1024).toFixed(1)} MB</Typography>{error&&<Alert severity="error">{error}</Alert>}</Box>;
-}
+function ChatAttachment({message}:{message:Message}) {return <MediaAttachment load={()=>api.download(`/api/chat/attachments/${message.attachment_id}/content`)} name={message.attachment_name||'attachment'} mime={message.attachment_type||'application/octet-stream'}/>;}
 
 export default function Chat() {
   const navigate = useNavigate();

@@ -38,3 +38,7 @@ Updated 2026-10-31. The tester report is the current priority; this register rem
 ## Existing deliverables
 
 The historical tester guide PDF, sales deck, and Reddit post were already supplied. Update those artifacts when appropriate; do not recreate them as unfinished work.
+
+## Additional screenshot work
+
+See `SCREENSHOT-FOLLOWUP-20261031.md` for media playback, compatible Lucy inference, expired-trial payment recovery, and the store-catalog approval state. The original lists above are retained.

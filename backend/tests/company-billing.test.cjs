@@ -11,7 +11,7 @@ const query=async(sql,p)=>{const r=await db.query(sql,p);return {rows:r.rows,row
 const previous=process.env.COMPLIMENTARY_TESTER_IDENTITY;
 let server,base;
 before(async()=>{
- await db.exec(`CREATE TABLE companies(id uuid primary key,name text,stripe_customer_id text,stripe_subscription_id text,stripe_trial_used_at timestamptz,is_active boolean default true,subscription_status text default 'inactive',subscription_tier text default 'trial',subscription_provider text,subscription_current_period_end timestamptz,subscription_expires_at timestamptz);
+ await db.exec(`CREATE TABLE companies(id uuid primary key,name text,stripe_customer_id text,stripe_subscription_id text,stripe_trial_used_at timestamptz,is_active boolean default true,subscription_status text default 'inactive',subscription_tier text default 'trial',subscription_provider text,subscription_current_period_end timestamptz,subscription_expires_at timestamptz,subscription_cancel_at_period_end boolean default false);
  CREATE TABLE users(id uuid primary key,company_id uuid,role text,is_active boolean default true,first_name text default 'Test',last_name text default 'User',email text);
  CREATE TABLE company_admin_audit_logs(id uuid primary key default gen_random_uuid(),company_id uuid,actor_id uuid,employee_id uuid,action text,details jsonb,created_at timestamptz default now());`);
  await query('INSERT INTO companies(id) VALUES($1),($2)',[company,other]);
@@ -64,4 +64,14 @@ test('complimentary boss and delegated manager cannot accidentally start a paid 
  assert.equal((await req('/api/subscriptions/capabilities',boss)).body.canPurchase,false);
  assert.equal((await req('/api/stripe/create-checkout',boss,'POST',{plan:'team_10'})).status,400);
  assert.equal((await req('/api/subscriptions/verify',boss,'POST',{platform:'ios'})).status,409);
+});
+
+test('expired trials retain billing and support routes without granting paid workspace access',async()=>{
+ delete process.env.COMPLIMENTARY_TESTER_IDENTITY;
+ await query("UPDATE companies SET subscription_status='trialing',subscription_tier='trial',subscription_current_period_end=now()-interval '1 day',subscription_expires_at=now()-interval '1 day' WHERE id=$1",[company]);
+ assert.equal((await req('/api/protected',boss)).status,402);
+ const c=await req('/api/subscriptions/capabilities',boss);assert.equal(c.status,200);assert.equal(c.body.canPurchase,true);assert.equal(c.body.entitled,false);
+ const status=await req('/api/subscriptions/status',boss);assert.equal(status.status,200);assert.equal(status.body.subscription.tier,'trial');assert.equal(status.body.subscription.plan,'trial');
+ const {isPublicSubscriptionPath}=require('../dist/middleware/trialMiddleware');
+ for(const path of ['/api/auth/session','/api/subscriptions/verify','/api/stripe/create-checkout','/api/support/active'])assert.equal(isPublicSubscriptionPath({method:'GET',originalUrl:path}),true);
 });

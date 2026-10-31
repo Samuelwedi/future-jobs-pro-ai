@@ -1,3 +1,4 @@
+import {getLocales} from 'expo-localization';
 // ============================================
 // LANGUAGE CONTEXT (en, es, fr)
 // Future Jobs Pro AI – Created by Samuel B.
@@ -21,7 +22,7 @@ const LanguageContext = createContext<LanguageContextType>({
 
 export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [lang, setLangState] = useState<Lang>(() => {
-    try { return deviceLanguage(Intl.DateTimeFormat().resolvedOptions().locale); }
+    try { return deviceLanguage(getLocales()[0]?.languageTag); }
     catch { return 'en'; }
   });
   const selected = useRef(false);

@@ -1,3 +1,5 @@
+import MediaAttachment from '../components/MediaAttachment';
+import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -7,6 +9,7 @@ import { api } from '../services/api';
 
 interface SupportMessage {
   id: string;
+  attachment_id?:string;attachment_name?:string;attachment_type?:string;
   senderType: 'customer' | 'agent' | 'lucy';
   senderName: string;
   message: string;
@@ -99,8 +102,14 @@ export default function SupportScreen() {
     }
   };
 
+  const attach = async()=>{
+    if(!ticket?.id||sending||ticket.status!=='open')return;
+    try{const choice=await DocumentPicker.getDocumentAsync({copyToCacheDirectory:true});if(choice.canceled)return;const file=choice.assets[0];setSending(true);
+     await api.uploadFileWithData(`/support/tickets/${ticket.id}/attachments`,file.uri,{},'file',false,{name:file.name,mimeType:file.mimeType});await loadMessages(ticket.id);
+    }catch(e:any){setError(e.response?.data?.message||e.message);}finally{setSending(false);}
+  };
   return (
-    <KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
           <Ionicons name="arrow-back" size={23} color="#FFF" />
@@ -150,7 +159,7 @@ export default function SupportScreen() {
               return (
                 <View style={[styles.messageWrap, mine ? styles.messageMine : styles.messageTheirs]}>
                   <Text style={styles.sender}>{mine ? 'You' : item.senderName || (item.senderType === 'lucy' ? 'Lucy' : 'Support agent')}</Text>
-                  <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}><Text style={[styles.messageText, mine && styles.messageTextMine]}>{item.message}</Text></View>
+                  <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>{item.attachment_id?<MediaAttachment path={`/support/attachments/${item.attachment_id}/content`} name={item.attachment_name||'attachment'} mime={item.attachment_type||'application/octet-stream'}/>:<Text style={[styles.messageText, mine && styles.messageTextMine]}>{item.message}</Text>}</View>
                   <Text style={styles.time}>{new Date(item.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
                 </View>
               );
@@ -159,6 +168,7 @@ export default function SupportScreen() {
           />
           {Boolean(error) && <Text style={styles.inlineError}>{error}</Text>}
           <View style={styles.inputBar}>
+            <TouchableOpacity accessibilityLabel="Attach support media" disabled={sending||ticket.status!=='open'} onPress={()=>void attach()} style={{padding:12}}><MaterialIcons name="attach-file" size={24} color="#67E8F9"/></TouchableOpacity>
             <TextInput style={styles.input} placeholder={ticket.status === 'open' ? 'Write a message…' : 'This ticket is closed'} placeholderTextColor="#64748B" value={input} onChangeText={setInput} editable={ticket.status === 'open'} multiline maxLength={5000} />
             <TouchableOpacity style={[styles.sendButton, (!input.trim() || sending) && styles.sendDisabled]} onPress={send} disabled={!input.trim() || sending}>
               {sending ? <ActivityIndicator color="#07111F" size="small" /> : <MaterialIcons name="send" size={22} color="#07111F" />}

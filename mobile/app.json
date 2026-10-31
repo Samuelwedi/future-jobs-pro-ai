@@ -79,7 +79,24 @@
         }
       ],
       "expo-sharing",
-      "expo-video"
+      "expo-video",
+      [
+        "expo-localization",
+        {
+          "supportedLocales": {
+            "ios": [
+              "en",
+              "es",
+              "fr"
+            ],
+            "android": [
+              "en",
+              "es",
+              "fr"
+            ]
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {

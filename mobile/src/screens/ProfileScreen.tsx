@@ -198,7 +198,7 @@ export default function ProfileScreen() {
 
       {/* ----- Subscription Button (boss/manager only) ----- */}
       {(user?.role === 'boss' || user?.role === 'manager') && (
-        <TouchableOpacity style={[styles.actionBtn, { borderColor: '#00D4FF', marginTop: 8 }]} onPress={() => navigation.navigate(t("Subscription"))}>
+        <TouchableOpacity style={[styles.actionBtn, { borderColor: '#00D4FF', marginTop: 8 }]} onPress={() => navigation.navigate("Subscription")}>
           <MaterialIcons name="stars" size={20} color="#00D4FF" />
           <Text style={[styles.actionText, { color: '#00D4FF' }]}>{t("Subscription Plans")}</Text>
         </TouchableOpacity>

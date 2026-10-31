@@ -37,6 +37,7 @@
     "expo-image-manipulator": "~55.0.21",
     "expo-image-picker": "~55.0.24",
     "expo-linear-gradient": "~55.0.18",
+    "expo-localization": "~55.0.19",
     "expo-location": "~55.1.14",
     "expo-network": "~55.0.18",
     "expo-notifications": "~55.0.27",

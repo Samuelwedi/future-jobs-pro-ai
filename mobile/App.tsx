@@ -95,6 +95,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 function AppNavigator() {
   const { isAuthenticated, isLoading, user } = useAuth();
   const isProcessing = useRef(false);
+  useEffect(()=>{api.setSubscriptionRequiredHandler(()=>{if(navigationRef.isReady() && !['Subscription','Support'].includes(navigationRef.getCurrentRoute()?.name || ''))navigationRef.navigate('Subscription');});return()=>api.setSubscriptionRequiredHandler(()=>{});},[]);
   const wakeWordRef = useRef<WakeWordService | null>(null);
 
   useEffect(() => {
