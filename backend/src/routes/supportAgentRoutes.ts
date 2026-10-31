@@ -1,3 +1,4 @@
+import {mountSupportMedia,supportMessageQuery} from '../services/supportMedia';
 import express, { NextFunction, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -188,8 +189,7 @@ router.get('/tickets/:ticketId/messages', authenticateAgent, async (req: AgentRe
   );
   if (!access.rowCount) return res.status(403).json({ success: false, message: 'Ticket access is not available' });
   const messages = await pool.query(
-    `SELECT id, sender_type AS "senderType", sender_name AS "senderName", message, created_at AS "createdAt"
-     FROM platform_support_messages WHERE ticket_id = $1 ORDER BY created_at ASC`,
+    supportMessageQuery,
     [req.params.ticketId],
   );
   res.json({ success: true, messages: messages.rows });
@@ -225,4 +225,11 @@ router.post('/tickets/:ticketId/resolve', authenticateAgent, async (req: AgentRe
   res.json({ success: true });
 });
 
+mountSupportMedia(router,async(req,ticketId,write)=>{
+ const agent=(req as AgentRequest).supportAgent!;
+ const result=await pool.query("SELECT status,assigned_agent_id FROM support_tickets WHERE id::text=$1",[ticketId]);
+ const ticket=result.rows[0];
+ if(!ticket || (write ? ticket.status!=='open'||String(ticket.assigned_agent_id)!==agent.id : ticket.assigned_agent_id&&String(ticket.assigned_agent_id)!==agent.id&&!['owner','supervisor'].includes(agent.role)))throw Object.assign(new Error('Ticket access is not available'),{status:403});
+ return {id:agent.id,name:`${agent.firstName} ${agent.lastName}`,type:'agent'};
+},authenticateAgent);
 export default router;

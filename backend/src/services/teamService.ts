@@ -16,7 +16,9 @@ export async function inviteEmployee(
   role: string,
   invitedBy: string
 ) {
-  console.log('📝 Inviting employee:', { companyId, email, firstName, lastName, role, invitedBy });
+  email = String(email || '').trim().toLowerCase();
+  firstName = String(firstName || '').trim(); lastName = String(lastName || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !firstName || !lastName) throw new Error('Enter a valid email, first name, and last name.');
 
   try {
     // 1. Check if invitedBy exists and has the same company
@@ -29,7 +31,7 @@ export async function inviteEmployee(
     }
 
     // 2. Check if user already exists
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    const existing = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1', [email]);
     if (existing.rows.length > 0) {
       throw new Error('A user with this email already exists');
     }
@@ -47,8 +49,8 @@ export async function inviteEmployee(
     let result;
     try {
       result = await pool.query(
-        `INSERT INTO users (email, password_hash, first_name, last_name, full_name, role, company_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO users (email, password_hash, first_name, last_name, full_name, role, company_id, must_change_password)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
          RETURNING id, email, first_name, last_name, role, company_id`,
         [email, passwordHash, firstName, lastName, fullName, role, companyId]
       );
@@ -56,8 +58,8 @@ export async function inviteEmployee(
       if (err.message.includes('column "full_name"')) {
         console.log('⚠️ full_name column missing, inserting without it');
         result = await pool.query(
-          `INSERT INTO users (email, password_hash, first_name, last_name, role, company_id)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO users (email, password_hash, first_name, last_name, role, company_id, must_change_password)
+           VALUES ($1, $2, $3, $4, $5, $6, TRUE)
            RETURNING id, email, first_name, last_name, role, company_id`,
           [email, passwordHash, firstName, lastName, role, companyId]
         );
@@ -67,12 +69,13 @@ export async function inviteEmployee(
     }
 
     const user = result.rows[0];
-    console.log('✅ Employee invited:', user);
+
 
     // 6. Send email with temporary password
-    await sendInviteEmail(email, firstName, tempPassword, companyName);
-
-    return { user, tempPassword };
+    let emailSent = true;
+    try { await sendInviteEmail(email, firstName, tempPassword, companyName); }
+    catch { emailSent = false; console.warn('Employee created; invitation email delivery failed.'); }
+    return { user, tempPassword, emailSent };
   } catch (error) {
     console.error('❌ Invite error:', error);
     throw error;

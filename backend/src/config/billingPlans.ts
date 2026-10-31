@@ -12,6 +12,7 @@ for (const [key,envName,employees] of [['basic','STRIPE_PRICE_BASIC_MONTHLY',5],
  BILLING_PLANS[key]={name:`Legacy ${key}`,envName,employees,monthlyAI:0,documentBytes:0,cadCents:0,sale:false,features:['Existing subscriptions only']};
 }
 export const STORE_PLANS = new Map(Object.keys(BILLING_PLANS).map(key=>[`com.samuel33.futurejobspro.${key}_monthly`,key]));
+for(const key of Object.keys(BILLING_PLANS).filter(key=>BILLING_PLANS[key].sale))STORE_PLANS.set(`futurejobs_${key}_monthly`,key);
 export async function applyPlanAllowance(db:any,companyId:string,key:string) {
  const plan=BILLING_PLANS[key];
  if (!plan?.sale) return; // Keep operator-managed legacy allowances intact.

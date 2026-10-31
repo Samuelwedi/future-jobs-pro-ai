@@ -10,6 +10,7 @@ import * as SecureStore from 'expo-secure-store';
 import { AppState } from 'react-native';
 
 interface User {
+  mustChangePassword?: boolean;
   id: string;
   email: string;
   firstName: string;
@@ -55,7 +56,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await SecureStore.setItemAsync('userData',JSON.stringify(response.user));
       setUser(response.user);return response.user;
     }catch(error:any){
-      if(error?.response?.status===401){await api.clearToken();await SecureStore.deleteItemAsync('userData');setUser(null);}
+      if(error?.response?.status===401){await stopBackgroundLocation().catch(() => {});await api.clearToken();await SecureStore.deleteItemAsync('userData');setUser(null);}
       throw error;
     }
   };
@@ -101,10 +102,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const logout = async () => {
     await stopBackgroundLocation().catch(()=>undefined);
-    await api.clearToken();
-    await SecureStore.deleteItemAsync('userData');
+    await Promise.allSettled([api.clearToken(), SecureStore.deleteItemAsync('userData')]);
     setUser(null);
   };
+
+  useEffect(() => {api.setUnauthorizedHandler(() => {void logout();}); return () => api.setUnauthorizedHandler(() => {});}, []);
 
   const register = async (data: RegisterData) => {
     const response = await api.post<{ success: boolean; token: string; user: User }>('/auth/register', data);

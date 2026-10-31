@@ -1,3 +1,4 @@
+import MediaAttachment from '../components/MediaAttachment';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -12,8 +13,6 @@ import { MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 
 const WS_URL = API_URL.replace(/\/api\/?$/, '');
 
@@ -80,17 +79,7 @@ export default function ChatScreen() {
     try {const r=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[1,1],quality:0.8});if(r.canceled)return;setUploading(true);const a=r.assets[0];const photo=await ImageManipulator.manipulateAsync(a.uri,[{resize:{width:512}}],{compress:.85,format:ImageManipulator.SaveFormat.JPEG});const result=await api.uploadFileWithData<{avatar_url:string}>(`/chat/room/${encodeURIComponent(roomId)}/photo`,photo.uri,{},'photo',false,{name:'photo.jpg',mimeType:'image/jpeg'});setRoom((prev:any)=>({...prev,avatar_url:result.avatar_url}));}
     catch(e:any){setError(e.response?.data?.message||e.message||'Photo upload failed');}finally{setUploading(false);}
   };
-  const openAttachment = async (item:any) => {
-    try {
-      const token=await api.getToken();
-      const filename=String(item.attachment_name||'attachment').replace(/[^a-zA-Z0-9._-]/g,'_');
-      const local=FileSystem.cacheDirectory+`${item.attachment_id}-${filename}`;
-      const result=await FileSystem.downloadAsync(`${API_URL}/chat/attachments/${item.attachment_id}/content`,local,{headers:{Authorization:`Bearer ${token}`}});
-      if(result.status!==200){await FileSystem.deleteAsync(local,{idempotent:true});throw Error('File download failed');}
-      if(await Sharing.isAvailableAsync())await Sharing.shareAsync(local,{mimeType:item.attachment_type});
-      else Alert.alert('Downloaded','File saved to the app cache. Sharing is unavailable on this device.');
-    }catch(e:any){setError(e.message||'File could not be opened');}
-  };
+
   const renderItem = ({ item }: { item: any }) => {
     const isMine = item.sender_id === user?.id;
     return (
@@ -98,7 +87,7 @@ export default function ChatScreen() {
         {!isMine && item.sender_avatar && <Image source={{uri:item.sender_avatar}} style={{width:28,height:28,borderRadius:14,marginBottom:5}} />}
         {!isMine && <Text style={styles.sender}>{item.sender_name || `${item.first_name || ''} ${item.last_name || ''}`.trim() || 'Team member'}</Text>}
         {item.message?<Text style={styles.message}>{item.message}</Text>:null}
-        {item.attachment_id && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Open ${item.attachment_name}`} onPress={()=>void openAttachment(item)}><Text style={{color:isMine?'#07111F':'#67E8F9',paddingVertical:12,fontWeight:'700'}}>{item.attachment_type?.startsWith('image/')?'Photo':item.attachment_type?.startsWith('video/')?'Video':'File'}: {item.attachment_name}</Text><Text style={styles.time}>{(Number(item.attachment_size)/1024/1024).toFixed(1)} MB · Tap to open or save</Text></TouchableOpacity>}
+        {item.attachment_id && <MediaAttachment path={`/chat/attachments/${item.attachment_id}/content`} name={item.attachment_name || 'attachment'} mime={item.attachment_type || 'application/octet-stream'}/>}
         <Text style={styles.time}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
       </View>
     );

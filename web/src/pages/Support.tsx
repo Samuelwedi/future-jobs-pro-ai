@@ -1,3 +1,5 @@
+import MediaAttachment from '../components/MediaAttachment';
+import {api} from '../services/api';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -17,6 +19,7 @@ import { API_BASE } from '../services/api';
 const LUCY_ID = 'lucy-ai';
 
 interface Message {
+  attachment_id?:string;attachment_name?:string;attachment_type?:string;
   id: string;
   sender_id: string;
   sender_name?: string;
@@ -58,6 +61,7 @@ export default function Support() {
     socket.on('connect_error', (socketError) => setError(socketError.message));
     socket.on('new-message', (message: Message) => addMessage(message));
     socket.on('support-message', (message: any) => addMessage({
+      ...message,
       id: String(message.id),
       sender_id: message.senderType === 'agent' ? 'support-agent' : String(user.id),
       sender_name: message.senderName,
@@ -111,6 +115,7 @@ export default function Support() {
     if (!response.ok) throw new Error(data.message || 'Could not load support messages');
     setAgentActive(Boolean(data.agentActive));
     setMessages((data.messages || []).map((item: any) => ({
+      ...item,
       id: String(item.id),
       sender_id: item.senderType === 'customer' ? String(user.id) : item.senderType === 'lucy' ? LUCY_ID : 'support-agent',
       sender_name: item.senderName,
@@ -228,7 +233,7 @@ export default function Support() {
             {mine ? 'You' : message.sender_name || (ai ? 'Lucy' : 'Support Agent')}
           </Typography>
           <Typography variant="body2" sx={{ color: mine ? '#0A0A0A' : '#FFF', whiteSpace: 'pre-wrap' }}>
-            {message.message}
+            {message.attachment_id?<MediaAttachment load={()=>api.download(`/api/support/attachments/${message.attachment_id}/content`)} name={message.attachment_name||'attachment'} mime={message.attachment_type||'application/octet-stream'}/>:message.message}
           </Typography>
         </Paper>
       </Box>
@@ -272,6 +277,7 @@ export default function Support() {
       </Box>
 
       <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, borderTop: '1px solid #333', pt: 2 }}>
+        {ticketId&&<Button component="label" disabled={aiTyping}>Attach<input hidden type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" onChange={async e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;setAiTyping(true);try{const form=new FormData();form.append('file',file);await api.upload(`/api/support/tickets/${ticketId}/attachments`,form);await loadTicketMessages(`support-ticket-${ticketId}`);}catch(err:any){setError(err.message);}finally{setAiTyping(false);}}}/></Button>}
         <TextField
           fullWidth
           value={input}

@@ -21,6 +21,7 @@ export function readOvertimePolicy(company: any): OvertimePolicy {
     if (company[key] != null && company[key] !== '') (policy as any)[key] = company[key];
   }
   for (const key of ['overtime_threshold_hours','overtime_daily_threshold_hours','overtime_multiplier','overtime_week_start']) (policy as any)[key] = Number((policy as any)[key]);
+  policy.timezone = /^(utc|gmt)$/i.test(String(policy.timezone).trim()) ? 'UTC' : String(policy.timezone).trim();
   validateOvertimePolicy(policy);
   return policy;
 }
@@ -49,6 +50,7 @@ export interface OvertimeHours { regular: number; overtime: number; total: numbe
 // Thresholds use elapsed paid hours. Calendar days/weeks use the company's time zone.
 // Break timestamps are not recorded; overnight breaks are apportioned by elapsed duration.
 export function calculateOvertime(entries: OvertimeEntry[], policy: OvertimePolicy): Map<string, OvertimeHours> {
+  policy.timezone = /^(utc|gmt)$/i.test(String(policy.timezone).trim()) ? 'UTC' : String(policy.timezone).trim();
   validateOvertimePolicy(policy);
   const daily = new Map<string, number>(), weeklyRegular = new Map<string, number>();
   const result = new Map<string, OvertimeHours>();

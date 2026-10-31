@@ -128,7 +128,9 @@ export async function sendInviteEmail(
       <p>Thanks,<br/>The Future Jobs Pro AI Team</p>
     </div>
   `;
-  await sendEmail(email, subject, html);
+  if (!transporter) throw new Error('Invitation email is unavailable because SMTP is not configured');
+  const result = await transporter.sendMail({from:process.env.SMTP_FROM || 'noreply@futurejobsproai.com',to:email,subject,html});
+  if (!result.accepted?.length) throw new Error('Invitation was not accepted by the mail provider');
 }
 
 // ─── Clock‑in notification ──────────────────────────────────────

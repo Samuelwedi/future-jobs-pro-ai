@@ -13,6 +13,7 @@ export type SubscriptionActor = {
   subscriptionProvider: string | null;
   entitlementEndsAt: Date | null;
   complimentary?: boolean;
+  mustChangePassword?: boolean;
 };
 
 const PUBLIC_API_PREFIXES = [
@@ -53,7 +54,7 @@ export async function loadSubscriptionActor(
   claimedCompanyId?: string,
 ): Promise<SubscriptionActor> {
   const result = await pool.query(
-    `SELECT u.id,
+    `SELECT u.id, COALESCE((to_jsonb(u)->>'must_change_password')::boolean,FALSE) AS must_change_password,
             u.company_id,
             LOWER(COALESCE(u.role, '')) AS role,
             TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS name,
@@ -78,6 +79,7 @@ export async function loadSubscriptionActor(
   }
 
   return {
+    mustChangePassword: Boolean(row.must_change_password),
     complimentary: await hasComplimentaryCompanyAccess(String(row.id), companyId),
     id: String(row.id),
     companyId,
@@ -91,6 +93,7 @@ export async function loadSubscriptionActor(
 }
 
 export function hasCompanyEntitlement(actor: SubscriptionActor, now = new Date()): boolean {
+  if (actor.mustChangePassword) return false;
   if (actor.complimentary === true) return true;
   if (!['active', 'trialing'].includes(actor.subscriptionStatus)) return false;
   if (!actor.entitlementEndsAt) return actor.subscriptionStatus === 'active';
@@ -104,6 +107,7 @@ export const subscriptionGate = async (req: Request, res: Response, next: NextFu
   try {
     const decoded = verifyToken(req);
     const actor = await loadSubscriptionActor(decoded.id, decoded.companyId);
+    if (actor.mustChangePassword) return res.status(403).json({success:false,code:'PASSWORD_CHANGE_REQUIRED',message:'Change your temporary password before continuing.'});
     if (!hasCompanyEntitlement(actor)) {
       res.set('Cache-Control', 'no-store');
       return res.status(402).json({

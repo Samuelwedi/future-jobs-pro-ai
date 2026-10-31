@@ -292,3 +292,19 @@ test('permanent tester grant allows only the existing authenticated identity in 
   assert.equal((await request('/unknown-tester-probe',ids.expiredUser)).status,402);
  }finally{if(old===undefined)delete process.env.COMPLIMENTARY_TESTER_IDENTITY;else process.env.COMPLIMENTARY_TESTER_IDENTITY=old;}
 });
+
+test('temporary-password accounts cannot use protected features until they change it',async()=>{
+ const bcrypt=require('bcryptjs');
+ const previous=(await query('SELECT password_hash FROM users WHERE id=$1',[ids.worker])).rows[0].password_hash;
+ await query('UPDATE users SET password_hash=$1,must_change_password=TRUE WHERE id=$2',[await bcrypt.hash('Temporary123!',4),ids.worker]);
+ try {
+  let r=await request('/operations/swaps',ids.worker);assert.equal(r.status,403);assert.equal(r.data.code,'PASSWORD_CHANGE_REQUIRED');
+  await query('UPDATE users SET email=LOWER(email) WHERE id=$1',[ids.worker]);
+  r=await request('/auth/login',null,'POST',{email:'employee@example.test',password:'Temporary123!'});assert.equal(r.status,200);assert.equal(r.data.user.mustChangePassword,true);
+  r=await request('/auth/change-password',ids.worker,'POST',{currentPassword:'Temporary123!',newPassword:'12345678'});assert.equal(r.status,400);
+  assert.equal((await query('SELECT must_change_password FROM users WHERE id=$1',[ids.worker])).rows[0].must_change_password,true);
+  r=await request('/auth/change-password',ids.worker,'POST',{currentPassword:'Temporary123!',newPassword:'Changed123!'});assert.equal(r.status,200);
+  assert.equal((await query('SELECT must_change_password FROM users WHERE id=$1',[ids.worker])).rows[0].must_change_password,false);
+  assert.notEqual((await request('/operations/swaps',ids.worker)).status,403);
+ } finally {await query('UPDATE users SET password_hash=$1,must_change_password=FALSE WHERE id=$2',[previous,ids.worker]);}
+});

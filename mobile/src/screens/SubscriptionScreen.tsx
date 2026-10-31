@@ -25,13 +25,14 @@ import { api, API_URL } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
   FALLBACK_PLAN_COPY,
-  STORE_PRODUCT_IDS,
+  STORE_PRODUCT_IDS, ANDROID_STORE_PRODUCT_IDS,
   type PlanKey,
   planKeyForProduct,
 } from '../config/subscriptionProducts';
 
 type SubscriptionState = {
   tier?: string;
+  plan?: string;
   status?: string;
   provider?: string | null;
   expiresAt?: string | null;
@@ -58,7 +59,9 @@ function friendlyError(error: unknown): string {
 }
 
 function planLabel(tier?: string): string {
-  if (!tier) return 'No active plan';
+  if (!tier) return 'Plan status unavailable';
+  if (tier==='trial') return 'Free trial';
+  if (FALLBACK_PLAN_COPY[tier]) return FALLBACK_PLAN_COPY[tier].name;
   return tier.charAt(0).toUpperCase() + tier.slice(1);
 }
 
@@ -66,6 +69,8 @@ export default function SubscriptionScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [status, setStatus] = useState<SubscriptionState>({});
+  const [storeError,setStoreError] = useState('');
+  const [loadingProducts,setLoadingProducts] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [processingProductId, setProcessingProductId] = useState<string | null>(null);
@@ -87,7 +92,8 @@ export default function SubscriptionScreen() {
       }
 
       await finishTransaction({ purchase, isConsumable: false });
-      if (response.subscription) setStatus(response.subscription);
+      if (response.subscription) setStatus({...response.subscription,tier:response.subscription.tier||response.subscription.plan});
+      void api.get<any>('/subscriptions/capabilities').then(c=>{if(c.success)setBilling(c);}).catch(()=>{});
       Alert.alert('Subscription activated', 'Your purchase was verified and your workspace is ready.');
     } catch (error) {
       // Never finish an unverified transaction. The store can safely deliver it again.
@@ -112,32 +118,31 @@ export default function SubscriptionScreen() {
         Alert.alert('Purchase not completed', error.message);
       }
     },
-    onError: (error) => Alert.alert('Store unavailable', error.message),
+    onError: (error) => setStoreError(error.message || 'Store products could not be loaded.'),
   });
 
   const loadStatus = useCallback(async () => {
-    try {
-      const response = await api.get<StatusResponse>('/subscriptions/status');
-      if (response.success) setStatus(response.subscription || {});
-      const capabilities=await api.get<any>('/subscriptions/capabilities');
-      setBilling(capabilities.success ? capabilities : null);
-    } catch (error) {
-      Alert.alert('Could not load subscription', friendlyError(error));
-    } finally {
-      setLoadingStatus(false);
-      setRefreshing(false);
-    }
+    const results = await globalThis.Promise.allSettled([
+      api.get<StatusResponse>('/subscriptions/status'), api.get<any>('/subscriptions/capabilities')
+    ]);
+    if(results[0].status==='fulfilled') {const next=results[0].value.subscription||{};setStatus({...next,tier:next.tier||next.plan});}
+    else setStoreError(friendlyError(results[0].reason));
+    if(results[1].status==='fulfilled')setBilling(results[1].value.success?results[1].value:null);
+    else setStoreError(friendlyError(results[1].reason));
+    setLoadingStatus(false);setRefreshing(false);
   }, []);
-
-  useEffect(() => {
-    void loadStatus();
-  }, [loadStatus]);
-
-  useEffect(() => {
-    if (connected) {
-      void fetchProducts({ skus: Object.values(STORE_PRODUCT_IDS), type: 'subs' });
+  useEffect(() => {void loadStatus();}, [loadStatus]);
+  const loadProducts = useCallback(async()=>{
+    if(!connected)return;
+    setLoadingProducts(true);setStoreError('');
+    let failed=false;
+    for(const key of Object.keys(FALLBACK_PLAN_COPY)){
+      try{await fetchProducts({skus:[(Platform.OS==='android'?ANDROID_STORE_PRODUCT_IDS:STORE_PRODUCT_IDS)[key]],type:'subs'});}catch{failed=true;}
     }
-  }, [connected, fetchProducts]);
+    if(failed)setStoreError('Some plans could not be loaded from the store. Retry, or contact support. Purchases require a store-installed build and an available plan.');
+    setLoadingProducts(false);
+  },[connected,fetchProducts]);
+  useEffect(()=>{void loadProducts();},[loadProducts]);
 
   useEffect(() => {
     if (!availablePurchases.length) return;
@@ -162,15 +167,15 @@ export default function SubscriptionScreen() {
 
   const startPurchase = async (plan: PlanKey) => {
     if (!storeReady) {
-      Alert.alert('Purchases unavailable', 'Company billing requires the boss or a manager explicitly authorized by the boss.');
+      Alert.alert('Purchases unavailable', !billing?.canPurchase ? 'Company billing requires the boss or a manager explicitly authorized by the boss.' : 'Store billing is not available yet. Contact billing support. You can remain signed in.');
       return;
     }
-    if (status.status === 'active' && status.provider) {
+    if (status.status === 'active' && status.provider && (!(status.currentPeriodEnd || status.expiresAt) || new Date((status.currentPeriodEnd || status.expiresAt)!).getTime()>Date.now())) {
       Alert.alert('Existing subscription', 'Manage your existing subscription in its billing provider before starting another subscription.');
       return;
     }
     const product = productsByPlan.get(plan);
-    if (!connected || !product) {
+    if (!connected || !product || !product.displayPrice) {
       Alert.alert(
         'Plan not available yet',
         'This product must be active in App Store Connect or Google Play Console before it can be purchased.',
@@ -183,6 +188,7 @@ export default function SubscriptionScreen() {
       ? product.subscriptionOffers?.find((offer) => Boolean(offer.offerTokenAndroid))
       : undefined;
 
+    if (Platform.OS==='android' && !androidOffer?.offerTokenAndroid) {setProcessingProductId(null);Alert.alert('Plan unavailable','No eligible monthly offer was returned by Google Play. Retry the store plans or contact support.');return;}
     try {
       await requestPurchase({
         request: {
@@ -207,7 +213,7 @@ export default function SubscriptionScreen() {
     setProcessingProductId('restore');
     try {
       await getAvailablePurchases({ onlyIncludeActiveItemsIOS: true });
-      Alert.alert('Restore started', 'Any active store purchase will be verified automatically.');
+      Alert.alert('Restore checked', 'Any available active store purchases will be verified. If none appear, confirm you are signed into the store account used to purchase.');
     } catch (error) {
       setProcessingProductId(null);
       Alert.alert('Restore failed', friendlyError(error));
@@ -222,7 +228,9 @@ export default function SubscriptionScreen() {
     if (!url) return Alert.alert('Web subscription', 'Manage your existing subscription from Billing in the web workspace.');
     try { await Linking.openURL(url); } catch { Alert.alert('Unable to open store', 'Open your app store subscription settings.'); }
   };
-  const active = ACTIVE_STATUSES.has((status.status || '').toLowerCase());
+  const periodEnd = status.currentPeriodEnd || status.expiresAt;
+  const expired = Boolean(periodEnd && new Date(periodEnd).getTime() <= Date.now());
+  const active = ACTIVE_STATUSES.has((status.status || '').toLowerCase()) && !expired;
   const renewalDate = status.currentPeriodEnd || status.expiresAt;
 
   return (
@@ -247,7 +255,7 @@ export default function SubscriptionScreen() {
           <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>FUTURE JOBS PRO AI</Text>
             <Text style={styles.title}>{billing?.canPurchase ? 'Choose your workspace plan' : 'Company subscription'}</Text>
-            {billing?.canManageBilling && status.provider && !billing.complimentary && <TouchableOpacity onPress={manageSubscription} accessibilityRole="button"><Text style={styles.restoreText}>Manage existing subscription</Text></TouchableOpacity>}
+            {billing?.canManageBilling && ['apple','google','stripe'].includes(status.provider||'') && !billing.complimentary && <TouchableOpacity onPress={manageSubscription} accessibilityRole="button"><Text style={styles.restoreText}>Manage existing subscription</Text></TouchableOpacity>}
           </View>
           <View style={styles.secureBadge}>
             <Ionicons name="shield-checkmark" size={15} color="#6FE7FF" />
@@ -255,6 +263,8 @@ export default function SubscriptionScreen() {
           </View>
         </View>
 
+        {!!storeError&&<View style={{padding:16}}><Text accessibilityRole="alert" style={{color:'#FDA4AF'}}>{storeError}</Text><TouchableOpacity onPress={()=>void loadProducts()} disabled={loadingProducts} style={{padding:12}}><Text style={{color:'#67E8F9'}}>{loadingProducts?'Loading plans…':'Retry store plans'}</Text></TouchableOpacity><TouchableOpacity onPress={()=>navigation.navigate('Support')} style={{padding:12}}><Text style={{color:'#67E8F9'}}>Contact billing support</Text></TouchableOpacity></View>}
+        {!active&&!loadingStatus&&<View style={{padding:16}}><Text style={{color:'#FFF'}}>Your trial or subscription has ended. You can still choose a plan, restore a purchase, or contact support here.</Text></View>}
         <View style={styles.statusCard}>
           <View style={[styles.statusDot, active ? styles.statusActive : styles.statusInactive]} />
           <View style={styles.statusCopy}>
@@ -262,7 +272,7 @@ export default function SubscriptionScreen() {
             <Text style={styles.statusTitle}>{loadingStatus ? 'Checking entitlement…' : planLabel(status.tier)}</Text>
             <Text style={styles.statusMeta}>
               {active ? `Status: ${status.status}` : billing?.canPurchase ? 'Select a company plan' : 'Contact your boss about company access; no individual payment is required'}
-              {renewalDate ? ` · ${status.cancelAtPeriodEnd ? 'Ends' : 'Renews'} ${new Date(renewalDate).toLocaleDateString()}` : ''}
+              {renewalDate ? ` · ${status.status==='trialing' ? (expired?'Trial ended':'Trial ends') : expired?'Ended':status.cancelAtPeriodEnd ? 'Ends' : 'Renews'} ${new Date(renewalDate).toLocaleDateString()}` : ''}
             </Text>
           </View>
           {loadingStatus && <ActivityIndicator color="#6FE7FF" />}
@@ -277,8 +287,8 @@ export default function SubscriptionScreen() {
         {billing?.canPurchase && (Object.keys(FALLBACK_PLAN_COPY) as PlanKey[]).map((plan, index) => {
           const copy = FALLBACK_PLAN_COPY[plan];
           const product = productsByPlan.get(plan);
-          const selected = status.tier?.toLowerCase() === plan ||
-            (plan === 'professional' && status.tier?.toLowerCase() === 'pro');
+          const selected = active && (status.tier?.toLowerCase() === plan ||
+            (plan === 'professional' && status.tier?.toLowerCase() === 'pro'));
           const busy = processingProductId === product?.id;
 
           return (
@@ -316,7 +326,7 @@ export default function SubscriptionScreen() {
               ))}
 
               <TouchableOpacity
-                disabled={selected || busy || !storeReady || !product}
+                disabled={selected || busy || loadingProducts || !connected || !storeReady || !product?.displayPrice}
                 onPress={() => void startPurchase(plan)}
                 style={[styles.purchaseButton, copy.featured && styles.featuredButton, selected && styles.selectedButton]}
               >
@@ -324,7 +334,7 @@ export default function SubscriptionScreen() {
                   <ActivityIndicator color="#07111F" />
                 ) : (
                   <Text style={[styles.purchaseText, !copy.featured && !selected && styles.secondaryPurchaseText]}>
-                    {selected ? 'Current plan' : !storeReady || !product ? 'Purchases unavailable' : `Choose ${copy.name}`}
+                    {selected ? 'Current plan' : loadingProducts ? 'Loading plans…' : !storeReady || !connected || !product?.displayPrice ? 'Purchases unavailable' : `Choose ${copy.name}`}
                   </Text>
                 )}
               </TouchableOpacity>

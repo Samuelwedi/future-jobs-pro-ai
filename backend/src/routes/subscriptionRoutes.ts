@@ -78,8 +78,9 @@ router.post('/apple/notifications', async (req: Request, res: Response) => {
 });
 
 router.get('/status', async (req: Request, res: Response) => {
+  let authenticated=false;
   try {
-    const decoded = await actor(req);
+    const decoded = await actor(req); authenticated=true;
     if (decoded.complimentary) {
       res.set('Cache-Control', 'no-store');
       return res.json({success:true,subscription:complimentarySubscription()});
@@ -88,7 +89,7 @@ router.get('/status', async (req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store');
     res.json({ success: true, subscription: await getSubscriptionStatus(decoded.companyId) });
   } catch (error: any) {
-    res.status(error instanceof BillingError ? error.status : 401).json({ success: false, message: error.message });
+    res.status(error instanceof BillingError ? error.status : authenticated ? 503 : 401).json({ success: false, message: error.message });
   }
 });
 

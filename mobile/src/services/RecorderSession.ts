@@ -71,8 +71,16 @@ export class RecorderSession {
     const lease = this.lease;
     if (!lease) return;
     lease.cancelled = true;
+    const wasRecording = lease.recording;
     lease.recording = false;
-    if (!lease.pending) this.release(lease);
+    if (lease.pending) return;
+    if (!wasRecording) { this.release(lease); return; }
+    lease.pending = true;
+    // Navigation may cancel an active recording. Stop native work before release.
+    void (async () => {
+      try { await lease.recorder.stop(); } catch { /* Cancellation discards audio. */ }
+      finally { lease.pending = false; this.release(lease); }
+    })();
   }
 
   dispose() {

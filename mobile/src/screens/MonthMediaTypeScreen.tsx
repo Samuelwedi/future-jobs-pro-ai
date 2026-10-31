@@ -18,6 +18,7 @@ export default function MonthMediaTypeScreen() {
   const [media, setMedia] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMedia, setSelectedMedia] = useState<any | null>(null);
+  const [playingUrl,setPlayingUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(false);
@@ -102,31 +103,33 @@ export default function MonthMediaTypeScreen() {
     try {
       if (!mounted.current) return;
       releaseAudio();
-      setIsPlaying(false);
+      setIsPlaying(false); setPlayingUrl(null);
       const sound = createAudioPlayer({ uri: url });
       soundRef.current = sound;
+      setPlayingUrl(url);
       setIsPlaying(true);
       soundListenerRef.current = sound.addListener('playbackStatusUpdate', (status) => {
         if (mounted.current && soundRef.current === sound && status.didJustFinish) {
-          setIsPlaying(false);
+          setIsPlaying(false); setPlayingUrl(null);
         }
       });
       sound.play();
     } catch (error) {
       releaseAudio();
-      setIsPlaying(false);
+      setIsPlaying(false); setPlayingUrl(null);
       if (mounted.current) Alert.alert('Error', 'Could not play audio');
     }
   };
 
   const handleStopAudio = async () => {
     releaseAudio();
-    if (mounted.current) setIsPlaying(false);
+    if (mounted.current) setIsPlaying(false); setPlayingUrl(null);
   };
 
   const renderMediaItem = ({ item }: { item: any }) => {
     if (!item || !item.type) return null;
 
+    const itemPlaying = isPlaying && playingUrl === item.url;
     const isPhoto = item.type === 'photo';
     const isVideo = item.type === 'video';
     const isVoice = item.type === 'voice_note';
@@ -138,7 +141,7 @@ export default function MonthMediaTypeScreen() {
         onPress={() => {
           if (isVoice) {
             if (hasAudio) {
-              if (isPlaying) {
+              if (itemPlaying) {
                 handleStopAudio();
               } else {
                 handlePlayAudio(item.url);
@@ -161,12 +164,12 @@ export default function MonthMediaTypeScreen() {
         {isVoice && (
           <View style={styles.thumbnailPlaceholder}>
             <Ionicons
-              name={isPlaying ? 'pause-circle' : hasAudio ? 'play-circle' : 'alert-circle'}
+              name={itemPlaying ? 'pause-circle' : hasAudio ? 'play-circle' : 'alert-circle'}
               size={32}
               color={hasAudio ? '#00D4FF' : '#888'}
             />
             <Text style={[styles.thumbnailLabel, !hasAudio && { color: '#888' }]}>
-              {isPlaying ? 'Playing...' : hasAudio ? 'Tap to Play' : 'No Audio'}
+              {itemPlaying ? 'Playing...' : hasAudio ? 'Tap to Play' : 'No Audio'}
             </Text>
           </View>
         )}
@@ -198,7 +201,7 @@ export default function MonthMediaTypeScreen() {
     setVideoLoading(false);
     setVideoError(false);
     releaseAudio();
-    if (mounted.current) setIsPlaying(false);
+    if (mounted.current) setIsPlaying(false); setPlayingUrl(null);
   };
 
   if (loading) {

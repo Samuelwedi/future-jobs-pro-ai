@@ -3,11 +3,12 @@
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
+import { uploadMetadata } from '../utils/uploadMetadata';
 import axios, { AxiosInstance } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
-import { getOnlineStatus, queueAction } from './offlineService';
+import { checkOnlineStatus, getOnlineStatus, queueAction } from './offlineService';
 
 // Railway permanent backend
 const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
@@ -17,6 +18,8 @@ export const API_URL = (process.env.EXPO_PUBLIC_API_URL || (__DEV__ ? DEV_API_UR
 class ApiService {
   private client: AxiosInstance;
   private token: string | null = null;
+  private onSubscriptionRequired: (() => void) | null = null;
+  setSubscriptionRequiredHandler(handler:()=>void){this.onSubscriptionRequired=handler;}
   private onUnauthorized: (() => void) | null = null;
 
   constructor() {
@@ -58,12 +61,10 @@ class ApiService {
     this.client.interceptors.response.use(
       (response) => response,
       async (error) => {
+        if (error.response?.status === 402) this.onSubscriptionRequired?.();
         if (error.response?.status === 401) {
           console.warn('🔑 Token expired – redirecting to login');
-          await this.clearToken();
-          if (this.onUnauthorized) {
-            this.onUnauthorized();
-          }
+          try { await this.clearToken(); } finally { this.onUnauthorized?.(); }
         }
         return Promise.reject(error);
       }
@@ -115,7 +116,7 @@ class ApiService {
       throw new Error('Offline – action queued for later');
     }
 
-    const response = await this.client.post<T>(url, data);
+    const response = await this.client.post<T>(url, data, p0);
 
     return response.data;
   }
@@ -167,7 +168,7 @@ class ApiService {
     replay = false,
     fileInfo?: { name: string; mimeType?: string }
   ): Promise<T> {
-    const online = getOnlineStatus();
+    const online = await checkOnlineStatus();
     if (!online && !replay) {
       console.log('📴 Offline – queuing upload:', url);
       const extension = /\.([a-z0-9]+)(?:\?.*)?$/i.exec(fileUri)?.[1] || (fieldName === 'audio' ? 'm4a' : 'jpg');
@@ -179,15 +180,7 @@ class ApiService {
     }
 
     const formData = new FormData();
-    const filename = fileInfo?.name || fileUri.split('/').pop() || 'photo.jpg';
-    const match = /\.(\w+)$/.exec(filename);
-    const extension = match?.[1]?.toLowerCase();
-    const type = fileInfo?.mimeType || (fieldName === 'audio'
-      ? extension === 'wav' ? 'audio/wav'
-        : extension === 'mp3' ? 'audio/mpeg'
-        : extension === 'caf' ? 'audio/x-caf'
-        : 'audio/mp4'
-      : extension ? `image/${extension}` : 'image/jpeg');
+    const {name: filename, type} = uploadMetadata(fileUri, fieldName, fileInfo);
     formData.append(fieldName, { uri: fileUri, name: filename, type } as any);
     Object.entries(extraFields).forEach(([key, value]) => formData.append(key, value));
 

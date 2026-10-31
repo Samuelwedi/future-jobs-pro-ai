@@ -1,3 +1,4 @@
+import ChangeTemporaryPasswordScreen from './src/screens/ChangeTemporaryPasswordScreen';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { ScreenFrame } from './src/components/ScreenFrame';
 import React, { useEffect, useRef } from 'react';
@@ -94,17 +95,12 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 function AppNavigator() {
   const { isAuthenticated, isLoading, user } = useAuth();
   const isProcessing = useRef(false);
+  useEffect(()=>{api.setSubscriptionRequiredHandler(()=>{if(navigationRef.isReady() && !['Subscription','Support'].includes(navigationRef.getCurrentRoute()?.name || ''))navigationRef.navigate('Subscription');});return()=>api.setSubscriptionRequiredHandler(()=>{});},[]);
   const wakeWordRef = useRef<WakeWordService | null>(null);
 
   useEffect(() => {
-    // Set the 401 handler to navigate to Login
-    api.setUnauthorizedHandler(() => {
-      if (navigationRef.isReady()) navigationRef.navigate('Login');
-    });
-  }, []);
-
-  useEffect(() => {
     let disposed = false;
+    let microphoneBusy = false;
 
     const stopWakeWord = async () => {
       const service = wakeWordRef.current;
@@ -115,7 +111,7 @@ function AppNavigator() {
     const syncWakeWord = async (preference?: boolean) => {
       await stopWakeWord();
       const enabled = preference ?? (await AsyncStorage.getItem('lucyWakeWordEnabled')) === 'true';
-      if (disposed || !enabled || !isAuthenticated || !user || AppState.currentState !== 'active') return;
+      if (disposed || microphoneBusy || user?.mustChangePassword || !enabled || !isAuthenticated || !user || AppState.currentState !== 'active') return;
 
       const service = new WakeWordService(() => {
         // Release the wake microphone before Lucy starts command recording on iOS.
@@ -132,6 +128,7 @@ function AppNavigator() {
     };
 
     syncWakeWord();
+    const microphoneListener = DeviceEventEmitter.addListener('lucyMicrophoneBusy', (busy:boolean) => {microphoneBusy=busy; if(busy)void stopWakeWord();else void syncWakeWord();});
     const preferenceListener = DeviceEventEmitter.addListener('lucyWakeWordPreferenceChanged', (enabled: boolean) => syncWakeWord(Boolean(enabled)));
     const conversationListener = DeviceEventEmitter.addListener('lucyConversationEnded', () => syncWakeWord());
     const appStateListener = AppState.addEventListener('change', state => {
@@ -141,12 +138,13 @@ function AppNavigator() {
 
     return () => {
       disposed = true;
+      microphoneListener.remove();
       preferenceListener.remove();
       conversationListener.remove();
       appStateListener.remove();
       stopWakeWord();
     };
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, user?.mustChangePassword]);
 
   useEffect(() => {
     const cleanup = listenToNetworkChanges(async (online) => {
@@ -171,6 +169,8 @@ function AppNavigator() {
             <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
             <Stack.Screen name="Demo" component={DemoScreen} />
           </>
+        ) : user?.mustChangePassword ? (
+          <Stack.Screen name="ChangeTemporaryPassword" component={ChangeTemporaryPasswordScreen} />
         ) : (
           <>
             <Stack.Screen name="Home" component={HomeScreen} />
