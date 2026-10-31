@@ -191,3 +191,13 @@ export async function sendTestEmail(to: string): Promise<void> {
   `;
   await sendEmail(to, subject, html);
 }
+
+export async function sendVerificationEmail(to: string, link: string): Promise<void> {
+  if (!transporter) throw new Error('SMTP is not configured');
+  const safeLink = link.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com', to,
+    subject: 'Verify your Future Jobs Pro AI email',
+    html: `<h2>Verify your email</h2><p><a href="${safeLink}">Verify email address</a></p><p>This link expires in one hour. If you did not request it, ignore this email.</p>`,
+  });
+}

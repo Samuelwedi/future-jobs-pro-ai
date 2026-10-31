@@ -1,3 +1,4 @@
+import { api } from '../services/api';
 import { Link as RouterLink } from 'react-router-dom';
 import React, { useState, useEffect } from 'react';
 import {
@@ -11,6 +12,11 @@ export default function Settings() {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [verification, setVerification] = useState<{verified: boolean; email: string} | null>(null);
+  const [verificationMessage, setVerificationMessage] = useState('');
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     try {
@@ -25,12 +31,29 @@ export default function Settings() {
     } catch {}
   }, []);
 
-  const handleSave = () => {
-    const updated = { ...user, firstName, lastName, email, fullName: `${firstName} ${lastName}` };
+  useEffect(() => {
+    api.get('/api/auth/email-verification').then(setVerification).catch(() => setVerificationMessage('Email verification status could not be loaded.'));
+  }, []);
+
+  const sendVerification = async () => {
+    setSending(true); setVerificationMessage('');
+    try { const result = await api.post('/api/auth/email-verification'); setVerificationMessage(result.message); }
+    catch (cause: any) { setVerificationMessage(cause.message || 'Unable to send verification email.'); }
+    finally { setSending(false); }
+  };
+
+  const handleSave = async () => {
+    setError(''); setSaved(false);
+    if (!firstName.trim() || !lastName.trim()) { setError('First and last names are required.'); return; }
+    setSaving(true);
+    try {
+    const response = await api.put('/api/users/profile', {firstName: firstName.trim(), lastName: lastName.trim()});
+    const updated = { ...user, firstName: response.user.first_name, lastName: response.user.last_name, fullName: response.user.full_name };
     localStorage.setItem('user', JSON.stringify(updated));
     setUser(updated);
     setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    } catch (cause: any) { setError(cause.message || 'Profile could not be saved.'); }
+    finally { setSaving(false); }
   };
 
   const initials = user
@@ -65,8 +88,14 @@ export default function Settings() {
             </Box>
           </Box>
 
+          {error && <Alert severity="error" sx={{mb:2}}>{error}</Alert>}
           {saved && <Alert severity="success" sx={{ mb: 2 }}>Profile updated successfully.</Alert>}
 
+          <Box sx={{mb:3}}>
+            <Typography color="white">Email: {verification ? (verification.verified ? 'Verified' : 'Not verified') : 'Status unavailable'}</Typography>
+            {verification && !verification.verified && <Button disabled={sending} onClick={sendVerification}>{sending ? 'Sending…' : 'Send verification email'}</Button>}
+            {verificationMessage && <Alert severity="info">{verificationMessage}</Alert>}
+          </Box>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
               <TextField
@@ -112,9 +141,10 @@ export default function Settings() {
           <Button
             variant="contained"
             onClick={handleSave}
+            disabled={saving}
             sx={{ mt: 3, bgcolor: '#00D4FF', color: '#0A0A0A', px: 4, py: 1.5 }}
           >
-            Save Changes
+            {saving ? 'Saving…' : 'Save Changes'}
           </Button>
         </Paper>
       </Container>

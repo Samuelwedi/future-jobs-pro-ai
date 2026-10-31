@@ -21,7 +21,7 @@ Expired trials continue to sign in and can reach subscription status, purchase v
 
 Company owners and explicitly authorized managers can purchase for their company; employees are not prompted to buy personal plans. Restores still require verified store receipts. No fabricated receipt, entitlement, provider credit or trial extension is granted.
 
-## Existing project prices — awaiting explicit approval in Play Console
+## Existing project prices — approved on 2026-10-31
 
 | Team size | Android product ID | CAD per month |
 |---|---|---:|
@@ -33,7 +33,7 @@ Company owners and explicitly authorized managers can purchase for their company
 | 95 | futurejobs_team_95_monthly | 599.00 |
 | 110 | futurejobs_team_110_monthly | 699.00 |
 
-These values are the existing `backend/src/config/billingPlans.ts` catalog, not newly chosen prices. Regional conversion and activation have not been completed. Existing pricing-change pause remains in effect until the user confirms these amounts.
+These values are the existing `backend/src/config/billingPlans.ts` catalog. The user approved all seven amounts and Google-converted regional prices. Team 10, 35, 50, 65 and 80 now each have one active monthly base plan. Exact Canadian prices were checked as CAD 79.00, 199.00, 299.00, 399.00 and 499.00. Google initially charms converted Canadian prices to .99; these were overridden before final acceptance. Team 95 and 110 are now also active. The generic save error was traced to South Korea: the converted KRW price exceeded the displayed maximum of KRW 600,000. South Korea is excluded from these two plans; approved Canadian prices remain CAD 599.00 and 699.00. All seven products each show one active base plan in Play Console. Do not claim real purchase acceptance until a signed build using the new Android product IDs is installed from Play.
 
 ## Support media implementation
 
@@ -55,3 +55,13 @@ References checked: https://github.com/tashfeenahmed/freellmapi ; https://github
 ## Validation and remaining acceptance
 
 Validation: backend TypeScript build and 212 backend tests passed; mobile TypeScript and 34 mobile tests passed; customer web and agent portal builds passed; all 13 portal tests passed; Expo production exports passed for Android and iOS; git diff --check passed. Signed native builds, Play/App Store purchases and restores, production migration/deployment and physical-device playback remain separately verifiable steps. Do not mark them complete from JavaScript exports or mocked provider tests.
+
+## Release follow-up
+
+PR #4 was merged into `fix/tester-release-20261022` as `79fc245b8f4564dee89d46847bc1a6a315e9dba3`. Railway deployment `481dc079-d376-43fa-b1b0-f85e9142a4f3` was triggered with Deploy latest commit. Railway now shows Active and Deployment successful. Deploy logs report all release migrations completed, and the public /api/health endpoint returned healthy after startup. The rollback baseline is `47562984dbae9fb15adcd85b815ff4d18374aebc`.
+
+Expo confirms iOS 1.2.8 build 55 was previously submitted successfully; it predates these fixes. A new production iOS build form is prepared for the merge commit with automatic submission. Expo reports 100% of included build credits used and pay-as-you-go charges for further builds; no new paid build was started. Local EAS CLI is not authenticated, while the browser session is signed in. Existing paused/remaining lists are retained; this exact catalog price approval supersedes only the price-approval pause.
+
+Customer web production deployment `dpl_EprYJCjhCvPyjUWQUHZn2kcE1xbH` is READY for merge commit `79fc245b`, with `futurejobsproai.com` and `www.futurejobsproai.com` assigned. The separate Vercel `future-jobs-pro-ai-z32m` production deployment was blocked by automatic approval review because its production scope was not established; no deployment was created there. Railway includes the portal build in its own deployed image.
+
+2026-10-31 continuation: all seven Play plans confirmed active. Expo lists medium iOS builds at USD 2 and medium Android builds at USD 1; paid build initiation still awaits an explicit spending limit. The separate portal production deployment remains blocked by automatic review pending explicit target confirmation. No new signed builds or receipt acceptance are claimed.

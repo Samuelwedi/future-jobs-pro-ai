@@ -8,7 +8,9 @@ import rateLimit from 'express-rate-limit';
 import { pool } from '../config/database';
 import { applyPlanAllowance } from '../config/billingPlans';
 
+import emailVerificationRoutes from './emailVerificationRoutes';
 const router = express.Router();
+router.use(emailVerificationRoutes);
 const JWT_SECRET = process.env.JWT_SECRET!;
 const passwordFingerprint = (hash: string) => crypto.createHash('sha256').update(hash).digest('hex');
 const resetRateLimitOptions = {
