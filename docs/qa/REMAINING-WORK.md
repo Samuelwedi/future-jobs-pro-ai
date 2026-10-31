@@ -7,7 +7,7 @@ Updated 2026-10-31. The tester report is the current priority; this register rem
 - 2026-10-31: PR #4 merged as `79fc245b8f4564dee89d46847bc1a6a315e9dba3`. Railway production deployment `481dc079-d376-43fa-b1b0-f85e9142a4f3` is Active; release migrations completed and live health is healthy.
 - Customer website production deployment `dpl_EprYJCjhCvPyjUWQUHZn2kcE1xbH` is READY on the same merge commit and assigned to futurejobsproai.com.
 - All seven Google Play Team subscription products have an active monthly base plan. Team 95/110 exclude South Korea because converted prices exceed its KRW 600,000 limit. Other regional prices are Google converted; exact Canadian prices are approved. Real purchase/restore acceptance remains open.
-- New signed builds await explicit approval of USD 3 plus tax for one medium iOS and one medium Android build. The separate Vercel portal production target awaits explicit confirmation after automatic review rejection.
+- The user explicitly approved merging/deploying PR #5, production deployment of the separate Vercel portal, and USD 3 plus tax for one iOS and one Android build. PR #5 merged as `f6e08b9bf17c843ffa762041e03542641006d93d`. Backend and both web production deployments are verified; both signed builds succeeded and iOS submission succeeded.
 
 ## Earlier verified release baseline
 
@@ -55,3 +55,16 @@ See `SCREENSHOT-FOLLOWUP-20261031.md` for media playback, compatible Lucy infere
 Email verification and web profile persistence are implemented in source, validated locally and pending release. Email links are random, hashed at rest, expire after one hour, and are consumed atomically; old links cannot verify a changed email. Existing accounts are not falsely marked verified or locked out of billing. Mobile Profile and web Settings expose status and email resend; confirmation uses the public verification page. SMTP failure is returned explicitly. Live delivery acceptance remains open.
 
 Validation for this source follow-up: backend build and all 215 tests passed; mobile TypeScript and 34 tests passed; customer web production build passed. Physical devices, SMTP delivery and store acceptance remain open.
+
+## Approved release execution — 2026-10-31
+
+- Railway deployment `170056be-8315-4e12-877d-8f215c0d7a29` is Active for PR #5 merge; all release migrations completed; live health returned healthy. The new verification endpoint rejects an invalid token with HTTP 400.
+- Customer web production deployment: `dpl_84uVyVQgFchw9y1ddBnanifD7jzp`, READY with custom domains assigned. The live /verify-email page renders correctly and disables confirmation without a token.
+- Portal production deployment: `dpl_GUgC6WsmGj2t8sqcm8HqxaxNoyeq`, READY; production alias returned HTTP 200.
+- iOS 1.2.8 build 56: `556ce160-0d7d-4a9d-98c7-4fb51047285a` succeeded. Automatic App Store Connect submission `7cec3285-bfb7-4ab7-9b70-36fb40f4bd6a` shows Succeeded. This is upload success, not Apple public App Review approval.
+- Android 1.2.8 version code 10: `70b7dc05-062d-4724-a6f6-c6acf19cf433` succeeded and produced a signed AAB. Automatic submission disabled; Android publication hold retained.
+- All targets use the exact PR #5 merge commit. Build initiation is not terminal success. No additional paid builds are authorized beyond this USD 3 plus tax allowance.
+
+Expo Doctor in the signed build reported 19/20 checks: four patch updates became recommended (expo 55.0.32 vs 55.0.31, expo-dev-client 55.0.41 vs 55.0.40, expo-location 55.1.15 vs 55.1.14, expo-sharing 55.0.25 vs 55.0.24). Native compilation continued and iOS succeeded. Record these for the next reviewed dependency update; this release uses the exact tested commit.
+
+Approved release result: PR #5 merge, Railway backend, customer website, separate portal, iOS signed build and App Store Connect upload, and Android signed build all completed successfully. Only one paid build per platform was started. Full parity and physical/device/store/live integration acceptance in the retained groups above remain open; release success does not close them automatically.
