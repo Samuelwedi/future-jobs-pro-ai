@@ -88,3 +88,7 @@ PR #6 now includes native estimates (drafts, decisions and safe conversion), yea
 Still open: automatic invoice/estimate email delivery; recurring invoice generation; complete milestone billing; physical media/sharing and store billing acceptance; independent statutory payroll/year-end validation; administration mapping; hosted operational acceptance; free inference configuration. Native evidence sharing supports 25 MB, below the larger web/server package limit. Additional estimate/payment request-key migrations are required before release.
 
 Validation for the estimates/year-end/evidence and invoice payment follow-up: backend TypeScript build and all 228 tests passed; the 13 business integration tests passed again after PDF snapshot hardening; mobile TypeScript and all 43 tests passed; customer web production build and iOS/Android production JavaScript/Hermes exports passed; git diff --check passed. No physical device or real external payment was exercised.
+
+Release wiring: Railway predeploy now runs `run-business-parity-migration.cjs`, which applies the three request-key migrations in one transaction and verifies the required columns before commit. Migration or verification failure stops deployment. No production database was accessed during these source checks.
+
+Final predeploy validation: all 230 backend tests passed, including migration order, rollback and schema-verification failures.

@@ -68,3 +68,7 @@ Evidence and year-end routes now require a current active manager, including arc
 Required additional migrations: `20261101_estimate_request_keys.sql` and `20261101_invoice_payment_keys.sql` (alongside the earlier PR #6 invoice request-key migration). No new production deployment or paid signed build has been started.
 
 Validation for the estimates/year-end/evidence and invoice payment follow-up: backend TypeScript build and all 228 tests passed; the 13 business integration tests passed again after PDF snapshot hardening; mobile TypeScript and all 43 tests passed; customer web production build and iOS/Android production JavaScript/Hermes exports passed; git diff --check passed. No physical device or real external payment was exercised.
+
+Release wiring: Railway predeploy now runs `run-business-parity-migration.cjs`, which applies the three request-key migrations in one transaction and verifies the required columns before commit. Migration or verification failure stops deployment. No production database was accessed during these source checks.
+
+Final predeploy validation: all 230 backend tests passed, including migration order, rollback and schema-verification failures.
