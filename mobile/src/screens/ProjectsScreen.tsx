@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {checkOnlineStatus} from '../services/offlineService';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
@@ -13,6 +14,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 
 export default function ProjectsScreen() {
+  const { t } = useLang();
   const { user } = useAuth();
   const navigation = useNavigation<any>();
   const [projects, setProjects] = useState<any[]>([]);
@@ -58,12 +60,12 @@ export default function ProjectsScreen() {
     if(saving)return;
 
     if (!projectName.trim()) {
-      Alert.alert('Error', 'Project name is required');
+      Alert.alert(t("Error"), t("Project name is required"));
       return;
     }
     setSaving(true);
     try {
-      if(!await checkOnlineStatus()) throw new Error('You are offline. Your project draft is kept on this device. Reconnect and tap Save.');
+      if(!await checkOnlineStatus()) throw new Error(t("You are offline. Your project draft is kept on this device. Reconnect and tap Save."));
       const payload = {
         name: projectName.trim(),
         client_name: clientName.trim() || null,
@@ -72,10 +74,10 @@ export default function ProjectsScreen() {
       };
       if (editingProject) {
         await api.put(`/projects/${editingProject.id}`, payload);
-        Alert.alert('Success', 'Project updated');
+        Alert.alert(t("Success"), t("Project updated"));
       } else {
         await api.post('/projects', payload);
-        Alert.alert('Success', 'Project created');
+        Alert.alert(t("Success"), t("Project created"));
       }
       setModalVisible(false);
       setProjectName('');
@@ -84,23 +86,23 @@ export default function ProjectsScreen() {
       setEditingProject(null);
       fetchProjects();
     } catch (error: any) {
-      Alert.alert('Project not saved', error.response?.data?.message || error.message || 'Failed to save project');
+      Alert.alert(t("Project not saved"), error.response?.data?.message || error.message || t("Failed to save project"));
     } finally {setSaving(false);}
   };
 
   const handleDelete = (project: any) => {
-    Alert.alert('Archive Project', `Archive "${project.name}"?`, [
-      { text: 'Cancel' },
+    Alert.alert(t("Archive Project"), t('Archive "{name}"?', {name:project.name}), [
+      { text: t("Cancel") },
       {
-        text: 'Archive',
+        text: t("Archive"),
         style: 'destructive',
         onPress: async () => {
           try {
             await api.delete(`/projects/${project.id}`);
-            Alert.alert('Archived', 'Project removed from active work. Its historical records are preserved.');
+            Alert.alert(t("Archived"), t("Project removed from active work. Its historical records are preserved."));
             fetchProjects();
           } catch (err: any) {
-            Alert.alert('Error', err.message);
+            Alert.alert(t("Error"), err.message);
           }
         }
       }
@@ -124,7 +126,7 @@ export default function ProjectsScreen() {
         <Text style={styles.projectName}>{item.name}</Text>
         {item.client_name && <Text style={styles.clientName}>{item.client_name}</Text>}
         {item.address && <Text style={styles.addressText} numberOfLines={1}>{item.address}</Text>}
-        <Text style={styles.status}>{item.status || 'active'}</Text>
+        <Text style={styles.status}>{item.status === 'completed' ? t('Completed') : item.status === 'archived' ? t('Archived') : !item.status || item.status === 'active' ? t('Active') : item.status}</Text>
       </TouchableOpacity>
       <View style={styles.actions}>
         <TouchableOpacity onPress={() => openEditModal(item)} style={styles.actionBtn}>
@@ -144,10 +146,10 @@ export default function ProjectsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Projects</Text>
+        <Text style={styles.headerTitle}>{t("Projects")}</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -157,7 +159,7 @@ export default function ProjectsScreen() {
         renderItem={renderProject}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={<Text style={styles.emptyText}>No projects yet. Tap + to create one.</Text>}
+        ListEmptyComponent={<Text style={styles.emptyText}>{t("No projects yet. Tap + to create one.")}</Text>}
       />
 
       <TouchableOpacity
@@ -172,24 +174,24 @@ export default function ProjectsScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <ScrollView>
-              <Text style={styles.modalTitle}>{editingProject ? 'Edit Project' : 'New Project'}</Text>
+              <Text style={styles.modalTitle}>{editingProject ? t("Edit Project") : t("New Project")}</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Project Name"
+                placeholder={t("Project Name")}
                 placeholderTextColor="#888"
                 value={projectName}
                 onChangeText={setProjectName}
               />
               <TextInput
                 style={styles.input}
-                placeholder="Client Name (optional)"
+                placeholder={t("Client Name (optional)")}
                 placeholderTextColor="#888"
                 value={clientName}
                 onChangeText={setClientName}
               />
               <TextInput
                 style={styles.input}
-                placeholder="Address (optional – used for directions)"
+                placeholder={t("Address (optional – used for directions)")}
                 placeholderTextColor="#888"
                 value={projectAddress}
                 onChangeText={setProjectAddress}
@@ -198,10 +200,10 @@ export default function ProjectsScreen() {
               />
               <View style={styles.modalActions}>
                 <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setModalVisible(false)}>
-                  <Text style={styles.btnText}>Cancel</Text>
+                  <Text style={styles.btnText}>{t("Cancel")}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.btn, styles.saveBtn]} disabled={saving} onPress={handleSaveProject}>
-                  <Text style={[styles.btnText, { color: '#0A0A0A' }]}>{saving?'Saving…':'Save'}</Text>
+                  <Text style={[styles.btnText, { color: '#0A0A0A' }]}>{saving?t("Saving…"):t("Save")}</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>

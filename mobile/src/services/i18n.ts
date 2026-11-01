@@ -293,5 +293,19 @@ const translations: Record<Lang, Record<string, string>> = {
 export function t(key: string, lang: Lang, vars?: Record<string, string>): string {
   const text = translations[lang]?.[key] ?? (lang === 'en' ? undefined : screenCopy[key]?.[lang === 'es' ? 0 : 1]) ?? translations.en[key] ?? key;
   if (!vars) return text;
-  return Object.entries(vars).reduce((acc, [k, v]) => acc.replace(`{${k}}`, v), text);
+  return text.replace(/\{([^{}]+)\}/g, (match, key) => Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : match);
 }
+
+export function dateLabel(date: Date, lang: Lang, options: Intl.DateTimeFormatOptions): string {
+  if (!Number.isFinite(date.getTime())) return '—';
+  return new Intl.DateTimeFormat(lang === 'es' ? 'es' : lang === 'fr' ? 'fr-CA' : 'en-CA', options).format(date);
+}
+
+export function calendarLabel(value: string, lang: Lang): string {
+  const key = value.split('T')[0];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return '—';
+  const date = new Date(key + 'T12:00:00Z');
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== key) return '—';
+  return dateLabel(date, lang, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+

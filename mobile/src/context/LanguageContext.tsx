@@ -4,7 +4,7 @@ import {getLocales} from 'expo-localization';
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { t, Lang, deviceLanguage } from '../services/i18n';
 
@@ -41,11 +41,14 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
     setLangState(newLang);
   };
 
+  const translate = useCallback((key: string, vars?: Record<string, string>) => t(key, lang, vars), [lang]);
+
   return (
-    <LanguageContext.Provider value={{ lang, setLang, t: (key, vars) => t(key, lang, vars) }}>
+    <LanguageContext.Provider value={{ lang, setLang, t: translate }}>
       {children}
     </LanguageContext.Provider>
   );
 };
 
 export const useLang = () => useContext(LanguageContext);
+

@@ -46,11 +46,16 @@ import ProjectMediaScreen from './src/screens/ProjectMediaScreen';
 import MonthMediaScreen from './src/screens/MonthMediaScreen';
 import { api } from './src/services/api';
 import MonthMediaTypeScreen from './src/screens/MonthMediaTypeScreen';
+import ExpensesScreen from './src/screens/ExpensesScreen';
+import WorkPreferencesScreen from './src/screens/WorkPreferencesScreen';
 import WebViewScreen from './src/screens/WebViewScreen';
 import SelectEmployeesScreen from './src/screens/SelectEmployeesScreen';
 import CreateShiftScreen from './src/screens/CreateShiftScreen';
 import CompanySettingsScreen from './src/screens/CompanySettingsScreen';
 import WorkerToolsScreen from './src/screens/WorkerToolsScreen';
+import PayStatementsScreen from './src/screens/PayStatementsScreen';
+import PayrollAdministrationScreen from './src/screens/PayrollAdministrationScreen';
+import ManualPayrollScreen from './src/screens/ManualPayrollScreen';
 import PayrollRulesScreen from './src/screens/PayrollRulesScreen';
 import { mobileDiagnosticContext } from './src/services/mobileDiagnostics';
 import { WakeWordService } from './src/services/wakeWordService';
@@ -208,7 +213,12 @@ function AppNavigator() {
             <Stack.Screen name="SelectEmployees" component={SelectEmployeesScreen} />
             <Stack.Screen name="CreateShift" component={CreateShiftScreen} />
             <Stack.Screen name="CompanySettings" component={CompanySettingsScreen as React.ComponentType<any>} />
+            <Stack.Screen name="Expenses" component={ExpensesScreen} />
+            <Stack.Screen name="WorkPreferences" component={WorkPreferencesScreen} />
             <Stack.Screen name="WorkerTools" component={WorkerToolsScreen} />
+            <Stack.Screen name="PayStatements" component={PayStatementsScreen} />
+            <Stack.Screen name="PayrollAdministration" component={PayrollAdministrationScreen} />
+            <Stack.Screen name="ManualPayroll" component={ManualPayrollScreen} />
             <Stack.Screen name="PayrollRules" component={PayrollRulesScreen} />
           </>
         )}
@@ -231,3 +241,4 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
