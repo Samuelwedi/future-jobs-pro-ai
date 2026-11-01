@@ -346,7 +346,7 @@ export default function HomeScreen() {
         ['Expenses & receipts', 'receipt-long', 'Expenses', '#A7F3D0'],
       ],
     },
-    ...(user?.role === 'boss' || user?.role === 'manager' ? [{
+    ...(['boss', 'manager', 'owner', 'admin'].includes(user?.role || '') ? [{
       eyebrow: 'COMPANY MANAGEMENT',
       title: 'People, access & operations',
       tools: [
@@ -354,6 +354,10 @@ export default function HomeScreen() {
         ['Kiosk', 'pin', 'Kiosk', '#FDBA74'],
         ['Team & roles', 'admin-panel-settings', 'Team', '#67E8F9'],
         ['Company', 'business', 'CompanySettings', '#A7F3D0'],
+        ['Payroll', 'payments', 'Payroll', '#A7F3D0'],
+        ['Invoices', 'receipt-long', 'Invoices', '#FDE68A'],
+        ['Reports', 'assessment', 'Reports', '#93C5FD'],
+        ['Integrations', 'link', 'Integrations', '#C4B5FD'],
         ['Subscription', 'workspace-premium', 'Subscription', '#F9A8D4'],
       ],
     }] : []),
@@ -493,7 +497,7 @@ export default function HomeScreen() {
             ['Projects', 'work', 'Projects', t('{count} active', { count: String(projects.length) })], ['Schedule', 'calendar-month', 'Schedule', t('{count} today', { count: String(schedules.length) })],
             ['Timesheet', 'schedule', 'Timesheet', 'Review time'], ['Team', 'groups', 'Team', 'People & pay'],
             ['Messages', 'forum', 'ChatList', 'Crew chat'], ['Support', 'support-agent', 'Support', 'Customer care'],
-          ].filter(([label]) => label !== 'Team' || user?.role === 'boss' || user?.role === 'manager').map(([label, icon, screen, meta], index, list) => (
+          ].filter(([label]) => label !== 'Team' || ['boss', 'manager', 'owner', 'admin'].includes(user?.role || '')).map(([label, icon, screen, meta], index, list) => (
             <TouchableOpacity key={label} style={[investorStyles.workspaceRow, index === list.length - 1 && investorStyles.workspaceRowLast]} onPress={() => navigation.navigate(screen)}>
               <View style={investorStyles.workspaceIcon}><MaterialIcons name={icon as any} size={20} color="#8FDFF0" /></View><View style={investorStyles.workspaceCopy}><Text style={investorStyles.workspaceTitle}>{t(label)}</Text><Text style={investorStyles.workspaceMeta}>{t(meta)}</Text></View><MaterialIcons name="chevron-right" size={23} color="#52677A" />
             </TouchableOpacity>
@@ -518,7 +522,7 @@ export default function HomeScreen() {
           </View>
         ))}
 
-        <View style={investorStyles.footerRow}>{(user?.role === 'boss' || user?.role === 'manager') && <><TouchableOpacity onPress={() => navigation.navigate('CompanySettings')}><Text style={investorStyles.footerLink}>{t("Company settings")}</Text></TouchableOpacity><TouchableOpacity onPress={() => navigation.navigate('PayrollRules')}><Text style={investorStyles.footerLink}>{t("Payroll rules")}</Text></TouchableOpacity><View style={investorStyles.footerDot} /></>}<TouchableOpacity onPress={logout}><Text style={investorStyles.footerLink}>{t("Sign out")}</Text></TouchableOpacity></View>
+        <View style={investorStyles.footerRow}>{(['boss', 'manager', 'owner', 'admin'].includes(user?.role || '')) && <><TouchableOpacity onPress={() => navigation.navigate('CompanySettings')}><Text style={investorStyles.footerLink}>{t("Company settings")}</Text></TouchableOpacity><TouchableOpacity onPress={() => navigation.navigate('PayrollRules')}><Text style={investorStyles.footerLink}>{t("Payroll rules")}</Text></TouchableOpacity><View style={investorStyles.footerDot} /></>}<TouchableOpacity onPress={logout}><Text style={investorStyles.footerLink}>{t("Sign out")}</Text></TouchableOpacity></View>
       </ScrollView>
     </View>
   );

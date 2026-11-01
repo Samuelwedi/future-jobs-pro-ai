@@ -1,6 +1,6 @@
 # Future Jobs Pro AI — mobile/web source parity audit
 
-Audited 2026-10-31 against `mobile/App.tsx`, mobile screen implementations, and `web/src/App.tsx`. This is a source inventory, not device acceptance or certification. A registered route does not establish every interaction works. Original remaining-work and tester registers are retained.
+Updated 2026-11-01; audited 2026-10-31 against `mobile/App.tsx`, mobile screen implementations, and `web/src/App.tsx`. This is a source inventory, not device acceptance or certification. A registered route does not establish every interaction works. Original remaining-work and tester registers are retained.
 
 | Workflow | Web surface | Mobile surface | Current source finding |
 |---|---|---|---|
@@ -23,12 +23,12 @@ Audited 2026-10-31 against `mobile/App.tsx`, mobile screen implementations, and 
 | Company policies | CompanySettings/PayrollRules | CompanySettings/PayrollRules | Source exists; policy-by-policy acceptance open. |
 | Kiosk | Kiosk/KioskClock | Kiosk | Source exists; physical PIN clocking acceptance open. |
 | Lucy text/voice | AskLucy/VoiceAssistant | AIAssistant/VoiceNote | Compatible inference adapter deployed. No free inference provider configured; voice/photo provider acceptance open. |
-| Payroll processing and adjustments | Payroll/ManualPayroll | No dedicated registered payroll screen | Native coverage gap. Payroll rules alone are not payroll processing parity. |
+| Payroll processing and adjustments | Payroll/ManualPayroll | New Payroll screen | Draft preparation, saved calculation, independent review, external payment recording, effective employee rates, cost simulation and PDF/CSV export implemented in PR #6. Bulk rate changes and physical acceptance remain open. |
 | Bank/direct-deposit management | DirectDeposit | No dedicated registered screen | Native coverage gap; live settlement also unverified. |
 | Year-end forms | YearEnd/FinalizedSlips | No dedicated registered screen | Native coverage gap. |
-| Invoices and estimates | Invoices/Estimates | No dedicated registered screens | Native coverage gap. |
-| Reports and exports | Reports | Timesheet CSV only | Native report coverage gap; CSV share device acceptance open. |
-| QuickBooks and Stripe integrations | Integrations | No dedicated registered screen | Native coverage gap; production OAuth/webhooks/settlement acceptance open. |
+| Invoices and estimates | Invoices/Estimates | New Invoices screen | Invoice list, filters, paging, draft create/edit/delete, approved unbilled labor and payment history implemented in PR #6. Estimates, actual delivery, payment mutations, recurring/milestone workflows and invoice PDF remain open. |
+| Reports and exports | Reports | New Reports screen | Project/date summary and real PDF/CSV sharing implemented in PR #6; device sharing acceptance open. Payroll Word/Excel export remains unsupported. |
+| QuickBooks and Stripe integrations | Integrations | New Integrations screen | Status, provider authorization in browser, disconnect and payment sync controls implemented in PR #6; production OAuth/webhooks/settlement acceptance open. |
 | Work preferences | WorkPreferences | No dedicated registered screen | Native coverage gap. |
 | Administration | AdminDashboard/Operations | Team/CompanySettings partial coverage | Complete permission/action mapping still needed. |
 | Evidence center | EvidenceCenter | Project files/camera partial coverage | Dedicated review/audit workflow coverage gap. |
@@ -42,3 +42,13 @@ Implemented: claims scoped by the existing API, CAD/USD validation, local calend
 Automated source validation does not prove Android/iOS receipt pickers, external receipt opening, OCR provider availability or physical-device keyboard behavior. No new paid build or store publication is started by this source change.
 
 Validation: mobile TypeScript passed; 36 mobile tests passed; production Hermes/JavaScript exports for iOS and Android passed; git diff --check passed. The existing backend was unchanged. Signed builds 56/10 predate this source addition.
+
+## Native business workflows — PR #6 follow-up, 2026-11-01
+
+Payroll, invoice drafts, reports and integrations now have registered native screens with manager navigation, fresh connectivity checks, synchronous mutation guards and confirmation for consequential actions. Manager visibility includes boss, manager, owner and admin; server authorization is authoritative. New control copy includes Spanish and French translations; a complete application localization audit remains open.
+
+Backend repairs: PDF/CSV payroll export, current active-user/company/manager checks for reports and integrations, strict invoice dates and money validation, approved same-project labor checks, atomic invoice draft edits, and idempotent invoice creation retries. Invoice writes share the company transaction lock with reviewed operations. The new invoice request-key migration must run before release. No bank transfer or tax certification is implied by these controls.
+
+Release status: source only, not production and not in signed iOS build 56 / Android versionCode 10. No further paid build has been started. Device acceptance, production provider authorization and independent financial review remain open.
+
+Validation for the native business workflow follow-up: backend build and all 221 tests passed; mobile TypeScript and 39 tests passed; customer web production build passed; iOS and Android production JavaScript/Hermes exports passed. These checks do not establish physical-device or store acceptance.

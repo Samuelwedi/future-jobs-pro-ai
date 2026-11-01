@@ -1,3 +1,5 @@
+import {validateInvoiceHeader,validateInvoiceLines,lockInvoiceLabor} from '../services/invoiceValidation';
+import {createHash} from 'crypto';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
@@ -75,7 +77,7 @@ router.get('/unbilled', async (req: Request, res: Response) => {
        FROM time_entries te
        JOIN users u ON te.user_id = u.id
        WHERE te.project_id = $1 AND u.company_id=$2
-         AND te.status = 'completed'
+         AND te.status = 'completed' AND te.approval_status='approved'
          AND NOT EXISTS (
            SELECT 1 FROM invoice_items ii
            WHERE ii.time_entry_ids @> ARRAY[te.id]
@@ -157,14 +159,17 @@ router.post('/', async (req: Request, res: Response) => {
       recurringEndDate,
     } = req.body;
 
-    if (!issueDate || !dueDate || !items || items.length === 0) {
-      return res.status(400).json({ success: false, message: 'issueDate, dueDate, and items required' });
-    }
-
+    validateInvoiceHeader(issueDate,dueDate,taxRate);
+    const validated=validateInvoiceLines(items);
+    const requestKey=req.body.requestKey;
+    if(requestKey!==undefined&&(typeof requestKey!=='string'||!/^[-_a-zA-Z0-9]{8,100}$/.test(requestKey)))throw Error('Invalid invoice request key.');
+    const requestHash=createHash('sha256').update(JSON.stringify({projectId:projectId||null,clientId:clientId||null,issueDate,dueDate,taxRate:taxRate||0,notes:notes||null,clientNotes:clientNotes||null,items,isRecurring:isRecurring||false,recurringFrequency:recurringFrequency||null,recurringEndDate:recurringEndDate||null})).digest('hex');
     await client.query('BEGIN');
+    await client.query('SELECT id FROM companies WHERE id=$1 FOR UPDATE',[companyId]);
+    if(requestKey){const prior=await client.query('SELECT * FROM invoices WHERE company_id=$1 AND creation_request_key=$2',[companyId,requestKey]);if(prior.rowCount){if(prior.rows[0].creation_request_hash!==requestHash){await client.query('ROLLBACK');return res.status(409).json({success:false,message:'This request key was already used for different invoice data.'});}await client.query('COMMIT');return res.json({success:true,invoice:prior.rows[0],replayed:true});}}
     if(projectId){const own=await client.query('SELECT id FROM projects WHERE id=$1 AND company_id=$2',[projectId,companyId]);if(!own.rowCount)throw new Error('Project outside company');}
     if(clientId){const own=await client.query('SELECT id FROM users WHERE id=$1 AND company_id=$2',[clientId,companyId]);if(!own.rowCount)throw new Error('Client outside company');}
-    for(const item of items){if(!Number.isFinite(Number(item.unit_price))||Number(item.unit_price)<0||!Number.isFinite(Number(item.quantity??1))||Number(item.quantity??1)<=0)throw new Error('Invalid invoice line');const ids=item.timeEntryIds||[];if(ids.length){const own=await client.query('SELECT t.id FROM time_entries t JOIN users u ON u.id=t.user_id WHERE t.id=ANY($1::uuid[]) AND u.company_id=$2',[ids,companyId]);if(own.rowCount!==new Set(ids).size)throw new Error('Time entry outside company');}}
+    await lockInvoiceLabor(client,companyId,validated.ids,null,projectId||null);
     // If clientId not provided, try to get from project
     let finalClientId = clientId || null;
     if (!finalClientId && projectId) {
@@ -174,12 +179,9 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    let subtotal = 0;
-    for (const item of items) {
-      subtotal += (item.quantity || 1) * item.unit_price;
-    }
+    const subtotal=validated.subtotal;
 
-    const userId = (req as any).user?.id || null;
+    const userId = res.locals.actor.id;
 
     const invoiceResult = await client.query(
       `INSERT INTO invoices
@@ -205,6 +207,7 @@ router.post('/', async (req: Request, res: Response) => {
       ]
     );
     const invoiceId = invoiceResult.rows[0].id;
+    if(requestKey)await client.query('UPDATE invoices SET creation_request_key=$1,creation_request_hash=$2 WHERE id=$3',[requestKey,requestHash,invoiceId]);
 
     // Insert items
     for (const item of items) {
@@ -226,7 +229,7 @@ router.post('/', async (req: Request, res: Response) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error creating invoice:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    res.status(400).json({ success: false, message: 'Invoice could not be saved. Check dates, lines and linked labor.' });
   } finally {
     client.release();
   }
@@ -234,51 +237,24 @@ router.post('/', async (req: Request, res: Response) => {
 
 // ─── PUT /api/invoices/:id (draft only) ────────────────────────
 router.put('/:id', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { id } = req.params;
-    const { issueDate, dueDate, taxRate, notes, clientNotes, status, items } = req.body;
-
-    const check = await pool.query(
-      'SELECT id FROM invoices WHERE id = $1 AND company_id = $2 AND status = $3',
-      [id, companyId, 'draft']
-    );
-    if (check.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Invoice not found or not draft' });
-    }
-
-    // Update invoice header
-    const result = await pool.query(
-      `UPDATE invoices
-       SET issue_date = COALESCE($1, issue_date),
-           due_date = COALESCE($2, due_date),
-           tax_rate = COALESCE($3, tax_rate),
-           notes = COALESCE($4, notes),
-           client_notes = COALESCE($5, client_notes),
-           status = COALESCE($6, status)
-       WHERE id = $7 RETURNING *`,
-      [issueDate, dueDate, taxRate, notes, clientNotes, status, id]
-    );
-
-    // Update items if provided
-    if (items && Array.isArray(items)) {
-      await pool.query('DELETE FROM invoice_items WHERE invoice_id = $1', [id]);
-      for (const item of items) {
-        await pool.query(
-          `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, time_entry_ids)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [id, item.description, item.quantity || 1, item.unit_price, item.timeEntryIds || []]
-        );
-      }
-    }
-
-    res.json({ success: true, invoice: result.rows[0] });
-  } catch (error) {
-    console.error('Error updating invoice:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+ const client=await pool.connect();
+ try {
+  const companyId=res.locals.actor.company_id;
+  await client.query('BEGIN');
+  await client.query('SELECT id FROM companies WHERE id=$1 FOR UPDATE',[companyId]);
+  const selected=await client.query("SELECT * FROM invoices WHERE id=$1 AND company_id=$2 AND status='draft' FOR UPDATE",[req.params.id,companyId]);
+  if(!selected.rowCount){await client.query('ROLLBACK');return res.status(404).json({success:false,message:'Draft invoice not found'});}
+  const previous=selected.rows[0];
+  const {issueDate,dueDate,taxRate,notes,clientNotes,status,items}=req.body;
+  if(status!==undefined&&status!=='draft')throw Error('Use the invoice issuing or payment workflow to change status.');
+  const dates={issue:issueDate??String(previous.issue_date instanceof Date?previous.issue_date.toISOString():previous.issue_date).slice(0,10),due:dueDate??String(previous.due_date instanceof Date?previous.due_date.toISOString():previous.due_date).slice(0,10)};
+  validateInvoiceHeader(dates.issue,dates.due,taxRate??previous.tax_rate);
+  const paid=await client.query('SELECT id FROM payments WHERE invoice_id=$1 LIMIT 1',[req.params.id]);if(paid.rowCount)throw Error('An invoice with payment records cannot be edited.');
+  let subtotal=previous.subtotal;
+  if(items!==undefined){const checked=validateInvoiceLines(items);await lockInvoiceLabor(client,companyId,checked.ids,String(req.params.id),previous.project_id);subtotal=checked.subtotal;await client.query('DELETE FROM invoice_items WHERE invoice_id=$1',[req.params.id]);for(const item of items)await client.query('INSERT INTO invoice_items(invoice_id,description,quantity,unit_price,time_entry_ids) VALUES($1,$2,$3,$4,$5)',[req.params.id,item.description,item.quantity??1,item.unit_price,item.timeEntryIds||[]]);}
+  const result=await client.query(`UPDATE invoices SET issue_date=$1,due_date=$2,tax_rate=$3,notes=COALESCE($4,notes),client_notes=COALESCE($5,client_notes),subtotal=$6 WHERE id=$7 AND company_id=$8 AND status='draft' RETURNING *`,[dates.issue,dates.due,taxRate??previous.tax_rate,notes,clientNotes,subtotal,req.params.id,companyId]);
+  await client.query('COMMIT');res.json({success:true,invoice:result.rows[0]});
+ }catch(error:any){await client.query('ROLLBACK').catch(()=>{});res.status(400).json({success:false,message:error.message||'Invoice could not be saved'});}finally{client.release();}
 });
 
 // ─── DELETE /api/invoices/:id (draft only) ─────────────────────

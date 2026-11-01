@@ -1,6 +1,6 @@
 # Future Jobs Pro AI — retained work register
 
-Updated 2026-10-31. The tester report is the current priority; this register remains open alongside it. Historical failures are not evidence that the current deployed release failed.
+Updated 2026-11-01. The tester report is the current priority; this register remains open alongside it. Historical failures are not evidence that the current deployed release failed.
 
 ## Current verified release
 
@@ -72,3 +72,9 @@ Approved release result: PR #5 merge, Railway backend, customer website, separat
 ## Mobile/web audit continuation
 
 See `MOBILE-WEB-PARITY.md` for the source inventory and explicit native workflow gaps. A native Expenses screen now implements claims, receipt attachment/extraction and manager review in the QA branch. It is not part of the already signed iOS build 56 or Android version code 10. Native payroll, direct deposit, year-end, invoices/estimates, reports, integrations, work preferences and evidence review still need coverage. Existing publishing/paid-build limits remain in force.
+
+## Mobile business workflow follow-up — PR #6
+
+Native payroll, invoice drafts, reports and integration controls have been added alongside expenses. Backend repairs include real payroll PDF/CSV export, active company-role checks, atomic invoice edits, approved labor validation and retry-safe invoice creation. See `MOBILE-WEB-PARITY.md` for the remaining action-level gaps. These additions are not deployed or included in builds 56/10. Migration `20261031_invoice_request_keys.sql` is required. The prior USD 3 plus tax build allowance has been used; no additional paid build was started.
+
+Validation for the native business workflow follow-up: backend build and all 221 tests passed; mobile TypeScript and 39 tests passed; customer web production build passed; iOS and Android production JavaScript/Hermes exports passed. These checks do not establish physical-device or store acceptance.

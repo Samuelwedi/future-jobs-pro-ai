@@ -160,6 +160,12 @@ class ApiService {
     return response.data;
   }
 
+  async downloadBusinessFile(path: string, body?: unknown): Promise<{data:ArrayBuffer;mime:string}> {
+    if (!/^\/(reports\/(comprehensive|timesheet\.csv)|payroll\/(export|paystub\/[a-f0-9-]+))(\?|$)/i.test(path)) throw new Error('Unsupported business download');
+    const response = await this.client.request<ArrayBuffer>({url:path,method:body === undefined?'GET':'POST',data:body,responseType:'arraybuffer'});
+    return {data:response.data,mime:String(response.headers['content-type']||'').split(';')[0]};
+  }
+
   async uploadFileWithData<T>(
     url: string,
     fileUri: string,

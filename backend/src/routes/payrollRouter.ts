@@ -6,7 +6,9 @@ import { verifyToken } from '../utils/auth';
 import { generatePayroll } from '../services/payrollGenerator';
 import { generatePayStubPDFBuffer } from '../services/pdfService';
 
+import payrollExportRoutes from './payrollExportRoutes';
 const router = express.Router();
+router.use('/export',payrollExportRoutes);
 router.use(async (req, res, next) => {
   try {
     const token = verifyToken(req);
