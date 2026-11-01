@@ -955,3 +955,362 @@ Object.assign(screenCopy, {
     "Votre prochain service"
   ]
 });
+
+// Native payroll processing and external payment recording.
+Object.assign(screenCopy, {
+  "Payroll manager access required.": [
+    "Se requiere acceso de responsable de nómina.",
+    "Accès de responsable de paie requis."
+  ],
+  "Payroll records could not be verified. Refresh before continuing.": [
+    "No se pudieron verificar los registros de nómina. Actualice antes de continuar.",
+    "Impossible de vérifier les dossiers de paie. Actualisez avant de continuer."
+  ],
+  "Payroll could not be loaded.": [
+    "No se pudo cargar la nómina.",
+    "Impossible de charger la paie."
+  ],
+  "Payroll requires a connection. Nothing was submitted.": [
+    "La nómina requiere conexión. No se envió nada.",
+    "La paie nécessite une connexion. Rien n’a été envoyé."
+  ],
+  "Payroll action failed.": [
+    "La acción de nómina falló.",
+    "L’action de paie a échoué."
+  ],
+  "Refresh and check the current payroll before retrying.": [
+    "Actualice y compruebe la nómina actual antes de reintentar.",
+    "Actualisez et vérifiez la paie actuelle avant de réessayer."
+  ],
+  "Payroll & manual payments": [
+    "Nómina y pagos manuales",
+    "Paie et paiements manuels"
+  ],
+  "Calculate and independently review payroll, pay employees through your bank, then record your confirmation. This app does not send money or verify bank settlement.": [
+    "Calcule y revise la nómina de forma independiente, pague mediante su banco y registre la confirmación. Esta aplicación no envía dinero ni verifica la liquidación bancaria.",
+    "Calculez et vérifiez indépendamment la paie, payez les employés par votre banque, puis consignez votre confirmation. Cette application n’envoie pas d’argent et ne vérifie pas le règlement bancaire."
+  ],
+  "Company payroll rules": [
+    "Reglas de nómina de la empresa",
+    "Règles de paie de l’entreprise"
+  ],
+  "Prepare payroll draft": [
+    "Preparar borrador de nómina",
+    "Préparer un brouillon de paie"
+  ],
+  "Includes all approved, unlocked time entries in this company and period, using saved effective pay rates. Preparing a draft locks those entries. It does not approve or pay payroll.": [
+    "Incluye todos los registros de horas aprobados y desbloqueados de esta empresa y período, con las tarifas vigentes guardadas. Preparar el borrador bloquea esas horas. No aprueba ni paga la nómina.",
+    "Inclut toutes les heures approuvées et non verrouillées de cette entreprise et période, aux taux enregistrés en vigueur. Préparer un brouillon verrouille ces heures. Cela n’approuve ni ne paie la paie."
+  ],
+  "Period start (YYYY-MM-DD)": [
+    "Inicio del período (AAAA-MM-DD)",
+    "Début de période (AAAA-MM-JJ)"
+  ],
+  "Period end (YYYY-MM-DD)": [
+    "Fin del período (AAAA-MM-DD)",
+    "Fin de période (AAAA-MM-JJ)"
+  ],
+  "Prepare draft": [
+    "Preparar borrador",
+    "Préparer le brouillon"
+  ],
+  "Prepare payroll draft?": [
+    "¿Preparar borrador de nómina?",
+    "Préparer le brouillon de paie ?"
+  ],
+  "Draft prepared. Select an employee to calculate payroll.": [
+    "Borrador preparado. Seleccione un empleado para calcular la nómina.",
+    "Brouillon préparé. Sélectionnez un employé pour calculer la paie."
+  ],
+  "Period: {start} to {end}": [
+    "Período: {start} a {end}",
+    "Période : du {start} au {end}"
+  ],
+  "Payroll runs": [
+    "Nóminas",
+    "Cycles de paie"
+  ],
+  "No payroll runs.": [
+    "No hay nóminas.",
+    "Aucun cycle de paie."
+  ],
+  "Payroll details": [
+    "Detalles de nómina",
+    "Détails de paie"
+  ],
+  "Saved rule revision: {revision}": [
+    "Revisión de reglas guardada: {revision}",
+    "Version des règles enregistrée : {revision}"
+  ],
+  "Payroll notes": [
+    "Notas de nómina",
+    "Notes de paie"
+  ],
+  "Save draft notes": [
+    "Guardar notas del borrador",
+    "Enregistrer les notes du brouillon"
+  ],
+  "Draft notes saved.": [
+    "Notas del borrador guardadas.",
+    "Notes du brouillon enregistrées."
+  ],
+  "Delete draft": [
+    "Eliminar borrador",
+    "Supprimer le brouillon"
+  ],
+  "Delete payroll draft?": [
+    "¿Eliminar borrador de nómina?",
+    "Supprimer le brouillon de paie ?"
+  ],
+  "Draft deleted.": [
+    "Borrador eliminado.",
+    "Brouillon supprimé."
+  ],
+  "This deletes only the draft and unlocks its time entries.": [
+    "Esto elimina solo el borrador y desbloquea sus registros de horas.",
+    "Cela supprime uniquement le brouillon et déverrouille ses heures."
+  ],
+  "Employees": [
+    "Empleados",
+    "Employés"
+  ],
+  "Independently reviewed amount": [
+    "Importe revisado de forma independiente",
+    "Montant vérifié indépendamment"
+  ],
+  "Prior YTD contribution": [
+    "Contribución previa acumulada del año",
+    "Cotisation antérieure cumulée de l’année"
+  ],
+  "I independently checked the inputs and confirm the stated calculation scope.": [
+    "He comprobado los datos de forma independiente y confirmo el alcance del cálculo indicado.",
+    "J’ai vérifié indépendamment les données et je confirme la portée du calcul indiquée."
+  ],
+  "Confirm calculation scope": [
+    "Confirmar alcance del cálculo",
+    "Confirmer la portée du calcul"
+  ],
+  "Calculate and save for review": [
+    "Calcular y guardar para revisión",
+    "Calculer et enregistrer pour vérification"
+  ],
+  "Save payroll calculation?": [
+    "¿Guardar cálculo de nómina?",
+    "Enregistrer le calcul de paie ?"
+  ],
+  "Calculation saved for independent review.": [
+    "Cálculo guardado para revisión independiente.",
+    "Calcul enregistré pour vérification indépendante."
+  ],
+  "This replaces this draft employee calculation using saved rule revision {revision}.": [
+    "Esto reemplaza el cálculo del empleado en este borrador con la revisión de reglas guardada {revision}.",
+    "Cela remplace le calcul de l’employé dans ce brouillon avec la version des règles enregistrée {revision}."
+  ],
+  "Saved calculation": [
+    "Cálculo guardado",
+    "Calcul enregistré"
+  ],
+  "Pay date": [
+    "Fecha de pago",
+    "Date de paie"
+  ],
+  "Company review is required. A saved calculation does not establish government approval.": [
+    "Se requiere revisión de la empresa. Un cálculo guardado no supone aprobación gubernamental.",
+    "Une vérification par l’entreprise est requise. Un calcul enregistré ne constitue pas une approbation gouvernementale."
+  ],
+  "Independent payroll review reference": [
+    "Referencia de revisión independiente de nómina",
+    "Référence de vérification indépendante de paie"
+  ],
+  "I checked every employee gross, YTD and deductions independently. This records company review, not government approval.": [
+    "He comprobado de forma independiente el bruto, los acumulados anuales y las deducciones de cada empleado. Esto registra la revisión de la empresa, no aprobación gubernamental.",
+    "J’ai vérifié indépendamment le brut, les cumuls annuels et les retenues de chaque employé. Cela consigne la vérification de l’entreprise, pas une approbation gouvernementale."
+  ],
+  "Confirm independent payroll review": [
+    "Confirmar revisión independiente de nómina",
+    "Confirmer la vérification indépendante de paie"
+  ],
+  "Approve reviewed payroll": [
+    "Aprobar nómina revisada",
+    "Approuver la paie vérifiée"
+  ],
+  "Approve reviewed payroll?": [
+    "¿Aprobar nómina revisada?",
+    "Approuver la paie vérifiée ?"
+  ],
+  "Payroll reviewed. Pay through your bank before recording payments.": [
+    "Nómina revisada. Pague mediante su banco antes de registrar los pagos.",
+    "Paie vérifiée. Payez par votre banque avant de consigner les paiements."
+  ],
+  "Review reference: {reference}": [
+    "Referencia de revisión: {reference}",
+    "Référence de vérification : {reference}"
+  ],
+  "Complete the exact net payment through your bank first. The payment date must match the reviewed pay date.": [
+    "Complete primero el pago neto exacto mediante su banco. La fecha debe coincidir con la fecha de pago revisada.",
+    "Effectuez d’abord le paiement net exact par votre banque. La date doit correspondre à la date de paie vérifiée."
+  ],
+  "Actual payment date (YYYY-MM-DD)": [
+    "Fecha real de pago (AAAA-MM-DD)",
+    "Date réelle de paiement (AAAA-MM-JJ)"
+  ],
+  "Bank payment reference (no account numbers)": [
+    "Referencia de pago bancario (sin números de cuenta)",
+    "Référence de paiement bancaire (sans numéro de compte)"
+  ],
+  "I completed this exact net payment through our bank.": [
+    "He completado este pago neto exacto mediante nuestro banco.",
+    "J’ai effectué ce paiement net exact par notre banque."
+  ],
+  "Confirm external bank payment": [
+    "Confirmar pago bancario externo",
+    "Confirmer le paiement bancaire externe"
+  ],
+  "Record external payment": [
+    "Registrar pago externo",
+    "Consigner le paiement externe"
+  ],
+  "Payment date must match the reviewed pay date.": [
+    "La fecha de pago debe coincidir con la fecha de pago revisada.",
+    "La date de paiement doit correspondre à la date de paie vérifiée."
+  ],
+  "Record external payment?": [
+    "¿Registrar pago externo?",
+    "Consigner le paiement externe ?"
+  ],
+  "External payment recorded. Bank settlement was not verified.": [
+    "Pago externo registrado. La liquidación bancaria no fue verificada.",
+    "Paiement externe consigné. Le règlement bancaire n’a pas été vérifié."
+  ],
+  "Amount: {amount} {currency}. Reference: {reference}": [
+    "Importe: {amount} {currency}. Referencia: {reference}",
+    "Montant : {amount} {currency}. Référence : {reference}"
+  ],
+  "External payment recorded": [
+    "Pago externo registrado",
+    "Paiement externe consigné"
+  ],
+  "Enter a valid date (YYYY-MM-DD).": [
+    "Introduzca una fecha válida (AAAA-MM-DD).",
+    "Saisissez une date valide (AAAA-MM-JJ)."
+  ],
+  "The period end must be on or after its start.": [
+    "El fin del período debe ser igual o posterior al inicio.",
+    "La fin de période doit être égale ou postérieure au début."
+  ],
+  "Enter every required amount, including zero where appropriate.": [
+    "Introduzca todos los importes requeridos, incluido cero cuando corresponda.",
+    "Saisissez tous les montants requis, y compris zéro s’il y a lieu."
+  ],
+  "Confirm the calculation scope and provide the review reference.": [
+    "Confirme el alcance del cálculo e indique la referencia de revisión.",
+    "Confirmez la portée du calcul et fournissez la référence de vérification."
+  ],
+  "Gross wages": [
+    "Salario bruto",
+    "Salaire brut"
+  ],
+  "Taxable wages": [
+    "Salario imponible",
+    "Salaire imposable"
+  ],
+  "CPP already deducted this year": [
+    "CPP ya deducido este año",
+    "RPC déjà retenu cette année"
+  ],
+  "CPP2 already deducted this year": [
+    "CPP2 ya deducido este año",
+    "RPC2 déjà retenu cette année"
+  ],
+  "EI already deducted this year": [
+    "EI ya deducido este año",
+    "AE déjà retenue cette année"
+  ],
+  "Pensionable earnings already paid this year": [
+    "Ingresos sujetos a pensión ya pagados este año",
+    "Gains ouvrant droit à pension déjà versés cette année"
+  ],
+  "Additional income tax": [
+    "Impuesto adicional sobre la renta",
+    "Impôt sur le revenu supplémentaire"
+  ],
+  "Federal claim (blank uses rule default)": [
+    "Crédito federal (en blanco usa el valor de la regla)",
+    "Crédit fédéral (vide utilise la valeur de la règle)"
+  ],
+  "Provincial claim (blank uses rule default)": [
+    "Crédito provincial (en blanco usa el valor de la regla)",
+    "Crédit provincial (vide utilise la valeur de la règle)"
+  ],
+  "Input review reference": [
+    "Referencia de revisión de datos",
+    "Référence de vérification des données"
+  ],
+  "Draft": [
+    "Borrador",
+    "Brouillon"
+  ],
+  "Reviewed": [
+    "Revisada",
+    "Vérifiée"
+  ],
+  "External payments recorded": [
+    "Pagos externos registrados",
+    "Paiements externes consignés"
+  ],
+  "Payment recorded": [
+    "Pago registrado",
+    "Paiement consigné"
+  ],
+  "Calculated — review required": [
+    "Calculado — requiere revisión",
+    "Calculée — vérification requise"
+  ],
+  "Uncalculated": [
+    "Sin calcular",
+    "Non calculée"
+  ],
+  "Income tax": [
+    "Impuesto sobre la renta",
+    "Impôt sur le revenu"
+  ],
+  "Net pay": [
+    "Salario neto",
+    "Salaire net"
+  ],
+  "Enter independently checked local gross, taxable wages, manual deductions and YTD contributions. Country selection does not certify tax coverage.": [
+    "Introduzca el bruto, el salario imponible, las deducciones manuales y las contribuciones acumuladas revisados de forma independiente. Seleccionar un país no certifica cobertura fiscal.",
+    "Saisissez le brut, le salaire imposable, les retenues manuelles et les cotisations cumulées vérifiés indépendamment. Le choix du pays ne certifie pas la couverture fiscale."
+  ],
+  "Regular Alberta/CAD wages in 2026 only. Confirm full-year CPP eligibility and standard EI. Excludes bonuses, Quebec transfers, noncash benefits, pension/RRSP deductions and special credits. YTD excludes this payment; enter zero only when no prior pay exists.": [
+    "Solo salarios regulares de Alberta/CAD en 2026. Confirme elegibilidad anual para CPP y EI estándar. Excluye bonificaciones, transferencias de Quebec, beneficios no monetarios, deducciones de pensión/RRSP y créditos especiales. Los acumulados excluyen este pago; indique cero solo si no hubo pagos previos.",
+    "Salaires réguliers Alberta/CAD en 2026 uniquement. Confirmez l’admissibilité annuelle au RPC et l’AE standard. Exclut primes, transferts du Québec, avantages non monétaires, retenues de pension/REER et crédits spéciaux. Les cumuls excluent ce paiement ; saisissez zéro uniquement en l’absence de paie antérieure."
+  ]
+});
+
+Object.assign(screenCopy, {
+  "Confirm": [
+    "Confirmar",
+    "Confirmer"
+  ],
+  "Export reviewed pay statement": [
+    "Exportar recibo de nómina revisado",
+    "Exporter le bulletin de paie vérifié"
+  ],
+  "Pay statement sharing closed.": [
+    "Se cerró la opción de compartir el recibo de nómina.",
+    "Le partage du bulletin de paie est fermé."
+  ],
+  "Pay statement is unavailable.": [
+    "El recibo de nómina no está disponible.",
+    "Le bulletin de paie est indisponible."
+  ],
+  "Sign in again before exporting payroll.": [
+    "Inicie sesión de nuevo antes de exportar la nómina.",
+    "Reconnectez-vous avant d’exporter la paie."
+  ],
+  "The reviewed pay statement could not be downloaded.": [
+    "No se pudo descargar el recibo de nómina revisado.",
+    "Impossible de télécharger le bulletin de paie vérifié."
+  ]
+});

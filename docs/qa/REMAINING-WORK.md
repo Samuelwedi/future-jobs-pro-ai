@@ -71,7 +71,7 @@ Approved release result: PR #5 merge, Railway backend, customer website, separat
 
 ## Mobile/web audit continuation
 
-See `MOBILE-WEB-PARITY.md` for the source inventory and explicit native workflow gaps. A native Expenses screen now implements claims, receipt attachment/extraction and manager review in the QA branch. It is not part of the already signed iOS build 56 or Android version code 10. Native payroll, direct deposit, year-end, invoices/estimates, reports, integrations and evidence review still need coverage. Native work-preference source is now implemented; device and deployed role acceptance remains open. Existing publishing/paid-build limits remain in force.
+See `MOBILE-WEB-PARITY.md` for the source inventory and explicit native workflow gaps. A native Expenses screen now implements claims, receipt attachment/extraction and manager review in the QA branch. It is not part of the already signed iOS build 56 or Android version code 10. Native payroll administration, direct deposit, year-end, invoices/estimates, reports, integrations and evidence review still need coverage. Native work-preference source is now implemented; device and deployed role acceptance remains open. Existing publishing/paid-build limits remain in force.
 
 ## Work-screen localization source follow-up — 2026-10-31
 
@@ -89,3 +89,11 @@ Availability and shift cover are now available in the authenticated native navig
 
 Validation: backend/mobile TypeScript passed, 44 mobile tests passed, 176 backend tests passed on the first correctly rooted run and 40 affected/aggregated tests passed after restoring missing checkout support files. Seven explicit React/native-to-DOM synthetic-HTTP workflow checks passed. No physical-device or production role acceptance is inferred from these checks. This source is not in signed builds 56/10. All remaining groups and paid-build/publication limits above remain open.
 
+
+## Native manual payroll source follow-up — 2026-11-01 UTC
+
+A manager-only native ManualPayroll screen adds draft generation/notes/deletion, saved-rule employee calculations, independent company review, external bank-payment recording and reviewed pay-statement PDF sharing. It supports the existing Alberta reference and company-configured worldwide input shapes, with explicit nonblank YTD/manual amounts, exact server net strings and confirmation before financial record changes. The server engine, independent review, currency restrictions and payment uniqueness remain authoritative. No app-initiated money movement is introduced.
+
+Payroll API mutations and old queued payroll actions now fail closed instead of being queued/replayed offline. Read failures, actor changes and uncertain mutations disable stale controls and require refreshing records. A lost payment response reconciles to the existing recorded payment without offering another payment action. PDF export checks account, response type/status and file size, then removes its temporary file after sharing. Native screen copy includes English/Spanish/French.
+
+Validation: mobile TypeScript, all 51 mobile tests, 19 backend payroll/worldwide tests and 13 actual React/native-to-DOM synthetic-HTTP/file workflow checks passed. Native compensation/settings and employee statement access remain open, alongside the retained banking/year-end/invoice/report/integration and physical/live/store acceptance groups. Source tests and synthetic adapters are not physical-device or settlement evidence. Not deployed or present in signed builds 56/10; no new paid build or publication was started.

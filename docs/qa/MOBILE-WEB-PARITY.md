@@ -23,7 +23,7 @@ Audited 2026-10-31 against `mobile/App.tsx`, mobile screen implementations, and 
 | Company policies | CompanySettings/PayrollRules | CompanySettings/PayrollRules | Source exists; policy-by-policy acceptance open. |
 | Kiosk | Kiosk/KioskClock | Kiosk | Source exists; physical PIN clocking acceptance open. |
 | Lucy text/voice | AskLucy/VoiceAssistant | AIAssistant/VoiceNote | Compatible inference adapter deployed. No free inference provider configured; voice/photo provider acceptance open. |
-| Payroll processing and adjustments | Payroll/ManualPayroll | No dedicated registered payroll screen | Native coverage gap. Payroll rules alone are not payroll processing parity. |
+| Payroll processing and adjustments | Payroll/ManualPayroll | ManualPayroll | Native draft preparation/deletion/notes, reviewed calculations, manual-payment records and reviewed PDF export source added. Compensation/settings administration and physical/live acceptance remain open. |
 | Bank/direct-deposit management | DirectDeposit | No dedicated registered screen | Native coverage gap; live settlement also unverified. |
 | Year-end forms | YearEnd/FinalizedSlips | No dedicated registered screen | Native coverage gap. |
 | Invoices and estimates | Invoices/Estimates | No dedicated registered screens | Native coverage gap. |
@@ -51,3 +51,15 @@ English, Spanish and French copy is included. Mutations require a fresh connecti
 
 Validation: mobile TypeScript, all 44 mobile tests and backend TypeScript passed. The backend run passed 176 tests; four entry files initially lacked supporting checkout files. After restoring those files, all 40 affected/aggregated tests passed (216 successful tests total across the two runs). Seven new real React/LanguageContext checks passed through explicit native-to-DOM adapters and synthetic HTTP records. They cover confirmations, UTC payloads, removal, request/accept/approve roles, offline write prevention and Spanish rendering. These are not physical-device or deployed API acceptance. No new paid build or store publication was started.
 
+
+## Native payroll processing source follow-up — 2026-11-01 UTC
+
+The authenticated ManualPayroll route and manager Home card now cover draft preparation from all approved/unlocked company time entries at saved effective rates; draft notes and deletion; employee calculation using the saved rule revision; independent company review; recording an exact external bank payment; and sharing a reviewed PDF statement. Regular Alberta inputs and company-configured worldwide manual/capped lines retain the existing server engine and approval rules. Gross can be independently corrected before calculation; no client-side tax engine was added.
+
+Blank YTD is not silently treated as zero. Calendar dates are validated without device timezone conversion. Worldwide manual amounts, taxable basis, caps and review references must be supplied explicitly. Employer/employee scope notices remain visible. Manager-only coherent reads verify actor and company; account/run changes clear forms and invalidate stale responses. Uncertain mutations disable the workflow until current server records are refreshed. Net payment amounts remain exact server strings. Recorded payment is explicitly not app-verified bank settlement.
+
+All payroll POST/PUT/PATCH/DELETE actions now refuse offline queueing, including generation, notes and deletion; legacy replay is also rejected. Reviewed PDF export authenticates to the configured API, requires an HTTP 200 PDF with a nonempty bounded file, checks current account before sharing, and deletes its temporary file. English, Spanish and French screen copy is provided; company names, references, rule line labels, server scope text and recorded values are unchanged.
+
+Validation: mobile TypeScript and all 51 mobile tests passed. The 19 existing backend payroll/worldwide tests passed against the unchanged engine/API. Thirteen real React/LanguageContext browser checks passed through explicit native-to-DOM, file-sharing adapters and synthetic HTTP state: manager-only visibility, draft confirmations/notes, required YTD, calculation, review, ambiguous payment reconciliation, account switch, company rules, offline refusal, deletion, reviewed PDF sharing and French rendering. File and network adapters do not prove physical iOS/Android sharing, live tax compliance or bank settlement. No new paid build, deployment or publication was started.
+
+Remaining native payroll coverage includes compensation/rate administration, payroll schedule/settings and full employee pay-statement access/acceptance. Existing banking, year-end, invoice/estimate, report, integration, administration/evidence and device/live/store gaps remain open. This source is later than signed builds 56/10.

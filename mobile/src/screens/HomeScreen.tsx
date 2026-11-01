@@ -347,10 +347,11 @@ export default function HomeScreen() {
         ['Availability & shift cover', 'event-available', 'WorkPreferences', '#A7F3D0'],
       ],
     },
-    ...(user?.role === 'boss' || user?.role === 'manager' ? [{
+    ...(['boss','owner','manager','admin'].includes(String(user?.role).toLowerCase()) ? [{
       eyebrow: 'COMPANY MANAGEMENT',
       title: 'People, access & operations',
       tools: [
+        ['Payroll & manual payments', 'payments', 'ManualPayroll', '#A7F3D0'],
         ['Crew clock', 'more-time', 'CrewClock', '#A7F3D0'],
         ['Kiosk', 'pin', 'Kiosk', '#FDBA74'],
         ['Team & roles', 'admin-panel-settings', 'Team', '#67E8F9'],
