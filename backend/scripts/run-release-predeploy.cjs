@@ -1,6 +1,6 @@
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
-const steps = ['migrate-chat-media.cjs', 'runVoiceNoteMigration.js', 'run-owner-operations-migration.js'];
+const steps = ['migrate-chat-media.cjs', 'runVoiceNoteMigration.js', 'run-owner-operations-migration.js', 'run-business-parity-migration.cjs'];
 function run(runner = spawnSync) {
   for (const step of steps) {
     console.log(`Release migration: ${step}`);

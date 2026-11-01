@@ -1,3 +1,8 @@
+import {commercialPdf} from '../services/commercialPdf';
+import Big from 'big.js';
+import {validDate} from '../services/payPeriodCalendar';
+import {validateInvoiceHeader,validateInvoiceLines,lockInvoiceLabor} from '../services/invoiceValidation';
+import {createHash} from 'crypto';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
@@ -75,7 +80,7 @@ router.get('/unbilled', async (req: Request, res: Response) => {
        FROM time_entries te
        JOIN users u ON te.user_id = u.id
        WHERE te.project_id = $1 AND u.company_id=$2
-         AND te.status = 'completed'
+         AND te.status = 'completed' AND te.approval_status='approved'
          AND NOT EXISTS (
            SELECT 1 FROM invoice_items ii
            WHERE ii.time_entry_ids @> ARRAY[te.id]
@@ -157,14 +162,17 @@ router.post('/', async (req: Request, res: Response) => {
       recurringEndDate,
     } = req.body;
 
-    if (!issueDate || !dueDate || !items || items.length === 0) {
-      return res.status(400).json({ success: false, message: 'issueDate, dueDate, and items required' });
-    }
-
+    validateInvoiceHeader(issueDate,dueDate,taxRate);
+    const validated=validateInvoiceLines(items);
+    const requestKey=req.body.requestKey;
+    if(requestKey!==undefined&&(typeof requestKey!=='string'||!/^[-_a-zA-Z0-9]{8,100}$/.test(requestKey)))throw Error('Invalid invoice request key.');
+    const requestHash=createHash('sha256').update(JSON.stringify({projectId:projectId||null,clientId:clientId||null,issueDate,dueDate,taxRate:taxRate||0,notes:notes||null,clientNotes:clientNotes||null,items,isRecurring:isRecurring||false,recurringFrequency:recurringFrequency||null,recurringEndDate:recurringEndDate||null})).digest('hex');
     await client.query('BEGIN');
+    await client.query('SELECT id FROM companies WHERE id=$1 FOR UPDATE',[companyId]);
+    if(requestKey){const prior=await client.query('SELECT * FROM invoices WHERE company_id=$1 AND creation_request_key=$2',[companyId,requestKey]);if(prior.rowCount){if(prior.rows[0].creation_request_hash!==requestHash){await client.query('ROLLBACK');return res.status(409).json({success:false,message:'This request key was already used for different invoice data.'});}await client.query('COMMIT');return res.json({success:true,invoice:prior.rows[0],replayed:true});}}
     if(projectId){const own=await client.query('SELECT id FROM projects WHERE id=$1 AND company_id=$2',[projectId,companyId]);if(!own.rowCount)throw new Error('Project outside company');}
     if(clientId){const own=await client.query('SELECT id FROM users WHERE id=$1 AND company_id=$2',[clientId,companyId]);if(!own.rowCount)throw new Error('Client outside company');}
-    for(const item of items){if(!Number.isFinite(Number(item.unit_price))||Number(item.unit_price)<0||!Number.isFinite(Number(item.quantity??1))||Number(item.quantity??1)<=0)throw new Error('Invalid invoice line');const ids=item.timeEntryIds||[];if(ids.length){const own=await client.query('SELECT t.id FROM time_entries t JOIN users u ON u.id=t.user_id WHERE t.id=ANY($1::uuid[]) AND u.company_id=$2',[ids,companyId]);if(own.rowCount!==new Set(ids).size)throw new Error('Time entry outside company');}}
+    await lockInvoiceLabor(client,companyId,validated.ids,null,projectId||null);
     // If clientId not provided, try to get from project
     let finalClientId = clientId || null;
     if (!finalClientId && projectId) {
@@ -174,12 +182,9 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    let subtotal = 0;
-    for (const item of items) {
-      subtotal += (item.quantity || 1) * item.unit_price;
-    }
+    const subtotal=validated.subtotal;
 
-    const userId = (req as any).user?.id || null;
+    const userId = res.locals.actor.id;
 
     const invoiceResult = await client.query(
       `INSERT INTO invoices
@@ -205,6 +210,7 @@ router.post('/', async (req: Request, res: Response) => {
       ]
     );
     const invoiceId = invoiceResult.rows[0].id;
+    if(requestKey)await client.query('UPDATE invoices SET creation_request_key=$1,creation_request_hash=$2 WHERE id=$3',[requestKey,requestHash,invoiceId]);
 
     // Insert items
     for (const item of items) {
@@ -226,7 +232,7 @@ router.post('/', async (req: Request, res: Response) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error creating invoice:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    res.status(400).json({ success: false, message: 'Invoice could not be saved. Check dates, lines and linked labor.' });
   } finally {
     client.release();
   }
@@ -234,51 +240,24 @@ router.post('/', async (req: Request, res: Response) => {
 
 // ─── PUT /api/invoices/:id (draft only) ────────────────────────
 router.put('/:id', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { id } = req.params;
-    const { issueDate, dueDate, taxRate, notes, clientNotes, status, items } = req.body;
-
-    const check = await pool.query(
-      'SELECT id FROM invoices WHERE id = $1 AND company_id = $2 AND status = $3',
-      [id, companyId, 'draft']
-    );
-    if (check.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Invoice not found or not draft' });
-    }
-
-    // Update invoice header
-    const result = await pool.query(
-      `UPDATE invoices
-       SET issue_date = COALESCE($1, issue_date),
-           due_date = COALESCE($2, due_date),
-           tax_rate = COALESCE($3, tax_rate),
-           notes = COALESCE($4, notes),
-           client_notes = COALESCE($5, client_notes),
-           status = COALESCE($6, status)
-       WHERE id = $7 RETURNING *`,
-      [issueDate, dueDate, taxRate, notes, clientNotes, status, id]
-    );
-
-    // Update items if provided
-    if (items && Array.isArray(items)) {
-      await pool.query('DELETE FROM invoice_items WHERE invoice_id = $1', [id]);
-      for (const item of items) {
-        await pool.query(
-          `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, time_entry_ids)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [id, item.description, item.quantity || 1, item.unit_price, item.timeEntryIds || []]
-        );
-      }
-    }
-
-    res.json({ success: true, invoice: result.rows[0] });
-  } catch (error) {
-    console.error('Error updating invoice:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+ const client=await pool.connect();
+ try {
+  const companyId=res.locals.actor.company_id;
+  await client.query('BEGIN');
+  await client.query('SELECT id FROM companies WHERE id=$1 FOR UPDATE',[companyId]);
+  const selected=await client.query("SELECT * FROM invoices WHERE id=$1 AND company_id=$2 AND status='draft' FOR UPDATE",[req.params.id,companyId]);
+  if(!selected.rowCount){await client.query('ROLLBACK');return res.status(404).json({success:false,message:'Draft invoice not found'});}
+  const previous=selected.rows[0];
+  const {issueDate,dueDate,taxRate,notes,clientNotes,status,items}=req.body;
+  if(status!==undefined&&status!=='draft')throw Error('Use the invoice issuing or payment workflow to change status.');
+  const dates={issue:issueDate??String(previous.issue_date instanceof Date?previous.issue_date.toISOString():previous.issue_date).slice(0,10),due:dueDate??String(previous.due_date instanceof Date?previous.due_date.toISOString():previous.due_date).slice(0,10)};
+  validateInvoiceHeader(dates.issue,dates.due,taxRate??previous.tax_rate);
+  const paid=await client.query('SELECT id FROM payments WHERE invoice_id=$1 LIMIT 1',[req.params.id]);if(paid.rowCount)throw Error('An invoice with payment records cannot be edited.');
+  let subtotal=previous.subtotal;
+  if(items!==undefined){const checked=validateInvoiceLines(items);await lockInvoiceLabor(client,companyId,checked.ids,String(req.params.id),previous.project_id);subtotal=checked.subtotal;await client.query('DELETE FROM invoice_items WHERE invoice_id=$1',[req.params.id]);for(const item of items)await client.query('INSERT INTO invoice_items(invoice_id,description,quantity,unit_price,time_entry_ids) VALUES($1,$2,$3,$4,$5)',[req.params.id,item.description,item.quantity??1,item.unit_price,item.timeEntryIds||[]]);}
+  const result=await client.query(`UPDATE invoices SET issue_date=$1,due_date=$2,tax_rate=$3,notes=COALESCE($4,notes),client_notes=COALESCE($5,client_notes),subtotal=$6 WHERE id=$7 AND company_id=$8 AND status='draft' RETURNING *`,[dates.issue,dates.due,taxRate??previous.tax_rate,notes,clientNotes,subtotal,req.params.id,companyId]);
+  await client.query('COMMIT');res.json({success:true,invoice:result.rows[0]});
+ }catch(error:any){await client.query('ROLLBACK').catch(()=>{});res.status(400).json({success:false,message:error.message||'Invoice could not be saved'});}finally{client.release();}
 });
 
 // ─── DELETE /api/invoices/:id (draft only) ─────────────────────
@@ -302,93 +281,33 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// ─── POST /api/invoices/:id/send ───────────────────────────────
-router.post('/:id/send', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { id } = req.params;
-    // Generate payment link (you can integrate Stripe here)
-    const paymentLink = `${process.env.FRONTEND_URL}/pay/invoice/${id}`;
-
-    const result = await pool.query(
-      `UPDATE invoices
-       SET status = 'sent', sent_at = NOW(), payment_link = $1
-       WHERE id = $2 AND company_id = $3
-       RETURNING *`,
-      [paymentLink, id, companyId]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Invoice not found' });
-    }
-
-    // TODO: Send email to client (using your emailService)
-
-    res.json({ success: true, invoice: result.rows[0] });
-  } catch (error) {
-    console.error('Error sending invoice:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+// Record delivery completed outside the app. No email or synthetic payment link is generated.
+router.post('/:id/send',async(req,res)=>{
+ try{const result=await pool.query("UPDATE invoices SET status='sent',sent_at=COALESCE(sent_at,NOW()) WHERE id=$1 AND company_id=$2 AND status IN ('draft','sent') RETURNING *",[req.params.id,res.locals.actor.company_id]);if(!result.rowCount)return res.status(409).json({message:'Draft or sent invoice not found'});res.json({success:true,invoice:result.rows[0],message:'External delivery recorded. No email was sent.'});}catch(error:any){res.status(400).json({message:error.message});}
 });
-
-// ─── POST /api/invoices/:id/payments ────────────────────────────
-router.post('/:id/payments', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { id } = req.params;
-    const { amount, paymentDate, method, reference, notes } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ success: false, message: 'Valid amount required' });
-    }
-
-    // Check invoice exists
-    const invoiceRes = await pool.query(
-      'SELECT id, status, total, paid_amount FROM invoices WHERE id = $1 AND company_id = $2',
-      [id, companyId]
-    );
-    if (invoiceRes.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Invoice not found' });
-    }
-    const invoice = invoiceRes.rows[0];
-
-    // Prevent overpayment
-    const newPaid = Number(invoice.paid_amount) + amount;
-    if (newPaid > Number(invoice.total)) {
-      return res.status(400).json({ success: false, message: 'Payment exceeds invoice total' });
-    }
-
-    // Record payment
-    await pool.query(
-      `INSERT INTO payments (invoice_id, amount, payment_date, method, reference, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, amount, paymentDate || new Date().toISOString().split('T')[0], method || null, reference || null, notes || null]
-    );
-
-    // Update invoice status if fully paid
-    const updated = await pool.query(
-      `UPDATE invoices
-       SET status = CASE
-         WHEN paid_amount + $1 >= total THEN 'paid'
-         ELSE status
-       END,
-       paid_at = CASE
-         WHEN paid_amount + $1 >= total THEN NOW()
-         ELSE paid_at
-       END
-       WHERE id = $2
-       RETURNING *`,
-      [amount, id]
-    );
-
-    res.json({ success: true, invoice: updated.rows[0] });
-  } catch (error) {
-    console.error('Error recording payment:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+// Record an already completed external payment, never transfer or charge money.
+router.post('/:id/payments',async(req,res)=>{
+ const c=await pool.connect();
+ try{
+  const b=req.body,key=b.requestKey,amount=String(b.amount),date=b.paymentDate;
+  if(typeof key!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(key)||b.confirmed!==true)throw Error('Confirm the external payment and provide a request key.');
+  if(!/^\d+(\.\d{1,2})?$/.test(amount)||new Big(amount).lte(0)||new Big(amount).gt('99999999.99')||!validDate(date))throw Error('Use a positive two-decimal amount and valid payment date.');
+  if(typeof b.reference!=='string'||b.reference.trim().length<4||b.reference.length>200)throw Error('Provide the external payment reference (4 to 200 characters).');
+  if(b.method&&(!['bank_transfer','ach','cash','check','credit_card','other'].includes(b.method)))throw Error('Invalid payment method.');
+  const hash=createHash('sha256').update(JSON.stringify({amount:new Big(amount).toFixed(2),date,reference:b.reference.trim(),method:b.method||null,notes:b.notes||null})).digest('hex');
+  await c.query('BEGIN');
+  const found=await c.query('SELECT * FROM invoices WHERE id=$1 AND company_id=$2 FOR UPDATE',[req.params.id,res.locals.actor.company_id]);
+  if(!found.rowCount){await c.query('ROLLBACK');return res.status(404).json({message:'Invoice not found'});}const invoice=found.rows[0];
+  const prior=await c.query('SELECT * FROM payments WHERE invoice_id=$1 AND record_request_key=$2',[req.params.id,key]);
+  if(prior.rowCount){if(prior.rows[0].record_request_hash!==hash){await c.query('ROLLBACK');return res.status(409).json({message:'Payment key already used with different values'});}await c.query('COMMIT');return res.json({success:true,invoice,payment:prior.rows[0],replayed:true});}
+  if(!['sent','overdue'].includes(invoice.status))throw Error('Only an issued unpaid invoice can receive a payment record.');
+  const existing=await c.query('SELECT COALESCE(SUM(amount),0) amount FROM payments WHERE invoice_id=$1',[req.params.id]);const paid=new Big(existing.rows[0].amount).plus(amount),total=new Big(invoice.total);
+  if(paid.gt(total))throw Error('Payment exceeds the remaining invoice balance.');
+  const payment=(await c.query('INSERT INTO payments(invoice_id,amount,payment_date,method,reference,notes,record_request_key,record_request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[req.params.id,new Big(amount).toFixed(2),date,b.method||null,b.reference.trim(),b.notes||null,key,hash])).rows[0];
+  // Recompute from payment records; the legacy trigger may already have updated paid_amount.
+  const updated=await c.query("UPDATE invoices SET paid_amount=$1,status=CASE WHEN $1::numeric>=total THEN 'paid' ELSE status END,paid_at=CASE WHEN $1::numeric>=total THEN NOW() ELSE paid_at END WHERE id=$2 AND company_id=$3 RETURNING *",[paid.toFixed(2),req.params.id,res.locals.actor.company_id]);
+  await c.query('COMMIT');res.json({success:true,invoice:updated.rows[0],payment,replayed:false});
+ }catch(error:any){await c.query('ROLLBACK').catch(()=>{});res.status(400).json({success:false,message:error.message||'Payment record failed'});}finally{c.release();}
 });
 
 // ─── GET /api/invoices/client/:clientId ────────────────────────
@@ -413,10 +332,10 @@ router.get('/client/:clientId', async (req: Request, res: Response) => {
     const invoicesRes = await pool.query(
       `SELECT id, invoice_number, issue_date, due_date, status, total, paid_amount, balance
        FROM invoices
-       WHERE client_id = $1
+       WHERE client_id = $1 AND company_id = $2
        ORDER BY issue_date DESC
        LIMIT 20`,
-      [clientId]
+      [clientId,companyId]
     );
 
     // Get projects
@@ -454,4 +373,5 @@ router.get('/client/:clientId', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/:id/pdf',async(req,res)=>{try{const bytes=await commercialPdf('invoice',String(req.params.id),res.locals.actor.company_id);res.type('application/pdf').set('Content-Disposition','attachment; filename="invoice.pdf"').send(bytes);}catch(error:any){res.status(error.status||400).json({message:error.message});}});
 export default router;

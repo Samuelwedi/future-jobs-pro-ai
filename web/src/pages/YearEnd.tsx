@@ -35,6 +35,7 @@ export default function YearEnd() {
   const [taxYear, setTaxYear] = useState<number>(new Date().getFullYear());
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<any | null>(null);
+  const [previewHash, setPreviewHash] = useState('');
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [finalizedSlips, setFinalizedSlips] = useState<FinalizedSlip[]>([]);
@@ -143,6 +144,7 @@ export default function YearEnd() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Preview failed');
       setPreview(data.preview);
+      setPreviewHash(data.previewHash);
       setSaved(false);
     } catch (err: any) {
       setError(err.message);
@@ -160,6 +162,7 @@ export default function YearEnd() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
+          previewHash,
           employeeId: selectedEmployee,
           taxYear,
           formType: selectedForm,

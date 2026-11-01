@@ -1,8 +1,8 @@
+import {companyActor,manages} from '../middleware/companyActor';
 import express, {
   Request,
   Response,
 } from 'express';
-import { verifyToken } from '../utils/auth';
 import {
   disconnectIntegration,
   getIntegrationStatus,
@@ -19,6 +19,10 @@ import {
 } from '../services/quickbooksService';
 
 const router = express.Router();
+router.use((req,res,next)=>{
+  if(req.method==='GET'&&['/quickbooks/callback','/stripe/callback'].includes(req.path))return next();
+  return companyActor(req,res,()=>{if(!manages(res.locals.actor))return res.status(403).json({message:'Manager access required'});(req as any).integrationActor=res.locals.actor;next();});
+});
 
 function authenticatedCompany(
   req: Request,
@@ -26,18 +30,9 @@ function authenticatedCompany(
   companyId: string;
   userId: string;
 } {
-  const decoded = verifyToken(req);
-
-  if (!decoded.companyId) {
-    throw new Error(
-      'Your user is not assigned to a company',
-    );
-  }
-
-  return {
-    companyId: decoded.companyId,
-    userId: decoded.id,
-  };
+  const actor=(req as any).integrationActor;
+  if(!actor?.company_id)throw new Error('Not authenticated');
+  return {companyId:String(actor.company_id),userId:String(actor.id)};
 }
 
 function errorStatus(

@@ -1,9 +1,11 @@
+import {companyActor,manages} from '../middleware/companyActor';
 import express, { Request, Response } from 'express';
 import { verifyToken } from '../utils/auth';
 import { pool } from '../config/database';
 import { generateComprehensiveReport, ProjectReportData } from '../services/comprehensiveReportService';
 
 const router = express.Router();
+router.use(companyActor, (_req,res,next)=>{if(!manages(res.locals.actor))return res.status(403).json({message:'Manager access required'});next();});
 
 type Actor = { id: string; companyId: string };
 

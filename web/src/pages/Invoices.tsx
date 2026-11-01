@@ -120,6 +120,7 @@ export default function InvoicesPage() {
   const [hubLoading, setHubLoading] = useState(false);
 
   // Payment dialog
+  const [paymentRequestKey,setPaymentRequestKey] = useState('');
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentInvoiceId, setPaymentInvoiceId] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState(0);
@@ -346,6 +347,7 @@ export default function InvoicesPage() {
   };
 
   const handleSend = async (id: string) => {
+    if (!window.confirm('Record that you delivered this invoice outside the app? This does not send email or create a payment link.')) return;
     try {
       const res = await fetch(`${API_BASE}/api/invoices/${id}/send`, {
         method: 'POST',
@@ -369,6 +371,7 @@ export default function InvoicesPage() {
   };
 
   const openPaymentDialog = (invoiceId: string, currentPaid: number, total: number) => {
+    setPaymentRequestKey(crypto.randomUUID());
     setPaymentInvoiceId(invoiceId);
     setPaymentAmount(total - currentPaid);
     setPaymentDate(new Date().toISOString().split('T')[0]);
@@ -379,11 +382,14 @@ export default function InvoicesPage() {
 
   const handleRecordPayment = async () => {
     if (!paymentInvoiceId) return;
+    if (!window.confirm('Confirm this payment was already completed outside the app. Recording does not charge or transfer money.')) return;
     try {
       const res = await fetch(`${API_BASE}/api/invoices/${paymentInvoiceId}/payments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
+          requestKey: paymentRequestKey,
+          confirmed: true,
           amount: paymentAmount,
           paymentDate,
           method: paymentMethod,
@@ -517,7 +523,7 @@ export default function InvoicesPage() {
                         <IconButton size="small" onClick={() => openEditDialog(inv)} color="primary" title="Edit">
                           <Edit fontSize="small" />
                         </IconButton>
-                        <IconButton size="small" onClick={() => handleSend(inv.id)} color="info" title="Send">
+                        <IconButton size="small" onClick={() => handleSend(inv.id)} color="info" title="Record external delivery">
                           <Send fontSize="small" />
                         </IconButton>
                         <IconButton size="small" onClick={() => handleDelete(inv.id)} color="error" title="Delete">
@@ -527,7 +533,7 @@ export default function InvoicesPage() {
                     )}
                     {inv.status === 'sent' && (
                       <>
-                        <IconButton size="small" onClick={() => handleSend(inv.id)} color="info" title="Resend">
+                        <IconButton size="small" onClick={() => handleSend(inv.id)} color="info" title="Record external delivery">
                           <Send fontSize="small" />
                         </IconButton>
                         <IconButton size="small" onClick={() => openPaymentDialog(inv.id, inv.paid_amount, inv.total)} color="success" title="Record Payment">
@@ -536,7 +542,7 @@ export default function InvoicesPage() {
                       </>
                     )}
                     {inv.status === 'overdue' && (
-                      <IconButton size="small" onClick={() => handleSend(inv.id)} color="error" title="Send Reminder">
+                      <IconButton size="small" onClick={() => handleSend(inv.id)} color="error" title="Record external delivery">
                         <Send fontSize="small" />
                       </IconButton>
                     )}
@@ -958,7 +964,7 @@ export default function InvoicesPage() {
           </Select>
         </FormControl>
         <TextField
-          label="Reference (optional)"
+          label="External payment reference (required)"
           fullWidth
           value={paymentRef}
           onChange={(e) => setPaymentRef(e.target.value)}

@@ -46,6 +46,15 @@ import ProjectMediaScreen from './src/screens/ProjectMediaScreen';
 import MonthMediaScreen from './src/screens/MonthMediaScreen';
 import { api } from './src/services/api';
 import MonthMediaTypeScreen from './src/screens/MonthMediaTypeScreen';
+import PayrollScreen from './src/screens/PayrollScreen';
+import ReportsScreen from './src/screens/ReportsScreen';
+import EvidenceScreen from './src/screens/EvidenceScreen';
+import YearEndScreen from './src/screens/YearEndScreen';
+import EstimatesScreen from './src/screens/EstimatesScreen';
+import WorkPreferencesScreen from './src/screens/WorkPreferencesScreen';
+import IntegrationsScreen from './src/screens/IntegrationsScreen';
+import InvoicesScreen from './src/screens/InvoicesScreen';
+import ExpensesScreen from './src/screens/ExpensesScreen';
 import WebViewScreen from './src/screens/WebViewScreen';
 import SelectEmployeesScreen from './src/screens/SelectEmployeesScreen';
 import CreateShiftScreen from './src/screens/CreateShiftScreen';
@@ -208,6 +217,15 @@ function AppNavigator() {
             <Stack.Screen name="SelectEmployees" component={SelectEmployeesScreen} />
             <Stack.Screen name="CreateShift" component={CreateShiftScreen} />
             <Stack.Screen name="CompanySettings" component={CompanySettingsScreen as React.ComponentType<any>} />
+            <Stack.Screen name="Payroll" component={PayrollScreen} />
+            <Stack.Screen name="Reports" component={ReportsScreen} />
+            <Stack.Screen name="Evidence" component={EvidenceScreen} />
+            <Stack.Screen name="YearEnd" component={YearEndScreen} />
+            <Stack.Screen name="Estimates" component={EstimatesScreen} />
+            <Stack.Screen name="WorkPreferences" component={WorkPreferencesScreen} />
+            <Stack.Screen name="Integrations" component={IntegrationsScreen} />
+            <Stack.Screen name="Invoices" component={InvoicesScreen} />
+            <Stack.Screen name="Expenses" component={ExpensesScreen} />
             <Stack.Screen name="WorkerTools" component={WorkerToolsScreen} />
             <Stack.Screen name="PayrollRules" component={PayrollRulesScreen} />
           </>

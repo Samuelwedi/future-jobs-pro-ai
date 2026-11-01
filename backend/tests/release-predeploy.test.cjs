@@ -8,3 +8,17 @@ test('single predeploy process runs all migrations in order without shell parsin
 test('failed or terminated migration prevents later migrations and deployment success',()=>{
  for(const result of [{status:1},{status:null,signal:'SIGTERM'},{error:new Error('spawn failure')}]){let calls=0;assert.throws(()=>run(()=>{calls++;return result;}),/Release migration failed/);assert.equal(calls,1);}
 });
+
+const {migrate,files}=require('../scripts/run-business-parity-migration.cjs');
+test('business schema is verified before commit and is wired into Railway predeploy',async()=>{
+ assert.ok(steps.includes('run-business-parity-migration.cjs'));const queries=[];
+ await migrate({query:async sql=>{queries.push(sql);}});
+ assert.equal(queries[0],'BEGIN');assert.equal(queries.at(-1),'COMMIT');assert.equal(queries.filter(sql=>sql.startsWith('ALTER TABLE')).length,files.length);
+ for(const table of ['invoices','estimates','payments'])assert.ok(queries.some(sql=>sql.includes('FROM '+table+' LIMIT 0')));
+});
+test('business migration rolls back and rejects when a schema change or verification fails',async()=>{
+ for(const match of ['ALTER TABLE estimates','FROM payments LIMIT 0']){
+  const queries=[];await assert.rejects(migrate({query:async sql=>{queries.push(sql);if(sql.includes(match))throw Error('Synthetic schema failure');}}),/Synthetic schema failure/);
+  assert.equal(queries.at(-1),'ROLLBACK');assert.ok(!queries.includes('COMMIT'));
+ }
+});

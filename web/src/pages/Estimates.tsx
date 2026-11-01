@@ -215,6 +215,7 @@ export default function EstimatesPage() {
   };
 
   const handleSend = async (id: string) => {
+    if (!window.confirm('Record that you delivered this estimate outside the app? This does not send email.')) return;
     try {
       const res = await fetch(`${API_BASE}/api/estimates/${id}/send`, {
         method: 'POST',
@@ -227,6 +228,7 @@ export default function EstimatesPage() {
   };
 
   const handleAccept = async (id: string) => {
+    if (!window.confirm('Record that the client accepted this estimate outside the app?')) return;
     try {
       const res = await fetch(`${API_BASE}/api/estimates/${id}/accept`, {
         method: 'POST',
@@ -360,7 +362,7 @@ export default function EstimatesPage() {
                           <IconButton size="small" onClick={() => openEditDialog(est)} color="primary" title="Edit">
                             <Edit fontSize="small" />
                           </IconButton>
-                          <IconButton size="small" onClick={() => handleSend(est.id)} color="info" title="Send">
+                          <IconButton size="small" onClick={() => handleSend(est.id)} color="info" title="Record external delivery">
                             <Send fontSize="small" />
                           </IconButton>
                           <IconButton size="small" onClick={() => handleDelete(est.id)} color="error" title="Delete">
@@ -370,7 +372,7 @@ export default function EstimatesPage() {
                       )}
                       {est.status === 'sent' && (
                         <>
-                          <IconButton size="small" onClick={() => handleAccept(est.id)} color="success" title="Accept">
+                          <IconButton size="small" onClick={() => handleAccept(est.id)} color="success" title="Record client acceptance">
                             <CheckCircle fontSize="small" />
                           </IconButton>
                           <IconButton size="small" onClick={() => handleConvert(est.id)} color="info" title="Convert to Invoice">
