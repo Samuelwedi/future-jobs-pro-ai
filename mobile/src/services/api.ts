@@ -1,3 +1,4 @@
+import {businessDownloadPath} from '../utils/businessValidation';
 // ============================================
 // MOBILE API SERVICE (with DELETE support & 401 handling)
 // Future Jobs Pro AI – Created by Samuel B.
@@ -161,7 +162,7 @@ class ApiService {
   }
 
   async downloadBusinessFile(path: string, body?: unknown): Promise<{data:ArrayBuffer;mime:string}> {
-    if (!/^\/(reports\/(comprehensive|timesheet\.csv)|payroll\/(export|paystub\/[a-f0-9-]+))(\?|$)/i.test(path)) throw new Error('Unsupported business download');
+    if (!businessDownloadPath(path)) throw new Error('Unsupported business download');
     const response = await this.client.request<ArrayBuffer>({url:path,method:body === undefined?'GET':'POST',data:body,responseType:'arraybuffer'});
     return {data:response.data,mime:String(response.headers['content-type']||'').split(';')[0]};
   }

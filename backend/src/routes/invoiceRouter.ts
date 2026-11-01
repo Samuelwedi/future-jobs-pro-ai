@@ -1,3 +1,6 @@
+import {commercialPdf} from '../services/commercialPdf';
+import Big from 'big.js';
+import {validDate} from '../services/payPeriodCalendar';
 import {validateInvoiceHeader,validateInvoiceLines,lockInvoiceLabor} from '../services/invoiceValidation';
 import {createHash} from 'crypto';
 import express, { Request, Response } from 'express';
@@ -278,93 +281,33 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// ─── POST /api/invoices/:id/send ───────────────────────────────
-router.post('/:id/send', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { id } = req.params;
-    // Generate payment link (you can integrate Stripe here)
-    const paymentLink = `${process.env.FRONTEND_URL}/pay/invoice/${id}`;
-
-    const result = await pool.query(
-      `UPDATE invoices
-       SET status = 'sent', sent_at = NOW(), payment_link = $1
-       WHERE id = $2 AND company_id = $3
-       RETURNING *`,
-      [paymentLink, id, companyId]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Invoice not found' });
-    }
-
-    // TODO: Send email to client (using your emailService)
-
-    res.json({ success: true, invoice: result.rows[0] });
-  } catch (error) {
-    console.error('Error sending invoice:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+// Record delivery completed outside the app. No email or synthetic payment link is generated.
+router.post('/:id/send',async(req,res)=>{
+ try{const result=await pool.query("UPDATE invoices SET status='sent',sent_at=COALESCE(sent_at,NOW()) WHERE id=$1 AND company_id=$2 AND status IN ('draft','sent') RETURNING *",[req.params.id,res.locals.actor.company_id]);if(!result.rowCount)return res.status(409).json({message:'Draft or sent invoice not found'});res.json({success:true,invoice:result.rows[0],message:'External delivery recorded. No email was sent.'});}catch(error:any){res.status(400).json({message:error.message});}
 });
-
-// ─── POST /api/invoices/:id/payments ────────────────────────────
-router.post('/:id/payments', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { id } = req.params;
-    const { amount, paymentDate, method, reference, notes } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ success: false, message: 'Valid amount required' });
-    }
-
-    // Check invoice exists
-    const invoiceRes = await pool.query(
-      'SELECT id, status, total, paid_amount FROM invoices WHERE id = $1 AND company_id = $2',
-      [id, companyId]
-    );
-    if (invoiceRes.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Invoice not found' });
-    }
-    const invoice = invoiceRes.rows[0];
-
-    // Prevent overpayment
-    const newPaid = Number(invoice.paid_amount) + amount;
-    if (newPaid > Number(invoice.total)) {
-      return res.status(400).json({ success: false, message: 'Payment exceeds invoice total' });
-    }
-
-    // Record payment
-    await pool.query(
-      `INSERT INTO payments (invoice_id, amount, payment_date, method, reference, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, amount, paymentDate || new Date().toISOString().split('T')[0], method || null, reference || null, notes || null]
-    );
-
-    // Update invoice status if fully paid
-    const updated = await pool.query(
-      `UPDATE invoices
-       SET status = CASE
-         WHEN paid_amount + $1 >= total THEN 'paid'
-         ELSE status
-       END,
-       paid_at = CASE
-         WHEN paid_amount + $1 >= total THEN NOW()
-         ELSE paid_at
-       END
-       WHERE id = $2
-       RETURNING *`,
-      [amount, id]
-    );
-
-    res.json({ success: true, invoice: updated.rows[0] });
-  } catch (error) {
-    console.error('Error recording payment:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+// Record an already completed external payment, never transfer or charge money.
+router.post('/:id/payments',async(req,res)=>{
+ const c=await pool.connect();
+ try{
+  const b=req.body,key=b.requestKey,amount=String(b.amount),date=b.paymentDate;
+  if(typeof key!=='string'||!/^[a-zA-Z0-9_-]{8,100}$/.test(key)||b.confirmed!==true)throw Error('Confirm the external payment and provide a request key.');
+  if(!/^\d+(\.\d{1,2})?$/.test(amount)||new Big(amount).lte(0)||new Big(amount).gt('99999999.99')||!validDate(date))throw Error('Use a positive two-decimal amount and valid payment date.');
+  if(typeof b.reference!=='string'||b.reference.trim().length<4||b.reference.length>200)throw Error('Provide the external payment reference (4 to 200 characters).');
+  if(b.method&&(!['bank_transfer','ach','cash','check','credit_card','other'].includes(b.method)))throw Error('Invalid payment method.');
+  const hash=createHash('sha256').update(JSON.stringify({amount:new Big(amount).toFixed(2),date,reference:b.reference.trim(),method:b.method||null,notes:b.notes||null})).digest('hex');
+  await c.query('BEGIN');
+  const found=await c.query('SELECT * FROM invoices WHERE id=$1 AND company_id=$2 FOR UPDATE',[req.params.id,res.locals.actor.company_id]);
+  if(!found.rowCount){await c.query('ROLLBACK');return res.status(404).json({message:'Invoice not found'});}const invoice=found.rows[0];
+  const prior=await c.query('SELECT * FROM payments WHERE invoice_id=$1 AND record_request_key=$2',[req.params.id,key]);
+  if(prior.rowCount){if(prior.rows[0].record_request_hash!==hash){await c.query('ROLLBACK');return res.status(409).json({message:'Payment key already used with different values'});}await c.query('COMMIT');return res.json({success:true,invoice,payment:prior.rows[0],replayed:true});}
+  if(!['sent','overdue'].includes(invoice.status))throw Error('Only an issued unpaid invoice can receive a payment record.');
+  const existing=await c.query('SELECT COALESCE(SUM(amount),0) amount FROM payments WHERE invoice_id=$1',[req.params.id]);const paid=new Big(existing.rows[0].amount).plus(amount),total=new Big(invoice.total);
+  if(paid.gt(total))throw Error('Payment exceeds the remaining invoice balance.');
+  const payment=(await c.query('INSERT INTO payments(invoice_id,amount,payment_date,method,reference,notes,record_request_key,record_request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',[req.params.id,new Big(amount).toFixed(2),date,b.method||null,b.reference.trim(),b.notes||null,key,hash])).rows[0];
+  // Recompute from payment records; the legacy trigger may already have updated paid_amount.
+  const updated=await c.query("UPDATE invoices SET paid_amount=$1,status=CASE WHEN $1::numeric>=total THEN 'paid' ELSE status END,paid_at=CASE WHEN $1::numeric>=total THEN NOW() ELSE paid_at END WHERE id=$2 AND company_id=$3 RETURNING *",[paid.toFixed(2),req.params.id,res.locals.actor.company_id]);
+  await c.query('COMMIT');res.json({success:true,invoice:updated.rows[0],payment,replayed:false});
+ }catch(error:any){await c.query('ROLLBACK').catch(()=>{});res.status(400).json({success:false,message:error.message||'Payment record failed'});}finally{c.release();}
 });
 
 // ─── GET /api/invoices/client/:clientId ────────────────────────
@@ -389,10 +332,10 @@ router.get('/client/:clientId', async (req: Request, res: Response) => {
     const invoicesRes = await pool.query(
       `SELECT id, invoice_number, issue_date, due_date, status, total, paid_amount, balance
        FROM invoices
-       WHERE client_id = $1
+       WHERE client_id = $1 AND company_id = $2
        ORDER BY issue_date DESC
        LIMIT 20`,
-      [clientId]
+      [clientId,companyId]
     );
 
     // Get projects
@@ -430,4 +373,5 @@ router.get('/client/:clientId', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/:id/pdf',async(req,res)=>{try{const bytes=await commercialPdf('invoice',String(req.params.id),res.locals.actor.company_id);res.type('application/pdf').set('Content-Disposition','attachment; filename="invoice.pdf"').send(bytes);}catch(error:any){res.status(error.status||400).json({message:error.message});}});
 export default router;

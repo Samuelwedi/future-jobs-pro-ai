@@ -80,3 +80,11 @@ Native payroll, invoice drafts, reports and integration controls have been added
 Validation for the native business workflow follow-up: backend build and all 221 tests passed; mobile TypeScript and 39 tests passed; customer web production build passed; iOS and Android production JavaScript/Hermes exports passed. These checks do not establish physical-device or store acceptance.
 
 Native availability and shift cover are also implemented: unavailability creation/removal, colleague cover requests, acceptance/decline, manager approval and refresh. Device timezone is shown; invalid dates and daylight-saving gaps reject rather than shift silently. Mobile validation now includes 41 passing tests and TypeScript. Device acceptance remains open.
+
+## Estimates, year-end, evidence and invoice payment follow-up
+
+PR #6 now includes native estimates (drafts, decisions and safe conversion), year-end identity/preview/archive controls, evidence selection and PDF/MP4/ZIP sharing, invoice PDFs and transactional external payment recording. These are source additions, not deployed or in signed builds 56/10. All original remaining groups and pauses are retained. See the action-level and size/jurisdiction limitations in `MOBILE-WEB-PARITY.md`.
+
+Still open: automatic invoice/estimate email delivery; recurring invoice generation; complete milestone billing; physical media/sharing and store billing acceptance; independent statutory payroll/year-end validation; administration mapping; hosted operational acceptance; free inference configuration. Native evidence sharing supports 25 MB, below the larger web/server package limit. Additional estimate/payment request-key migrations are required before release.
+
+Validation for the estimates/year-end/evidence and invoice payment follow-up: backend TypeScript build and all 228 tests passed; the 13 business integration tests passed again after PDF snapshot hardening; mobile TypeScript and all 43 tests passed; customer web production build and iOS/Android production JavaScript/Hermes exports passed; git diff --check passed. No physical device or real external payment was exercised.

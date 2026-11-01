@@ -25,13 +25,13 @@ Updated 2026-11-01; audited 2026-10-31 against `mobile/App.tsx`, mobile screen i
 | Lucy text/voice | AskLucy/VoiceAssistant | AIAssistant/VoiceNote | Compatible inference adapter deployed. No free inference provider configured; voice/photo provider acceptance open. |
 | Payroll processing and adjustments | Payroll/ManualPayroll | New Payroll screen | Draft preparation, saved calculation, independent review, external payment recording, effective employee rates, cost simulation and PDF/CSV export implemented in PR #6. Bulk rate changes and physical acceptance remain open. |
 | Bank/direct-deposit management | DirectDeposit | No dedicated registered screen | Native coverage gap; live settlement also unverified. |
-| Year-end forms | YearEnd/FinalizedSlips | No dedicated registered screen | Native coverage gap. |
-| Invoices and estimates | Invoices/Estimates | New Invoices screen | Invoice list, filters, paging, draft create/edit/delete, approved unbilled labor and payment history implemented in PR #6. Estimates, actual delivery, payment mutations, recurring/milestone workflows and invoice PDF remain open. |
+| Year-end forms | YearEnd/FinalizedSlips | New YearEnd screen | Employer identity, employee/form/year selection, preview, reviewed-value finalization, finalized archive and JSON sharing implemented in PR #6. Tax box calculations, jurisdiction coverage and actual filing remain subject to independent acceptance; no filing is performed. |
+| Invoices and estimates | Invoices/Estimates | New Invoices/Estimates screens | Draft CRUD, approved invoice labor, PDF sharing, recorded external delivery, external invoice payments, estimate decisions and retry-safe conversion implemented in PR #6. Automatic email delivery, recurring generation and milestone workflows remain open. |
 | Reports and exports | Reports | New Reports screen | Project/date summary and real PDF/CSV sharing implemented in PR #6; device sharing acceptance open. Payroll Word/Excel export remains unsupported. |
 | QuickBooks and Stripe integrations | Integrations | New Integrations screen | Status, provider authorization in browser, disconnect and payment sync controls implemented in PR #6; production OAuth/webhooks/settlement acceptance open. |
 | Work preferences | WorkPreferences | New WorkPreferences screen | Native unavailability, cover requests, replacement acceptance/decline and manager approval implemented in PR #6. Device timezone is displayed and invalid dates/DST gaps reject; device acceptance remains open. |
 | Administration | AdminDashboard/Operations | Team/CompanySettings partial coverage | Complete permission/action mapping still needed. |
-| Evidence center | EvidenceCenter | Project files/camera partial coverage | Dedicated review/audit workflow coverage gap. |
+| Evidence center | EvidenceCenter | New Evidence screen | Native recent-entry selection, individual media selection, derived PDF/MP4 and ZIP sharing implemented in PR #6. Native sharing is limited to 25 MB (web/server packages support larger sizes); device and chain-of-custody acceptance remain open. |
 | Localization | Screen-dependent | Dictionary and screen-dependent | Full screen coverage and translated runtime acceptance remain open. The new expense screen uses en/fr/es copy. |
 | Schedule optimization/document ingestion/crew globe/universal undo | Enhancement register | Enhancement register | Requirements and implementation acceptance remain open; do not count generic screens as completed features. |
 
@@ -56,3 +56,15 @@ Validation for the native business workflow follow-up: backend build and all 221
 Native availability follow-up: local wall-clock dates are converted to UTC without silently normalizing invalid dates or DST gaps. Cover approval uses a stable per-request retry key and authoritative server conflict checks. New controls include Spanish/French copy.
 
 Availability validation: mobile TypeScript and all 41 tests passed, including timezone extremes, calendar normalization, daylight-saving gaps and ordered ranges.
+
+## Estimates, year-end and evidence follow-up
+
+Native estimates now support list/filter/paging, draft create/edit/delete, external delivery and client-decision recording, PDF sharing and conversion to an invoice. Backend creation/edit/conversion use real transactions; retry keys and the converted invoice link prevent duplicate drafts. Relationships are scoped to the active manager’s company. Invoice payment recording is now transactional and retry-safe, rejects overpayment and avoids double-counting the legacy payment trigger. No card charge, bank transfer, email or synthetic payment link is implied by recording external actions. Invoice and estimate PDFs read one database snapshot.
+
+Year-end previews return a fingerprint bound to employee, year, form, identity and payroll values. Both web and mobile submit that fingerprint; stale or absent previews reject before saving. Native employer identity, preview, archive and explicit saved-record sharing are implemented. Tests exercise workflow integrity with synthetic compilation data, not statutory correctness. The existing tax-box mapping and annual calculations still need independent payroll acceptance; these are company records, not filing certificates. Worldwide company-rule generation remains blocked by the existing jurisdiction guard.
+
+Evidence and year-end routes now require a current active manager, including archive and evidence-option reads. Native evidence sharing validates allowed relative routes, content types, binary signatures and a 25 MB limit. Selected evidence may contain sensitive business records; sharing uses the device share sheet and temporary cached files are removed afterward. Physical playback and package verification remain open.
+
+Required additional migrations: `20261101_estimate_request_keys.sql` and `20261101_invoice_payment_keys.sql` (alongside the earlier PR #6 invoice request-key migration). No new production deployment or paid signed build has been started.
+
+Validation for the estimates/year-end/evidence and invoice payment follow-up: backend TypeScript build and all 228 tests passed; the 13 business integration tests passed again after PDF snapshot hardening; mobile TypeScript and all 43 tests passed; customer web production build and iOS/Android production JavaScript/Hermes exports passed; git diff --check passed. No physical device or real external payment was exercised.
