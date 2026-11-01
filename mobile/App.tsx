@@ -53,6 +53,8 @@ import SelectEmployeesScreen from './src/screens/SelectEmployeesScreen';
 import CreateShiftScreen from './src/screens/CreateShiftScreen';
 import CompanySettingsScreen from './src/screens/CompanySettingsScreen';
 import WorkerToolsScreen from './src/screens/WorkerToolsScreen';
+import PayStatementsScreen from './src/screens/PayStatementsScreen';
+import PayrollAdministrationScreen from './src/screens/PayrollAdministrationScreen';
 import ManualPayrollScreen from './src/screens/ManualPayrollScreen';
 import PayrollRulesScreen from './src/screens/PayrollRulesScreen';
 import { mobileDiagnosticContext } from './src/services/mobileDiagnostics';
@@ -214,6 +216,8 @@ function AppNavigator() {
             <Stack.Screen name="Expenses" component={ExpensesScreen} />
             <Stack.Screen name="WorkPreferences" component={WorkPreferencesScreen} />
             <Stack.Screen name="WorkerTools" component={WorkerToolsScreen} />
+            <Stack.Screen name="PayStatements" component={PayStatementsScreen} />
+            <Stack.Screen name="PayrollAdministration" component={PayrollAdministrationScreen} />
             <Stack.Screen name="ManualPayroll" component={ManualPayrollScreen} />
             <Stack.Screen name="PayrollRules" component={PayrollRulesScreen} />
           </>

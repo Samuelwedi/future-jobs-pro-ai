@@ -365,6 +365,7 @@ export default function ManualPayrollScreen() {
           {button("Company payroll rules", () =>
             nav.navigate("PayrollRules" as never),
           )}
+          {button('Payroll administration', () => nav.navigate('PayrollAdministration' as never))}
           <View style={s.card}>
             <Text style={s.heading}>{t("Prepare payroll draft")}</Text>
             <Text style={s.text}>

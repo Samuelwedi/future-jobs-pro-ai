@@ -1314,3 +1314,266 @@ Object.assign(screenCopy, {
     "Impossible de télécharger le bulletin de paie vérifié."
   ]
 });
+
+// Native payroll administration.
+Object.assign(screenCopy, {
+  "Payroll administration": [
+    "Administración de nómina",
+    "Administration de la paie"
+  ],
+  "Payroll schedule": [
+    "Calendario de nómina",
+    "Calendrier de paie"
+  ],
+  "Payroll day": [
+    "Día de nómina",
+    "Jour de paie"
+  ],
+  "Payroll time (HH:mm)": [
+    "Hora de nómina (HH:mm)",
+    "Heure de paie (HH:mm)"
+  ],
+  "Default hourly rate": [
+    "Tarifa horaria predeterminada",
+    "Taux horaire par défaut"
+  ],
+  "Overtime multiplier": [
+    "Multiplicador de horas extra",
+    "Multiplicateur des heures supplémentaires"
+  ],
+  "Legacy tax rate (%)": [
+    "Tasa fiscal anterior (%)",
+    "Ancien taux d’impôt (%)"
+  ],
+  "Exact hourly rate": [
+    "Tarifa horaria exacta",
+    "Taux horaire exact"
+  ],
+  "Percentage raise": [
+    "Aumento porcentual",
+    "Augmentation en pourcentage"
+  ],
+  "Fixed hourly raise": [
+    "Aumento horario fijo",
+    "Augmentation horaire fixe"
+  ],
+  "Percentage raise scenario": [
+    "Escenario de aumento porcentual",
+    "Scénario d’augmentation en pourcentage"
+  ],
+  "Fixed hourly raise scenario": [
+    "Escenario de aumento horario fijo",
+    "Scénario d’augmentation horaire fixe"
+  ],
+  "Additional employee count scenario": [
+    "Escenario de empleados adicionales",
+    "Scénario d’employés supplémentaires"
+  ],
+  "Company timezone: {timezone}": [
+    "Zona horaria de la empresa: {timezone}",
+    "Fuseau horaire de l’entreprise : {timezone}"
+  ],
+  "Currency not configured": [
+    "Moneda no configurada",
+    "Devise non configurée"
+  ],
+  "Company payroll settings": [
+    "Configuración de nómina de la empresa",
+    "Paramètres de paie de l’entreprise"
+  ],
+  "These are saved company settings. Saving does not activate automatic payroll or make a payment. Reviewed payroll keeps its saved calculation. The legacy tax percentage does not replace independently reviewed deduction rules.": [
+    "Estos son ajustes guardados de la empresa. Guardarlos no activa nómina automática ni realiza pagos. La nómina revisada conserva su cálculo. El porcentaje fiscal anterior no reemplaza las reglas de deducción revisadas de forma independiente.",
+    "Ce sont les paramètres enregistrés de l’entreprise. L’enregistrement n’active pas la paie automatique et n’effectue aucun paiement. La paie vérifiée conserve son calcul. L’ancien pourcentage d’impôt ne remplace pas les règles de retenue vérifiées indépendamment."
+  ],
+  "Weekly": [
+    "Semanal",
+    "Hebdomadaire"
+  ],
+  "Every two weeks": [
+    "Cada dos semanas",
+    "Toutes les deux semaines"
+  ],
+  "Monthly": [
+    "Mensual",
+    "Mensuel"
+  ],
+  "Monthly day: 1–31. Check short months when planning payroll.": [
+    "Día mensual: 1–31. Revise los meses cortos al planificar la nómina.",
+    "Jour du mois : 1–31. Vérifiez les mois courts lors de la planification de la paie."
+  ],
+  "Weekly day: 0 = Sunday through 6 = Saturday. Biweekly periods also need a company anchor date.": [
+    "Día semanal: 0 = domingo a 6 = sábado. Los períodos de dos semanas también necesitan una fecha de inicio de referencia de la empresa.",
+    "Jour de la semaine : 0 = dimanche à 6 = samedi. Les périodes de deux semaines nécessitent aussi une date de référence de l’entreprise."
+  ],
+  "Save payroll settings": [
+    "Guardar configuración de nómina",
+    "Enregistrer les paramètres de paie"
+  ],
+  "Save company payroll settings?": [
+    "¿Guardar configuración de nómina de la empresa?",
+    "Enregistrer les paramètres de paie de l’entreprise ?"
+  ],
+  "Review the schedule, rates and overtime multiplier before confirming.": [
+    "Revise el calendario, las tarifas y el multiplicador de horas extra antes de confirmar.",
+    "Vérifiez le calendrier, les taux et le multiplicateur des heures supplémentaires avant de confirmer."
+  ],
+  "Payroll settings saved.": [
+    "Configuración de nómina guardada.",
+    "Paramètres de paie enregistrés."
+  ],
+  "Employee compensation": [
+    "Remuneración de empleados",
+    "Rémunération des employés"
+  ],
+  "Effective-dated rates apply to draft preparation. Review existing draft and historical payroll separately. Saving a raise does not recalculate reviewed payroll or pay an employee.": [
+    "Las tarifas con fecha de vigencia se aplican al preparar borradores. Revise por separado los borradores existentes y la nómina histórica. Guardar un aumento no recalcula la nómina revisada ni paga al empleado.",
+    "Les taux datés s’appliquent à la préparation des brouillons. Vérifiez séparément les brouillons existants et les anciennes paies. Enregistrer une augmentation ne recalcule pas la paie vérifiée et ne paie pas l’employé."
+  ],
+  "No employees available for compensation changes.": [
+    "No hay empleados disponibles para cambios de remuneración.",
+    "Aucun employé disponible pour modifier la rémunération."
+  ],
+  "No saved rate": [
+    "Sin tarifa guardada",
+    "Aucun taux enregistré"
+  ],
+  "Rate history": [
+    "Historial de tarifas",
+    "Historique des taux"
+  ],
+  "Selected employees: {count}": [
+    "Empleados seleccionados: {count}",
+    "Employés sélectionnés : {count}"
+  ],
+  "Compensation value": [
+    "Valor del cambio de remuneración",
+    "Valeur du changement de rémunération"
+  ],
+  "Effective date (YYYY-MM-DD)": [
+    "Fecha de vigencia (AAAA-MM-DD)",
+    "Date d’effet (AAAA-MM-JJ)"
+  ],
+  "Save compensation change": [
+    "Guardar cambio de remuneración",
+    "Enregistrer le changement de rémunération"
+  ],
+  "Save compensation change?": [
+    "¿Guardar cambio de remuneración?",
+    "Enregistrer le changement de rémunération ?"
+  ],
+  "Employees: {names}. Change: {kind} {value}. Effective: {date}.": [
+    "Empleados: {names}. Cambio: {kind} {value}. Vigencia: {date}.",
+    "Employés : {names}. Changement : {kind} {value}. Date d’effet : {date}."
+  ],
+  "Compensation change saved.": [
+    "Cambio de remuneración guardado.",
+    "Changement de rémunération enregistré."
+  ],
+  "Compensation cost scenario": [
+    "Escenario de costos de remuneración",
+    "Scénario de coût de rémunération"
+  ],
+  "Read-only estimate using 40 hours per employee and current rates. Excludes deductions, overtime, benefits and employer costs. A scenario does not change rates or payroll. Future effective-dated changes are not simulated.": [
+    "Estimación de solo lectura con 40 horas por empleado y tarifas actuales. Excluye deducciones, horas extra, beneficios y costos patronales. El escenario no cambia tarifas ni nómina. No simula cambios de vigencia futura.",
+    "Estimation en lecture seule sur 40 heures par employé aux taux actuels. Exclut retenues, heures supplémentaires, avantages et coûts patronaux. Le scénario ne change ni les taux ni la paie. Les changements futurs datés ne sont pas simulés."
+  ],
+  "Scenario value": [
+    "Valor del escenario",
+    "Valeur du scénario"
+  ],
+  "Preview cost scenario": [
+    "Vista previa del escenario de costos",
+    "Aperçu du scénario de coût"
+  ],
+  "The cost scenario is unavailable.": [
+    "El escenario de costos no está disponible.",
+    "Le scénario de coût est indisponible."
+  ],
+  "Cost scenario calculated. No wages changed.": [
+    "Escenario de costos calculado. No se modificaron salarios.",
+    "Scénario de coût calculé. Aucun salaire modifié."
+  ],
+  "Current 40-hour estimate": [
+    "Estimación actual de 40 horas",
+    "Estimation actuelle sur 40 heures"
+  ],
+  "Projected 40-hour estimate": [
+    "Estimación proyectada de 40 horas",
+    "Estimation projetée sur 40 heures"
+  ],
+  "Estimated difference": [
+    "Diferencia estimada",
+    "Différence estimée"
+  ],
+  "Choose a supported payroll schedule.": [
+    "Elija un calendario de nómina compatible.",
+    "Choisissez un calendrier de paie pris en charge."
+  ],
+  "Enter a valid payroll day for this schedule.": [
+    "Introduzca un día de nómina válido para este calendario.",
+    "Saisissez un jour de paie valide pour ce calendrier."
+  ],
+  "Enter a valid payroll time (HH:mm).": [
+    "Introduzca una hora de nómina válida (HH:mm).",
+    "Saisissez une heure de paie valide (HH:mm)."
+  ],
+  "Check the rate, overtime multiplier and legacy tax percentage.": [
+    "Compruebe la tarifa, el multiplicador de horas extra y el porcentaje fiscal anterior.",
+    "Vérifiez le taux, le multiplicateur des heures supplémentaires et l’ancien pourcentage d’impôt."
+  ],
+  "Select employees from the current company list.": [
+    "Seleccione empleados de la lista actual de la empresa.",
+    "Sélectionnez les employés dans la liste actuelle de l’entreprise."
+  ],
+  "Enter a positive compensation value.": [
+    "Introduzca un valor de remuneración positivo.",
+    "Saisissez une valeur de rémunération positive."
+  ],
+  "An exact rate requires exactly one employee.": [
+    "Una tarifa exacta requiere un solo empleado.",
+    "Un taux exact nécessite un seul employé."
+  ],
+  "Choose a supported compensation change.": [
+    "Elija un cambio de remuneración compatible.",
+    "Choisissez un changement de rémunération pris en charge."
+  ],
+  "Choose a supported scenario.": [
+    "Elija un escenario compatible.",
+    "Choisissez un scénario pris en charge."
+  ],
+  "Enter a positive scenario value; hiring counts must be whole numbers.": [
+    "Introduzca un valor de escenario positivo; las contrataciones deben ser números enteros.",
+    "Saisissez une valeur de scénario positive ; le nombre d’embauches doit être entier."
+  ]
+});
+
+Object.assign(screenCopy, {
+  "My pay statements": [
+    "Mis recibos de nómina",
+    "Mes bulletins de paie"
+  ],
+  "Your pay statements could not be verified.": [
+    "No se pudieron verificar sus recibos de nómina.",
+    "Impossible de vérifier vos bulletins de paie."
+  ],
+  "Pay statements could not be loaded.": [
+    "No se pudieron cargar los recibos de nómina.",
+    "Impossible de charger les bulletins de paie."
+  ],
+  "Reconnect before downloading a pay statement.": [
+    "Vuelva a conectarse antes de descargar un recibo de nómina.",
+    "Reconnectez-vous avant de télécharger un bulletin de paie."
+  ],
+  "These statements show independently reviewed company payroll calculations. A recorded external payment is not bank-verified settlement. Contact your payroll manager about discrepancies.": [
+    "Estos recibos muestran cálculos de nómina revisados de forma independiente por la empresa. Un pago externo registrado no es liquidación bancaria verificada. Consulte las discrepancias con el responsable de nómina.",
+    "Ces bulletins présentent les calculs de paie vérifiés indépendamment par l’entreprise. Un paiement externe consigné ne constitue pas un règlement bancaire vérifié. Contactez votre responsable de paie en cas d’écart."
+  ],
+  "No reviewed pay statements are available yet.": [
+    "Aún no hay recibos de nómina revisados disponibles.",
+    "Aucun bulletin de paie vérifié n’est encore disponible."
+  ],
+  "Reviewed — external payment not recorded": [
+    "Revisado — pago externo no registrado",
+    "Vérifiée — paiement externe non consigné"
+  ]
+});

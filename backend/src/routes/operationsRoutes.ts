@@ -24,7 +24,7 @@ router.get('/work-options',route(async(_req:any,res:any)=>{
   pool.query('SELECT s.id,s.name,s.date,s.start_time,s.end_time FROM shifts s JOIN shift_assignments sa ON sa.shift_id=s.id JOIN users owner ON owner.id=s.created_by WHERE sa.user_id=$1 AND owner.company_id=$2 AND s.date>=current_date ORDER BY s.date LIMIT 100',[a.id,a.company_id]),
   pool.query("SELECT COALESCE(timezone,'UTC') timezone FROM companies WHERE id=$1",[a.company_id]),
  ]);
- res.json({actorId:a.id,manager:manages(a),timezone:company.rows[0]?.timezone||'UTC',people:people.rows,shifts:shifts.rows});
+ res.json({actorId:a.id,companyId:a.company_id,manager:manages(a),timezone:company.rows[0]?.timezone||'UTC',people:people.rows,shifts:shifts.rows});
 }));
 router.get('/overview',route(async(_req:any,res:any)=>{const a=res.locals.actor;manager(a);const [projects,people,actions,reports,limits,usage,studies,schedules,sites,shifts]=await Promise.all([
  pool.query('SELECT id,name FROM projects WHERE company_id=$1 ORDER BY name',[a.company_id]),
@@ -100,4 +100,5 @@ router.post('/actions/:id/undo',route(async(req:any,res:any)=>{const a=res.local
  await c.query("UPDATE ops_actions SET state='undone',undone_at=now() WHERE id=$1",[item.id]);return {success:true,actionId:item.id};}));}));
 router.use((e:any,_req:any,res:any,_next:any)=>{if(e instanceof OpsError)return res.status(e.status).json({message:e.message});if(e.code==='23505')return res.status(409).json({message:'A matching record already exists. Refresh before retrying.'});console.error('Operations request failed',{code:e.code,message:e.message});res.status(503).json({message:'Operations unavailable. Check migrations, provider configuration and server logs.'});});
 export default router;
+
 

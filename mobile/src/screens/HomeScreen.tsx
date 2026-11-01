@@ -343,6 +343,7 @@ export default function HomeScreen() {
         ['History', 'history', 'History', '#93C5FD'],
         ['Project files', 'perm-media', 'Folders', '#67E8F9'],
         ['Worker tools', 'construction', 'WorkerTools', '#67E8F9'],
+        ['My pay statements', 'receipt', 'PayStatements', '#A7F3D0'],
         ['Expenses & receipts', 'receipt-long', 'Expenses', '#A7F3D0'],
         ['Availability & shift cover', 'event-available', 'WorkPreferences', '#A7F3D0'],
       ],

@@ -261,7 +261,7 @@ test('legacy team test-header bypass removed; foreign membership and role escala
 test('replacement request requires recipient consent and manager approval; reassignment recorded',async()=>{
  const sid='00000000-0000-4000-a000-000000000099';await query("INSERT INTO shift_assignments(id,shift_id,user_id,status) VALUES(gen_random_uuid(),$1,$2,'assigned')",[sid,ids.worker]);
  const r=await request('/operations/swaps',ids.worker,'POST',{shiftId:sid,toUser:ids.boss});assert.equal(r.status,201,JSON.stringify(r));
- const options=await request('/operations/work-options',ids.worker);assert.equal(options.status,200);assert.equal(options.data.actorId,ids.worker);assert.equal(options.data.manager,false);assert.equal(options.data.timezone,'UTC');
+ const options=await request('/operations/work-options',ids.worker);assert.equal(options.status,200);assert.equal(options.data.actorId,ids.worker);assert.equal(options.data.companyId,ids.company);assert.equal(options.data.manager,false);assert.equal(options.data.timezone,'UTC');
  const offered=options.data.shifts.find(s=>s.id===sid);assert.ok(offered);assert.ok(offered.start_time&&offered.end_time);
  const queue=await request('/operations/swaps',ids.boss);assert.equal(queue.status,200);const details=queue.data.find(s=>s.id===r.data.id);assert.equal(details.shift_name,offered.name);assert.equal(String(details.shift_date).slice(0,10),String(offered.date).slice(0,10));assert.equal(details.start_time,offered.start_time);
  assert.equal((await request('/operations/swaps',ids.outsider)).data.some(s=>s.id===r.data.id),false);
@@ -323,4 +323,5 @@ test('temporary-password accounts cannot use protected features until they chang
   assert.notEqual((await request('/operations/swaps',ids.worker)).status,403);
  } finally {await query('UPDATE users SET password_hash=$1,must_change_password=FALSE WHERE id=$2',[previous,ids.worker]);}
 });
+
 

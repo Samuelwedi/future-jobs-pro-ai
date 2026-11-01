@@ -4,6 +4,7 @@ import { api, API_URL } from "./api";
 export async function sharePayStatement(
   itemId: string,
   isCurrent: () => boolean,
+  source: "manager" | "employee" = "manager",
 ) {
   if (
     !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
@@ -21,7 +22,10 @@ export async function sharePayStatement(
     FileSystem.cacheDirectory + "paystub_" + itemId + "_" + Date.now() + ".pdf";
   try {
     const result = await FileSystem.downloadAsync(
-      API_URL + "/payroll/paystub/" + encodeURIComponent(itemId),
+      API_URL +
+        (source === "employee"
+          ? "/pay-stubs/reviewed/" + encodeURIComponent(itemId) + "/download"
+          : "/payroll/paystub/" + encodeURIComponent(itemId)),
       file,
       { headers: { Authorization: "Bearer " + token } },
     );
