@@ -29,7 +29,7 @@ Audited 2026-10-31 against `mobile/App.tsx`, mobile screen implementations, and 
 | Invoices and estimates | Invoices/Estimates | No dedicated registered screens | Native coverage gap. |
 | Reports and exports | Reports | Timesheet CSV only | Native report coverage gap; CSV share device acceptance open. |
 | QuickBooks and Stripe integrations | Integrations | No dedicated registered screen | Native coverage gap; production OAuth/webhooks/settlement acceptance open. |
-| Work preferences | WorkPreferences | No dedicated registered screen | Native coverage gap. |
+| Work preferences | WorkPreferences | WorkPreferences | Native unavailability, replacement request/response and manager approval source implemented. Physical and deployed role acceptance open; not in builds 56/10. |
 | Administration | AdminDashboard/Operations | Team/CompanySettings partial coverage | Complete permission/action mapping still needed. |
 | Evidence center | EvidenceCenter | Project files/camera partial coverage | Dedicated review/audit workflow coverage gap. |
 | Localization | Screen-dependent | Dictionary and screen-dependent | Full screen coverage and translated runtime acceptance remain open. The new expense screen uses en/fr/es copy. |
@@ -42,3 +42,12 @@ Implemented: claims scoped by the existing API, CAD/USD validation, local calend
 Automated source validation does not prove Android/iOS receipt pickers, external receipt opening, OCR provider availability or physical-device keyboard behavior. No new paid build or store publication is started by this source change.
 
 Validation: mobile TypeScript passed; 36 mobile tests passed; production Hermes/JavaScript exports for iOS and Android passed; git diff --check passed. The existing backend was unchanged. Signed builds 56/10 predate this source addition.
+
+## Native work preferences source follow-up
+
+WorkPreferences is registered in authenticated navigation and Home tools. Explicit timezone input is validated against impossible dates and normalized to UTC. Only a worker's own upcoming shifts are offered; colleagues can accept or decline their incoming requests, and managers can approve accepted requests through the existing audited action API. Acceptance alone does not change an assignment. The server remains authoritative for eligibility, company access and approval. Reads now provide company timezone and shift context, and reject inconsistent foreign-company shift relations.
+
+English, Spanish and French copy is included. Mutations require a fresh connection and coherent actor-scoped reads; uncertain failures require refreshing current records before retrying. A stable swap-scoped approval key prevents a lost response from creating a second action. Forms are in memory; no offline queue is claimed.
+
+Validation: mobile TypeScript, all 44 mobile tests and backend TypeScript passed. The backend run passed 176 tests; four entry files initially lacked supporting checkout files. After restoring those files, all 40 affected/aggregated tests passed (216 successful tests total across the two runs). Seven new real React/LanguageContext checks passed through explicit native-to-DOM adapters and synthetic HTTP records. They cover confirmations, UTC payloads, removal, request/accept/approve roles, offline write prevention and Spanish rendering. These are not physical-device or deployed API acceptance. No new paid build or store publication was started.
+

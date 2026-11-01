@@ -71,7 +71,7 @@ Approved release result: PR #5 merge, Railway backend, customer website, separat
 
 ## Mobile/web audit continuation
 
-See `MOBILE-WEB-PARITY.md` for the source inventory and explicit native workflow gaps. A native Expenses screen now implements claims, receipt attachment/extraction and manager review in the QA branch. It is not part of the already signed iOS build 56 or Android version code 10. Native payroll, direct deposit, year-end, invoices/estimates, reports, integrations, work preferences and evidence review still need coverage. Existing publishing/paid-build limits remain in force.
+See `MOBILE-WEB-PARITY.md` for the source inventory and explicit native workflow gaps. A native Expenses screen now implements claims, receipt attachment/extraction and manager review in the QA branch. It is not part of the already signed iOS build 56 or Android version code 10. Native payroll, direct deposit, year-end, invoices/estimates, reports, integrations and evidence review still need coverage. Native work-preference source is now implemented; device and deployed role acceptance remains open. Existing publishing/paid-build limits remain in force.
 
 ## Work-screen localization source follow-up — 2026-10-31
 
@@ -82,3 +82,10 @@ Validation: all 40 mobile tests and mobile TypeScript passed. Seven real React/L
 This follow-up is later than iOS build 56 / Android version code 10 and is not in those binaries. The approved USD 3 plus tax pair already completed. No additional paid build was started or authorized by this source follow-up; include these changes in the next reviewed native release after remaining work is ready.
 
 The combined localization branch preserves PR #6 mobile expenses, receipts, helper validation, screen navigation and translations unchanged. Combined TypeScript and all 40 mobile tests passed; the seven localization React/DOM harness checks were repeated against the combined dictionary. No paid native build was started.
+
+## Native work-preferences source follow-up — 2026-10-31
+
+Availability and shift cover are now available in the authenticated native navigation. Workers submit/remove unavailability and request cover for their own upcoming shifts; only the recipient can accept/decline, and the existing manager approval changes assignment after current eligibility checks. The native screen uses explicit timezone input, company shift-time context, English/Spanish/French copy, actor-change guards, fresh connectivity checks and stable approval retry keys. Backend read responses add timezone/shift context and exclude corrupt foreign-company shift relations. Mutation authorization is unchanged.
+
+Validation: backend/mobile TypeScript passed, 44 mobile tests passed, 176 backend tests passed on the first correctly rooted run and 40 affected/aggregated tests passed after restoring missing checkout support files. Seven explicit React/native-to-DOM synthetic-HTTP workflow checks passed. No physical-device or production role acceptance is inferred from these checks. This source is not in signed builds 56/10. All remaining groups and paid-build/publication limits above remain open.
+

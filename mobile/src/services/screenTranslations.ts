@@ -722,3 +722,236 @@ Object.assign(screenCopy, {
     "dim."
   ]
 });
+
+
+// Availability and cover: display copy only.
+Object.assign(screenCopy, {
+  "A cover request to this colleague is already pending.": [
+    "Ya hay una solicitud de cobertura pendiente para este colega.",
+    "Une demande de remplacement est déjà en attente pour ce collègue."
+  ],
+  "Accept": [
+    "Aceptar",
+    "Accepter"
+  ],
+  "Approval changes the assignment after current availability and conflict checks.": [
+    "La aprobación cambia la asignación después de comprobar la disponibilidad y los conflictos actuales.",
+    "L’approbation modifie l’affectation après vérification des disponibilités et des conflits actuels."
+  ],
+  "Approve": [
+    "Aprobar",
+    "Approuver"
+  ],
+  "Approve replacement": [
+    "Aprobar reemplazo",
+    "Approuver le remplacement"
+  ],
+  "Approve replacement?": [
+    "¿Aprobar el reemplazo?",
+    "Approuver le remplacement ?"
+  ],
+  "Ask this colleague": [
+    "Solicitar a este colega",
+    "Demander à ce collègue"
+  ],
+  "Ask {name} to cover {shift}?": [
+    "¿Pedir a {name} que cubra {shift}?",
+    "Demander à {name} de remplacer pour {shift} ?"
+  ],
+  "Availability & shift cover": [
+    "Disponibilidad y reemplazos",
+    "Disponibilités et remplacements"
+  ],
+  "Awaiting colleague": [
+    "Esperando al colega",
+    "En attente du collègue"
+  ],
+  "Awaiting manager approval": [
+    "Esperando aprobación del responsable",
+    "En attente de l’approbation du responsable"
+  ],
+  "Back": [
+    "Volver",
+    "Retour"
+  ],
+  "Cancel": [
+    "Cancelar",
+    "Annuler"
+  ],
+  "Choose an end after the start, within 366 days.": [
+    "La fecha de fin debe ser posterior al inicio y estar dentro de 366 días.",
+    "La fin doit suivre le début, dans un délai maximal de 366 jours."
+  ],
+  "Cover accepted. Manager approval is still required.": [
+    "Cobertura aceptada. Aún se necesita la aprobación del responsable.",
+    "Remplacement accepté. L’approbation du responsable reste nécessaire."
+  ],
+  "Cover request declined.": [
+    "Solicitud de cobertura rechazada.",
+    "Demande de remplacement refusée."
+  ],
+  "Cover request is unavailable.": [
+    "La solicitud de cobertura no está disponible.",
+    "La demande de remplacement est indisponible."
+  ],
+  "Cover request sent. Your assignment stays until manager approval.": [
+    "Solicitud enviada. Su asignación se mantiene hasta la aprobación del responsable.",
+    "Demande envoyée. Votre affectation reste inchangée jusqu’à l’approbation du responsable."
+  ],
+  "Cover requests": [
+    "Solicitudes de cobertura",
+    "Demandes de remplacement"
+  ],
+  "Decline": [
+    "Rechazar",
+    "Refuser"
+  ],
+  "Declined": [
+    "Rechazado",
+    "Refusé"
+  ],
+  "Enter a valid calendar date, time and timezone offset.": [
+    "Introduzca una fecha, hora y diferencia horaria válidas.",
+    "Saisissez une date, une heure et un décalage horaire valides."
+  ],
+  "Enter an ISO date/time with an explicit timezone.": [
+    "Introduzca una fecha y hora ISO con una zona horaria explícita.",
+    "Saisissez une date et une heure ISO avec un fuseau horaire explicite."
+  ],
+  "Enter dates with a timezone, for example 2026-12-01T08:00:00-07:00. Dates below use this device timezone. Changes require a connection.": [
+    "Introduzca fechas con zona horaria, por ejemplo 2026-12-01T08:00:00-07:00. Las fechas de abajo usan la zona horaria de este dispositivo. Se necesita conexión para realizar cambios.",
+    "Saisissez les dates avec un fuseau horaire, par exemple 2026-12-01T08:00:00-07:00. Les dates ci-dessous utilisent le fuseau de cet appareil. Une connexion est nécessaire pour effectuer des modifications."
+  ],
+  "From (ISO date/time with timezone)": [
+    "Desde (fecha y hora ISO con zona horaria)",
+    "Début (date et heure ISO avec fuseau)"
+  ],
+  "From {from}\nUntil {until}": [
+    "Desde {from}\nHasta {until}",
+    "Du {from}\nAu {until}"
+  ],
+  "No assigned upcoming shifts.": [
+    "No tiene próximos turnos asignados.",
+    "Aucun service à venir ne vous est affecté."
+  ],
+  "No cover requests.": [
+    "No hay solicitudes de cobertura.",
+    "Aucune demande de remplacement."
+  ],
+  "No unavailability recorded.": [
+    "No hay períodos de indisponibilidad registrados.",
+    "Aucune indisponibilité enregistrée."
+  ],
+  "Reconnect before making changes. Your form has not been submitted.": [
+    "Vuelva a conectarse antes de hacer cambios. El formulario no se ha enviado.",
+    "Reconnectez-vous avant d’effectuer des modifications. Le formulaire n’a pas été envoyé."
+  ],
+  "Refresh": [
+    "Actualizar",
+    "Actualiser"
+  ],
+  "Refresh and check the current records before retrying.": [
+    "Actualice y compruebe los registros actuales antes de reintentar.",
+    "Actualisez et vérifiez les données actuelles avant de réessayer."
+  ],
+  "Remove": [
+    "Eliminar",
+    "Supprimer"
+  ],
+  "Remove unavailability": [
+    "Eliminar indisponibilidad",
+    "Supprimer l’indisponibilité"
+  ],
+  "Remove unavailability?": [
+    "¿Eliminar la indisponibilidad?",
+    "Supprimer l’indisponibilité ?"
+  ],
+  "Replacement approved": [
+    "Reemplazo aprobado",
+    "Remplacement approuvé"
+  ],
+  "Replacement approved.": [
+    "Reemplazo aprobado.",
+    "Remplacement approuvé."
+  ],
+  "Request a replacement": [
+    "Solicitar un reemplazo",
+    "Demander un remplacement"
+  ],
+  "Request cover": [
+    "Solicitar cobertura",
+    "Demander un remplacement"
+  ],
+  "Request cover?": [
+    "¿Solicitar cobertura?",
+    "Demander un remplacement ?"
+  ],
+  "Save": [
+    "Guardar",
+    "Enregistrer"
+  ],
+  "Save unavailability": [
+    "Guardar indisponibilidad",
+    "Enregistrer l’indisponibilité"
+  ],
+  "Save unavailability?": [
+    "¿Guardar la indisponibilidad?",
+    "Enregistrer l’indisponibilité ?"
+  ],
+  "Scheduled shift": [
+    "Turno programado",
+    "Service planifié"
+  ],
+  "Shift times use company timezone: {timezone}": [
+    "Los horarios usan la zona horaria de la empresa: {timezone}",
+    "Les horaires utilisent le fuseau de l’entreprise : {timezone}"
+  ],
+  "Status unavailable": [
+    "Estado no disponible",
+    "Statut indisponible"
+  ],
+  "This unavailability is already recorded.": [
+    "Esta indisponibilidad ya está registrada.",
+    "Cette indisponibilité est déjà enregistrée."
+  ],
+  "Unavailability removed.": [
+    "Indisponibilidad eliminada.",
+    "Indisponibilité supprimée."
+  ],
+  "Unavailability saved.": [
+    "Indisponibilidad guardada.",
+    "Indisponibilité enregistrée."
+  ],
+  "Unavailable member": [
+    "Miembro no disponible",
+    "Membre indisponible"
+  ],
+  "Until (ISO date/time with timezone)": [
+    "Hasta (fecha y hora ISO con zona horaria)",
+    "Fin (date et heure ISO avec fuseau)"
+  ],
+  "When you cannot work": [
+    "Cuándo no puede trabajar",
+    "Vos indisponibilités"
+  ],
+  "Work preference action failed.": [
+    "La acción de preferencias laborales falló.",
+    "L’action sur les préférences de travail a échoué."
+  ],
+  "Work preferences are unavailable. Refresh and try again.": [
+    "Las preferencias laborales no están disponibles. Actualice e inténtelo de nuevo.",
+    "Les préférences de travail sont indisponibles. Actualisez et réessayez."
+  ],
+  "Work preferences could not be loaded.": [
+    "No se pudieron cargar las preferencias laborales.",
+    "Impossible de charger les préférences de travail."
+  ],
+  "Your colleague must accept, then a manager approves after checking availability and conflicts. Accepting alone does not change the assignment.": [
+    "Su colega debe aceptar y luego un responsable aprobará tras comprobar la disponibilidad y los conflictos. La aceptación por sí sola no cambia la asignación.",
+    "Votre collègue doit accepter, puis un responsable approuve après vérification des disponibilités et des conflits. L’acceptation seule ne modifie pas l’affectation."
+  ],
+  "Your upcoming shift": [
+    "Su próximo turno",
+    "Votre prochain service"
+  ]
+});

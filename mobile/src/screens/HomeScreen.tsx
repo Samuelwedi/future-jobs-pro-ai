@@ -344,6 +344,7 @@ export default function HomeScreen() {
         ['Project files', 'perm-media', 'Folders', '#67E8F9'],
         ['Worker tools', 'construction', 'WorkerTools', '#67E8F9'],
         ['Expenses & receipts', 'receipt-long', 'Expenses', '#A7F3D0'],
+        ['Availability & shift cover', 'event-available', 'WorkPreferences', '#A7F3D0'],
       ],
     },
     ...(user?.role === 'boss' || user?.role === 'manager' ? [{
@@ -617,4 +618,5 @@ const investorStyles = StyleSheet.create({
   footerLink: { color: '#6E8397', fontSize: 10, fontWeight: '700' },
   footerDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: '#3C5266', marginHorizontal: 10 },
 });
+
 
