@@ -48,6 +48,7 @@ import { api } from './src/services/api';
 import MonthMediaTypeScreen from './src/screens/MonthMediaTypeScreen';
 import PayrollScreen from './src/screens/PayrollScreen';
 import ReportsScreen from './src/screens/ReportsScreen';
+import WorkPreferencesScreen from './src/screens/WorkPreferencesScreen';
 import IntegrationsScreen from './src/screens/IntegrationsScreen';
 import InvoicesScreen from './src/screens/InvoicesScreen';
 import ExpensesScreen from './src/screens/ExpensesScreen';
@@ -215,6 +216,7 @@ function AppNavigator() {
             <Stack.Screen name="CompanySettings" component={CompanySettingsScreen as React.ComponentType<any>} />
             <Stack.Screen name="Payroll" component={PayrollScreen} />
             <Stack.Screen name="Reports" component={ReportsScreen} />
+            <Stack.Screen name="WorkPreferences" component={WorkPreferencesScreen} />
             <Stack.Screen name="Integrations" component={IntegrationsScreen} />
             <Stack.Screen name="Invoices" component={InvoicesScreen} />
             <Stack.Screen name="Expenses" component={ExpensesScreen} />

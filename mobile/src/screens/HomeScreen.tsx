@@ -340,6 +340,7 @@ export default function HomeScreen() {
         ['Crew map', 'location-searching', 'CrewTracking', '#67E8F9'],
         ['Tasks', 'task-alt', 'Tasks', '#FDE68A'],
         ['Time off', 'beach-access', 'PTO', '#C4B5FD'],
+        ['Availability & shift cover', 'event-available', 'WorkPreferences', '#A7F3D0'],
         ['History', 'history', 'History', '#93C5FD'],
         ['Project files', 'perm-media', 'Folders', '#67E8F9'],
         ['Worker tools', 'construction', 'WorkerTools', '#67E8F9'],

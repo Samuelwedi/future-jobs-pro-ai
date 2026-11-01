@@ -29,7 +29,7 @@ Updated 2026-11-01; audited 2026-10-31 against `mobile/App.tsx`, mobile screen i
 | Invoices and estimates | Invoices/Estimates | New Invoices screen | Invoice list, filters, paging, draft create/edit/delete, approved unbilled labor and payment history implemented in PR #6. Estimates, actual delivery, payment mutations, recurring/milestone workflows and invoice PDF remain open. |
 | Reports and exports | Reports | New Reports screen | Project/date summary and real PDF/CSV sharing implemented in PR #6; device sharing acceptance open. Payroll Word/Excel export remains unsupported. |
 | QuickBooks and Stripe integrations | Integrations | New Integrations screen | Status, provider authorization in browser, disconnect and payment sync controls implemented in PR #6; production OAuth/webhooks/settlement acceptance open. |
-| Work preferences | WorkPreferences | No dedicated registered screen | Native coverage gap. |
+| Work preferences | WorkPreferences | New WorkPreferences screen | Native unavailability, cover requests, replacement acceptance/decline and manager approval implemented in PR #6. Device timezone is displayed and invalid dates/DST gaps reject; device acceptance remains open. |
 | Administration | AdminDashboard/Operations | Team/CompanySettings partial coverage | Complete permission/action mapping still needed. |
 | Evidence center | EvidenceCenter | Project files/camera partial coverage | Dedicated review/audit workflow coverage gap. |
 | Localization | Screen-dependent | Dictionary and screen-dependent | Full screen coverage and translated runtime acceptance remain open. The new expense screen uses en/fr/es copy. |
@@ -52,3 +52,7 @@ Backend repairs: PDF/CSV payroll export, current active-user/company/manager che
 Release status: source only, not production and not in signed iOS build 56 / Android versionCode 10. No further paid build has been started. Device acceptance, production provider authorization and independent financial review remain open.
 
 Validation for the native business workflow follow-up: backend build and all 221 tests passed; mobile TypeScript and 39 tests passed; customer web production build passed; iOS and Android production JavaScript/Hermes exports passed. These checks do not establish physical-device or store acceptance.
+
+Native availability follow-up: local wall-clock dates are converted to UTC without silently normalizing invalid dates or DST gaps. Cover approval uses a stable per-request retry key and authoritative server conflict checks. New controls include Spanish/French copy.
+
+Availability validation: mobile TypeScript and all 41 tests passed, including timezone extremes, calendar normalization, daylight-saving gaps and ordered ranges.
