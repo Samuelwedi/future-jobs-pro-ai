@@ -1,69 +1,374 @@
-import express, { Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import { pool } from '../config/database';
-import { verifyToken } from '../utils/auth';
-
-const router = express.Router();
-type Actor = { id: string; companyId: string };
-
-async function actor(req: Request): Promise<Actor> {
-  const token = verifyToken(req);
-  if (!token.companyId) throw new Error('Your account is not assigned to a company');
-  const found = await pool.query('SELECT id,company_id,role FROM users WHERE id=$1 AND company_id=$2 AND COALESCE(is_active,TRUE)=TRUE', [token.id, token.companyId]);
-  const row = found.rows[0];
-  if (!row || !['boss','manager','admin'].includes(String(row.role).toLowerCase())) throw new Error('Company administrator access is required');
-  return { id: row.id, companyId: row.company_id };
+import express from "express";
+import bcrypt from "bcryptjs";
+import { pool } from "../config/database";
+import { companyActor, manages } from "../middleware/companyActor";
+import {
+  decimal,
+  documentDate,
+  documentId,
+  note,
+  requireValue,
+  transaction,
+} from "../services/commercialDocuments";
+import {
+  adminEmployee,
+  adminUserQuery,
+  canManageCompanyMember,
+  checkAdminVersion,
+  privilegedCompanyRole,
+} from "../services/companyAdministration";
+const router = express.Router(),
+  route = (fn: any) => (req: any, res: any, next: any) =>
+    Promise.resolve(fn(req, res)).catch(next);
+router.use(companyActor, (_req, res, next) =>
+  manages(res.locals.actor)
+    ? next()
+    : res.status(403).json({
+        success: false,
+        message: "Company administrator access is required",
+      }),
+);
+async function calendar(client: any, companyId: string) {
+  const r = await client.query(
+    "SELECT COALESCE(NULLIF(to_jsonb(c)->>'timezone',''),'UTC') timezone,(CURRENT_TIMESTAMP AT TIME ZONE COALESCE(NULLIF(to_jsonb(c)->>'timezone',''),'UTC'))::date::text today FROM companies c WHERE id=$1",
+    [companyId],
+  );
+  requireValue(r.rows[0], "Company not found.", 404);
+  return r.rows[0];
 }
-
-async function employee(a: Actor, id: string) {
-  const found = await pool.query('SELECT id,role FROM users WHERE id=$1 AND company_id=$2', [id, a.companyId]);
-  if (!found.rowCount) throw new Error('Employee not found in your company');
-  if (String(found.rows[0].role).toLowerCase() === 'boss' && found.rows[0].id !== a.id) throw new Error('The owner account cannot be changed here');
+async function employee(
+  client: any,
+  a: any,
+  id: string,
+  tz: string,
+  lock = false,
+) {
+  const r = await client.query(
+    adminUserQuery +
+      ` WHERE u.id=$1 AND u.company_id=$2${lock ? " FOR UPDATE OF u" : ""}`,
+    [id, a.company_id, tz],
+  );
+  requireValue(r.rows[0], "Employee not found in your company", 404);
+  return r.rows[0];
 }
-
-async function audit(a: Actor, id: string, action: string, details: object = {}) {
-  await pool.query('INSERT INTO company_admin_audit_logs(company_id,actor_id,employee_id,action,details) VALUES($1,$2,$3,$4,$5)', [a.companyId,a.id,id,action,JSON.stringify(details)]);
+async function mutate(
+  req: any,
+  res: any,
+  action: string,
+  work: (c: any, a: any, row: any, cal: any) => Promise<any>,
+  auditDetails: any = {},
+) {
+  const initial = res.locals.actor,
+    id = documentId(req.params.id);
+  const result = await transaction(async (c) => {
+    const actorResult = await c.query(
+        "SELECT id,company_id,LOWER(role) role FROM users WHERE id=$1 AND company_id=$2 AND COALESCE(is_active,true) FOR SHARE",
+        [initial.id, initial.company_id],
+      ),
+      a = actorResult.rows[0];
+    requireValue(
+      a && manages(a),
+      "Company administrator access is required",
+      403,
+    );
+    const cal = await calendar(c, a.company_id),
+      before = await employee(c, a, id, cal.timezone);
+    requireValue(
+      canManageCompanyMember(a, before),
+      "This employee account cannot be managed by your role. Use the dedicated ownership-transfer flow for owners.",
+      403,
+    );
+    const row = await employee(c, a, id, cal.timezone, true);
+    requireValue(
+      canManageCompanyMember(a, row),
+      "This employee account cannot be managed by your role.",
+      403,
+    );
+    checkAdminVersion(row, req.body?.expectedVersion);
+    await work(c, a, row, cal);
+    await c.query(
+      "UPDATE users SET updated_at=NOW() WHERE id=$1 AND company_id=$2",
+      [id, a.company_id],
+    );
+    await c.query(
+      "INSERT INTO company_admin_audit_logs(company_id,actor_id,employee_id,action,details) VALUES($1,$2,$3,$4,$5)",
+      [a.company_id, a.id, id, action, JSON.stringify(auditDetails)],
+    );
+    return {
+      actorId: a.id,
+      companyId: a.company_id,
+      employee: adminEmployee(a, await employee(c, a, id, cal.timezone)),
+    };
+  });
+  res.json({ success: true, ...result, sessionRefreshRequired: true });
 }
-
-function masked(value: unknown, visible = 4) {
-  const clean = String(value || '').replace(/\s/g, '');
-  return clean ? `${'•'.repeat(Math.max(4, clean.length-visible))}${clean.slice(-visible)}` : null;
-}
-
-async function metric(sql: string, companyId: string) {
-  try { return Number((await pool.query(sql,[companyId])).rows[0]?.value || 0); }
-  catch (error) { console.warn('Admin metric unavailable:', (error as Error).message); return 0; }
-}
-
-router.get('/overview', async (req, res) => {
-  try {
-    const a = await actor(req);
-    const employeesResult = await pool.query(`SELECT u.id,u.first_name,u.last_name,u.full_name,u.email,u.role,COALESCE(u.is_active,TRUE) is_active,u.date_of_birth,u.sin,
-      (SELECT hourly_rate FROM compensation_history c WHERE c.user_id=u.id AND c.effective_date<=CURRENT_DATE ORDER BY effective_date DESC,created_at DESC LIMIT 1) hourly_rate,
-      (SELECT effective_date FROM compensation_history c WHERE c.user_id=u.id AND c.effective_date<=CURRENT_DATE ORDER BY effective_date DESC,created_at DESC LIMIT 1) rate_effective_date
-      FROM users u WHERE u.company_id=$1 AND LOWER(COALESCE(u.role,'employee'))<>'boss' ORDER BY COALESCE(u.first_name,u.full_name),u.last_name`, [a.companyId]);
-    const [totalEmployees,activeJobs,totalProjects,payrollMonth,revenueMonth,labourToday,revenueToday] = await Promise.all([
-      metric("SELECT COUNT(*) value FROM users WHERE company_id=$1 AND LOWER(COALESCE(role,'employee'))<>'boss' AND COALESCE(is_active,TRUE)=TRUE",a.companyId),
-      metric("SELECT COUNT(*) value FROM projects WHERE company_id=$1 AND LOWER(COALESCE(status,'active')) IN ('active','in_progress','in progress')",a.companyId),
-      metric('SELECT COUNT(*) value FROM projects WHERE company_id=$1',a.companyId),
-      metric("SELECT COALESCE(SUM(pi.final_pay),0) value FROM payroll_items pi JOIN payrolls p ON p.id=pi.payroll_id WHERE p.company_id=$1 AND p.created_at>=date_trunc('month',CURRENT_DATE)",a.companyId),
-      metric("SELECT COALESCE(SUM(pay.amount),0) value FROM payments pay JOIN invoices i ON i.id=pay.invoice_id WHERE i.company_id=$1 AND pay.payment_date>=date_trunc('month',CURRENT_DATE)",a.companyId),
-      metric('SELECT COALESCE(SUM(te.total_wage),0) value FROM time_entries te JOIN users u ON u.id=te.user_id WHERE u.company_id=$1 AND te.clock_in::date=CURRENT_DATE',a.companyId),
-      metric('SELECT COALESCE(SUM(pay.amount),0) value FROM payments pay JOIN invoices i ON i.id=pay.invoice_id WHERE i.company_id=$1 AND pay.payment_date=CURRENT_DATE',a.companyId),
+router.get(
+  "/overview",
+  route(async (_req: any, res: any) => {
+    const a = res.locals.actor,
+      cal = await calendar(pool, a.company_id);
+    const users = await pool.query(
+      adminUserQuery +
+        " WHERE u.company_id=$1 AND LOWER(COALESCE(u.role,'employee')) NOT IN ('boss','owner','admin') ORDER BY u.first_name,u.last_name,u.id LIMIT $2",
+      [a.company_id, 501, cal.timezone],
+    );
+    requireValue(
+      users.rows.length <= 500,
+      "Too many employee records. Use the team and payroll workspaces.",
+      413,
+    );
+    const metric = async (sql: string) => {
+      try {
+        const r = await pool.query(sql, [a.company_id, cal.timezone]);
+        const n = Number(r.rows[0]?.value);
+        return Number.isFinite(n) ? n : null;
+      } catch {
+        return null;
+      }
+    };
+    const [
+      totalEmployees,
+      activeJobs,
+      totalProjects,
+      payrollMonth,
+      labourToday,
+    ] = await Promise.all([
+      metric(
+        "SELECT COUNT(*) value FROM users WHERE company_id=$1 AND COALESCE(is_active,true) AND LOWER(COALESCE(role,'employee')) NOT IN ('boss','owner','admin') AND $2::text IS NOT NULL",
+      ),
+      metric(
+        "SELECT COUNT(*) value FROM projects WHERE company_id=$1 AND LOWER(COALESCE(status,'active')) IN ('active','in_progress','in progress') AND $2::text IS NOT NULL",
+      ),
+      metric(
+        "SELECT COUNT(*) value FROM projects WHERE company_id=$1 AND $2::text IS NOT NULL",
+      ),
+      metric(
+        "SELECT COALESCE(SUM(pi.final_pay),0) value FROM payroll_items pi JOIN payrolls p ON p.id=pi.payroll_id WHERE p.company_id=$1 AND p.created_at>=(date_trunc('month',CURRENT_TIMESTAMP AT TIME ZONE $2) AT TIME ZONE $2)",
+      ),
+      metric(
+        "SELECT COALESCE(SUM(te.total_wage),0) value FROM time_entries te JOIN users u ON u.id=te.user_id WHERE u.company_id=$1 AND (te.clock_in AT TIME ZONE $2)::date=(CURRENT_TIMESTAMP AT TIME ZONE $2)::date",
+      ),
     ]);
-    const employees = employeesResult.rows.map((r:any)=>({ id:r.id,firstName:r.first_name||'',lastName:r.last_name||'',fullName:r.full_name||`${r.first_name||''} ${r.last_name||''}`.trim(),email:r.email,role:r.role||'employee',isActive:r.is_active,dateOfBirth:r.date_of_birth,hourlyRate:Number(r.hourly_rate||0),rateEffectiveDate:r.rate_effective_date,tax:{configured:Boolean(r.sin),maskedSin:masked(r.sin,3)},directDeposit:{configured:false,accountHolder:'',accountType:'',maskedRouting:null,maskedAccount:null}}));
-    res.set('Cache-Control','no-store').json({success:true,stats:{totalEmployees,activeJobs,totalProjects,totalPayrollThisMonth:payrollMonth,revenueThisMonth:revenueMonth,marginToday:revenueToday>0?((revenueToday-labourToday)/revenueToday)*100:0,labourCostToday:labourToday,revenueToday},employees});
-  } catch(error:any) { res.status(/access|required|token/i.test(error.message)?403:400).json({success:false,message:error.message}); }
-});
-
-router.patch('/employees/:id/profile', async(req,res)=>{ try { const a=await actor(req),id=String(req.params.id); await employee(a,id); const first=String(req.body.firstName||'').trim(),last=String(req.body.lastName||'').trim(),email=String(req.body.email||'').trim().toLowerCase(),role=String(req.body.role||'employee').toLowerCase(); if(!first||!last||!/^\S+@\S+\.\S+$/.test(email)) throw new Error('A valid name and email are required'); if(!['employee','manager'].includes(role)) throw new Error('Role must be employee or manager'); const changed=await pool.query('UPDATE users SET first_name=$1,last_name=$2,full_name=$3,email=$4,role=$5,is_active=$6,updated_at=NOW() WHERE id=$7 AND company_id=$8 RETURNING id,email,first_name,last_name,full_name,role,company_id,is_active',[first,last,`${first} ${last}`,email,role,req.body.isActive!==false,id,a.companyId]); await audit(a,id,'employee.profile_updated',{role,isActive:req.body.isActive!==false}); res.json({success:true,user:changed.rows[0],sessionRefreshRequired:true}); } catch(error:any){res.status(400).json({success:false,message:error.message});} });
-
-router.post('/employees/:id/compensation', async(req,res)=>{ try { const a=await actor(req),id=String(req.params.id); await employee(a,id); const rate=Number(req.body.hourlyRate),date=String(req.body.effectiveDate||''); if(!Number.isFinite(rate)||rate<=0||rate>10000) throw new Error('Enter a valid hourly wage'); if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Enter a valid effective date'); await pool.query('INSERT INTO compensation_history(user_id,hourly_rate,effective_date,created_by) VALUES($1,$2,$3,$4)',[id,rate,date,a.id]); await audit(a,id,'employee.compensation_updated',{hourlyRate:rate,effectiveDate:date}); res.status(201).json({success:true}); } catch(error:any){res.status(400).json({success:false,message:error.message});} });
-
-router.patch('/employees/:id/tax', async(req,res)=>{ try { const a=await actor(req),id=String(req.params.id); await employee(a,id); const sin=String(req.body.sin||'').replace(/\D/g,''),dob=String(req.body.dateOfBirth||''); if(sin&&sin.length!==9) throw new Error('SIN must contain exactly 9 digits'); if(dob&&!/^\d{4}-\d{2}-\d{2}$/.test(dob)) throw new Error('Enter a valid date of birth'); await pool.query("UPDATE users SET sin=COALESCE(NULLIF($1,''),sin),date_of_birth=COALESCE(NULLIF($2,'')::date,date_of_birth),updated_at=NOW() WHERE id=$3 AND company_id=$4",[sin,dob,id,a.companyId]); await audit(a,id,'employee.tax_updated',{sinReplaced:Boolean(sin),dateOfBirthUpdated:Boolean(dob)}); res.json({success:true}); } catch(error:any){res.status(400).json({success:false,message:error.message});} });
-
-router.patch('/employees/:id/direct-deposit', async(req,res)=>{ try { const a=await actor(req),id=String(req.params.id); await employee(a,id); await audit(a,id,'employee.legacy_direct_deposit_blocked'); res.status(410).json({success:false,message:'Legacy bank-detail entry has been retired. Use the secure Payout Center enrollment workflow.'}); } catch(error:any){res.status(400).json({success:false,message:error.message});} });
-
-router.post('/employees/:id/reset-password', async(req,res)=>{ try { const a=await actor(req),id=String(req.params.id); await employee(a,id); const password=String(req.body.temporaryPassword||''); if(password.length<12) throw new Error('Temporary password must contain at least 12 characters'); const changed=await pool.query('UPDATE users SET password_hash=$1,must_change_password=TRUE,updated_at=NOW() WHERE id=$2 AND company_id=$3 RETURNING id,email',[await bcrypt.hash(password,12),id,a.companyId]); if(!changed.rowCount)throw new Error('Employee account was not found'); await audit(a,id,'employee.password_reset'); res.json({success:true,message:'Temporary password set successfully. The employee must change it after signing in.',user:changed.rows[0]}); } catch(error:any){res.status(400).json({success:false,message:error.message});} });
-
+    let revenueByCurrency: any[] | null = null;
+    try {
+      revenueByCurrency = (
+        await pool.query(
+          "SELECT i.currency,COALESCE(SUM(pay.amount),0)::text month_amount,COALESCE(SUM(pay.amount) FILTER(WHERE pay.payment_date=$2::date),0)::text today_amount FROM payments pay JOIN invoices i ON i.id=pay.invoice_id WHERE i.company_id=$1 AND pay.payment_date>=date_trunc('month',$2::date)::date AND pay.payment_date<=$2::date GROUP BY i.currency ORDER BY i.currency",
+          [a.company_id, cal.today],
+        )
+      ).rows;
+    } catch {}
+    const single =
+      revenueByCurrency?.length === 1 &&
+      ["CAD", "USD"].includes(revenueByCurrency[0].currency)
+        ? revenueByCurrency[0]
+        : null;
+    res.json({
+      success: true,
+      actorId: a.id,
+      companyId: a.company_id,
+      timezone: cal.timezone,
+      asOfDate: cal.today,
+      permissions: { canAssignManager: privilegedCompanyRole(a.role) },
+      stats: {
+        totalEmployees,
+        activeJobs,
+        totalProjects,
+        totalPayrollThisMonth: payrollMonth,
+        revenueThisMonth: single ? Number(single.month_amount) : null,
+        revenueToday: single ? Number(single.today_amount) : null,
+        marginToday: null,
+        labourCostToday: labourToday,
+        revenueCurrency: single?.currency || null,
+      },
+      revenueByCurrency,
+      wageCurrency: null,
+      employees: users.rows.map((row) => adminEmployee(a, row)),
+    });
+  }),
+);
+router.get(
+  "/employees/:id",
+  route(async (req: any, res: any) => {
+    const a = res.locals.actor,
+      cal = await calendar(pool, a.company_id),
+      row = await employee(pool, a, documentId(req.params.id), cal.timezone);
+    requireValue(
+      canManageCompanyMember(a, row),
+      "Use a permitted administrator or the dedicated account workflow.",
+      403,
+    );
+    res.json({
+      success: true,
+      actorId: a.id,
+      companyId: a.company_id,
+      employee: adminEmployee(a, row),
+    });
+  }),
+);
+router.get(
+  "/audit",
+  route(async (req: any, res: any) => {
+    const a = res.locals.actor,
+      limit = Number(req.query.limit ?? 25),
+      offset = Number(req.query.offset ?? 0);
+    requireValue(
+      Number.isInteger(limit) &&
+        limit > 0 &&
+        limit <= 100 &&
+        Number.isInteger(offset) &&
+        offset >= 0 &&
+        offset <= 100000,
+      "Choose a valid audit page.",
+    );
+    const r = await pool.query(
+      "SELECT id,actor_id,employee_id,action,details,created_at FROM company_admin_audit_logs WHERE company_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3",
+      [a.company_id, limit, offset],
+    );
+    res.json({
+      success: true,
+      actorId: a.id,
+      companyId: a.company_id,
+      events: r.rows,
+      limit,
+      offset,
+    });
+  }),
+);
+router.patch(
+  "/employees/:id/profile",
+  route(async (req: any, res: any) => {
+    const first = note(req.body?.firstName, 100),
+      last = note(req.body?.lastName, 100),
+      email = note(req.body?.email, 254).toLowerCase(),
+      role = String(req.body?.role || "").toLowerCase();
+    requireValue(
+      first && last && /^\S+@\S+\.\S+$/.test(email),
+      "A valid name and email are required",
+    );
+    requireValue(
+      ["employee", "manager"].includes(role),
+      "Role must be employee or manager",
+    );
+    requireValue(
+      typeof req.body.isActive === "boolean",
+      "Choose whether the account is active.",
+    );
+    await mutate(
+      req,
+      res,
+      "employee.profile_updated",
+      async (c, a) => {
+        requireValue(
+          role !== "manager" || privilegedCompanyRole(a.role),
+          "Only a company owner or administrator can assign manager access.",
+          403,
+        );
+        await c.query(
+          "UPDATE users SET first_name=$1,last_name=$2,full_name=$3,email=$4,role=$5,is_active=$6 WHERE id=$7 AND company_id=$8",
+          [
+            first,
+            last,
+            first + " " + last,
+            email,
+            role,
+            req.body.isActive,
+            req.params.id,
+            a.company_id,
+          ],
+        );
+      },
+      { role, isActive: req.body.isActive },
+    );
+  }),
+);
+router.post(
+  "/employees/:id/compensation",
+  route(async (req: any, res: any) => {
+    const rate = decimal(req.body?.hourlyRate, 10000, true),
+      date = documentDate(req.body?.effectiveDate);
+    await mutate(
+      req,
+      res,
+      "employee.compensation_updated",
+      async (c, a) => {
+        await c.query(
+          "INSERT INTO compensation_history(user_id,hourly_rate,effective_date,created_by) VALUES($1,$2,$3,$4)",
+          [req.params.id, rate, date, a.id],
+        );
+      },
+      { hourlyRate: rate, effectiveDate: date },
+    );
+  }),
+);
+router.patch(
+  "/employees/:id/tax",
+  route(async (req: any, res: any) => {
+    requireValue(
+      req.body?.sin == null || typeof req.body.sin === "string",
+      "Enter a valid tax identifier.",
+    );
+    const sin = String(req.body?.sin || "").replace(/[ -]/g, ""),
+      dob = req.body?.dateOfBirth ? documentDate(req.body.dateOfBirth) : "";
+    requireValue(
+      !sin || /^\d{9}$/.test(sin),
+      "SIN must contain exactly 9 digits",
+    );
+    await mutate(
+      req,
+      res,
+      "employee.tax_updated",
+      async (c, a, _row, cal) => {
+        requireValue(
+          !dob || dob <= cal.today,
+          "Date of birth cannot be in the future.",
+        );
+        await c.query(
+          "UPDATE users SET sin=COALESCE(NULLIF($1,''),sin),date_of_birth=COALESCE(NULLIF($2,'')::date,date_of_birth) WHERE id=$3 AND company_id=$4",
+          [sin, dob, req.params.id, a.company_id],
+        );
+      },
+      { sinReplaced: !!sin, dateOfBirthUpdated: !!dob },
+    );
+  }),
+);
+router.patch(
+  "/employees/:id/direct-deposit",
+  route(async (_req: any, res: any) =>
+    res.status(410).json({
+      success: false,
+      message:
+        "Legacy bank-detail entry has been retired. Employee payouts remain disabled.",
+    }),
+  ),
+);
+router.post(
+  "/employees/:id/reset-password",
+  route(async (req: any, res: any) => {
+    const password = req.body?.temporaryPassword;
+    requireValue(
+      typeof password === "string" &&
+        password.length >= 12 &&
+        Buffer.byteLength(password, "utf8") <= 72,
+      "Use a temporary password of at least 12 characters and at most 72 UTF-8 bytes.",
+    );
+    await mutate(req, res, "employee.password_reset", async (c, a) => {
+      await c.query(
+        "UPDATE users SET password_hash=$1,must_change_password=true WHERE id=$2 AND company_id=$3",
+        [await bcrypt.hash(password, 12), req.params.id, a.company_id],
+      );
+    });
+  }),
+);
+router.use((e: any, _req: any, res: any, _next: any) =>
+  res.status(e.code === "23505" ? 409 : e.status || 503).json({
+    success: false,
+    message:
+      e.code === "23505"
+        ? "That account or record conflicts with an existing entry."
+        : e.status
+          ? e.message
+          : "Company administration is unavailable. Refresh or contact support.",
+  }),
+);
 export default router;

@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -27,6 +28,7 @@ const statusMeta: Record<Status, { label: string; color: string; icon: keyof typ
 };
 
 export default function TasksScreen() {
+  const { t } = useLang();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const role = String((user as any)?.role || '').toLowerCase();
@@ -49,12 +51,12 @@ export default function TasksScreen() {
         setEmployees(people.users || []);
       }
     } catch (cause: any) {
-      Alert.alert('Tasks unavailable', cause?.response?.data?.message || cause?.message || 'Could not load tasks.');
+      Alert.alert(t("Tasks unavailable"), cause?.response?.data?.message || cause?.message || t("Could not load tasks."));
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [isManager]);
+  }, [isManager, t]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -63,7 +65,7 @@ export default function TasksScreen() {
   const progress = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
 
   const createTask = async () => {
-    if (!description.trim()) return Alert.alert('Task details required', 'Describe the work that needs to be completed.');
+    if (!description.trim()) return Alert.alert(t("Task details required"), t("Describe the work that needs to be completed."));
     try {
       const response = await api.post<{ task: Task }>('/tasks', { description: description.trim(), assigned_to: assignedTo || null });
       const assignee = employees.find(person => person.id === assignedTo);
@@ -72,7 +74,7 @@ export default function TasksScreen() {
       setAssignedTo('');
       setShowComposer(false);
     } catch (cause: any) {
-      Alert.alert('Task not created', cause?.response?.data?.message || cause?.message || 'Please try again.');
+      Alert.alert(t("Task not created"), cause?.response?.data?.message || cause?.message || t("Please try again."));
     }
   };
 
@@ -82,17 +84,17 @@ export default function TasksScreen() {
       await api.patch(`/tasks/${task.id}`, { status: next });
       setTasks(current => current.map(item => item.id === task.id ? { ...item, status: next } : item));
     } catch (cause: any) {
-      Alert.alert('Task not updated', cause?.response?.data?.message || cause?.message || 'You may only update tasks assigned to you.');
+      Alert.alert(t("Task not updated"), cause?.response?.data?.message || cause?.message || t("You may only update tasks assigned to you."));
     }
   };
 
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#22D3EE" /><Text style={styles.muted}>Loading the work board…</Text></View>;
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#22D3EE" /><Text style={styles.muted}>{t("Loading the work board…")}</Text></View>;
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 14 }}><Text style={styles.title}>Work Board</Text><Text style={styles.muted}>{tasks.length} assignments • {progress}% complete</Text></View>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
+        <View style={{ flex: 1, marginLeft: 14 }}><Text style={styles.title}>{t("Work Board")}</Text><Text style={styles.muted}>{t(tasks.length === 1 ? '{count} assignment • {progress}% complete' : '{count} assignments • {progress}% complete',{count:String(tasks.length),progress:String(progress)})}</Text></View>
         {isManager ? <TouchableOpacity style={styles.addButton} onPress={() => setShowComposer(value => !value)}><MaterialIcons name={showComposer ? 'close' : 'add'} size={23} color="#06131B" /></TouchableOpacity> : null}
       </View>
 
@@ -100,18 +102,18 @@ export default function TasksScreen() {
 
       {showComposer && isManager ? (
         <View style={styles.composer}>
-          <Text style={styles.sectionLabel}>NEW ASSIGNMENT</Text>
-          <TextInput value={description} onChangeText={setDescription} placeholder="Describe the expected result…" placeholderTextColor="#64748B" multiline style={styles.input} />
+          <Text style={styles.sectionLabel}>{t("NEW ASSIGNMENT")}</Text>
+          <TextInput value={description} onChangeText={setDescription} placeholder={t("Describe the expected result…")} placeholderTextColor="#64748B" multiline style={styles.input} />
           <ScrollView automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag" horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
-            <TouchableOpacity style={[styles.personChip, !assignedTo && styles.personSelected]} onPress={() => setAssignedTo('')}><Text style={styles.chipText}>Unassigned</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.personChip, !assignedTo && styles.personSelected]} onPress={() => setAssignedTo('')}><Text style={styles.chipText}>{t("Unassigned")}</Text></TouchableOpacity>
             {employees.map(person => <TouchableOpacity key={person.id} style={[styles.personChip, assignedTo === person.id && styles.personSelected]} onPress={() => setAssignedTo(person.id)}><Text style={styles.chipText}>{person.first_name} {person.last_name}</Text></TouchableOpacity>)}
           </ScrollView>
-          <TouchableOpacity style={styles.createButton} onPress={createTask}><MaterialIcons name="auto-awesome" size={18} color="#06131B" /><Text style={styles.createText}>Create and notify</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.createButton} onPress={createTask}><MaterialIcons name="auto-awesome" size={18} color="#06131B" /><Text style={styles.createText}>{t("Create and notify")}</Text></TouchableOpacity>
         </View>
       ) : null}
 
       <ScrollView automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag" horizontal showsHorizontalScrollIndicator={false} style={styles.filters} contentContainerStyle={{ gap: 8, paddingHorizontal: 14 }}>
-        {(['all', 'pending', 'in_progress', 'completed'] as const).map(value => <TouchableOpacity key={value} style={[styles.filter, filter === value && styles.filterActive]} onPress={() => setFilter(value)}><Text style={styles.filterText}>{value === 'all' ? `All ${tasks.length}` : statusMeta[value].label}</Text></TouchableOpacity>)}
+        {(['all', 'pending', 'in_progress', 'completed'] as const).map(value => <TouchableOpacity key={value} style={[styles.filter, filter === value && styles.filterActive]} onPress={() => setFilter(value)}><Text style={styles.filterText}>{value === 'all' ? t('All {count}',{count:String(tasks.length)}) : t(statusMeta[value].label)}</Text></TouchableOpacity>)}
       </ScrollView>
 
       <FlatList
@@ -119,7 +121,7 @@ export default function TasksScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor="#22D3EE" />}
-        ListEmptyComponent={<View style={styles.empty}><MaterialIcons name="task-alt" size={50} color="#476079" /><Text style={styles.emptyTitle}>Nothing in this lane</Text><Text style={styles.muted}>New work and completed results will appear here.</Text></View>}
+        ListEmptyComponent={<View style={styles.empty}><MaterialIcons name="task-alt" size={50} color="#476079" /><Text style={styles.emptyTitle}>{t("Nothing in this lane")}</Text><Text style={styles.muted}>{t("New work and completed results will appear here.")}</Text></View>}
         renderItem={({ item }) => {
           const meta = statusMeta[item.status] || statusMeta.pending;
           return (
@@ -127,8 +129,8 @@ export default function TasksScreen() {
               <View style={[styles.statusIcon, { backgroundColor: `${meta.color}20` }]}><MaterialIcons name={meta.icon} size={24} color={meta.color} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.description}>{item.description}</Text>
-                <View style={styles.metaRow}><Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text><Text style={styles.dotText}>•</Text><Text style={styles.assignee}>{item.assigned_name || 'Unassigned'}</Text></View>
-                <Text style={styles.tapHint}>Tap to {item.status === 'pending' ? 'start work' : item.status === 'in_progress' ? 'mark complete' : 'reopen'}</Text>
+                <View style={styles.metaRow}><Text style={[styles.statusText, { color: meta.color }]}>{t(meta.label)}</Text><Text style={styles.dotText}>•</Text><Text style={styles.assignee}>{item.assigned_name || t("Unassigned")}</Text></View>
+                <Text style={styles.tapHint}>{t(item.status === 'pending' ? 'Tap to start work' : item.status === 'in_progress' ? 'Tap to mark complete' : 'Tap to reopen')}</Text>
               </View>
               <MaterialIcons name="chevron-right" size={22} color="#64748B" />
             </TouchableOpacity>
@@ -146,3 +148,4 @@ const styles = StyleSheet.create({
   filters: { maxHeight: 55, paddingVertical: 10 }, filter: { paddingHorizontal: 13, paddingVertical: 8, borderRadius: 12, backgroundColor: '#101E2D', borderWidth: 1, borderColor: '#263B50' }, filterActive: { backgroundColor: '#164E63', borderColor: '#22D3EE' }, filterText: { color: '#D6E4F0', fontSize: 11, fontWeight: '800' },
   list: { padding: 14, paddingBottom: 45 }, card: { flexDirection: 'row', gap: 12, alignItems: 'center', padding: 15, borderRadius: 16, marginBottom: 10, backgroundColor: '#101E2D', borderWidth: 1, borderColor: '#263B50' }, statusIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, description: { color: '#F8FAFC', fontSize: 14, fontWeight: '700', lineHeight: 20 }, metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5 }, statusText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase' }, dotText: { color: '#52667B', marginHorizontal: 6 }, assignee: { color: '#9FB0C2', fontSize: 11 }, tapHint: { color: '#5F758C', fontSize: 9, marginTop: 5 }, empty: { alignItems: 'center', paddingTop: 70 }, emptyTitle: { color: '#D6E4F0', fontSize: 16, fontWeight: '800', marginTop: 12 },
 });
+

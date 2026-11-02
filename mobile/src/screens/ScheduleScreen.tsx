@@ -1,3 +1,5 @@
+import { dateLabel, calendarLabel } from '../services/i18n';
+import { useLang } from '../context/LanguageContext';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -41,6 +43,7 @@ interface TeamMembersResponse {
 }
 
 export default function ScheduleScreen() {
+  const { t, lang } = useLang();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -108,7 +111,7 @@ export default function ScheduleScreen() {
       console.log(`📊 Fetched ${fetchedShifts.length} shifts`);
     } catch (e) {
       console.error('Error fetching shifts:', e);
-      Alert.alert('Error', 'Could not load shifts');
+      Alert.alert(t("Error"), t("Could not load shifts"));
     } finally {
       if(request === requestNumber.current) { setLoading(false); setRefreshing(false); }
     }
@@ -119,7 +122,7 @@ export default function ScheduleScreen() {
       fetchEmployees();
     }
     fetchShifts();
-  }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]));
+  }, [selectedDate, viewMode, selectedEmployeeId, currentMonth, t]));
 
   const onRefresh = () => { setRefreshing(true); fetchShifts(); };
 
@@ -142,12 +145,7 @@ export default function ScheduleScreen() {
 
   const formatShiftDate = (dateStr: string) => {
     if (!dateStr) return '';
-    const parts = dateStr.split('T')[0].split('-');
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const month = monthNames[+parts[1] - 1];
-    const day = +parts[2];
-    const weekday = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(Date.UTC(+parts[0], +parts[1] - 1, +parts[2])).getUTCDay()];
-    return `${weekday}, ${month} ${day}`;
+    return calendarLabel(dateStr, lang);
   };
 
   const shiftDates = new Set(shifts.map(s => s.date ? getShiftDateString(s.date) : ''));
@@ -179,12 +177,12 @@ export default function ScheduleScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 16 }}>
           <TouchableOpacity onPress={() => setShowEmployeePicker(true)}>
-            <Text style={styles.headerTitle}>{selectedEmployeeName}</Text>
+            <Text style={styles.headerTitle}>{selectedEmployeeId === user?.id ? t('My Schedule') : selectedEmployeeName}</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity disabled={!canManage} onPress={openCreateShift} style={{ padding: 4 }}>
@@ -199,7 +197,7 @@ export default function ScheduleScreen() {
             onPress={() => setViewMode(m)}
             style={[styles.viewModeBtn, viewMode === m && styles.viewModeBtnActive]}
           >
-            <Text style={[styles.viewModeText, viewMode === m && styles.viewModeTextActive]}>{m}</Text>
+            <Text style={[styles.viewModeText, viewMode === m && styles.viewModeTextActive]}>{t(m === 'month' ? 'Month' : m === 'week' ? 'Week' : m === '3days' ? '3 days' : 'Day')}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -208,7 +206,7 @@ export default function ScheduleScreen() {
         <TouchableOpacity onPress={() => navigateMonth(-1)}>
           <MaterialIcons name="chevron-left" size={28} color="#00D4FF" />
         </TouchableOpacity>
-        <Text style={styles.monthTitle}>{format(currentMonth, 'MMMM yyyy')}</Text>
+        <Text style={styles.monthTitle}>{dateLabel(currentMonth, lang, {month:'long',year:'numeric'})}</Text>
         <TouchableOpacity onPress={() => navigateMonth(1)}>
           <MaterialIcons name="chevron-right" size={28} color="#00D4FF" />
         </TouchableOpacity>
@@ -216,7 +214,7 @@ export default function ScheduleScreen() {
 
       <View style={styles.dayHeaders}>
         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-          <Text key={day} style={styles.dayHeaderText}>{day}</Text>
+          <Text key={day} style={styles.dayHeaderText}>{t(day)}</Text>
         ))}
       </View>
 
@@ -263,7 +261,7 @@ export default function ScheduleScreen() {
             {item.attachment_url && (
               <View style={styles.attachmentBadge}>
                 <MaterialIcons name="attach-file" size={14} color="#00D4FF" />
-                <Text style={styles.attachmentBadgeText}>Attachment</Text>
+                <Text style={styles.attachmentBadgeText}>{t("Attachment")}</Text>
               </View>
             )}
           </TouchableOpacity>
@@ -271,7 +269,7 @@ export default function ScheduleScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={<Text style={styles.empty}>No shifts on this day</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>{t("No shifts on this day")}</Text>}
       />
 
       {/* Shift Detail Modal */}
@@ -279,7 +277,7 @@ export default function ScheduleScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Shift Details</Text>
+              <Text style={styles.modalTitle}>{t("Shift Details")}</Text>
               <TouchableOpacity onPress={() => setSelectedShift(null)}>
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
@@ -287,36 +285,36 @@ export default function ScheduleScreen() {
             {selectedShift && (
               <ScrollView>
                 {canManage && <View style={{flexDirection:'row', gap:20, paddingBottom:16}}>
-                  <TouchableOpacity onPress={() => { navigation.navigate('CreateShift', {shift:selectedShift, date:selectedShift.date}); setSelectedShift(null); }}><Text style={{color:'#00D4FF'}}>Edit shift</Text></TouchableOpacity>
-                  <TouchableOpacity onPress={() => Alert.alert('Delete shift','Remove this scheduled shift?', [{text:'Cancel'},{text:'Delete',style:'destructive',onPress:async()=>{try { await api.delete(`/schedule/shifts/${selectedShift.id}`); setSelectedShift(null); await fetchShifts(); } catch(e:any) {Alert.alert('Delete failed',e.response?.data?.message || e.message);} }}])}><Text style={{color:'#F44336'}}>Delete shift</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => { navigation.navigate('CreateShift', {shift:selectedShift, date:selectedShift.date}); setSelectedShift(null); }}><Text style={{color:'#00D4FF'}}>{t("Edit shift")}</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => Alert.alert(t("Delete shift"),t("Remove this scheduled shift?"), [{text:t("Cancel")},{text:t("Delete"),style:'destructive',onPress:async()=>{try { await api.delete(`/schedule/shifts/${selectedShift.id}`); setSelectedShift(null); await fetchShifts(); } catch(e:any) {Alert.alert(t("Delete failed"),e.response?.data?.message || e.message);} }}])}><Text style={{color:'#F44336'}}>{t("Delete shift")}</Text></TouchableOpacity>
                 </View>}
-                <Text style={styles.detailLabel}>Shift</Text>
+                <Text style={styles.detailLabel}>{t("Shift")}</Text>
                 <Text style={styles.detailValue}>{selectedShift.name}</Text>
-                <Text style={styles.detailLabel}>Project</Text>
+                <Text style={styles.detailLabel}>{t("Project")}</Text>
                 <Text style={styles.detailValue}>{selectedShift.project_name}</Text>
                 {selectedShift.project_address && (
                   <>
-                    <Text style={styles.detailLabel}>Address</Text>
+                    <Text style={styles.detailLabel}>{t("Address")}</Text>
                     <Text style={styles.detailValue}>{selectedShift.project_address}</Text>
                   </>
                 )}
-                <Text style={styles.detailLabel}>Time</Text>
+                <Text style={styles.detailLabel}>{t("Time")}</Text>
                 <Text style={styles.detailValue}>{selectedShift.start_time} → {selectedShift.end_time}</Text>
                 {selectedShift.notes && (
                   <>
-                    <Text style={styles.detailLabel}>Notes</Text>
+                    <Text style={styles.detailLabel}>{t("Notes")}</Text>
                     <Text style={styles.detailValue}>{selectedShift.notes}</Text>
                   </>
                 )}
                 {selectedShift.attachment_url && (
                   <>
-                    <Text style={styles.detailLabel}>Attachment</Text>
+                    <Text style={styles.detailLabel}>{t("Attachment")}</Text>
                     <TouchableOpacity
                       style={styles.downloadBtn}
                       onPress={() => Linking.openURL(selectedShift.attachment_url!)}
                     >
                       <MaterialIcons name="download" size={20} color="#00D4FF" />
-                      <Text style={styles.downloadBtnText}>Open Attachment</Text>
+                      <Text style={styles.downloadBtnText}>{t("Open Attachment")}</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -330,7 +328,7 @@ export default function ScheduleScreen() {
                   }}
                 >
                   <MaterialIcons name="home" size={20} color="#0A0A0A" />
-                  <Text style={styles.goHomeBtnText}>Go to Home to Clock In</Text>
+                  <Text style={styles.goHomeBtnText}>{t("Go to Home to Clock In")}</Text>
                 </TouchableOpacity>
 
                 {selectedShift.project_address && (
@@ -339,7 +337,7 @@ export default function ScheduleScreen() {
                     onPress={() => handleOpenDirections(selectedShift.project_address)}
                   >
                     <MaterialIcons name="directions" size={20} color="#0A0A0A" />
-                    <Text style={styles.directionsBtnText}>Get Directions</Text>
+                    <Text style={styles.directionsBtnText}>{t("Get Directions")}</Text>
                   </TouchableOpacity>
                 )}
               </ScrollView>
@@ -353,7 +351,7 @@ export default function ScheduleScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Employee</Text>
+              <Text style={styles.modalTitle}>{t("Select Employee")}</Text>
               <TouchableOpacity onPress={() => setShowEmployeePicker(false)}>
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
@@ -366,7 +364,7 @@ export default function ScheduleScreen() {
                 setShowEmployeePicker(false);
               }}
             >
-              <Text style={styles.employeeName}>Me ({(user?.firstName || '') + ' ' + (user?.lastName || '')})</Text>
+              <Text style={styles.employeeName}>{t("Me (")}{(user?.firstName || '') + ' ' + (user?.lastName || '')})</Text>
             </TouchableOpacity>
             {employees.map(emp => (
               <TouchableOpacity

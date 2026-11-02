@@ -1,37 +1,47 @@
-import nodemailer, { Transporter } from 'nodemailer';
-import { Buffer } from 'buffer';
+import nodemailer, { Transporter } from "nodemailer";
+import { Buffer } from "buffer";
 
 // ─── SMTP Configuration ───
 const isSMTPConfigured = (): boolean => {
-  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  return !!(
+    process.env.SMTP_HOST &&
+    process.env.SMTP_USER &&
+    process.env.SMTP_PASS
+  );
 };
 
 let transporter: Transporter | null = null;
 if (isSMTPConfigured()) {
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_SECURE === 'true',
+    port: parseInt(process.env.SMTP_PORT || "587"),
+    secure: process.env.SMTP_SECURE === "true",
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
   });
-  console.log('📧 SMTP configured – email sending enabled');
+  console.log("📧 SMTP configured – email sending enabled");
 } else {
-  console.log('⚠️  SMTP not configured – email sending is disabled.');
+  console.log("⚠️  SMTP not configured – email sending is disabled.");
 }
 
 // ─── Send email (generic) ───
-export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
+export async function sendEmail(
+  to: string,
+  subject: string,
+  html: string,
+): Promise<void> {
   if (!transporter) {
-    console.log(`📧 [Samuel B.] Email would be sent to ${to} – Subject: ${subject}`);
-    console.log('   (Email sending is disabled – SMTP not configured)');
+    console.log(
+      `📧 [Samuel B.] Email would be sent to ${to} – Subject: ${subject}`,
+    );
+    console.log("   (Email sending is disabled – SMTP not configured)");
     return;
   }
   try {
     await transporter.sendMail({
-      from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com',
+      from: process.env.SMTP_FROM || "noreply@futurejobsproai.com",
       to,
       subject,
       html,
@@ -42,14 +52,19 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
   }
 }
 
-export async function sendPasswordResetEmail(to: string, resetLink: string): Promise<void> {
+export async function sendPasswordResetEmail(
+  to: string,
+  resetLink: string,
+): Promise<void> {
   if (!transporter) {
-    throw new Error('Password reset email is unavailable because SMTP is not configured');
+    throw new Error(
+      "Password reset email is unavailable because SMTP is not configured",
+    );
   }
   await transporter.sendMail({
-    from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com',
+    from: process.env.SMTP_FROM || "noreply@futurejobsproai.com",
     to,
-    subject: 'Reset your Future Jobs Pro AI password',
+    subject: "Reset your Future Jobs Pro AI password",
     html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;color:#172033"><h2>Reset your password</h2><p>We received a request to reset your Future Jobs Pro AI password.</p><p><a href="${resetLink}" style="display:inline-block;padding:12px 20px;border-radius:8px;background:#00bfe8;color:#07111f;text-decoration:none;font-weight:700">Reset password</a></p><p>This link expires in one hour. If you did not request it, you can safely ignore this email.</p></div>`,
   });
 }
@@ -59,16 +74,18 @@ export async function sendEmailWithAttachment(
   to: string,
   subject: string,
   html: string,
-  attachment: { filename: string; content: Buffer; contentType: string }
+  attachment: { filename: string; content: Buffer; contentType: string },
 ): Promise<void> {
   if (!transporter) {
-    console.log(`📧 [Samuel B.] Email would be sent to ${to} – Subject: ${subject}`);
-    console.log('   (Email sending is disabled – SMTP not configured)');
+    console.log(
+      `📧 [Samuel B.] Email would be sent to ${to} – Subject: ${subject}`,
+    );
+    console.log("   (Email sending is disabled – SMTP not configured)");
     return;
   }
   try {
     await transporter.sendMail({
-      from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com',
+      from: process.env.SMTP_FROM || "noreply@futurejobsproai.com",
       to,
       subject,
       html,
@@ -86,7 +103,7 @@ export async function sendPayStubEmail(
   employeeName: string,
   payrollPeriod: string,
   pdfBuffer: Buffer,
-  pdfFilename: string
+  pdfFilename: string,
 ): Promise<void> {
   const subject = `Your Pay Stub – ${payrollPeriod}`;
   const html = `
@@ -105,7 +122,7 @@ export async function sendPayStubEmail(
   await sendEmailWithAttachment(toEmail, subject, html, {
     filename: pdfFilename,
     content: pdfBuffer,
-    contentType: 'application/pdf',
+    contentType: "application/pdf",
   });
 }
 
@@ -114,23 +131,47 @@ export async function sendInviteEmail(
   email: string,
   firstName: string,
   tempPassword: string,
-  companyName: string
+  companyName: string,
 ): Promise<void> {
-  const subject = `Welcome to ${companyName} – Your Temporary Password`;
+  const esc = (value: string) =>
+    value.replace(
+      /[&<>"\']/g,
+      (c) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[c] || c,
+    );
+  const safeCompany = esc(companyName),
+    safeName = esc(firstName),
+    safePassword = esc(tempPassword);
+  const subject = `Welcome to ${companyName.replace(/[\r\n]/g, " ")} – Your Temporary Password`;
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #0A0A0A; color: #FFF;">
-      <h2 style="color: #00D4FF;">Welcome to ${companyName}</h2>
-      <p>Hello <strong>${firstName}</strong>,</p>
-      <p>You have been invited to join <strong>${companyName}</strong> on <strong>Future Jobs Pro AI</strong>.</p>
-      <p>Your temporary password is: <span style="background: #1A1A1A; padding: 4px 12px; border-radius: 6px; font-family: monospace;">${tempPassword}</span></p>
+      <h2 style="color: #00D4FF;">Welcome to ${safeCompany}</h2>
+      <p>Hello <strong>${safeName}</strong>,</p>
+      <p>You have been invited to join <strong>${safeCompany}</strong> on <strong>Future Jobs Pro AI</strong>.</p>
+      <p>Your temporary password is: <span style="background: #1A1A1A; padding: 4px 12px; border-radius: 6px; font-family: monospace;">${safePassword}</span></p>
       <p>Please log in at <a href="https://futurejobsproai.com/login" style="color: #00D4FF;">https://futurejobsproai.com/login</a> and change your password immediately.</p>
       <p>If you have any questions, contact <a href="mailto:support@futurejobsproai.com" style="color: #00D4FF;">support@futurejobsproai.com</a>.</p>
       <p>Thanks,<br/>The Future Jobs Pro AI Team</p>
     </div>
   `;
-  if (!transporter) throw new Error('Invitation email is unavailable because SMTP is not configured');
-  const result = await transporter.sendMail({from:process.env.SMTP_FROM || 'noreply@futurejobsproai.com',to:email,subject,html});
-  if (!result.accepted?.length) throw new Error('Invitation was not accepted by the mail provider');
+  if (!transporter)
+    throw new Error(
+      "Invitation email is unavailable because SMTP is not configured",
+    );
+  const result = await transporter.sendMail({
+    from: process.env.SMTP_FROM || "noreply@futurejobsproai.com",
+    to: email,
+    subject,
+    html,
+  });
+  if (!result.accepted?.length)
+    throw new Error("Invitation was not accepted by the mail provider");
 }
 
 // ─── Clock‑in notification ──────────────────────────────────────
@@ -139,7 +180,7 @@ export async function sendClockInNotification(
   name: string,
   projectName: string,
   time: Date,
-  companyName: string
+  companyName: string,
 ): Promise<void> {
   const subject = `Clock‑in Notification – ${companyName}`;
   const html = `
@@ -158,7 +199,7 @@ export async function sendShiftAssignmentEmail(
   shiftName: string,
   shiftDate: string,
   shiftTime: string,
-  companyName: string
+  companyName: string,
 ): Promise<void> {
   const subject = `New Shift Assigned – ${companyName}`;
   const html = `
@@ -180,7 +221,7 @@ export async function sendShiftAssignmentEmail(
 
 // ─── Test email (for debugging) ─────────────────────────────────
 export async function sendTestEmail(to: string): Promise<void> {
-  const subject = 'Test Email from Future Jobs Pro AI';
+  const subject = "Test Email from Future Jobs Pro AI";
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #0A0A0A; color: #FFF;">
       <h2 style="color: #00D4FF;">Test Email</h2>
@@ -192,12 +233,19 @@ export async function sendTestEmail(to: string): Promise<void> {
   await sendEmail(to, subject, html);
 }
 
-export async function sendVerificationEmail(to: string, link: string): Promise<void> {
-  if (!transporter) throw new Error('SMTP is not configured');
-  const safeLink = link.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+export async function sendVerificationEmail(
+  to: string,
+  link: string,
+): Promise<void> {
+  if (!transporter) throw new Error("SMTP is not configured");
+  const safeLink = link
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;");
   await transporter.sendMail({
-    from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com', to,
-    subject: 'Verify your Future Jobs Pro AI email',
+    from: process.env.SMTP_FROM || "noreply@futurejobsproai.com",
+    to,
+    subject: "Verify your Future Jobs Pro AI email",
     html: `<h2>Verify your email</h2><p><a href="${safeLink}">Verify email address</a></p><p>This link expires in one hour. If you did not request it, ignore this email.</p>`,
   });
 }

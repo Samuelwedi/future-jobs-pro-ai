@@ -12,7 +12,7 @@ const key=(id:string)=>`offline-queue-v2:${id}`;
 // Apply this to both new work and old queued records before replay.
 export function requiresOnlineConfirmation(url:string){
  const path=url.split('?')[0].toLowerCase();
- return /\/(auth|payroll|manual-payroll|direct-deposit|payouts?|stripe|subscriptions?|billing|approvals?|lucy|invoices?|expenses|integrations)(\/|$)/.test(path);
+ return /\/(auth|payroll|manual-payroll|year-end|direct-deposit|payouts?|stripe|subscriptions?|billing|approvals?|lucy|invoices?|estimates|evidence-bundles|company-admin|team|expenses|integrations)(\/|$)/.test(path);
 }
 async function read(id:string):Promise<any[]>{const raw=await AsyncStorage.getItem(key(id));return raw?JSON.parse(raw):[];}
 export async function checkOnlineStatus(){try{const state=await Network.getNetworkStateAsync();isOnline=Boolean(state.isConnected)&&state.isInternetReachable!==false;return isOnline;}catch{return isOnline;}}

@@ -1,45 +1,757 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Container, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel, Grid, IconButton, InputAdornment, MenuItem, Paper, Switch, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
-import { AccountBalance, AttachMoney, Badge, Close, Edit, LockReset, People, Refresh, Search, TrendingUp, Work } from '@mui/icons-material';
-import { API_BASE } from '../services/api';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  FormControlLabel,
+  Grid,
+  IconButton,
+  InputAdornment,
+  MenuItem,
+  Paper,
+  Switch,
+  Tab,
+  Tabs,
+  TextField,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import {
+  AccountBalance,
+  AttachMoney,
+  Badge,
+  Close,
+  Edit,
+  LockReset,
+  People,
+  Refresh,
+  Search,
+  TrendingUp,
+  Work,
+} from "@mui/icons-material";
+import { API_BASE } from "../services/api";
 
-type Stats={totalEmployees:number;activeJobs:number;totalProjects:number;totalPayrollThisMonth:number;revenueThisMonth:number;marginToday:number;labourCostToday:number;revenueToday:number};
-type Employee={id:string;firstName:string;lastName:string;fullName:string;email:string;role:string;isActive:boolean;dateOfBirth?:string;hourlyRate:number;rateEffectiveDate?:string;tax:{configured:boolean;maskedSin?:string};directDeposit:{configured:boolean;accountHolder:string;accountType:string;maskedRouting?:string;maskedAccount?:string}};
-const emptyStats:Stats={totalEmployees:0,activeJobs:0,totalProjects:0,totalPayrollThisMonth:0,revenueThisMonth:0,marginToday:0,labourCostToday:0,revenueToday:0};
-const money=(n:number)=>new Intl.NumberFormat('en-CA',{style:'currency',currency:'CAD',maximumFractionDigits:0}).format(n||0);
+type Stats = {
+  revenueCurrency?: string | null;
+  totalEmployees: number | null;
+  activeJobs: number | null;
+  totalProjects: number | null;
+  totalPayrollThisMonth: number | null;
+  revenueThisMonth: number | null;
+  marginToday: number | null;
+  labourCostToday: number | null;
+  revenueToday: number | null;
+};
+type Employee = {
+  recordVersion: string;
+  canManage: boolean;
+  id: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  dateOfBirth?: string | null;
+  hourlyRate: string | null;
+  rateEffectiveDate?: string;
+  tax: { configured: boolean; maskedSin?: string };
+  directDeposit: {
+    configured: boolean;
+    accountHolder: string;
+    accountType: string;
+    maskedRouting?: string;
+    maskedAccount?: string;
+  };
+};
+const emptyStats: Stats = {
+  totalEmployees: 0,
+  activeJobs: 0,
+  totalProjects: 0,
+  totalPayrollThisMonth: 0,
+  revenueThisMonth: 0,
+  marginToday: 0,
+  labourCostToday: 0,
+  revenueToday: 0,
+};
+const money = (n: number | string | null, currency?: string | null) =>
+  n == null
+    ? "Unavailable"
+    : `${currency || "Currency unspecified"} ${Number(n).toFixed(2)}`;
 
-export default function AdminDashboard(){
- const token=localStorage.getItem('token')||'',navigate=useNavigate();
- const [stats,setStats]=useState<Stats>(emptyStats),[employees,setEmployees]=useState<Employee[]>([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[success,setSuccess]=useState(''),[query,setQuery]=useState(''),[selected,setSelected]=useState<Employee|null>(null),[tab,setTab]=useState(0),[form,setForm]=useState<any>({});
- const api=useCallback(async(path:string,options:RequestInit={})=>{const response=await fetch(`${API_BASE}/api/company-admin${path}`,{...options,headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,...(options.headers||{})},cache:'no-store'});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'Request failed');return data;},[token]);
- const load=useCallback(async()=>{setLoading(true);setError('');try{const data=await api('/overview');setStats(data.stats||emptyStats);setEmployees(data.employees||[]);}catch(e:any){setError(e.message);}finally{setLoading(false);}},[api]);
- useEffect(()=>{load();},[load]);
- const visible=useMemo(()=>employees.filter(e=>`${e.fullName} ${e.email} ${e.role}`.toLowerCase().includes(query.toLowerCase())),[employees,query]);
- const open=(e:Employee)=>{setSelected(e);setTab(0);setError('');setSuccess('');setForm({firstName:e.firstName,lastName:e.lastName,email:e.email,role:e.role,isActive:e.isActive,hourlyRate:e.hourlyRate||'',effectiveDate:new Date().toISOString().slice(0,10),sin:'',dateOfBirth:e.dateOfBirth?.slice(0,10)||'',temporaryPassword:''});};
- const call=async(path:string,method:string,body:any,message:string)=>{if(!selected)return;setSaving(true);setError('');try{await api(`/employees/${selected.id}${path}`,{method,body:JSON.stringify(body)});setSuccess(message);await load();}catch(e:any){setError(e.message);}finally{setSaving(false);}};
- const cards=[
-  {label:'Total Employees',value:stats.totalEmployees,caption:'Manage team profiles',icon:<People/>,color:'#00d4ff',action:()=>document.getElementById('employee-operations')?.scrollIntoView({behavior:'smooth'})},
-  {label:'Active Jobs',value:stats.activeJobs,caption:'Open project operations',icon:<Work/>,color:'#55d66b',action:()=>navigate('/projects')},
-  {label:'Revenue This Month',value:money(stats.revenueThisMonth),caption:'Review invoices and payments',icon:<AttachMoney/>,color:'#ffb020',action:()=>navigate('/invoices')},
-  {label:"Today's Margin",value:`${stats.marginToday.toFixed(1)}%`,caption:`${money(stats.revenueToday)} revenue · ${money(stats.labourCostToday)} labour`,icon:<TrendingUp/>,color:'#b084ff',action:()=>navigate('/reports')},
-  {label:'Total Projects',value:stats.totalProjects,caption:'View project portfolio',icon:<Badge/>,color:'#6aa9ff',action:()=>navigate('/projects')},
-  {label:'Payroll This Month',value:money(stats.totalPayrollThisMonth),caption:'Open payroll workspace',icon:<AccountBalance/>,color:'#ff718b',action:()=>navigate('/payroll')},
- ];
- if(loading&&!employees.length)return <Box sx={{height:'70vh',display:'grid',placeItems:'center'}}><CircularProgress/></Box>;
- return <Container maxWidth="xl" sx={{py:4,color:'#fff'}}>
-  <Box sx={{display:'flex',justifyContent:'space-between',alignItems:'center',mb:3,gap:2,flexWrap:'wrap'}}><Box><Typography variant="h4" fontWeight={900}>Company operations</Typography><Typography color="text.secondary">Financial health, jobs and secure employee administration in one workspace.</Typography></Box><Button startIcon={<Refresh/>} onClick={load} variant="outlined">Refresh</Button></Box>
-  {error&&<Alert severity="error" sx={{mb:2}} onClose={()=>setError('')}>{error}</Alert>}{success&&<Alert severity="success" sx={{mb:2}} onClose={()=>setSuccess('')}>{success}</Alert>}
-  <Grid container spacing={2} sx={{mb:4}}>{cards.map(c=><Grid item xs={12} sm={6} lg={4} key={c.label}><Card onClick={c.action} sx={{height:'100%',cursor:'pointer',bgcolor:'#171b22',border:'1px solid #303846','&:hover':{borderColor:c.color,transform:'translateY(-2px)'},transition:'.2s'}}><CardContent><Box sx={{display:'flex',justifyContent:'space-between'}}><Box><Typography color="text.secondary">{c.label}</Typography><Typography variant="h4" fontWeight={900} sx={{color:c.color,my:1}}>{c.value}</Typography><Typography variant="caption" color="text.secondary">{c.caption}</Typography></Box><Box sx={{color:c.color}}>{c.icon}</Box></Box></CardContent></Card></Grid>)}</Grid>
-  <Paper id="employee-operations" sx={{p:{xs:2,md:3},bgcolor:'#11151b',border:'1px solid #303846'}}><Box sx={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:2,flexWrap:'wrap',mb:2}}><Box><Typography variant="h5" fontWeight={800}>Employee operations</Typography><Typography color="text.secondary">Profiles, effective wages, tax setup, secure payout enrollment and account access.</Typography></Box><TextField size="small" placeholder="Search employees" value={query} onChange={e=>setQuery(e.target.value)} InputProps={{startAdornment:<InputAdornment position="start"><Search/></InputAdornment>}}/></Box>
-   <Grid container spacing={2}>{visible.map(e=><Grid item xs={12} md={6} lg={4} key={e.id}><Card sx={{bgcolor:'#1a2029',border:'1px solid #303846'}}><CardContent><Box sx={{display:'flex',justifyContent:'space-between',gap:1}}><Box><Typography fontWeight={800}>{e.fullName}</Typography><Typography variant="body2" color="text.secondary">{e.email}</Typography></Box><Tooltip title="Edit employee"><IconButton onClick={()=>open(e)} color="primary"><Edit/></IconButton></Tooltip></Box><Box sx={{display:'flex',gap:1,flexWrap:'wrap',my:2}}><Chip size="small" label={e.role}/><Chip size="small" color={e.isActive?'success':'default'} label={e.isActive?'Active':'Inactive'}/><Chip size="small" color={e.tax.configured?'success':'warning'} label={e.tax.configured?'Tax ready':'Tax incomplete'}/><Chip size="small" color={e.directDeposit.configured?'success':'warning'} label={e.directDeposit.configured?'Deposit ready':'Deposit incomplete'}/></Box><Divider/><Box sx={{display:'flex',justifyContent:'space-between',mt:2}}><Typography color="text.secondary">Current wage</Typography><Typography fontWeight={800}>{money(e.hourlyRate)}/hr</Typography></Box></CardContent></Card></Grid>)}</Grid>{!visible.length&&<Typography color="text.secondary" sx={{py:5,textAlign:'center'}}>No employees match this search.</Typography>}
-  </Paper>
-  <Dialog open={Boolean(selected)} onClose={()=>!saving&&setSelected(null)} fullWidth maxWidth="md" PaperProps={{sx:{bgcolor:'#151a22',color:'#fff'}}}><DialogTitle sx={{display:'flex',justifyContent:'space-between'}}><span>Manage {selected?.fullName}</span><IconButton onClick={()=>setSelected(null)}><Close/></IconButton></DialogTitle><Tabs value={tab} onChange={(_,v)=>setTab(v)} variant="scrollable"><Tab label="Profile"/><Tab label="Pay"/><Tab label="Tax"/><Tab label="Payout account"/><Tab label="Security"/></Tabs><Divider/><DialogContent sx={{pt:3}}>
-   {tab===0&&<Grid container spacing={2}><Grid item xs={6}><TextField fullWidth label="First name" value={form.firstName||''} onChange={e=>setForm({...form,firstName:e.target.value})}/></Grid><Grid item xs={6}><TextField fullWidth label="Last name" value={form.lastName||''} onChange={e=>setForm({...form,lastName:e.target.value})}/></Grid><Grid item xs={12}><TextField fullWidth label="Email" value={form.email||''} onChange={e=>setForm({...form,email:e.target.value})}/></Grid><Grid item xs={6}><TextField select fullWidth label="Role" value={form.role||'employee'} onChange={e=>setForm({...form,role:e.target.value})}><MenuItem value="employee">Employee</MenuItem><MenuItem value="manager">Manager</MenuItem></TextField></Grid><Grid item xs={6}><FormControlLabel control={<Switch checked={form.isActive!==false} onChange={e=>setForm({...form,isActive:e.target.checked})}/>} label="Active account"/></Grid></Grid>}
-   {tab===1&&<Grid container spacing={2}><Grid item xs={12}><Alert severity="info">Future payroll uses the newest effective wage. Finalized payroll is not rewritten.</Alert></Grid><Grid item xs={6}><TextField fullWidth type="number" label="Hourly wage (CAD)" value={form.hourlyRate||''} onChange={e=>setForm({...form,hourlyRate:e.target.value})}/></Grid><Grid item xs={6}><TextField fullWidth type="date" label="Effective date" InputLabelProps={{shrink:true}} value={form.effectiveDate||''} onChange={e=>setForm({...form,effectiveDate:e.target.value})}/></Grid></Grid>}
-   {tab===2&&<Grid container spacing={2}><Grid item xs={12}><Alert severity="warning">Sensitive values are never returned after saving. Current SIN: {selected?.tax.maskedSin||'not configured'}.</Alert></Grid><Grid item xs={6}><TextField fullWidth label="Replacement SIN" value={form.sin||''} onChange={e=>setForm({...form,sin:e.target.value})}/></Grid><Grid item xs={6}><TextField fullWidth type="date" label="Date of birth" InputLabelProps={{shrink:true}} value={form.dateOfBirth||''} onChange={e=>setForm({...form,dateOfBirth:e.target.value})}/></Grid></Grid>}
-   {tab===3&&<Box><Alert severity="info" sx={{mb:2}}>Banking credentials are no longer collected in employee administration. Use the Payout Center for secure, tokenized enrollment and country availability.</Alert><Typography color="text.secondary">Current status: {selected?.directDeposit.configured?'Payout account enrolled':'Payout enrollment required'}.</Typography></Box>}
-   {tab===4&&<Box><Alert severity="info" sx={{mb:2}}>Passwords cannot be viewed. Set a temporary password of at least 12 characters.</Alert><TextField fullWidth type="password" label="New temporary password" value={form.temporaryPassword||''} onChange={e=>setForm({...form,temporaryPassword:e.target.value})} InputProps={{startAdornment:<InputAdornment position="start"><LockReset/></InputAdornment>}}/></Box>}
-  </DialogContent><DialogActions sx={{p:3}}><Button onClick={()=>setSelected(null)}>Cancel</Button>{tab===0&&<Button disabled={saving} variant="contained" onClick={()=>call('/profile','PATCH',{firstName:form.firstName,lastName:form.lastName,email:form.email,role:form.role,isActive:form.isActive},'Employee profile updated.')}>Save profile</Button>}{tab===1&&<Button disabled={saving} variant="contained" onClick={()=>call('/compensation','POST',{hourlyRate:form.hourlyRate,effectiveDate:form.effectiveDate},'New wage scheduled.')}>Save wage</Button>}{tab===2&&<Button disabled={saving} variant="contained" onClick={()=>call('/tax','PATCH',{sin:form.sin,dateOfBirth:form.dateOfBirth},'Tax information updated.')}>Save tax info</Button>}{tab===3&&<Button variant="contained" onClick={()=>navigate('/direct-deposit')}>Open Payout Center</Button>}{tab===4&&<Button disabled={saving} color="warning" variant="contained" onClick={()=>call('/reset-password','POST',{temporaryPassword:form.temporaryPassword},'Temporary password set.')}>Reset password</Button>}</DialogActions></Dialog>
- </Container>;
+export default function AdminDashboard() {
+  const token = localStorage.getItem("token") || "",
+    navigate = useNavigate();
+  const [stats, setStats] = useState<Stats>(emptyStats),
+    [employees, setEmployees] = useState<Employee[]>([]),
+    [loading, setLoading] = useState(true),
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState(""),
+    [success, setSuccess] = useState(""),
+    [query, setQuery] = useState(""),
+    [selected, setSelected] = useState<Employee | null>(null),
+    [tab, setTab] = useState(0),
+    [form, setForm] = useState<any>({});
+  const [canAssignManager, setCanAssignManager] = useState(false),
+    [asOfDate, setAsOfDate] = useState("");
+  const close = () => {
+    if (!saving) {
+      setSelected(null);
+      setForm({});
+    }
+  };
+  const api = useCallback(
+    async (path: string, options: RequestInit = {}) => {
+      const response = await fetch(`${API_BASE}/api/company-admin${path}`, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          ...(options.headers || {}),
+        },
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Request failed");
+      return data;
+    },
+    [token],
+  );
+  const [revenueByCurrency, setRevenueByCurrency] = useState<any[] | null>(
+    null,
+  );
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await api("/overview");
+      setStats(data.stats || emptyStats);
+      setRevenueByCurrency(data.revenueByCurrency ?? null);
+      setEmployees(data.employees || []);
+      setCanAssignManager(data.permissions?.canAssignManager === true);
+      setAsOfDate(data.asOfDate || "");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const visible = useMemo(
+    () =>
+      employees.filter((e) =>
+        `${e.fullName} ${e.email} ${e.role}`
+          .toLowerCase()
+          .includes(query.toLowerCase()),
+      ),
+    [employees, query],
+  );
+  const open = (e: Employee) => {
+    setSelected(e);
+    setTab(0);
+    setError("");
+    setSuccess("");
+    setForm({
+      firstName: e.firstName,
+      lastName: e.lastName,
+      email: e.email,
+      role: e.role,
+      isActive: e.isActive,
+      hourlyRate: e.hourlyRate || "",
+      effectiveDate: asOfDate,
+      sin: "",
+      dateOfBirth: e.dateOfBirth?.slice(0, 10) || "",
+      temporaryPassword: "",
+    });
+  };
+  const call = async (
+    path: string,
+    method: string,
+    body: any,
+    message: string,
+  ) => {
+    if (!selected) return;
+    setSaving(true);
+    setError("");
+    try {
+      const result = await api(`/employees/${selected.id}${path}`, {
+        method,
+        body: JSON.stringify({
+          ...body,
+          expectedVersion: selected.recordVersion,
+        }),
+      });
+      setSelected(result.employee);
+      setForm((f: any) => ({ ...f, sin: "", temporaryPassword: "" }));
+      setSuccess(message);
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const cards = [
+    {
+      label: "Total Employees",
+      value: stats.totalEmployees ?? "Unavailable",
+      caption: "Manage team profiles",
+      icon: <People />,
+      color: "#00d4ff",
+      action: () =>
+        document
+          .getElementById("employee-operations")
+          ?.scrollIntoView({ behavior: "smooth" }),
+    },
+    {
+      label: "Active Jobs",
+      value: stats.activeJobs ?? "Unavailable",
+      caption: "Open project operations",
+      icon: <Work />,
+      color: "#55d66b",
+      action: () => navigate("/projects"),
+    },
+    {
+      label: "Recorded Payments This Month",
+      value: money(stats.revenueThisMonth, stats.revenueCurrency),
+      caption: "Review invoices and payments",
+      icon: <AttachMoney />,
+      color: "#ffb020",
+      action: () => navigate("/invoices"),
+    },
+    {
+      label: "Today's Margin",
+      value:
+        stats.marginToday == null
+          ? "Unavailable"
+          : `${stats.marginToday.toFixed(1)}%`,
+      caption: "Currency and cost reconciliation required",
+      icon: <TrendingUp />,
+      color: "#b084ff",
+      action: () => navigate("/reports"),
+    },
+    {
+      label: "Total Projects",
+      value: stats.totalProjects ?? "Unavailable",
+      caption: "View project portfolio",
+      icon: <Badge />,
+      color: "#6aa9ff",
+      action: () => navigate("/projects"),
+    },
+    {
+      label: "Recorded Payroll This Month",
+      value: money(stats.totalPayrollThisMonth),
+      caption: "Open payroll workspace",
+      icon: <AccountBalance />,
+      color: "#ff718b",
+      action: () => navigate("/payroll"),
+    },
+  ];
+  if (loading && !employees.length)
+    return (
+      <Box sx={{ height: "70vh", display: "grid", placeItems: "center" }}>
+        <CircularProgress />
+      </Box>
+    );
+  return (
+    <Container maxWidth="xl" sx={{ py: 4, color: "#fff" }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 3,
+          gap: 2,
+          flexWrap: "wrap",
+        }}
+      >
+        <Box>
+          <Typography variant="h4" fontWeight={900}>
+            Company operations
+          </Typography>
+          <Typography color="text.secondary">
+            Financial health, jobs and secure employee administration in one
+            workspace.
+          </Typography>
+        </Box>
+        <Button startIcon={<Refresh />} onClick={load} variant="outlined">
+          Refresh
+        </Button>
+      </Box>
+      <Alert severity="info" sx={{ mb: 2 }}>
+        Mixed or unrecorded currency totals are not combined. Wage/payroll
+        amounts have unspecified historical currency; recorded payments are not
+        verified bank settlement. Protected owner/admin accounts are managed
+        separately.
+      </Alert>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError("")}>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess("")}>
+          {success}
+        </Alert>
+      )}
+      <Grid container spacing={2} sx={{ mb: 4 }}>
+        {cards.map((c) => (
+          <Grid item xs={12} sm={6} lg={4} key={c.label}>
+            <Card
+              onClick={c.action}
+              sx={{
+                height: "100%",
+                cursor: "pointer",
+                bgcolor: "#171b22",
+                border: "1px solid #303846",
+                "&:hover": {
+                  borderColor: c.color,
+                  transform: "translateY(-2px)",
+                },
+                transition: ".2s",
+              }}
+            >
+              <CardContent>
+                <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                  <Box>
+                    <Typography color="text.secondary">{c.label}</Typography>
+                    <Typography
+                      variant="h4"
+                      fontWeight={900}
+                      sx={{ color: c.color, my: 1 }}
+                    >
+                      {c.value}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {c.caption}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ color: c.color }}>{c.icon}</Box>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Typography variant="h6">Recorded payments by currency</Typography>
+        {revenueByCurrency === null ? (
+          <Typography>Totals unavailable</Typography>
+        ) : revenueByCurrency.length ? (
+          revenueByCurrency.map((r) => (
+            <Typography key={r.currency || "unspecified"}>
+              {r.currency || "Currency unspecified"}: {r.month_amount} this
+              month · {r.today_amount} today
+            </Typography>
+          ))
+        ) : (
+          <Typography>No recorded payments this month.</Typography>
+        )}
+      </Paper>
+      <Paper
+        id="employee-operations"
+        sx={{
+          p: { xs: 2, md: 3 },
+          bgcolor: "#11151b",
+          border: "1px solid #303846",
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 2,
+            flexWrap: "wrap",
+            mb: 2,
+          }}
+        >
+          <Box>
+            <Typography variant="h5" fontWeight={800}>
+              Employee operations
+            </Typography>
+            <Typography color="text.secondary">
+              Profiles, effective wages, tax setup, disabled employee payouts
+              and account access.
+            </Typography>
+          </Box>
+          <TextField
+            size="small"
+            placeholder="Search employees"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search />
+                </InputAdornment>
+              ),
+            }}
+          />
+        </Box>
+        <Grid container spacing={2}>
+          {visible.map((e) => (
+            <Grid item xs={12} md={6} lg={4} key={e.id}>
+              <Card sx={{ bgcolor: "#1a2029", border: "1px solid #303846" }}>
+                <CardContent>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 1,
+                    }}
+                  >
+                    <Box>
+                      <Typography fontWeight={800}>{e.fullName}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {e.email}
+                      </Typography>
+                    </Box>
+                    <Tooltip title="Edit employee">
+                      <IconButton
+                        disabled={!e.canManage}
+                        onClick={() => open(e)}
+                        color="primary"
+                      >
+                        <Edit />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                  <Box
+                    sx={{ display: "flex", gap: 1, flexWrap: "wrap", my: 2 }}
+                  >
+                    <Chip size="small" label={e.role} />
+                    <Chip
+                      size="small"
+                      color={e.isActive ? "success" : "default"}
+                      label={e.isActive ? "Active" : "Inactive"}
+                    />
+                    <Chip
+                      size="small"
+                      color={e.tax.configured ? "success" : "warning"}
+                      label={e.tax.configured ? "Tax ready" : "Tax incomplete"}
+                    />
+                    <Chip
+                      size="small"
+                      color={e.directDeposit.configured ? "success" : "warning"}
+                      label={
+                        e.directDeposit.configured
+                          ? "Deposit ready"
+                          : "Deposit incomplete"
+                      }
+                    />
+                  </Box>
+                  <Divider />
+                  <Box
+                    sx={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      mt: 2,
+                    }}
+                  >
+                    <Typography color="text.secondary">Current wage</Typography>
+                    <Typography fontWeight={800}>
+                      {money(e.hourlyRate)}/hr
+                    </Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+        {!visible.length && (
+          <Typography
+            color="text.secondary"
+            sx={{ py: 5, textAlign: "center" }}
+          >
+            No employees match this search.
+          </Typography>
+        )}
+      </Paper>
+      <Dialog
+        open={Boolean(selected)}
+        onClose={close}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{ sx: { bgcolor: "#151a22", color: "#fff" } }}
+      >
+        <DialogTitle sx={{ display: "flex", justifyContent: "space-between" }}>
+          <span>Manage {selected?.fullName}</span>
+          <IconButton onClick={close}>
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable">
+          <Tab label="Profile" />
+          <Tab label="Pay" />
+          <Tab label="Tax" />
+          <Tab label="Payout account" />
+          <Tab label="Security" />
+        </Tabs>
+        <Divider />
+        <DialogContent sx={{ pt: 3 }}>
+          {tab === 0 && (
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  label="First name"
+                  value={form.firstName || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, firstName: e.target.value })
+                  }
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  label="Last name"
+                  value={form.lastName || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, lastName: e.target.value })
+                  }
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Email"
+                  value={form.email || ""}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  select
+                  fullWidth
+                  label="Role"
+                  value={form.role || "employee"}
+                  onChange={(e) => setForm({ ...form, role: e.target.value })}
+                >
+                  <MenuItem value="employee">Employee</MenuItem>
+                  <MenuItem value="manager" disabled={!canAssignManager}>
+                    Manager
+                  </MenuItem>
+                </TextField>
+              </Grid>
+              <Grid item xs={6}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={form.isActive !== false}
+                      onChange={(e) =>
+                        setForm({ ...form, isActive: e.target.checked })
+                      }
+                    />
+                  }
+                  label="Active account"
+                />
+              </Grid>
+            </Grid>
+          )}
+          {tab === 1 && (
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <Alert severity="info">
+                  Future payroll uses the newest effective wage. Finalized
+                  payroll is not rewritten.
+                </Alert>
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Hourly wage (CAD)"
+                  value={form.hourlyRate || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, hourlyRate: e.target.value })
+                  }
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  type="date"
+                  label="Effective date"
+                  InputLabelProps={{ shrink: true }}
+                  value={form.effectiveDate || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, effectiveDate: e.target.value })
+                  }
+                />
+              </Grid>
+            </Grid>
+          )}
+          {tab === 2 && (
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <Alert severity="warning">
+                  Sensitive values are never returned after saving. Current SIN:{" "}
+                  {selected?.tax.maskedSin || "not configured"}.
+                </Alert>
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  label="Replacement SIN"
+                  value={form.sin || ""}
+                  onChange={(e) => setForm({ ...form, sin: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  fullWidth
+                  type="date"
+                  label="Date of birth"
+                  InputLabelProps={{ shrink: true }}
+                  value={form.dateOfBirth || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, dateOfBirth: e.target.value })
+                  }
+                />
+              </Grid>
+            </Grid>
+          )}
+          {tab === 3 && (
+            <Box>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Banking credentials are no longer collected in employee
+                administration. Use the Payout Center for secure, tokenized
+                enrollment and country availability.
+              </Alert>
+              <Typography color="text.secondary">
+                Current status:{" "}
+                {selected?.directDeposit.configured
+                  ? "Payout account enrolled"
+                  : "Payout enrollment required"}
+                .
+              </Typography>
+            </Box>
+          )}
+          {tab === 4 && (
+            <Box>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Passwords cannot be viewed. Set a temporary password of at least
+                12 characters.
+              </Alert>
+              <TextField
+                fullWidth
+                type="password"
+                label="New temporary password"
+                value={form.temporaryPassword || ""}
+                onChange={(e) =>
+                  setForm({ ...form, temporaryPassword: e.target.value })
+                }
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <LockReset />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={close}>Cancel</Button>
+          {tab === 0 && (
+            <Button
+              disabled={saving}
+              variant="contained"
+              onClick={() =>
+                call(
+                  "/profile",
+                  "PATCH",
+                  {
+                    firstName: form.firstName,
+                    lastName: form.lastName,
+                    email: form.email,
+                    role: form.role,
+                    isActive: form.isActive,
+                  },
+                  "Employee profile updated.",
+                )
+              }
+            >
+              Save profile
+            </Button>
+          )}
+          {tab === 1 && (
+            <Button
+              disabled={saving}
+              variant="contained"
+              onClick={() =>
+                call(
+                  "/compensation",
+                  "POST",
+                  {
+                    hourlyRate: form.hourlyRate,
+                    effectiveDate: form.effectiveDate,
+                  },
+                  "New wage scheduled.",
+                )
+              }
+            >
+              Save wage
+            </Button>
+          )}
+          {tab === 2 && (
+            <Button
+              disabled={saving}
+              variant="contained"
+              onClick={() =>
+                call(
+                  "/tax",
+                  "PATCH",
+                  { sin: form.sin, dateOfBirth: form.dateOfBirth },
+                  "Tax information updated.",
+                )
+              }
+            >
+              Save tax info
+            </Button>
+          )}
+          {tab === 3 && (
+            <Button
+              variant="contained"
+              onClick={() => navigate("/direct-deposit")}
+            >
+              Open Payout Center
+            </Button>
+          )}
+          {tab === 4 && (
+            <Button
+              disabled={saving}
+              color="warning"
+              variant="contained"
+              onClick={() =>
+                call(
+                  "/reset-password",
+                  "POST",
+                  { temporaryPassword: form.temporaryPassword },
+                  "Temporary password set.",
+                )
+              }
+            >
+              Reset password
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+    </Container>
+  );
 }

@@ -45,3 +45,4 @@ export async function generateEstimatePDF(data: any): Promise<string> {
   // Reuse invoice PDF with estimate number
   return generateInvoicePDF({ ...data, invoiceNumber: data.estimateNumber });
 }
+export async function generateInvoicePDFBuffer(data:InvoiceData):Promise<Buffer>{return renderToBuffer(React.createElement(InvoicePDF,{data}) as React.ReactElement<any>);}

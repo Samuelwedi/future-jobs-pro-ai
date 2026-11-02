@@ -1,29 +1,34 @@
-import crypto from 'crypto';
-import Stripe from 'stripe';
-import { pool } from '../config/database';
-import { decrypt, encrypt } from './encryptionService';
+import crypto from "crypto";
+import { manages } from "../middleware/companyActor";
+import Stripe from "stripe";
+import { pool } from "../config/database";
+import { decrypt, encrypt } from "./encryptionService";
 import {
   createSalesReceipt,
   findOrCreateQuickBooksCustomer,
-} from './quickbooksService';
+} from "./quickbooksService";
 import {
   createQuickBooksAuthorizationUrl,
   exchangeQuickBooksAuthorizationCode,
   revokeQuickBooksToken,
-} from './quickbooksOAuth';
+} from "./quickbooksOAuth";
 
-type Provider = 'quickbooks' | 'stripe';
+type Provider = "quickbooks" | "stripe";
 
-function integrationEnvironment(provider: Provider): 'sandbox' | 'production' {
-  if (provider === 'quickbooks') {
-    return process.env.QUICKBOOKS_ENVIRONMENT === 'production' ? 'production' : 'sandbox';
+function integrationEnvironment(provider: Provider): "sandbox" | "production" {
+  if (provider === "quickbooks") {
+    return process.env.QUICKBOOKS_ENVIRONMENT === "production"
+      ? "production"
+      : "sandbox";
   }
-  return requireEnvironment('STRIPE_CONNECT_SECRET_KEY').startsWith('sk_live_')
-    ? 'production'
-    : 'sandbox';
+  return requireEnvironment("STRIPE_CONNECT_SECRET_KEY").startsWith("sk_live_")
+    ? "production"
+    : "sandbox";
 }
 
-const frontendUrl = (process.env.FRONTEND_URL || 'https://www.futurejobsproai.com').replace(/\/$/, '');
+const frontendUrl = (
+  process.env.FRONTEND_URL || "https://www.futurejobsproai.com"
+).replace(/\/$/, "");
 function requireEnvironment(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is not configured`);
@@ -33,15 +38,19 @@ function requireEnvironment(name: string): string {
 function stripeClient(): any {
   // Customer-owned Stripe Connect data is deliberately isolated from
   // Future Jobs Pro AI's own live subscription billing account.
-  return new Stripe(requireEnvironment('STRIPE_CONNECT_SECRET_KEY'));
+  return new Stripe(requireEnvironment("STRIPE_CONNECT_SECRET_KEY"));
 }
 
 function hashState(state: string): string {
-  return crypto.createHash('sha256').update(state).digest('hex');
+  return crypto.createHash("sha256").update(state).digest("hex");
 }
 
-async function createOAuthState(companyId: string, userId: string, provider: Provider): Promise<string> {
-  const state = crypto.randomBytes(32).toString('base64url');
+async function createOAuthState(
+  companyId: string,
+  userId: string,
+  provider: Provider,
+): Promise<string> {
+  const state = crypto.randomBytes(32).toString("base64url");
   await pool.query(
     `INSERT INTO integration_oauth_states
        (state_hash, company_id, user_id, provider, expires_at)
@@ -51,8 +60,11 @@ async function createOAuthState(companyId: string, userId: string, provider: Pro
   return state;
 }
 
-async function consumeOAuthState(state: string, provider: Provider): Promise<{ companyId: string; userId: string }> {
-  if (!state) throw new Error('Missing OAuth state');
+async function consumeOAuthState(
+  state: string,
+  provider: Provider,
+): Promise<{ companyId: string; userId: string }> {
+  if (!state) throw new Error("Missing OAuth state");
 
   const result = await pool.query(
     `DELETE FROM integration_oauth_states
@@ -65,48 +77,100 @@ async function consumeOAuthState(state: string, provider: Provider): Promise<{ c
   );
 
   if (result.rowCount !== 1) {
-    throw new Error('OAuth state is invalid, expired, or already used');
+    throw new Error("OAuth state is invalid, expired, or already used");
   }
 
+  const member = await pool.query(
+    "SELECT id,company_id,LOWER(role) role FROM users WHERE id=$1 AND company_id=$2 AND COALESCE(is_active,true)",
+    [result.rows[0].user_id, result.rows[0].company_id],
+  );
+  if (!member.rows[0] || !manages(member.rows[0]))
+    throw Error(
+      "OAuth initiating manager no longer has access. Start a new connection.",
+    );
   return {
     companyId: result.rows[0].company_id,
     userId: result.rows[0].user_id,
   };
 }
 
-export function integrationResultUrl(provider: Provider, result: 'connected' | 'error', message?: string): string {
-  const url = new URL('/integrations', frontendUrl);
-  url.searchParams.set('provider', provider);
-  url.searchParams.set('result', result);
-  if (message) url.searchParams.set('message', message.slice(0, 180));
+async function persistOAuthConnection(
+  companyId: string,
+  userId: string,
+  sql: string,
+  values: any[],
+) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      "SELECT id,company_id,LOWER(role) role FROM users WHERE id=$1 AND company_id=$2 AND COALESCE(is_active,true) FOR SHARE",
+      [userId, companyId],
+    );
+    if (!result.rows[0] || !manages(result.rows[0]))
+      throw Error(
+        "OAuth initiating manager no longer has access. Start a new connection.",
+      );
+    await client.query(sql, values);
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+export function integrationResultUrl(
+  provider: Provider,
+  result: "connected" | "error",
+  message?: string,
+): string {
+  const url = new URL("/integrations", frontendUrl);
+  url.searchParams.set("provider", provider);
+  url.searchParams.set("result", result);
+  if (message) url.searchParams.set("message", message.slice(0, 180));
   return url.toString();
 }
 
-export async function getQuickBooksAuthUrl(companyId: string, userId: string): Promise<string> {
-  const state = await createOAuthState(companyId, userId, 'quickbooks');
+export async function getQuickBooksAuthUrl(
+  companyId: string,
+  userId: string,
+): Promise<string> {
+  const state = await createOAuthState(companyId, userId, "quickbooks");
   return createQuickBooksAuthorizationUrl(state);
 }
 
-export async function getStripeConnectUrl(companyId: string, userId: string): Promise<string> {
-  const state = await createOAuthState(companyId, userId, 'stripe');
+export async function getStripeConnectUrl(
+  companyId: string,
+  userId: string,
+): Promise<string> {
+  const state = await createOAuthState(companyId, userId, "stripe");
   const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: requireEnvironment('STRIPE_CONNECT_CLIENT_ID'),
-    scope: 'read_write',
+    response_type: "code",
+    client_id: requireEnvironment("STRIPE_CONNECT_CLIENT_ID"),
+    scope: "read_write",
     state,
-    redirect_uri: requireEnvironment('STRIPE_REDIRECT_URI'),
+    redirect_uri: requireEnvironment("STRIPE_REDIRECT_URI"),
   });
   return `https://connect.stripe.com/oauth/authorize?${params.toString()}`;
 }
 
-export async function handleQuickBooksCallback(code: string, state: string, realmId: string): Promise<void> {
-  const { companyId } = await consumeOAuthState(state, 'quickbooks');
-  if (!realmId) throw new Error('QuickBooks did not return a company realm');
+export async function handleQuickBooksCallback(
+  code: string,
+  state: string,
+  realmId: string,
+): Promise<void> {
+  const { companyId, userId } = await consumeOAuthState(state, "quickbooks");
+  if (!realmId) throw new Error("QuickBooks did not return a company realm");
 
   const token = await exchangeQuickBooksAuthorizationCode(code);
-  const expiresAt = new Date(Date.now() + Number(token.expires_in || 3600) * 1000);
+  const expiresAt = new Date(
+    Date.now() + Number(token.expires_in || 3600) * 1000,
+  );
 
-  await pool.query(
+  await persistOAuthConnection(
+    companyId,
+    userId,
     `INSERT INTO integrations
        (company_id, provider, access_token, refresh_token, realm_id, token_expires_at, environment, is_active, updated_at)
      VALUES ($1, 'quickbooks', $2, $3, $4, $5, $6, TRUE, NOW())
@@ -124,24 +188,30 @@ export async function handleQuickBooksCallback(code: string, state: string, real
       token.refresh_token ? encrypt(token.refresh_token) : null,
       realmId,
       expiresAt,
-      integrationEnvironment('quickbooks'),
+      integrationEnvironment("quickbooks"),
     ],
   );
 }
 
-export async function handleStripeConnectCallback(code: string, state: string): Promise<void> {
-  const { companyId } = await consumeOAuthState(state, 'stripe');
-  if (!code) throw new Error('Stripe did not return an authorization code');
+export async function handleStripeConnectCallback(
+  code: string,
+  state: string,
+): Promise<void> {
+  const { companyId, userId } = await consumeOAuthState(state, "stripe");
+  if (!code) throw new Error("Stripe did not return an authorization code");
 
   const response = await stripeClient().oauth.token({
-    grant_type: 'authorization_code',
+    grant_type: "authorization_code",
     code,
   });
 
-  if (!response.stripe_user_id) throw new Error('Stripe did not return a connected account ID');
+  if (!response.stripe_user_id)
+    throw new Error("Stripe did not return a connected account ID");
 
   const compatibilityToken = response.access_token || response.stripe_user_id;
-  await pool.query(
+  await persistOAuthConnection(
+    companyId,
+    userId,
     `INSERT INTO integrations
        (company_id, provider, access_token, refresh_token, stripe_account_id, environment, is_active, updated_at)
      VALUES ($1, 'stripe', $2, $3, $4, $5, TRUE, NOW())
@@ -157,12 +227,14 @@ export async function handleStripeConnectCallback(code: string, state: string): 
       encrypt(compatibilityToken),
       response.refresh_token ? encrypt(response.refresh_token) : null,
       response.stripe_user_id,
-      integrationEnvironment('stripe'),
+      integrationEnvironment("stripe"),
     ],
   );
 }
 
-export async function getIntegrationStatus(companyId: string): Promise<Record<string, unknown>> {
+export async function getIntegrationStatus(
+  companyId: string,
+): Promise<Record<string, unknown>> {
   const result = await pool.query(
     `SELECT provider, is_active, realm_id, stripe_account_id, environment, updated_at
      FROM integrations
@@ -176,39 +248,45 @@ export async function getIntegrationStatus(companyId: string): Promise<Record<st
   };
 
   for (const row of result.rows) {
-    const expectedEnvironment = integrationEnvironment(row.provider as Provider);
+    const expectedEnvironment = integrationEnvironment(
+      row.provider as Provider,
+    );
     const environmentMatches = row.environment === expectedEnvironment;
     status[row.provider] = {
       connected: Boolean(row.is_active && environmentMatches),
       reconnectRequired: Boolean(row.is_active && !environmentMatches),
       environment: expectedEnvironment,
-      accountId: row.provider === 'stripe' ? row.stripe_account_id : row.realm_id,
+      accountId:
+        row.provider === "stripe" ? row.stripe_account_id : row.realm_id,
       updatedAt: row.updated_at,
     };
   }
   return status;
 }
 
-export async function disconnectIntegration(companyId: string, provider: Provider): Promise<void> {
+export async function disconnectIntegration(
+  companyId: string,
+  provider: Provider,
+): Promise<void> {
   const existing = await pool.query(
     `SELECT stripe_account_id, refresh_token FROM integrations
      WHERE company_id = $1 AND provider = $2 AND is_active = TRUE`,
     [companyId, provider],
   );
 
-  if (provider === 'stripe' && existing.rows[0]?.stripe_account_id) {
+  if (provider === "stripe" && existing.rows[0]?.stripe_account_id) {
     await stripeClient().oauth.deauthorize({
-      client_id: requireEnvironment('STRIPE_CONNECT_CLIENT_ID'),
+      client_id: requireEnvironment("STRIPE_CONNECT_CLIENT_ID"),
       stripe_user_id: existing.rows[0].stripe_account_id,
     });
   }
 
-  if (provider === 'quickbooks' && existing.rows[0]?.refresh_token) {
+  if (provider === "quickbooks" && existing.rows[0]?.refresh_token) {
     try {
       await revokeQuickBooksToken(decrypt(existing.rows[0].refresh_token));
     } catch (error) {
       // An already-expired/revoked grant should not prevent local disconnection.
-      console.warn('QuickBooks revoke returned an error; clearing the local connection:', error);
+      console.warn("QuickBooks revoke failed; local connection cleared.");
     }
   }
 
@@ -223,14 +301,16 @@ export async function disconnectIntegration(companyId: string, provider: Provide
   );
 }
 
-export async function syncRecentStripePayments(companyId: string): Promise<{ created: number; skipped: number; failed: number }> {
+export async function syncRecentStripePayments(
+  companyId: string,
+): Promise<{ created: number; skipped: number; failed: number }> {
   const connection = await pool.query(
     `SELECT stripe_account_id FROM integrations
      WHERE company_id = $1 AND provider = 'stripe' AND is_active = TRUE AND environment = $2`,
-    [companyId, integrationEnvironment('stripe')],
+    [companyId, integrationEnvironment("stripe")],
   );
   const stripeAccount = connection.rows[0]?.stripe_account_id;
-  if (!stripeAccount) throw new Error('Connect Stripe before running a sync');
+  if (!stripeAccount) throw new Error("Connect Stripe before running a sync");
 
   const payments = await stripeClient().paymentIntents.list(
     { limit: 25 },
@@ -241,7 +321,9 @@ export async function syncRecentStripePayments(companyId: string): Promise<{ cre
   let skipped = 0;
   let failed = 0;
 
-  for (const payment of payments.data.filter((item) => item.status === 'succeeded')) {
+  for (const payment of payments.data.filter(
+    (item) => item.status === "succeeded",
+  )) {
     const mapped = await pool.query(
       `SELECT 1 FROM integration_sync_mappings
        WHERE company_id = $1 AND source_provider = 'stripe'
@@ -254,10 +336,14 @@ export async function syncRecentStripePayments(companyId: string): Promise<{ cre
     }
 
     try {
-      let customerName = payment.description || 'Stripe customer';
+      let customerName = payment.description || "Stripe customer";
       let customerEmail: string | undefined;
-      if (typeof payment.customer === 'string') {
-        const customer = await stripeClient().customers.retrieve(payment.customer, {}, { stripeAccount });
+      if (typeof payment.customer === "string") {
+        const customer = await stripeClient().customers.retrieve(
+          payment.customer,
+          {},
+          { stripeAccount },
+        );
         if (!customer.deleted) {
           customerName = customer.name || customer.email || customerName;
           customerEmail = customer.email || undefined;
@@ -270,7 +356,9 @@ export async function syncRecentStripePayments(companyId: string): Promise<{ cre
         customerEmail,
       );
       const amount = payment.amount_received / 100;
-      const transactionDate = new Date(payment.created * 1000).toISOString().slice(0, 10);
+      const transactionDate = new Date(payment.created * 1000)
+        .toISOString()
+        .slice(0, 10);
       const receipt = await createSalesReceipt(
         companyId,
         quickBooksCustomerId,
@@ -278,7 +366,9 @@ export async function syncRecentStripePayments(companyId: string): Promise<{ cre
         `Stripe payment ${payment.id}`,
         transactionDate,
       );
-      const receiptId = String(receipt?.SalesReceipt?.Id || receipt?.Id || payment.id);
+      const receiptId = String(
+        receipt?.SalesReceipt?.Id || receipt?.Id || payment.id,
+      );
 
       await pool.query(
         `INSERT INTO integration_sync_mappings
@@ -292,7 +382,7 @@ export async function syncRecentStripePayments(companyId: string): Promise<{ cre
       created += 1;
     } catch (error) {
       failed += 1;
-      console.error(`Failed to sync Stripe payment ${payment.id}:`, error);
+      console.warn("An accounting sync item failed.");
     }
   }
 
@@ -305,11 +395,14 @@ export async function syncStripeEventToQuickBooks(event: any): Promise<void> {
     `SELECT company_id FROM integrations
      WHERE provider = 'stripe' AND stripe_account_id = $1
        AND is_active = TRUE AND environment = $2`,
-    [event.account, integrationEnvironment('stripe')],
+    [event.account, integrationEnvironment("stripe")],
   );
   if (!connection.rowCount) return;
 
-  if (event.type === 'payment_intent.succeeded' || event.type === 'invoice.paid') {
+  if (
+    event.type === "payment_intent.succeeded" ||
+    event.type === "invoice.paid"
+  ) {
     await syncRecentStripePayments(connection.rows[0].company_id);
   }
 }

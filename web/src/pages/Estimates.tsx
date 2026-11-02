@@ -1,17 +1,56 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
-  Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Button, Dialog, DialogTitle, DialogContent,
-  TextField, Chip, IconButton, CircularProgress, Stack, Tabs, Tab,
-  Alert, Grid, MenuItem, Select, FormControl, InputLabel,
+  Box,
+  Container,
+  Typography,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  TextField,
+  Chip,
+  IconButton,
+  CircularProgress,
+  Stack,
+  Tabs,
+  Tab,
+  Alert,
+  Grid,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
   InputAdornment,
-} from '@mui/material';
+} from "@mui/material";
 import {
-  Add, Delete, Send, Edit, Refresh, AttachMoney,
-  CheckCircle, Cancel, TrendingUp, Description,
-  PictureAsPdf, TableChart, FilePresent,
-} from '@mui/icons-material';
-import { API_BASE } from '../services/api';
+  Add,
+  Delete,
+  Send,
+  Edit,
+  Refresh,
+  AttachMoney,
+  CheckCircle,
+  Cancel,
+  TrendingUp,
+  Description,
+  PictureAsPdf,
+  TableChart,
+  FilePresent,
+} from "@mui/icons-material";
+import { API_BASE } from "../services/api";
+import {
+  commercialKey,
+  money,
+  conversionDates,
+  downloadCommercialPDF,
+} from "../services/commercialDocuments";
 
 // ─── Types ────────────────────────────────────────────────────────
 interface EstimateItem {
@@ -22,13 +61,15 @@ interface EstimateItem {
 }
 
 interface Estimate {
+  currency?: string;
+  updated_at: string;
   id: string;
   estimate_number: string;
   project_id: string | null;
   client_id: string | null;
   issue_date: string;
   expiry_date: string | null;
-  status: 'draft' | 'sent' | 'accepted' | 'rejected' | 'converted';
+  status: "draft" | "sent" | "accepted" | "rejected" | "converted";
   subtotal: number;
   tax_rate: number;
   tax_amount: number;
@@ -46,42 +87,55 @@ interface Estimate {
 
 // ─── Main Component ──────────────────────────────────────────────
 export default function EstimatesPage() {
-  const token = localStorage.getItem('token') || '';
+  const token = localStorage.getItem("token") || "";
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [error, setError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>("all");
 
   // Form state
   const [form, setForm] = useState({
-    projectId: '',
-    clientId: '',
-    issueDate: new Date().toISOString().split('T')[0],
-    expiryDate: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+    currency: "CAD",
+    requestKey: commercialKey(),
+    expectedUpdatedAt: "",
+    projectId: "",
+    clientId: "",
+    issueDate: new Date().toISOString().split("T")[0],
+    expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0],
     taxRate: 0,
-    notes: '',
-    clientNotes: '',
-    items: [{ description: '', quantity: 1, unit_price: 0 }],
+    notes: "",
+    clientNotes: "",
+    items: [{ description: "", quantity: 1, unit_price: 0 }],
   });
   const [projects, setProjects] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
+  const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(
+    null,
+  );
 
   // ── Fetch Functions ──
   const fetchEstimates = async () => {
     setLoading(true);
     try {
-      const url = filterStatus !== 'all' ? `${API_BASE}/api/estimates?status=${filterStatus}` : `${API_BASE}/api/estimates`;
+      const url =
+        filterStatus !== "all"
+          ? `${API_BASE}/api/estimates?status=${filterStatus}&limit=25&offset=${offset}`
+          : `${API_BASE}/api/estimates?limit=25&offset=${offset}`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
       if (data.success) setEstimates(data.estimates);
-      else setError(data.message || 'Failed to load estimates');
-    } catch (e: any) { setError(e.message); }
+      else setError(data.message || "Failed to load estimates");
+    } catch (e: any) {
+      setError(e.message);
+    }
     setLoading(false);
   };
 
@@ -92,7 +146,9 @@ export default function EstimatesPage() {
       });
       const data = await res.json();
       if (data.success) setProjects(data.projects);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const fetchClients = async () => {
@@ -102,43 +158,58 @@ export default function EstimatesPage() {
       });
       const data = await res.json();
       if (data.success) setClients(data.users);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   useEffect(() => {
     fetchEstimates();
     fetchProjects();
     fetchClients();
-  }, [filterStatus]);
+  }, [filterStatus, offset]);
 
   // ── Handlers ──
   const resetForm = () => {
     setEditId(null);
     setForm({
-      projectId: '',
-      clientId: '',
-      issueDate: new Date().toISOString().split('T')[0],
-      expiryDate: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+      currency: "CAD",
+      requestKey: commercialKey(),
+      expectedUpdatedAt: "",
+      projectId: "",
+      clientId: "",
+      issueDate: new Date().toISOString().split("T")[0],
+      expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0],
       taxRate: 0,
-      notes: '',
-      clientNotes: '',
-      items: [{ description: '', quantity: 1, unit_price: 0 }],
+      notes: "",
+      clientNotes: "",
+      items: [{ description: "", quantity: 1, unit_price: 0 }],
     });
   };
 
-  const openCreateDialog = () => { resetForm(); setDialogOpen(true); };
+  const openCreateDialog = () => {
+    resetForm();
+    setDialogOpen(true);
+  };
 
   const openEditDialog = async (estimate: Estimate) => {
     setEditId(estimate.id);
     setForm({
-      projectId: estimate.project_id || '',
-      clientId: estimate.client_id || '',
+      currency: estimate.currency || "",
+      requestKey: commercialKey(),
+      expectedUpdatedAt: estimate.updated_at,
+      projectId: estimate.project_id || "",
+      clientId: estimate.client_id || "",
       issueDate: estimate.issue_date,
-      expiryDate: estimate.expiry_date || '',
+      expiryDate: estimate.expiry_date || "",
       taxRate: estimate.tax_rate,
-      notes: estimate.notes || '',
-      clientNotes: estimate.client_notes || '',
-      items: estimate.items || [{ description: '', quantity: 1, unit_price: 0 }],
+      notes: estimate.notes || "",
+      clientNotes: estimate.client_notes || "",
+      items: estimate.items || [
+        { description: "", quantity: 1, unit_price: 0 },
+      ],
     });
     if (!estimate.items) {
       // Fetch items
@@ -147,20 +218,33 @@ export default function EstimatesPage() {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
+        if (!res.ok || !data.success || !data.items)
+          throw new Error("Unable to load draft.");
         if (data.success && data.items) {
-          setForm(prev => ({ ...prev, items: data.items.map((it: any) => ({
-            description: it.description,
-            quantity: it.quantity,
-            unit_price: it.unit_price,
-          })) }));
+          setForm((prev) => ({
+            ...prev,
+            expectedUpdatedAt: data.estimate.updated_at,
+            currency: data.estimate.currency || "",
+            items: data.items.map((it: any) => ({
+              description: it.description,
+              quantity: it.quantity,
+              unit_price: it.unit_price,
+            })),
+          }));
         }
-      } catch (e) {}
+      } catch (e) {
+        alert("Unable to load draft. Refresh before editing.");
+        return;
+      }
     }
     setDialogOpen(true);
   };
 
   const addItem = () => {
-    setForm({ ...form, items: [...form.items, { description: '', quantity: 1, unit_price: 0 }] });
+    setForm({
+      ...form,
+      items: [...form.items, { description: "", quantity: 1, unit_price: 0 }],
+    });
   };
 
   const removeItem = (idx: number) => {
@@ -171,19 +255,22 @@ export default function EstimatesPage() {
 
   const updateItem = (idx: number, field: string, value: any) => {
     const updated = form.items.map((item, i) =>
-      i === idx ? { ...item, [field]: value } : item
+      i === idx ? { ...item, [field]: value } : item,
     );
     setForm({ ...form, items: updated });
   };
 
   const handleSave = async () => {
     // Validate
-    if (form.items.some(i => !i.description || i.unit_price <= 0)) {
-      alert('All items must have a description and positive unit price.');
+    if (form.items.some((i) => !i.description || i.unit_price <= 0)) {
+      alert("All items must have a description and positive unit price.");
       return;
     }
     try {
       const payload = {
+        currency: form.currency,
+        requestKey: form.requestKey,
+        expectedUpdatedAt: form.expectedUpdatedAt,
         projectId: form.projectId || null,
         clientId: form.clientId || null,
         issueDate: form.issueDate,
@@ -191,17 +278,22 @@ export default function EstimatesPage() {
         taxRate: form.taxRate || 0,
         notes: form.notes,
         clientNotes: form.clientNotes,
-        items: form.items.map(i => ({
+        items: form.items.map((i) => ({
           description: i.description,
-          quantity: i.quantity || 1,
+          quantity: i.quantity,
           unit_price: i.unit_price,
         })),
       };
-      const url = editId ? `${API_BASE}/api/estimates/${editId}` : `${API_BASE}/api/estimates`;
-      const method = editId ? 'PUT' : 'POST';
+      const url = editId
+        ? `${API_BASE}/api/estimates/${editId}`
+        : `${API_BASE}/api/estimates?limit=25&offset=${offset}`;
+      const method = editId ? "PUT" : "POST";
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -209,42 +301,70 @@ export default function EstimatesPage() {
         setDialogOpen(false);
         fetchEstimates();
       } else {
-        alert(data.message || 'Save failed');
+        alert(data.message || "Save failed");
       }
-    } catch (e) { alert('Error saving estimate'); }
+    } catch (e) {
+      alert("Error saving estimate");
+    }
   };
 
   const handleSend = async (id: string) => {
+    if (
+      !window.confirm(
+        "Have you shared this document with the customer externally? This records sharing; no email is sent.",
+      )
+    )
+      return;
     try {
       const res = await fetch(`${API_BASE}/api/estimates/${id}/send`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ confirmed: true }),
       });
       const data = await res.json();
-      if (data.success) fetchEstimates();
-      else alert(data.message || 'Failed to send');
-    } catch (e) { alert('Error sending'); }
+      if (!res.ok) throw new Error(data.message);
+      fetchEstimates();
+    } catch (e: any) {
+      alert(e.message || "Unable to record external sharing.");
+    }
   };
 
   const handleAccept = async (id: string) => {
+    const reference = window.prompt(
+      "Reference for customer acceptance already received externally (at least 4 characters):",
+    );
+    if (!reference || reference.trim().length < 4) return;
     try {
       const res = await fetch(`${API_BASE}/api/estimates/${id}/accept`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        method: "POST",
+        body: JSON.stringify({ confirmed: true, reference: reference.trim() }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
       });
       const data = await res.json();
       if (data.success) fetchEstimates();
-      else alert(data.message || 'Failed to accept');
-    } catch (e) { alert('Error accepting'); }
+      else alert(data.message || "Failed to accept");
+    } catch (e) {
+      alert("Error accepting");
+    }
   };
 
   const handleConvert = async (id: string) => {
-    if (!window.confirm('Convert this estimate to an invoice?')) return;
+    const dates = conversionDates();
+    if (!dates) return;
     try {
       const res = await fetch(`${API_BASE}/api/estimates/${id}/convert`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({}),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(dates),
       });
       const data = await res.json();
       if (data.success && data.invoice) {
@@ -252,31 +372,45 @@ export default function EstimatesPage() {
         fetchEstimates();
         // Optionally navigate to invoice
       } else {
-        alert(data.message || 'Conversion failed');
+        alert(data.message || "Conversion failed");
       }
-    } catch (e) { alert('Error converting'); }
+    } catch (e) {
+      alert("Error converting");
+    }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this estimate?')) return;
+    if (!window.confirm("Delete this estimate?")) return;
     try {
-      await fetch(`${API_BASE}/api/estimates/${id}`, {
-        method: 'DELETE',
+      const res = await fetch(`${API_BASE}/api/estimates/${id}`, {
+        method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message);
+      }
       fetchEstimates();
-    } catch (e) { alert('Delete failed'); }
+    } catch (e: any) {
+      alert(e.message || "Delete failed");
+    }
   };
 
   const getStatusChip = (status: string) => {
     const map: Record<string, any> = {
-      draft: { color: 'default', label: 'Draft' },
-      sent: { color: 'primary', label: 'Sent' },
-      accepted: { color: 'success', label: 'Accepted' },
-      rejected: { color: 'error', label: 'Rejected' },
-      converted: { color: 'info', label: 'Converted' },
+      draft: { color: "default", label: "Draft" },
+      sent: { color: "primary", label: "Shared externally" },
+      accepted: { color: "success", label: "Accepted" },
+      rejected: { color: "error", label: "Rejected" },
+      converted: { color: "info", label: "Converted" },
     };
-    return <Chip label={map[status]?.label || status} color={map[status]?.color || 'default'} size="small" />;
+    return (
+      <Chip
+        label={map[status]?.label || status}
+        color={map[status]?.color || "default"}
+        size="small"
+      />
+    );
   };
 
   const openDetail = async (id: string) => {
@@ -287,20 +421,37 @@ export default function EstimatesPage() {
       const data = await res.json();
       if (data.success) {
         setSelectedEstimate(data.estimate);
-        setSelectedEstimate(prev => ({ ...prev!, items: data.items || [] }));
+        setSelectedEstimate((prev) => ({ ...prev!, items: data.items || [] }));
         setDetailDialogOpen(true);
       }
-    } catch (e) { alert('Failed to load details'); }
+    } catch (e) {
+      alert("Failed to load details");
+    }
   };
 
   // ── Render ─────────────────────────────────────────────────────
   return (
-    <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold' }}>
+    <Container
+      maxWidth="xl"
+      sx={{ py: 4, bgcolor: "#0A0A0A", minHeight: "100vh" }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 3,
+        }}
+      >
+        <Typography variant="h4" sx={{ color: "#FFF", fontWeight: "bold" }}>
           📄 Estimates
         </Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={openCreateDialog} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
+        <Button
+          variant="contained"
+          startIcon={<Add />}
+          onClick={openCreateDialog}
+          sx={{ bgcolor: "#00D4FF", color: "#0A0A0A" }}
+        >
           Create Estimate
         </Button>
       </Box>
@@ -308,11 +459,17 @@ export default function EstimatesPage() {
       {/* Filter */}
       <Box sx={{ mb: 2 }}>
         <FormControl size="small" sx={{ minWidth: 150 }}>
-          <InputLabel sx={{ color: '#888' }}>Status</InputLabel>
+          <InputLabel sx={{ color: "#888" }}>Status</InputLabel>
           <Select
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+            onChange={(e) => {
+              setFilterStatus(e.target.value);
+              setOffset(0);
+            }}
+            sx={{
+              color: "#FFF",
+              "& .MuiOutlinedInput-notchedOutline": { borderColor: "#333" },
+            }}
           >
             <MenuItem value="all">All</MenuItem>
             <MenuItem value="draft">Draft</MenuItem>
@@ -324,67 +481,135 @@ export default function EstimatesPage() {
         </FormControl>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
 
-      <TableContainer component={Paper} sx={{ bgcolor: '#1A1A1A', border: '1px solid #333' }}>
+      <TableContainer
+        component={Paper}
+        sx={{ bgcolor: "#1A1A1A", border: "1px solid #333" }}
+      >
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell sx={{ color: '#FFF' }}>#</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Client</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Project</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Issue Date</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Total</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Status</TableCell>
-              <TableCell sx={{ color: '#FFF' }}>Actions</TableCell>
+              <TableCell sx={{ color: "#FFF" }}>#</TableCell>
+              <TableCell sx={{ color: "#FFF" }}>Client</TableCell>
+              <TableCell sx={{ color: "#FFF" }}>Project</TableCell>
+              <TableCell sx={{ color: "#FFF" }}>Issue Date</TableCell>
+              <TableCell sx={{ color: "#FFF" }}>Total</TableCell>
+              <TableCell sx={{ color: "#FFF" }}>Status</TableCell>
+              <TableCell sx={{ color: "#FFF" }}>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={7} sx={{ textAlign: 'center', py: 3 }}><CircularProgress sx={{ color: '#00D4FF' }} /></TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={7} sx={{ textAlign: "center", py: 3 }}>
+                  <CircularProgress sx={{ color: "#00D4FF" }} />
+                </TableCell>
+              </TableRow>
             ) : estimates.length === 0 ? (
-              <TableRow><TableCell colSpan={7} sx={{ color: '#888', textAlign: 'center', py: 3 }}>No estimates found.</TableCell></TableRow>
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  sx={{ color: "#888", textAlign: "center", py: 3 }}
+                >
+                  No estimates found.
+                </TableCell>
+              </TableRow>
             ) : (
               estimates.map((est) => (
-                <TableRow key={est.id} sx={{ borderBottom: '1px solid #333' }}>
-                  <TableCell sx={{ color: '#FFF' }}>{est.estimate_number}</TableCell>
-                  <TableCell sx={{ color: '#FFF' }}>{est.client_name || '—'}</TableCell>
-                  <TableCell sx={{ color: '#FFF' }}>{est.project_name || '—'}</TableCell>
-                  <TableCell sx={{ color: '#FFF' }}>{est.issue_date}</TableCell>
-                  <TableCell sx={{ color: '#FFF' }}>${est.total.toFixed(2)}</TableCell>
+                <TableRow key={est.id} sx={{ borderBottom: "1px solid #333" }}>
+                  <TableCell sx={{ color: "#FFF" }}>
+                    {est.estimate_number}
+                  </TableCell>
+                  <TableCell sx={{ color: "#FFF" }}>
+                    {est.client_name || "—"}
+                  </TableCell>
+                  <TableCell sx={{ color: "#FFF" }}>
+                    {est.project_name || "—"}
+                  </TableCell>
+                  <TableCell sx={{ color: "#FFF" }}>{est.issue_date}</TableCell>
+                  <TableCell sx={{ color: "#FFF" }}>
+                    {money(est.total, est.currency)}
+                  </TableCell>
                   <TableCell>{getStatusChip(est.status)}</TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={1}>
-                      {est.status === 'draft' && (
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          downloadCommercialPDF(
+                            API_BASE,
+                            "estimate",
+                            est.id,
+                            token,
+                          ).catch((e) => alert(e.message))
+                        }
+                      >
+                        PDF
+                      </Button>
+                      {est.status === "draft" && (
                         <>
-                          <IconButton size="small" onClick={() => openEditDialog(est)} color="primary" title="Edit">
+                          <IconButton
+                            size="small"
+                            onClick={() => openEditDialog(est)}
+                            color="primary"
+                            title="Edit"
+                          >
                             <Edit fontSize="small" />
                           </IconButton>
-                          <IconButton size="small" onClick={() => handleSend(est.id)} color="info" title="Send">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleSend(est.id)}
+                            color="info"
+                            title="Record external sharing"
+                          >
                             <Send fontSize="small" />
                           </IconButton>
-                          <IconButton size="small" onClick={() => handleDelete(est.id)} color="error" title="Delete">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleDelete(est.id)}
+                            color="error"
+                            title="Delete"
+                          >
                             <Delete fontSize="small" />
                           </IconButton>
                         </>
                       )}
-                      {est.status === 'sent' && (
+                      {est.status === "sent" && (
                         <>
-                          <IconButton size="small" onClick={() => handleAccept(est.id)} color="success" title="Accept">
+                          <IconButton
+                            size="small"
+                            onClick={() => handleAccept(est.id)}
+                            color="success"
+                            title="Accept"
+                          >
                             <CheckCircle fontSize="small" />
-                          </IconButton>
-                          <IconButton size="small" onClick={() => handleConvert(est.id)} color="info" title="Convert to Invoice">
-                            <AttachMoney fontSize="small" />
                           </IconButton>
                         </>
                       )}
-                      {est.status === 'accepted' && (
-                        <IconButton size="small" onClick={() => handleConvert(est.id)} color="info" title="Convert to Invoice">
+                      {est.status === "accepted" && (
+                        <IconButton
+                          size="small"
+                          onClick={() => handleConvert(est.id)}
+                          color="info"
+                          title="Convert to Invoice"
+                        >
                           <AttachMoney fontSize="small" />
                         </IconButton>
                       )}
-                      {(est.status === 'sent' || est.status === 'accepted' || est.status === 'converted') && (
-                        <IconButton size="small" onClick={() => openDetail(est.id)} color="default" title="Details">
+                      {(est.status === "sent" ||
+                        est.status === "accepted" ||
+                        est.status === "converted") && (
+                        <IconButton
+                          size="small"
+                          onClick={() => openDetail(est.id)}
+                          color="default"
+                          title="Details"
+                        >
                           <Description fontSize="small" />
                         </IconButton>
                       )}
@@ -396,37 +621,99 @@ export default function EstimatesPage() {
           </TableBody>
         </Table>
       </TableContainer>
+      <Stack direction="row" spacing={2}>
+        <Button
+          disabled={loading || offset === 0}
+          onClick={() => setOffset((n) => Math.max(0, n - 25))}
+        >
+          Previous
+        </Button>
+        <Typography sx={{ color: "#FFF" }}>
+          Page {Math.floor(offset / 25) + 1}
+        </Typography>
+        <Button
+          disabled={loading || estimates.length < 25 || offset >= 100000}
+          onClick={() => setOffset((n) => n + 25)}
+        >
+          Next
+        </Button>
+      </Stack>
 
       {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
-          {editId ? 'Edit Estimate' : 'Create Estimate'}
+      <Dialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: "#1A1A1A", color: "#FFF" }}>
+          {editId ? "Edit Estimate" : "Create Estimate"}
         </DialogTitle>
-        <DialogContent sx={{ bgcolor: '#1A1A1A', maxHeight: '80vh', overflowY: 'auto' }}>
+        <DialogContent
+          sx={{ bgcolor: "#1A1A1A", maxHeight: "80vh", overflowY: "auto" }}
+        >
+          <TextField
+            select
+            fullWidth
+            label="Currency"
+            value={form.currency}
+            onChange={(e) => setForm({ ...form, currency: e.target.value })}
+            sx={{ mt: 2 }}
+            helperText="Choose explicitly. Existing unspecified currency is never guessed."
+          >
+            <MenuItem value="CAD">CAD</MenuItem>
+            <MenuItem value="USD">USD</MenuItem>
+          </TextField>
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={12} md={6}>
               <FormControl fullWidth>
-                <InputLabel sx={{ color: '#888' }}>Project (optional)</InputLabel>
+                <InputLabel sx={{ color: "#888" }}>
+                  Project (optional)
+                </InputLabel>
                 <Select
                   value={form.projectId}
-                  onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-                  sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                  onChange={(e) =>
+                    setForm({ ...form, projectId: e.target.value })
+                  }
+                  sx={{
+                    color: "#FFF",
+                    "& .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "#333",
+                    },
+                  }}
                 >
                   <MenuItem value="">None</MenuItem>
-                  {projects.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+                  {projects.map((p) => (
+                    <MenuItem key={p.id} value={p.id}>
+                      {p.name}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
             </Grid>
             <Grid item xs={12} md={6}>
               <FormControl fullWidth>
-                <InputLabel sx={{ color: '#888' }}>Client (optional)</InputLabel>
+                <InputLabel sx={{ color: "#888" }}>
+                  Client (optional)
+                </InputLabel>
                 <Select
                   value={form.clientId}
-                  onChange={(e) => setForm({ ...form, clientId: e.target.value })}
-                  sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
+                  onChange={(e) =>
+                    setForm({ ...form, clientId: e.target.value })
+                  }
+                  sx={{
+                    color: "#FFF",
+                    "& .MuiOutlinedInput-notchedOutline": {
+                      borderColor: "#333",
+                    },
+                  }}
                 >
                   <MenuItem value="">Select Client</MenuItem>
-                  {clients.map(c => <MenuItem key={c.id} value={c.id}>{c.first_name} {c.last_name}</MenuItem>)}
+                  {clients.map((c) => (
+                    <MenuItem key={c.id} value={c.id}>
+                      {c.first_name} {c.last_name}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
             </Grid>
@@ -436,9 +723,11 @@ export default function EstimatesPage() {
                 type="date"
                 fullWidth
                 value={form.issueDate}
-                onChange={(e) => setForm({ ...form, issueDate: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, issueDate: e.target.value })
+                }
                 InputLabelProps={{ shrink: true }}
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                sx={{ input: { color: "#FFF" }, label: { color: "#888" } }}
               />
             </Grid>
             <Grid item xs={6}>
@@ -447,9 +736,11 @@ export default function EstimatesPage() {
                 type="date"
                 fullWidth
                 value={form.expiryDate}
-                onChange={(e) => setForm({ ...form, expiryDate: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, expiryDate: e.target.value })
+                }
                 InputLabelProps={{ shrink: true }}
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                sx={{ input: { color: "#FFF" }, label: { color: "#888" } }}
               />
             </Grid>
             <Grid item xs={12}>
@@ -458,43 +749,60 @@ export default function EstimatesPage() {
                 type="number"
                 fullWidth
                 value={form.taxRate}
-                onChange={(e) => setForm({ ...form, taxRate: Number(e.target.value) })}
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                onChange={(e) =>
+                  setForm({ ...form, taxRate: Number(e.target.value) })
+                }
+                sx={{ input: { color: "#FFF" }, label: { color: "#888" } }}
               />
             </Grid>
             <Grid item xs={12}>
-              <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 2 }}>Line Items</Typography>
+              <Typography variant="subtitle1" sx={{ color: "#FFF", mt: 2 }}>
+                Line Items
+              </Typography>
               {form.items.map((item, idx) => (
-                <Box key={idx} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                <Box key={idx} sx={{ display: "flex", gap: 1, mb: 1 }}>
                   <TextField
                     placeholder="Description"
                     value={item.description}
-                    onChange={(e) => updateItem(idx, 'description', e.target.value)}
-                    sx={{ flex: 3, input: { color: '#FFF' } }}
+                    onChange={(e) =>
+                      updateItem(idx, "description", e.target.value)
+                    }
+                    sx={{ flex: 3, input: { color: "#FFF" } }}
                     size="small"
                   />
                   <TextField
                     type="number"
                     placeholder="Qty"
                     value={item.quantity}
-                    onChange={(e) => updateItem(idx, 'quantity', Number(e.target.value))}
-                    sx={{ flex: 1, input: { color: '#FFF' } }}
+                    onChange={(e) =>
+                      updateItem(idx, "quantity", Number(e.target.value))
+                    }
+                    sx={{ flex: 1, input: { color: "#FFF" } }}
                     size="small"
                   />
                   <TextField
                     type="number"
                     placeholder="Unit Price"
                     value={item.unit_price}
-                    onChange={(e) => updateItem(idx, 'unit_price', Number(e.target.value))}
-                    sx={{ flex: 1, input: { color: '#FFF' } }}
+                    onChange={(e) =>
+                      updateItem(idx, "unit_price", Number(e.target.value))
+                    }
+                    sx={{ flex: 1, input: { color: "#FFF" } }}
                     size="small"
                   />
-                  <IconButton size="small" onClick={() => removeItem(idx)} color="error" disabled={form.items.length === 1}>
+                  <IconButton
+                    size="small"
+                    onClick={() => removeItem(idx)}
+                    color="error"
+                    disabled={form.items.length === 1}
+                  >
                     <Delete fontSize="small" />
                   </IconButton>
                 </Box>
               ))}
-              <Button onClick={addItem} size="small" sx={{ color: '#00D4FF' }}>+ Add Item</Button>
+              <Button onClick={addItem} size="small" sx={{ color: "#00D4FF" }}>
+                + Add Item
+              </Button>
             </Grid>
             <Grid item xs={12}>
               <TextField
@@ -504,7 +812,7 @@ export default function EstimatesPage() {
                 fullWidth
                 value={form.notes}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                sx={{ input: { color: "#FFF" }, label: { color: "#888" } }}
               />
             </Grid>
             <Grid item xs={12}>
@@ -514,71 +822,156 @@ export default function EstimatesPage() {
                 rows={2}
                 fullWidth
                 value={form.clientNotes}
-                onChange={(e) => setForm({ ...form, clientNotes: e.target.value })}
-                sx={{ input: { color: '#FFF' }, label: { color: '#888' } }}
+                onChange={(e) =>
+                  setForm({ ...form, clientNotes: e.target.value })
+                }
+                sx={{ input: { color: "#FFF" }, label: { color: "#888" } }}
               />
             </Grid>
           </Grid>
-          <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+          <Box
+            sx={{ mt: 3, display: "flex", justifyContent: "flex-end", gap: 2 }}
+          >
             <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button variant="contained" onClick={handleSave} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}>
-              {editId ? 'Update' : 'Create'}
+            <Button
+              variant="contained"
+              onClick={handleSave}
+              sx={{ bgcolor: "#00D4FF", color: "#0A0A0A" }}
+            >
+              {editId ? "Update" : "Create"}
             </Button>
           </Box>
         </DialogContent>
       </Dialog>
 
       {/* Detail Dialog */}
-      <Dialog open={detailDialogOpen} onClose={() => setDetailDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
+      <Dialog
+        open={detailDialogOpen}
+        onClose={() => setDetailDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: "#1A1A1A", color: "#FFF" }}>
           Estimate Details – {selectedEstimate?.estimate_number}
         </DialogTitle>
-        <DialogContent sx={{ bgcolor: '#0A0A0A' }}>
+        <DialogContent sx={{ bgcolor: "#0A0A0A" }}>
           {selectedEstimate && (
             <>
               <Grid container spacing={2}>
-                <Grid item xs={6}><Typography variant="body2" sx={{ color: '#888' }}>Client</Typography><Typography sx={{ color: '#FFF' }}>{selectedEstimate.client_name || '—'}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="body2" sx={{ color: '#888' }}>Project</Typography><Typography sx={{ color: '#FFF' }}>{selectedEstimate.project_name || '—'}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="body2" sx={{ color: '#888' }}>Issue Date</Typography><Typography sx={{ color: '#FFF' }}>{selectedEstimate.issue_date}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="body2" sx={{ color: '#888' }}>Expiry</Typography><Typography sx={{ color: '#FFF' }}>{selectedEstimate.expiry_date || '—'}</Typography></Grid>
-                <Grid item xs={12}><Typography variant="body2" sx={{ color: '#888' }}>Status</Typography>{getStatusChip(selectedEstimate.status)}</Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" sx={{ color: "#888" }}>
+                    Client
+                  </Typography>
+                  <Typography sx={{ color: "#FFF" }}>
+                    {selectedEstimate.client_name || "—"}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" sx={{ color: "#888" }}>
+                    Project
+                  </Typography>
+                  <Typography sx={{ color: "#FFF" }}>
+                    {selectedEstimate.project_name || "—"}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" sx={{ color: "#888" }}>
+                    Issue Date
+                  </Typography>
+                  <Typography sx={{ color: "#FFF" }}>
+                    {selectedEstimate.issue_date}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="body2" sx={{ color: "#888" }}>
+                    Expiry
+                  </Typography>
+                  <Typography sx={{ color: "#FFF" }}>
+                    {selectedEstimate.expiry_date || "—"}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12}>
+                  <Typography variant="body2" sx={{ color: "#888" }}>
+                    Status
+                  </Typography>
+                  {getStatusChip(selectedEstimate.status)}
+                </Grid>
               </Grid>
-              <Typography variant="h6" sx={{ color: '#FFF', mt: 2 }}>Items</Typography>
+              <Typography variant="h6" sx={{ color: "#FFF", mt: 2 }}>
+                Items
+              </Typography>
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ color: '#888' }}>Description</TableCell>
-                    <TableCell sx={{ color: '#888' }} align="right">Qty</TableCell>
-                    <TableCell sx={{ color: '#888' }} align="right">Unit Price</TableCell>
-                    <TableCell sx={{ color: '#888' }} align="right">Total</TableCell>
+                    <TableCell sx={{ color: "#888" }}>Description</TableCell>
+                    <TableCell sx={{ color: "#888" }} align="right">
+                      Qty
+                    </TableCell>
+                    <TableCell sx={{ color: "#888" }} align="right">
+                      Unit Price
+                    </TableCell>
+                    <TableCell sx={{ color: "#888" }} align="right">
+                      Total
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {selectedEstimate.items?.map((item, idx) => (
                     <TableRow key={idx}>
-                      <TableCell sx={{ color: '#FFF' }}>{item.description}</TableCell>
-                      <TableCell sx={{ color: '#FFF' }} align="right">{item.quantity}</TableCell>
-                      <TableCell sx={{ color: '#FFF' }} align="right">${item.unit_price.toFixed(2)}</TableCell>
-                      <TableCell sx={{ color: '#FFF' }} align="right">${(item.quantity * item.unit_price).toFixed(2)}</TableCell>
+                      <TableCell sx={{ color: "#FFF" }}>
+                        {item.description}
+                      </TableCell>
+                      <TableCell sx={{ color: "#FFF" }} align="right">
+                        {item.quantity}
+                      </TableCell>
+                      <TableCell sx={{ color: "#FFF" }} align="right">
+                        {money(item.unit_price, selectedEstimate.currency)}
+                      </TableCell>
+                      <TableCell sx={{ color: "#FFF" }} align="right">
+                        {money(
+                          item.quantity * item.unit_price,
+                          selectedEstimate.currency,
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-              <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                <Typography variant="body1" sx={{ color: '#888' }}>Subtotal: ${selectedEstimate.subtotal.toFixed(2)}</Typography>
+              <Box sx={{ mt: 2, display: "flex", justifyContent: "flex-end" }}>
+                <Typography variant="body1" sx={{ color: "#888" }}>
+                  Subtotal:{" "}
+                  {money(selectedEstimate.subtotal, selectedEstimate.currency)}
+                </Typography>
                 {selectedEstimate.tax_rate > 0 && (
-                  <Typography variant="body1" sx={{ color: '#888', ml: 2 }}>Tax: ${selectedEstimate.tax_amount.toFixed(2)}</Typography>
+                  <Typography variant="body1" sx={{ color: "#888", ml: 2 }}>
+                    Tax:{" "}
+                    {money(
+                      selectedEstimate.tax_amount,
+                      selectedEstimate.currency,
+                    )}
+                  </Typography>
                 )}
-                <Typography variant="h6" sx={{ color: '#00D4FF', ml: 3 }}>Total: ${selectedEstimate.total.toFixed(2)}</Typography>
+                <Typography variant="h6" sx={{ color: "#00D4FF", ml: 3 }}>
+                  Total:{" "}
+                  {money(selectedEstimate.total, selectedEstimate.currency)}
+                </Typography>
               </Box>
               {selectedEstimate.notes && (
-                <Typography variant="body2" sx={{ color: '#888', mt: 2 }}>Notes: {selectedEstimate.notes}</Typography>
+                <Typography variant="body2" sx={{ color: "#888", mt: 2 }}>
+                  Notes: {selectedEstimate.notes}
+                </Typography>
               )}
               {selectedEstimate.client_notes && (
-                <Typography variant="body2" sx={{ color: '#888' }}>Client Notes: {selectedEstimate.client_notes}</Typography>
+                <Typography variant="body2" sx={{ color: "#888" }}>
+                  Client Notes: {selectedEstimate.client_notes}
+                </Typography>
               )}
               {selectedEstimate.converted_to_invoice_id && (
-                <Button variant="outlined" size="small" sx={{ mt: 2, color: '#00D4FF', borderColor: '#00D4FF' }}>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  sx={{ mt: 2, color: "#00D4FF", borderColor: "#00D4FF" }}
+                >
                   View Invoice
                 </Button>
               )}

@@ -261,11 +261,26 @@ test('legacy team test-header bypass removed; foreign membership and role escala
 test('replacement request requires recipient consent and manager approval; reassignment recorded',async()=>{
  const sid='00000000-0000-4000-a000-000000000099';await query("INSERT INTO shift_assignments(id,shift_id,user_id,status) VALUES(gen_random_uuid(),$1,$2,'assigned')",[sid,ids.worker]);
  const r=await request('/operations/swaps',ids.worker,'POST',{shiftId:sid,toUser:ids.boss});assert.equal(r.status,201,JSON.stringify(r));
+ const options=await request('/operations/work-options',ids.worker);assert.equal(options.status,200);assert.equal(options.data.actorId,ids.worker);assert.equal(options.data.companyId,ids.company);assert.equal(options.data.manager,false);assert.equal(options.data.timezone,'UTC');
+ const offered=options.data.shifts.find(s=>s.id===sid);assert.ok(offered);assert.ok(offered.start_time&&offered.end_time);
+ const queue=await request('/operations/swaps',ids.boss);assert.equal(queue.status,200);const details=queue.data.find(s=>s.id===r.data.id);assert.equal(details.shift_name,offered.name);assert.equal(String(details.shift_date).slice(0,10),String(offered.date).slice(0,10));assert.equal(details.start_time,offered.start_time);
+ assert.equal((await request('/operations/swaps',ids.outsider)).data.some(s=>s.id===r.data.id),false);
  assert.equal((await request('/operations/swaps/'+r.data.id+'/approve',ids.boss,'POST',{requestKey:'swap-too-soon'})).status,409);
  assert.equal((await request('/operations/swaps/'+r.data.id+'/respond',ids.outsider,'POST',{status:'accepted'})).status,409);
  assert.equal((await request('/operations/swaps/'+r.data.id+'/respond',ids.boss,'POST',{status:'accepted'})).status,200);
  assert.equal((await request('/operations/swaps/'+r.data.id+'/approve',ids.boss,'POST',{requestKey:'swap-approved'})).status,200);
  assert.equal((await query('SELECT user_id FROM shift_assignments WHERE shift_id=$1',[sid])).rows[0].user_id,ids.boss);
+});
+
+test('cover details never reveal a foreign-company shift even if a stored swap relation is inconsistent',async()=>{
+ const foreign='00000000-0000-4000-a000-000000000097';
+ await query("INSERT INTO shifts VALUES($1,$2,current_date+14,'09:00','17:00','PRIVATE OTHER COMPANY SHIFT')",[foreign,ids.outsider]);
+ await query("INSERT INTO shift_assignments(id,shift_id,user_id,status) VALUES(gen_random_uuid(),$1,$2,'assigned')",[foreign,ids.worker]);
+ const bad=await query('INSERT INTO ops_swaps(company_id,shift_id,from_user,to_user) VALUES($1,$2,$3,$4) RETURNING id',[ids.company,foreign,ids.worker,ids.boss]);
+ const queue=await request('/operations/swaps',ids.boss);assert.equal(queue.status,200);assert.equal(JSON.stringify(queue.data).includes('PRIVATE OTHER COMPANY SHIFT'),false);assert.equal(queue.data.some(s=>s.id===bad.rows[0].id),false);
+ const options=await request('/operations/work-options',ids.worker);assert.equal(options.data.shifts.some(s=>s.id===foreign),false);
+ assert.equal((await request('/operations/swaps',null)).status,401);
+ await query('DELETE FROM ops_swaps WHERE id=$1',[bad.rows[0].id]);await query('DELETE FROM shift_assignments WHERE shift_id=$1',[foreign]);await query('DELETE FROM shifts WHERE id=$1',[foreign]);
 });
 
 test('store billing routes reject anonymous and employee purchases before provider calls',async()=>{
@@ -308,3 +323,5 @@ test('temporary-password accounts cannot use protected features until they chang
   assert.notEqual((await request('/operations/swaps',ids.worker)).status,403);
  } finally {await query('UPDATE users SET password_hash=$1,must_change_password=FALSE WHERE id=$2',[previous,ids.worker]);}
 });
+
+

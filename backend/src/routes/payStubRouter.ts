@@ -1,3 +1,4 @@
+import employeePayStatementsRoutes from './employeePayStatementsRoutes';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
@@ -6,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 
 const router = express.Router();
+router.use('/reviewed', employeePayStatementsRoutes);
 
 // ─── Helper to get current user from token ──────────────────────
 const getUserId = (req: Request): string | null => {

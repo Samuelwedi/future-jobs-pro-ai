@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  Box, Container, Typography, Paper, Grid, Button, CircularProgress,
+  Box, Container, Typography, Paper, Grid, Button, CircularProgress, Checkbox, FormControlLabel,
   Alert, Chip, Stack, Select, MenuItem, FormControl, InputLabel, TextField,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Divider,
 } from '@mui/material';
@@ -36,6 +36,9 @@ export default function YearEnd() {
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<any | null>(null);
   const [saved, setSaved] = useState(false);
+  const [previewHash,setPreviewHash]=useState(''),[reviewReference,setReviewReference]=useState(''),[reviewConfirmed,setReviewConfirmed]=useState(false);
+  const selectionKey=String(selectedEmployee)+':'+taxYear+':'+selectedForm,selectionRef=useRef(selectionKey);selectionRef.current=selectionKey;
+  useEffect(()=>{setPreview(null);setPreviewHash('');setSaved(false);setReviewConfirmed(false);setReviewReference('');},[selectionKey]);
   const [error, setError] = useState<string | null>(null);
   const [finalizedSlips, setFinalizedSlips] = useState<FinalizedSlip[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -133,6 +136,7 @@ export default function YearEnd() {
 
   const handlePreview = async () => {
     if (!selectedEmployee || !selectedForm) return;
+    const requestKey=selectionKey;
     setLoading(true);
     setError(null);
     try {
@@ -141,8 +145,9 @@ export default function YearEnd() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Preview failed');
-      setPreview(data.preview);
+      if (!res.ok) throw new Error(data.message || data.error || 'Preview failed');
+      if(selectionRef.current!==requestKey)return;
+      setPreview(data.preview);setPreviewHash(data.previewHash);setReviewConfirmed(false);
       setSaved(false);
     } catch (err: any) {
       setError(err.message);
@@ -152,8 +157,9 @@ export default function YearEnd() {
   };
 
   const handleSave = async () => {
-    if (!selectedEmployee || !selectedForm) return;
-    if (!window.confirm(`Finalize this ${selectedForm} using the displayed payroll totals? Review every amount before continuing.`)) return;
+    if (!selectedEmployee || !selectedForm || !previewHash || !reviewConfirmed || reviewReference.trim().length<8) return;
+    if (!window.confirm(`Store reviewed ${selectedForm} for ${employees.find(e=>e.id===selectedEmployee)?.first_name||selectedEmployee}, tax year ${taxYear}? Review reference: ${reviewReference}. No government filing is submitted.`)) return;
+    const requestKey=selectionKey;
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/year-end/finalize`, {
@@ -162,11 +168,12 @@ export default function YearEnd() {
         body: JSON.stringify({
           employeeId: selectedEmployee,
           taxYear,
-          formType: selectedForm,
+          formType: selectedForm,previewHash,confirmed:reviewConfirmed,reviewReference:reviewReference.trim(),
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Save failed');
+      if (!res.ok) throw new Error(data.message || data.error || 'Save failed');
+      if(selectionRef.current!==requestKey)return;
       setSaved(true);
       await fetchFinalized();
     } catch (err: any) {
@@ -192,6 +199,7 @@ export default function YearEnd() {
     const labelMap: Record<string, string> = {
       box14_employment_income: 'Box 14 – Employment Income',
       box16_cpp_withheld: 'Box 16 – Employee CPP',
+      box16a_cpp2_withheld: 'Box 16A – Employee CPP2',
       box18_ei_withheld: 'Box 18 – Employee EI',
       box22_income_tax_withheld: 'Box 22 – Income Tax',
       box24_insurable_earnings: 'Box 24 – EI Insurable Earnings',
@@ -261,9 +269,9 @@ export default function YearEnd() {
   return (
     <Container maxWidth="xl" sx={{ py: 4, bgcolor: '#0A0A0A', minHeight: '100vh' }}>
       <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 1 }}>📄 Year‑End Tax Forms</Typography>
-      <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>Generate, preview, and finalize T4, T4A, and RL‑1 slips.</Typography>
+      <Typography variant="body1" sx={{ color: '#888', mb: 4 }}>Preview supported reviewed payroll and store independently reviewed year-end snapshots. T4A, RL-1 and unsupported payroll cases require the local filing process.</Typography>
       <Alert severity="warning" sx={{ mb: 3 }}>Review year-end slips with a qualified payroll professional before filing. Values are compiled from finalized payroll records and are not submitted automatically.</Alert>
-      <YearEndCompanyProfile />
+      <YearEndCompanyProfile onSaved={()=>{setPreview(null);setPreviewHash('');setSaved(false);setReviewConfirmed(false);}} />
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={4}>
@@ -298,11 +306,13 @@ export default function YearEnd() {
 
             <TextField label="Tax Year" type="number" fullWidth value={taxYear} onChange={(e) => setTaxYear(Number(e.target.value))} sx={{ mb: 2, ...darkInputStyle }} />
 
+            <TextField fullWidth label="Independent year-end review reference" value={reviewReference} onChange={e=>setReviewReference(e.target.value)} inputProps={{maxLength:500}} sx={{mb:2,...darkInputStyle}} />
+            <FormControlLabel control={<Checkbox checked={reviewConfirmed} onChange={e=>setReviewConfirmed(e.target.checked)}/>} label="I independently reviewed all annual payments and form amounts. Store this snapshot; no government filing is submitted." />
             <Stack direction="row" spacing={2}>
               <Button variant="contained" startIcon={<Visibility />} onClick={handlePreview} disabled={!selectedEmployee || loading} sx={{ backgroundColor: '#FFFFFF', color: '#000000', border: '2px solid #333333', '&:hover': { backgroundColor: '#F0F0F0' }, flex: 1 }}>
                 Preview
               </Button>
-              <Button variant="contained" startIcon={<Save />} onClick={handleSave} disabled={!preview || saved || loading} sx={{ backgroundColor: '#FFFFFF', color: '#000000', border: '2px solid #333333', '&:hover': { backgroundColor: '#F0F0F0' }, flex: 1 }}>
+              <Button variant="contained" startIcon={<Save />} onClick={handleSave} disabled={!preview || !previewHash || !reviewConfirmed || reviewReference.trim().length<8 || saved || loading} sx={{ backgroundColor: '#FFFFFF', color: '#000000', border: '2px solid #333333', '&:hover': { backgroundColor: '#F0F0F0' }, flex: 1 }}>
                 Finalize
               </Button>
             </Stack>
@@ -327,7 +337,7 @@ export default function YearEnd() {
         <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2} sx={{ mb: 2 }}>
           <Box>
             <Typography variant="h6" sx={{ color: '#FFF', fontWeight: 800 }}>Finalized slips archive</Typography>
-            <Typography variant="body2" sx={{ color: '#888' }}>Stored T4, T4A, and RL‑1 records for {taxYear}. Finalizing again updates the stored employee/year record.</Typography>
+            <Typography variant="body2" sx={{ color: '#888' }}>Employer-scoped reviewed records for {taxYear}. Legacy records without employer provenance require reconciliation. Finalizing again updates this company’s employee/year snapshot.</Typography>
           </Box>
           <Button startIcon={<Refresh />} onClick={fetchFinalized} disabled={archiveLoading} variant="outlined">Refresh archive</Button>
         </Stack>
