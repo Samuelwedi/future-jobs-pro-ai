@@ -127,7 +127,7 @@ export default function VoiceNoteScreen() {
       }, 1000);
     } catch (error: any) {
       console.error('Start recording error:', error);
-      if (mounted.current) Alert.alert('Error', `Could not start recording: ${error.message}`);
+      if (current(epoch)) Alert.alert('Error', `Could not start recording: ${error.message}`);
     } finally {
       busy.current = false;
     }
@@ -152,7 +152,7 @@ export default function VoiceNoteScreen() {
         Alert.alert('Error', 'No audio file was created.');
       }
     } catch (error: any) {
-      if (mounted.current) Alert.alert('Error', `Could not stop recording: ${error.message}`);
+      if (current(epoch)) Alert.alert('Error', `Could not stop recording: ${error.message}`);
     } finally {
       busy.current = false;
     }
