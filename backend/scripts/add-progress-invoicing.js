@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS estimates (
   subtotal DECIMAL(10,2) NOT NULL,
   tax_rate DECIMAL(5,2) DEFAULT 0,
   tax_amount DECIMAL(10,2) GENERATED ALWAYS AS (subtotal * tax_rate / 100) STORED,
-  total DECIMAL(10,2) GENERATED ALWAYS AS (subtotal + tax_amount) STORED,
+  total DECIMAL(10,2) GENERATED ALWAYS AS (subtotal + ROUND(subtotal * tax_rate / 100, 2)) STORED,
   notes TEXT,
   client_notes TEXT,
   sent_at TIMESTAMP,

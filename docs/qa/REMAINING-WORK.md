@@ -119,3 +119,33 @@ Year-end totals now come from matching company-recorded payment dates and immuta
 Verified: full backend suite 229/229, mobile 61/61, backend/mobile TypeScript, customer web production build, and 12 native/web browser checks using real local year-end JWT/Express/PGlite/compiler/migration and real MUI flows with explicit native adapters. Payout reads use fixture orchestration behind the actual disabled router; no live provider or physical-device acceptance is inferred.
 
 Rollout requires the new reviewed archive migration (wired into predeploy), backend and updated customer web together. No production data, migration/deployment, paid native build or store publication changed. Builds 56/10 predate this source and the earlier build allowance remains exhausted. Remaining source/acceptance work includes unsupported tax cases/legacy reconciliation, live bank settlement, invoices/estimates, reports, integrations, administration/evidence/localization and all retained physical/live/store/security/load/backup review groups. Original pauses remain in force.
+
+
+## Invoices and estimates source continuation — 2026-11-01
+
+Native CommercialDocuments and matching web/API contracts cover drafts, explicit CAD/USD, ordered line items/tax, company/project/client/time-entry validation, recurring/milestone metadata, authenticated PDF export, confirmed external sharing/acceptance, one-time conversion, recorded external payments and client totals grouped by currency. Decimal calculations, transactions, version checks, durable action receipts, invoice row locks and exact ledger totals address partial writes, stale edits and duplicate/double-counted payments. Native mutations and old queued invoice/estimate/integration writes refuse replay.
+
+Real email delivery, automatic recurring generation, live settlement, legacy currency/ledger reconciliation, physical sharing and retained acceptance groups remain open. Backend/web require coordinated rollout with the commercial migration wired into predeploy; old clients must refresh for new request/version/confirmation contracts. This source is not deployed or in builds 56/10. No new paid build or store publication. See COMMERCIAL-DOCUMENTS-20261101.md.
+
+
+## Reports and accounting connection source — 2026-11-02
+
+Native Reports now covers current-company project/range selection, summary/workforce and private authenticated PDF/CSV export. API manager checks, company-calendar/DST bounds, real date validation, stable employee identities, completed-only approval rates, bounded export size and CSV formula escaping are tested. Historical time-entry wage currency is not guessed. The actual web report includes the same scope notice.
+
+Native Integrations covers scoped connection inspection, verified provider authorization links, confirmed disconnection and sanitized QuickBooks company/items. Backend APIs recheck active manager membership; OAuth grants recheck/lock the initiating user before encrypted persistence. Actual native/local API tests use explicitly mocked external provider transports; no real account connection or financial sync occurred.
+
+Accounting sync idempotency/reconciliation, currency/import/refund completeness, live providers, physical devices and existing broader administration/evidence/localization/security/load/backup/store acceptance remain open. Report exports are operational reads, not frozen audit/payroll statements. No new production migration/deployment, paid native build or publication. See REPORTS-INTEGRATIONS-20261102.md; preserve earlier migration/release holds.
+
+
+## Evidence review source — 2026-11-02
+
+Native Evidence and scoped original viewing/export source now cover paged records, explicit file selection, private media viewer, time PDF/GPS/voice reconstruction and bounded mobile ZIP sharing. All API evidence endpoints require current active manager/owner membership; source IDs/project labels/counts are scoped, selected missing/foreign records fail explicitly, and original downloads restrict the configured Cloudinary path with no redirects and streaming limits. ZIP paths are sanitized; actual archive bytes have a distinct digest. The shared native viewer uses returned MIME and translated controls. Web list pagination and stale dialog reads are fixed. Hashes do not prove real-world authenticity.
+
+Verified: 264 backend and 72 mobile tests, backend/mobile TypeScript, web production build, nine native/web local browser checks with explicit file/provider/player adapters and actual PNG/PDF/ZIP data. No deployment, paid build, physical camera/GPS or real video/provider acceptance. Public upload remains blocked pending explicit payload approval. Administration action/permission mapping, accounting-sync completeness, delivery/recurrence, legacy reconciliation and retained acceptance groups remain open. See EVIDENCE-20261102.md.
+
+
+## Company administration and legacy tax-write closure source — 2026-11-02
+
+Native CompanyAdministration and matching MUI administration/team flows cover masked employee operations, protected owner/admin/self/peer policy, effective rates, validated tax/date fields, forced-change temporary passwords, audit paging and currency-separated payment inspection. Edits bind a server resource version; updates and audit events commit or roll back together. Legacy Team endpoints align with the protected-account policy, deactivate rather than delete identities, and retain history. Invitations create/audit atomically before mail acceptance; failure and manual handoff are explicit. The older same-company employee tax-write bypass is retired; web Team uses the audited versioned path. No raw passwords/SIN values are returned by new administration reads or entered into audit details.
+
+A verified existing audit-schema/prerequisite migration runner is now wired into predeploy; it was tested locally, not run in production. Updated backend/web must roll out together. Physical/live/SMTP/tax/settlement acceptance, broader Operations/enhancements/employee documents/localization, legacy provenance and retained release/security/load/backup groups remain open. Public source upload still requires explicit payload approval; no deployment, paid native build or store publication occurred. See ADMINISTRATION-20261102.md for action mapping, reproduction and test scope.

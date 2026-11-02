@@ -132,6 +132,11 @@ export function payrollCalculationInput(
     standardCaseConfirmed: true,
   };
 }
-// Financial mutations require an explicit online action; they must never replay later.
+// Sensitive mutations require an explicit online action; they must never replay later.
 export const isPayrollMutation = (url: string) =>
-  /^\/(payroll|payroll-rules|manual-payroll|year-end)(\/|$)/.test(url);
+  /^\/(payroll|payroll-rules|manual-payroll|year-end|invoices|estimates|integrations|evidence-bundles|company-admin|team)(\/|$)/.test(
+    String(url)
+      .replace(/^https?:\/\/[^/]+/i, "")
+      .replace(/^\/api(?=\/)/, "")
+      .split(/[?#]/, 1)[0],
+  );

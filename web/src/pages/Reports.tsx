@@ -103,7 +103,7 @@ function today() {
 }
 
 function money(value: number) {
-  return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(Number(value || 0));
+  return Number(value || 0).toFixed(2);
 }
 
 function fileNameFrom(response: Response, fallback: string) {
@@ -244,6 +244,7 @@ export default function Reports() {
 
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 3 }}>{error}</Alert>}
 
+      <Alert severity="info" sx={{mb:2}}>Recorded time-entry amounts have no stored currency. This is an operational report, not a reviewed payroll or payment statement. Reporting dates use the company timezone.</Alert>
       {!loading && summary.anomalousEntries > 0 && (
         <Alert severity="warning" sx={{ mb: 3 }}>
           <Typography fontWeight={900}>Time-entry review required</Typography>
@@ -281,7 +282,7 @@ export default function Reports() {
       <Grid container spacing={2.5} sx={{ mb: 3 }}>
         {[
           { label: 'Recorded hours', value: summary.totalHours.toFixed(1), detail: `${summary.regularHours.toFixed(1)} regular • ${summary.overtimeHours.toFixed(1)} overtime`, icon: <Schedule />, color: '#00CDEA' },
-          { label: 'Gross recorded wages', value: money(summary.grossWages), detail: 'Payroll-facing project labour', icon: <AttachMoney />, color: '#31C48D' },
+          { label: 'Gross recorded wages', value: money(summary.grossWages), detail: 'Currency unspecified on time entries', icon: <AttachMoney />, color: '#31C48D' },
           { label: 'Team participation', value: summary.employees, detail: `${summary.timeEntries} recorded time entries`, icon: <Groups />, color: '#A78BFA' },
           { label: 'Approval rate', value: `${summary.approvalRate}%`, detail: `${summary.approvedEntries} approved completed entries`, icon: <CheckCircle />, color: '#FFB020' },
         ].map((metric) => (
@@ -391,3 +392,4 @@ export default function Reports() {
     </Container>
   );
 }
+

@@ -352,6 +352,11 @@ export default function HomeScreen() {
       eyebrow: 'COMPANY MANAGEMENT',
       title: 'People, access & operations',
       tools: [
+        ['Company administration', 'admin-panel-settings', 'CompanyAdministration', '#A7F3D0'],
+        ['Evidence center', 'fact-check', 'Evidence', '#A7F3D0'],
+        ['Accounting integrations', 'sync', 'Integrations', '#A7F3D0'],
+        ['Reports & exports', 'assessment', 'Reports', '#A7F3D0'],
+        ['Invoices & estimates', 'receipt-long', 'CommercialDocuments', '#A7F3D0'],
         ['Year-end review and archive', 'description', 'YearEnd', '#A7F3D0'],
         ['Banking and payout status', 'account-balance', 'PayoutStatus', '#A7F3D0'],
         ['Payroll & manual payments', 'payments', 'ManualPayroll', '#A7F3D0'],

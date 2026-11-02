@@ -53,6 +53,11 @@ import SelectEmployeesScreen from './src/screens/SelectEmployeesScreen';
 import CreateShiftScreen from './src/screens/CreateShiftScreen';
 import CompanySettingsScreen from './src/screens/CompanySettingsScreen';
 import WorkerToolsScreen from './src/screens/WorkerToolsScreen';
+import CompanyAdministrationScreen from './src/screens/CompanyAdministrationScreen';
+import EvidenceScreen from './src/screens/EvidenceScreen';
+import IntegrationsScreen from './src/screens/IntegrationsScreen';
+import ReportsScreen from './src/screens/ReportsScreen';
+import CommercialDocumentsScreen from './src/screens/CommercialDocumentsScreen';
 import YearEndScreen from './src/screens/YearEndScreen';
 import PayoutStatusScreen from './src/screens/PayoutStatusScreen';
 import PayStatementsScreen from './src/screens/PayStatementsScreen';
@@ -218,6 +223,11 @@ function AppNavigator() {
             <Stack.Screen name="Expenses" component={ExpensesScreen} />
             <Stack.Screen name="WorkPreferences" component={WorkPreferencesScreen} />
             <Stack.Screen name="WorkerTools" component={WorkerToolsScreen} />
+            <Stack.Screen name="CompanyAdministration" component={CompanyAdministrationScreen} />
+            <Stack.Screen name="Evidence" component={EvidenceScreen} />
+            <Stack.Screen name="Integrations" component={IntegrationsScreen} />
+            <Stack.Screen name="Reports" component={ReportsScreen} />
+            <Stack.Screen name="CommercialDocuments" component={CommercialDocumentsScreen} />
             <Stack.Screen name="YearEnd" component={YearEndScreen} />
             <Stack.Screen name="PayoutStatus" component={PayoutStatusScreen} />
             <Stack.Screen name="PayStatements" component={PayStatementsScreen} />

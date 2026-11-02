@@ -98,7 +98,7 @@ class ApiService {
   }
 
   async replayQueued(action:any):Promise<void>{
-    if(isPayrollMutation(action.url)) throw new Error('Payroll cannot be replayed from an offline queue. Open payroll and review the current records.');
+    if(isPayrollMutation(action.url)) throw new Error('Financial actions cannot be replayed from an offline queue. Open the screen and review the current records.');
     if(action.fileUri){await this.uploadFileWithData(action.url,action.fileUri,action.data||{},action.fieldName||'file',true,action.fileInfo);return;}
     await this.client.request({method:action.method,url:action.url,data:action.data});
   }
@@ -111,7 +111,7 @@ class ApiService {
 
   async post<T>(url: string, data?: any, p0?: { headers: { 'Content-Type': string; }; }): Promise<T> {
     const online = getOnlineStatus();
-    if (!online && isPayrollMutation(url)) throw new Error('Payroll requires an online connection. Nothing was queued or saved.');
+    if (!online && isPayrollMutation(url)) throw new Error('This action requires an online connection. Nothing was queued or saved.');
     if (!online) {
 
       await queueAction({ method: 'POST', url, data });
@@ -125,7 +125,7 @@ class ApiService {
 
   async put<T>(url: string, data?: any): Promise<T> {
     const online = getOnlineStatus();
-    if (!online && isPayrollMutation(url)) throw new Error('Payroll requires an online connection. Nothing was queued or saved.');
+    if (!online && isPayrollMutation(url)) throw new Error('This action requires an online connection. Nothing was queued or saved.');
     if (!online) {
 
       await queueAction({ method: 'PUT', url, data });
@@ -139,7 +139,7 @@ class ApiService {
 
   async patch<T>(url: string, data?: any): Promise<T> {
     const online = getOnlineStatus();
-    if (!online && isPayrollMutation(url)) throw new Error('Payroll requires an online connection. Nothing was queued or saved.');
+    if (!online && isPayrollMutation(url)) throw new Error('This action requires an online connection. Nothing was queued or saved.');
     if (!online) {
 
       await queueAction({ method: 'PATCH', url, data });
@@ -153,7 +153,7 @@ class ApiService {
 
   async delete<T>(url: string): Promise<T> {
     const online = getOnlineStatus();
-    if (!online && isPayrollMutation(url)) throw new Error('Payroll requires an online connection. Nothing was queued or saved.');
+    if (!online && isPayrollMutation(url)) throw new Error('This action requires an online connection. Nothing was queued or saved.');
     if (!online) {
 
       await queueAction({ method: 'DELETE', url });

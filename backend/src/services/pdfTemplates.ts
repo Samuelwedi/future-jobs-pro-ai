@@ -108,6 +108,8 @@ export interface PayStubData {
 }
 
 export interface InvoiceData {
+  currency?: string;
+  documentTitle?: string;
   invoiceNumber: string;
   date: string;
   dueDate: string;
@@ -168,7 +170,7 @@ export const InvoicePDF: React.FC<{ data: InvoiceData }> = ({ data }) => el(Docu
   el(Page, { size: 'A4', style: styles.page },
     el(View, { style: styles.header },
       el(View, { style: styles.headerLeft },
-        text(styles.title, 'INVOICE'),
+        text(styles.title, data.documentTitle || 'INVOICE'),
         text(styles.subtitle, data.companyName),
         data.companyAddress && text(styles.subtitle, data.companyAddress)
       ),
@@ -193,17 +195,17 @@ export const InvoicePDF: React.FC<{ data: InvoiceData }> = ({ data }) => el(Docu
       ...data.items.map((item, idx) => el(View, { key: idx, style: idx % 2 === 0 ? styles.tableRow : styles.tableRowAlt },
         text([styles.tableCell, styles.flex4], item.description),
         text([styles.tableCell, styles.flex1, styles.textRight], item.quantity),
-        text([styles.tableCell, styles.flex15, styles.textRight], `$${item.unitPrice.toFixed(2)}`),
-        text([styles.tableCell, styles.flex15, styles.textRight], `$${item.total.toFixed(2)}`)
+        text([styles.tableCell, styles.flex15, styles.textRight], `${data.currency || 'Unspecified'} ${item.unitPrice.toFixed(2)}`),
+        text([styles.tableCell, styles.flex15, styles.textRight], `${data.currency || 'Unspecified'} ${item.total.toFixed(2)}`)
       ))
     ),
-    el(View, { style: styles.totalRow }, text(styles.totalLabel, 'Subtotal'), text(styles.totalValue, `$${data.subtotal.toFixed(2)}`)),
+    el(View, { style: styles.totalRow }, text(styles.totalLabel, 'Subtotal'), text(styles.totalValue, `${data.currency || 'Unspecified'} ${data.subtotal.toFixed(2)}`)),
     data.taxRate > 0 && el(View, { style: [styles.totalRow, { borderTop: 'none', paddingTop: 0 }] },
-      text(styles.totalLabel, `Tax (${data.taxRate}%)`), text(styles.totalValue, `$${data.taxAmount.toFixed(2)}`)
+      text(styles.totalLabel, `Tax (${data.taxRate}%)`), text(styles.totalValue, `${data.currency || 'Unspecified'} ${data.taxAmount.toFixed(2)}`)
     ),
     el(View, { style: [styles.totalRow, { borderTop: '2px solid #00D4FF' }] },
       text([styles.totalLabel, { fontSize: 16, color: '#00D4FF' }], 'Total'),
-      text([styles.totalValue, { fontSize: 18 }], `$${data.total.toFixed(2)}`)
+      text([styles.totalValue, { fontSize: 18 }], `${data.currency || 'Unspecified'} ${data.total.toFixed(2)}`)
     ),
     data.notes && el(View, { style: { marginTop: 20 } },
       text([styles.subtitle, { fontWeight: 'bold' }], 'Notes:'), text(styles.subtitle, data.notes)

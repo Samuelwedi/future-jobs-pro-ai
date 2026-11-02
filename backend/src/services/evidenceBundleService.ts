@@ -1,64 +1,351 @@
-import crypto from 'crypto';
-import { pool } from '../config/database';
-import { generateGpsTrailVideo, generateTimeEntryPdf, generateVoiceCaptionVideo } from './evidenceMediaService';
+import crypto from "crypto";
+import { documentId, requireValue } from "./commercialDocuments";
+import { downloadEvidenceMedia, evidenceFilename } from "./evidenceDownload";
+import { pool } from "../config/database";
+import {
+  generateGpsTrailVideo,
+  generateTimeEntryPdf,
+  generateVoiceCaptionVideo,
+} from "./evidenceMediaService";
 
 type ZipEntry = { name: string; data: Buffer };
-type Selection = { photoIds?: string[]; voiceNoteIds?: string[]; attachmentIds?: string[]; includeGpsVideo?: boolean; includeTimeEntryPdf?: boolean; includeVoiceVideos?: boolean };
-const crcTable = Array.from({ length: 256 }, (_, n) => { let c=n; for(let k=0;k<8;k++) c=(c&1)?0xedb88320^(c>>>1):c>>>1; return c>>>0; });
-function crc32(data: Buffer) { let c=0xffffffff; for(const byte of data)c=crcTable[(c^byte)&255]^(c>>>8); return (c^0xffffffff)>>>0; }
+type Selection = {
+  photoIds?: string[];
+  voiceNoteIds?: string[];
+  attachmentIds?: string[];
+  includeGpsVideo?: boolean;
+  includeTimeEntryPdf?: boolean;
+  includeVoiceVideos?: boolean;
+};
+const crcTable = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(data: Buffer) {
+  let c = 0xffffffff;
+  for (const byte of data) c = crcTable[(c ^ byte) & 255] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
 function zip(entries: ZipEntry[]): Buffer {
-  const local: Buffer[]=[]; const central: Buffer[]=[]; let offset=0;
-  for(const entry of entries){ const name=Buffer.from(entry.name.replace(/[^\w.\-/ ]/g,'_')); const crc=crc32(entry.data); const h=Buffer.alloc(30); h.writeUInt32LE(0x04034b50); h.writeUInt16LE(20,4); h.writeUInt16LE(0,6); h.writeUInt16LE(0,8); h.writeUInt32LE(crc,14); h.writeUInt32LE(entry.data.length,18); h.writeUInt32LE(entry.data.length,22); h.writeUInt16LE(name.length,26); local.push(h,name,entry.data); const ch=Buffer.alloc(46); ch.writeUInt32LE(0x02014b50); ch.writeUInt16LE(20,4); ch.writeUInt16LE(20,6); ch.writeUInt32LE(crc,16); ch.writeUInt32LE(entry.data.length,20); ch.writeUInt32LE(entry.data.length,24); ch.writeUInt16LE(name.length,28); ch.writeUInt32LE(offset,42); central.push(ch,name); offset+=h.length+name.length+entry.data.length; }
-  const center=Buffer.concat(central); const end=Buffer.alloc(22); end.writeUInt32LE(0x06054b50); end.writeUInt16LE(entries.length,8); end.writeUInt16LE(entries.length,10); end.writeUInt32LE(center.length,12); end.writeUInt32LE(offset,16); return Buffer.concat([...local,center,end]);
+  const local: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name.replace(/[^\w.\-/ ]/g, "_"));
+    const crc = crc32(entry.data);
+    const h = Buffer.alloc(30);
+    h.writeUInt32LE(0x04034b50);
+    h.writeUInt16LE(20, 4);
+    h.writeUInt16LE(0, 6);
+    h.writeUInt16LE(0, 8);
+    h.writeUInt32LE(crc, 14);
+    h.writeUInt32LE(entry.data.length, 18);
+    h.writeUInt32LE(entry.data.length, 22);
+    h.writeUInt16LE(name.length, 26);
+    local.push(h, name, entry.data);
+    const ch = Buffer.alloc(46);
+    ch.writeUInt32LE(0x02014b50);
+    ch.writeUInt16LE(20, 4);
+    ch.writeUInt16LE(20, 6);
+    ch.writeUInt32LE(crc, 16);
+    ch.writeUInt32LE(entry.data.length, 20);
+    ch.writeUInt32LE(entry.data.length, 24);
+    ch.writeUInt16LE(name.length, 28);
+    ch.writeUInt32LE(offset, 42);
+    central.push(ch, name);
+    offset += h.length + name.length + entry.data.length;
+  }
+  const center = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(center.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...local, center, end]);
 }
-function esc(value: unknown) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c] || c)); }
-async function fetchMedia(url: string, maxBytes = 75*1024*1024) { const response=await fetch(url,{signal:AbortSignal.timeout(30000)}); if(!response.ok)throw new Error(`Media download failed (${response.status})`); const data=Buffer.from(await response.arrayBuffer()); if(data.length>maxBytes)throw new Error('Media is larger than 75 MB'); return data; }
-function ext(url:string,mime?:string){ const fromUrl=(url.split('?')[0].match(/\.[a-z0-9]{2,5}$/i)||[])[0]; if(fromUrl)return fromUrl; if(mime?.includes('pdf'))return '.pdf'; if(mime?.includes('video'))return '.mp4'; if(mime?.includes('audio'))return '.m4a'; return '.bin'; }
+function esc(value: unknown) {
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ] || c,
+  );
+}
+function ext(url: string, mime?: string) {
+  const fromUrl = (url.split("?")[0].match(/\.[a-z0-9]{2,5}$/i) || [])[0];
+  if (fromUrl) return fromUrl;
+  if (mime?.includes("pdf")) return ".pdf";
+  if (mime?.includes("video")) return ".mp4";
+  if (mime?.includes("audio")) return ".m4a";
+  return ".bin";
+}
 
-export async function evidenceOptions(companyId:string,timeEntryId:string){
-  const entry=await pool.query(`SELECT te.*, concat_ws(' ',u.first_name,u.last_name) employee_name,p.name project_name,p.address project_address,c.name company_name FROM time_entries te JOIN users u ON u.id=te.user_id LEFT JOIN projects p ON p.id=te.project_id JOIN companies c ON c.id=u.company_id WHERE te.id=$1 AND u.company_id=$2`,[timeEntryId,companyId]);
-  if(!entry.rowCount)throw new Error('Time entry not found');
-  const [photos,voices,attachments,gps]=await Promise.all([
-    pool.query(`SELECT id,s3_key url,file_type,taken_at,verification_hash FROM photos WHERE time_entry_id=$1 AND company_id=$2 ORDER BY taken_at`,[timeEntryId,companyId]),
-    pool.query(`SELECT id,audio_url url,transcript,client_summary,duration_seconds,taken_at FROM voice_notes WHERE time_entry_id=$1 AND company_id=$2 ORDER BY taken_at`,[timeEntryId,companyId]),
-    pool.query(`SELECT id,file_name,file_url url,file_type,file_size,created_at FROM attachments WHERE time_entry_id=$1 AND company_id=$2 ORDER BY created_at`,[timeEntryId,companyId]),
-    pool.query(`SELECT latitude,longitude,timestamp,accuracy,speed FROM gps_tracking WHERE time_entry_id=$1 ORDER BY timestamp`,[timeEntryId]),
+export async function evidenceOptions(companyId: string, timeEntryId: string) {
+  documentId(timeEntryId);
+  const entry = await pool.query(
+    `SELECT te.id,te.user_id,te.project_id,te.clock_in,te.clock_out,te.regular_hours,te.overtime_hours,te.total_wage,te.approval_status, concat_ws(' ',u.first_name,u.last_name) employee_name,p.name project_name,p.address project_address,c.name company_name FROM time_entries te JOIN users u ON u.id=te.user_id LEFT JOIN projects p ON p.id=te.project_id AND p.company_id=u.company_id JOIN companies c ON c.id=u.company_id WHERE te.id=$1 AND u.company_id=$2`,
+    [timeEntryId, companyId],
+  );
+  requireValue(entry.rowCount, "Time entry not found", 404);
+  const [photos, voices, attachments, gps] = await Promise.all([
+    pool.query(
+      `SELECT id,s3_key url,file_type,taken_at,verification_hash FROM photos WHERE time_entry_id=$1 AND company_id=$2 ORDER BY taken_at,id LIMIT 501`,
+      [timeEntryId, companyId],
+    ),
+    pool.query(
+      `SELECT id,audio_url url,transcript,client_summary,duration_seconds,taken_at FROM voice_notes WHERE time_entry_id=$1 AND company_id=$2 ORDER BY taken_at,id LIMIT 501`,
+      [timeEntryId, companyId],
+    ),
+    pool.query(
+      `SELECT id,file_name,file_url url,file_type,file_size,created_at FROM attachments WHERE time_entry_id=$1 AND company_id=$2 ORDER BY created_at,id LIMIT 501`,
+      [timeEntryId, companyId],
+    ),
+    pool.query(
+      `SELECT latitude,longitude,timestamp,accuracy,speed FROM gps_tracking WHERE time_entry_id=$1 ORDER BY timestamp LIMIT 10001`,
+      [timeEntryId],
+    ),
   ]);
-  return { entry:entry.rows[0], photos:photos.rows, voiceNotes:voices.rows, attachments:attachments.rows, gps:gps.rows };
+  requireValue(
+    [photos, voices, attachments].every((r) => r.rows.length <= 500) &&
+      gps.rows.length <= 10000,
+    "Too much evidence for one package. Use a narrower source entry.",
+    413,
+  );
+  return {
+    entry: entry.rows[0],
+    photos: photos.rows,
+    voiceNotes: voices.rows,
+    attachments: attachments.rows,
+    gps: gps.rows,
+  };
 }
-export async function buildEvidenceZip(companyId:string,userId:string,timeEntryId:string,selection:Selection){
-  const data=await evidenceOptions(companyId,timeEntryId); const choose=(rows:any[],ids?:string[])=>ids===undefined?rows:rows.filter(r=>ids.includes(String(r.id)));
-  const photos=choose(data.photos,selection.photoIds); const voices=choose(data.voiceNotes,selection.voiceNoteIds); const attachments=choose(data.attachments,selection.attachmentIds);
-  const generatedAt=new Date().toISOString(); const packageId=crypto.randomUUID();
-  const canonical={packageId,generatedAt,timeEntry:data.entry,gps:data.gps,photos,voiceNotes:voices,attachments,generatedBy:userId};
-  const hash=crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
-  const rows=data.gps.map((p:any)=>`${p.timestamp},${p.latitude},${p.longitude},${p.accuracy??''},${p.speed??''}`).join('\n');
-  const firstGps=data.gps[0];
-  const jobSite=data.entry.project_address||(firstGps?`Address not supplied — GPS ${Number(firstGps.latitude).toFixed(6)}, ${Number(firstGps.longitude).toFixed(6)}`:'Address and GPS location not supplied');
-  const inventoryNotes=[
-    photos.length?`${photos.length} photo/video record(s) included`:'No photo or video records were attached to this time entry',
-    voices.length?`${voices.length} voice record(s) included`:'No voice notes were attached to this time entry',
-    attachments.length?`${attachments.length} supporting document(s) included`:'No supporting documents were attached to this time entry',
-  ];
-  const report=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Verified Evidence ${esc(packageId)}</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#061018;color:#eaf5fa;font:14px Arial,sans-serif}.hero{padding:44px 6vw;background:linear-gradient(135deg,#061018,#0b2734);border-bottom:1px solid #214351}.eyebrow{color:#00dcff;font-weight:800;letter-spacing:.14em}.hero h1{font-size:38px;margin:12px 0 8px}.hero p{color:#a9bec9;font-size:16px}.wrap{max-width:1100px;margin:auto;padding:32px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.card{background:#0d1d27;border:1px solid #294552;border-radius:18px;padding:20px;margin:16px 0}.metric{font-size:30px;font-weight:900;color:#fff}.label{font-size:11px;color:#88a0ad;text-transform:uppercase;letter-spacing:.1em}.status{display:inline-flex;align-items:center;gap:8px;color:#7bf1a8;font-weight:800}.dot{width:10px;height:10px;border-radius:50%;background:#22c55e;box-shadow:0 0 18px #22c55e}.details{display:grid;grid-template-columns:180px 1fr;gap:10px}.details span:nth-child(odd){color:#88a0ad}.hash{word-break:break-all;font:12px monospace;background:#061018;border:1px solid #274655;border-radius:12px;padding:14px;color:#00dcff}.timeline{border-left:2px solid #00cde8;padding-left:20px;margin-left:8px}.timeline div{margin:18px 0}.timeline b{display:block}.timeline small,.inventory{color:#8ca3af}.footer{color:#78909d;font-size:12px;padding:20px 0}@media print{body{background:#fff;color:#172033}.hero,.card{background:#fff;color:#172033}.hash{color:#172033}}</style></head><body><section class="hero"><div class="eyebrow">FUTURE JOBS PRO AI • EVIDENCE INTELLIGENCE</div><h1>Verified Worksite Evidence</h1><p>A unified, independently reviewable record of time, location, media and supporting documents.</p><div class="status"><span class="dot"></span> PACKAGE GENERATED &amp; SEALED</div></section><main class="wrap"><div class="grid"><div class="card"><div class="label">GPS observations</div><div class="metric">${data.gps.length}</div></div><div class="card"><div class="label">Photo / video files</div><div class="metric">${photos.length}</div></div><div class="card"><div class="label">Voice records</div><div class="metric">${voices.length}</div></div><div class="card"><div class="label">Documents</div><div class="metric">${attachments.length}</div></div></div><section class="card"><div class="label">Case context</div><h2>${esc(data.entry.project_name||'Work record')}</h2><div class="details"><span>Company</span><b>${esc(data.entry.company_name)}</b><span>Employee</span><b>${esc(data.entry.employee_name)}</b><span>Job site</span><b>${esc(jobSite)}</b><span>Time-entry ID</span><b>${esc(timeEntryId)}</b></div></section><section class="card"><div class="label">Evidence inventory status</div>${inventoryNotes.map(note=>`<p class="inventory">${esc(note)}</p>`).join('')}</section><section class="card"><div class="label">Event timeline</div><div class="timeline"><div><b>Clock-in recorded</b><small>${esc(data.entry.clock_in)}</small></div><div><b>GPS trail captured</b><small>${data.gps.length} timestamped source observations retained in gps-trail.csv</small></div><div><b>Clock-out recorded</b><small>${esc(data.entry.clock_out||'Entry remains open')}</small></div><div><b>Evidence package generated</b><small>${esc(generatedAt)}</small></div></div></section><section class="card"><div class="label">Chain of custody</div><h2>Cryptographic verification</h2><p>The package manifest records the source metadata and generation context. Use this SHA-256 value to detect changes to the canonical evidence record.</p><div class="hash">${hash}</div><p><b>Package ID:</b> ${esc(packageId)}</p></section><section class="card"><div class="label">Included review tools</div><p><b>Animated GPS reconstruction:</b> generated/gps-trail-*.mp4</p><p><b>Printable time record:</b> generated/time-entry-*.pdf</p><p><b>Raw coordinates:</b> gps-trail.csv</p><p><b>Machine-readable source record:</b> manifest.json</p><p><b>File-level integrity:</b> artifact-index.json and package-seal.json</p></section><div class="footer">Generated by Future Jobs Pro AI. Maps are contextual reconstructions; original coordinates, timestamps and recorded accuracy values remain authoritative.</div></main></body></html>`;
-  const entries:ZipEntry[]=[{name:'evidence-report.html',data:Buffer.from(report)},{name:'manifest.json',data:Buffer.from(JSON.stringify({...canonical,verificationHash:hash},null,2))},{name:'gps-trail.csv',data:Buffer.from(`timestamp,latitude,longitude,accuracy,speed\n${rows}`)}];
-  if(selection.includeTimeEntryPdf!==false){const pdf=await generateTimeEntryPdf(companyId,timeEntryId);entries.push({name:`generated/${pdf.fileName}`,data:pdf.buffer});}
-  if(selection.includeGpsVideo!==false){try{const video=await generateGpsTrailVideo(companyId,timeEntryId);entries.push({name:`generated/${video.fileName}`,data:video.buffer});}catch(error:any){entries.push({name:'generated/gps-video-not-created.txt',data:Buffer.from(error.message)});}}
-  if(selection.includeVoiceVideos!==false){for(const note of voices){try{const video=await generateVoiceCaptionVideo(companyId,String(note.id));entries.push({name:`generated/${video.fileName}`,data:video.buffer});}catch(error:any){entries.push({name:`generated/voice-${note.id}-video-not-created.txt`,data:Buffer.from(error.message)});}}}
-  let total=entries.reduce((n,e)=>n+e.data.length,0); const addRemote=async(folder:string,item:any,index:number)=>{if(!item.url)return; const body=await fetchMedia(item.url); total+=body.length;if(total>250*1024*1024)throw new Error('Selected package exceeds 250 MB'); entries.push({name:`${folder}/${String(index+1).padStart(3,'0')}-${String(item.file_name||item.id)}${ext(item.url,item.file_type)}`,data:body});};
-  for(let i=0;i<photos.length;i++)await addRemote(photos[i].file_type==='video'?'videos':'photos',photos[i],i);
-  for(let i=0;i<voices.length;i++){await addRemote('voice-notes',voices[i],i);entries.push({name:`voice-notes/${String(i+1).padStart(3,'0')}-${voices[i].id}.txt`,data:Buffer.from(voices[i].transcript||'No transcript')});}
-  for(let i=0;i<attachments.length;i++)await addRemote('documents',attachments[i],i);
-  const artifactIndex={
+export async function buildEvidenceZip(
+  companyId: string,
+  userId: string,
+  timeEntryId: string,
+  selection: Selection,
+  maxBytes = 250 * 1024 * 1024,
+) {
+  requireValue(
+    selection && typeof selection === "object" && !Array.isArray(selection),
+    "Choose the evidence to include.",
+  );
+  for (const key of [
+    "includeGpsVideo",
+    "includeTimeEntryPdf",
+    "includeVoiceVideos",
+  ] as const)
+    requireValue(
+      selection[key] === undefined || typeof selection[key] === "boolean",
+      "Invalid generated-evidence selection.",
+    );
+  const data = await evidenceOptions(companyId, timeEntryId);
+  const choose = (rows: any[], ids?: string[]) => {
+    if (ids === undefined) return rows;
+    requireValue(
+      Array.isArray(ids) && ids.length <= 500,
+      "Invalid evidence selection.",
+    );
+    const unique = new Set(ids.map(documentId));
+    requireValue(
+      [...unique].every((id) => rows.some((r) => String(r.id) === id)),
+      "The evidence selection changed or contains another entry’s records.",
+      409,
+    );
+    return rows.filter((r) => unique.has(String(r.id)));
+  };
+  const photos = choose(data.photos, selection.photoIds);
+  const voices = choose(data.voiceNotes, selection.voiceNoteIds);
+  const attachments = choose(data.attachments, selection.attachmentIds);
+  requireValue(
+    selection.includeVoiceVideos === false || voices.length <= 10,
+    "Select at most ten voice reconstructions per package.",
+    413,
+  );
+  const generatedAt = new Date().toISOString();
+  const packageId = crypto.randomUUID();
+  const canonical = {
     packageId,
     generatedAt,
-    canonicalEvidenceHash:hash,
-    algorithm:'SHA-256',
-    artifacts:entries.map(entry=>({name:entry.name,size:entry.data.length,sha256:crypto.createHash('sha256').update(entry.data).digest('hex')})),
+    timeEntry: data.entry,
+    gps: data.gps,
+    photos,
+    voiceNotes: voices,
+    attachments,
+    generatedBy: userId,
   };
-  const artifactIndexData=Buffer.from(JSON.stringify(artifactIndex,null,2));
-  const packageSeal=crypto.createHash('sha256').update(artifactIndexData).digest('hex');
-  entries.push({name:'artifact-index.json',data:artifactIndexData});
-  entries.push({name:'package-seal.json',data:Buffer.from(JSON.stringify({packageId,algorithm:'SHA-256',artifactIndexHash:packageSeal,canonicalEvidenceHash:hash},null,2))});
-  return { packageId, hash, buffer:zip(entries), fileName:`future-jobs-evidence-${timeEntryId}-${generatedAt.slice(0,10)}.zip` };
+  const hash = crypto
+    .createHash("sha256")
+    .update(JSON.stringify(canonical))
+    .digest("hex");
+  const rows = data.gps
+    .map(
+      (p: any) =>
+        `${p.timestamp},${p.latitude},${p.longitude},${p.accuracy ?? ""},${p.speed ?? ""}`,
+    )
+    .join("\n");
+  const firstGps = data.gps[0];
+  const jobSite =
+    data.entry.project_address ||
+    (firstGps
+      ? `Address not supplied — GPS ${Number(firstGps.latitude).toFixed(6)}, ${Number(firstGps.longitude).toFixed(6)}`
+      : "Address and GPS location not supplied");
+  const inventoryNotes = [
+    photos.length
+      ? `${photos.length} photo/video record(s) included`
+      : "No photo or video records were attached to this time entry",
+    voices.length
+      ? `${voices.length} voice record(s) included`
+      : "No voice notes were attached to this time entry",
+    attachments.length
+      ? `${attachments.length} supporting document(s) included`
+      : "No supporting documents were attached to this time entry",
+  ];
+  const report = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Evidence ${esc(packageId)}</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#061018;color:#eaf5fa;font:14px Arial,sans-serif}.hero{padding:44px 6vw;background:linear-gradient(135deg,#061018,#0b2734);border-bottom:1px solid #214351}.eyebrow{color:#00dcff;font-weight:800;letter-spacing:.14em}.hero h1{font-size:38px;margin:12px 0 8px}.hero p{color:#a9bec9;font-size:16px}.wrap{max-width:1100px;margin:auto;padding:32px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.card{background:#0d1d27;border:1px solid #294552;border-radius:18px;padding:20px;margin:16px 0}.metric{font-size:30px;font-weight:900;color:#fff}.label{font-size:11px;color:#88a0ad;text-transform:uppercase;letter-spacing:.1em}.status{display:inline-flex;align-items:center;gap:8px;color:#7bf1a8;font-weight:800}.dot{width:10px;height:10px;border-radius:50%;background:#22c55e;box-shadow:0 0 18px #22c55e}.details{display:grid;grid-template-columns:180px 1fr;gap:10px}.details span:nth-child(odd){color:#88a0ad}.hash{word-break:break-all;font:12px monospace;background:#061018;border:1px solid #274655;border-radius:12px;padding:14px;color:#00dcff}.timeline{border-left:2px solid #00cde8;padding-left:20px;margin-left:8px}.timeline div{margin:18px 0}.timeline b{display:block}.timeline small,.inventory{color:#8ca3af}.footer{color:#78909d;font-size:12px;padding:20px 0}@media print{body{background:#fff;color:#172033}.hero,.card{background:#fff;color:#172033}.hash{color:#172033}}</style></head><body><section class="hero"><div class="eyebrow">FUTURE JOBS PRO AI • EVIDENCE INTELLIGENCE</div><h1>Stored Worksite Evidence</h1><p>A unified, independently reviewable record of time, location, media and supporting documents.</p><div class="status"><span class="dot"></span> PACKAGE GENERATED &amp; SEALED</div></section><main class="wrap"><div class="grid"><div class="card"><div class="label">GPS observations</div><div class="metric">${data.gps.length}</div></div><div class="card"><div class="label">Photo / video files</div><div class="metric">${photos.length}</div></div><div class="card"><div class="label">Voice records</div><div class="metric">${voices.length}</div></div><div class="card"><div class="label">Documents</div><div class="metric">${attachments.length}</div></div></div><section class="card"><div class="label">Case context</div><h2>${esc(data.entry.project_name || "Work record")}</h2><div class="details"><span>Company</span><b>${esc(data.entry.company_name)}</b><span>Employee</span><b>${esc(data.entry.employee_name)}</b><span>Job site</span><b>${esc(jobSite)}</b><span>Time-entry ID</span><b>${esc(timeEntryId)}</b></div></section><section class="card"><div class="label">Evidence inventory status</div>${inventoryNotes.map((note) => `<p class="inventory">${esc(note)}</p>`).join("")}</section><section class="card"><div class="label">Event timeline</div><div class="timeline"><div><b>Clock-in recorded</b><small>${esc(data.entry.clock_in)}</small></div><div><b>GPS trail captured</b><small>${data.gps.length} timestamped source observations retained in gps-trail.csv</small></div><div><b>Clock-out recorded</b><small>${esc(data.entry.clock_out || "Entry remains open")}</small></div><div><b>Evidence package generated</b><small>${esc(generatedAt)}</small></div></div></section><section class="card"><div class="label">Chain of custody</div><h2>Integrity hashes</h2><p>The package manifest records the source metadata and generation context. Use this SHA-256 value to detect changes to the canonical evidence record.</p><div class="hash">${hash}</div><p><b>Package ID:</b> ${esc(packageId)}</p></section><section class="card"><div class="label">Included review tools</div><p><b>Animated GPS reconstruction:</b> generated/gps-trail-*.mp4</p><p><b>Printable time record:</b> generated/time-entry-*.pdf</p><p><b>Raw coordinates:</b> gps-trail.csv</p><p><b>Machine-readable source record:</b> manifest.json</p><p><b>File-level integrity:</b> artifact-index.json and package-seal.json</p></section><div class="footer">Generated by Future Jobs Pro AI. Maps are contextual reconstructions; original coordinates, timestamps and recorded accuracy values remain authoritative.</div></main></body></html>`;
+  const entries: ZipEntry[] = [
+    { name: "evidence-report.html", data: Buffer.from(report) },
+    {
+      name: "manifest.json",
+      data: Buffer.from(
+        JSON.stringify({ ...canonical, verificationHash: hash }, null, 2),
+      ),
+    },
+    {
+      name: "gps-trail.csv",
+      data: Buffer.from(`timestamp,latitude,longitude,accuracy,speed\n${rows}`),
+    },
+  ];
+  if (selection.includeTimeEntryPdf !== false) {
+    const pdf = await generateTimeEntryPdf(companyId, timeEntryId);
+    entries.push({ name: `generated/${pdf.fileName}`, data: pdf.buffer });
+  }
+  if (selection.includeGpsVideo !== false) {
+    try {
+      const video = await generateGpsTrailVideo(companyId, timeEntryId);
+      entries.push({ name: `generated/${video.fileName}`, data: video.buffer });
+    } catch (error: any) {
+      entries.push({
+        name: "generated/gps-video-not-created.txt",
+        data: Buffer.from(
+          "The selected reconstruction could not be created. Original metadata is retained.",
+        ),
+      });
+    }
+  }
+  if (selection.includeVoiceVideos !== false) {
+    for (const note of voices) {
+      try {
+        const video = await generateVoiceCaptionVideo(
+          companyId,
+          String(note.id),
+        );
+        entries.push({
+          name: `generated/${video.fileName}`,
+          data: video.buffer,
+        });
+      } catch (error: any) {
+        entries.push({
+          name: `generated/voice-${note.id}-video-not-created.txt`,
+          data: Buffer.from(
+            "The selected reconstruction could not be created. Original metadata is retained.",
+          ),
+        });
+      }
+    }
+  }
+  let total = entries.reduce((n, e) => n + e.data.length, 0);
+  const addRemote = async (folder: string, item: any, index: number) => {
+    requireValue(
+      item.url,
+      "A selected original file is missing. Deselect it or restore the original.",
+      409,
+    );
+    requireValue(
+      total < maxBytes,
+      "Selected package exceeds the download limit.",
+      413,
+    );
+    const body = await downloadEvidenceMedia(
+      item.url,
+      Math.min(75 * 1024 * 1024, maxBytes - total),
+    );
+    total += body.length;
+    requireValue(
+      total <= maxBytes,
+      "Selected package exceeds the download limit.",
+      413,
+    );
+    entries.push({
+      name: `${folder}/${String(index + 1).padStart(3, "0")}-${item.file_name ? evidenceFilename(item.file_name) : evidenceFilename(item.id) + ext(item.url, item.file_type)}`,
+      data: body,
+    });
+  };
+  for (let i = 0; i < photos.length; i++)
+    await addRemote(
+      photos[i].file_type === "video" ? "videos" : "photos",
+      photos[i],
+      i,
+    );
+  for (let i = 0; i < voices.length; i++) {
+    await addRemote("voice-notes", voices[i], i);
+    entries.push({
+      name: `voice-notes/${String(i + 1).padStart(3, "0")}-${voices[i].id}.txt`,
+      data: Buffer.from(voices[i].transcript || "No transcript"),
+    });
+  }
+  for (let i = 0; i < attachments.length; i++)
+    await addRemote("documents", attachments[i], i);
+  requireValue(
+    entries.reduce((n, e) => n + e.data.length, 0) <= maxBytes,
+    "Selected package exceeds the download limit.",
+    413,
+  );
+  const artifactIndex = {
+    packageId,
+    generatedAt,
+    canonicalEvidenceHash: hash,
+    algorithm: "SHA-256",
+    artifacts: entries.map((entry) => ({
+      name: entry.name,
+      size: entry.data.length,
+      sha256: crypto.createHash("sha256").update(entry.data).digest("hex"),
+    })),
+  };
+  const artifactIndexData = Buffer.from(JSON.stringify(artifactIndex, null, 2));
+  const packageSeal = crypto
+    .createHash("sha256")
+    .update(artifactIndexData)
+    .digest("hex");
+  entries.push({ name: "artifact-index.json", data: artifactIndexData });
+  entries.push({
+    name: "package-seal.json",
+    data: Buffer.from(
+      JSON.stringify(
+        {
+          packageId,
+          algorithm: "SHA-256",
+          artifactIndexHash: packageSeal,
+          canonicalEvidenceHash: hash,
+        },
+        null,
+        2,
+      ),
+    ),
+  });
+  const buffer = zip(entries);
+  requireValue(
+    buffer.length <= maxBytes,
+    "Selected package exceeds the download limit.",
+    413,
+  );
+  return {
+    packageId,
+    hash,
+    zipHash: crypto.createHash("sha256").update(buffer).digest("hex"),
+    buffer,
+    fileName: `future-jobs-evidence-${timeEntryId}-${generatedAt.slice(0, 10)}.zip`,
+  };
 }
