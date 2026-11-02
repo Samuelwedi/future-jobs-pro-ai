@@ -134,4 +134,4 @@ export function payrollCalculationInput(
 }
 // Financial mutations require an explicit online action; they must never replay later.
 export const isPayrollMutation = (url: string) =>
-  /^\/(payroll|payroll-rules|manual-payroll)(\/|$)/.test(url);
+  /^\/(payroll|payroll-rules|manual-payroll|year-end)(\/|$)/.test(url);

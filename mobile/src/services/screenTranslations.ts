@@ -1577,3 +1577,297 @@ Object.assign(screenCopy, {
     "Vérifiée — paiement externe non consigné"
   ]
 });
+
+// Native year-end and read-only payout status.
+Object.assign(screenCopy, {
+  "Year-end records could not be verified.": [
+    "No se pudieron verificar los registros de cierre anual.",
+    "Impossible de vérifier les dossiers de fin d’année."
+  ],
+  "Year-end records could not be loaded.": [
+    "No se pudieron cargar los registros de cierre anual.",
+    "Impossible de charger les dossiers de fin d’année."
+  ],
+  "Year-end action failed.": [
+    "La acción de cierre anual falló.",
+    "L’action de fin d’année a échoué."
+  ],
+  "SIN not configured": [
+    "SIN no configurado",
+    "NAS non configuré"
+  ],
+  "Review summary only. No government filing or bank verification was performed.": [
+    "Solo resumen de revisión. No se realizó presentación gubernamental ni verificación bancaria.",
+    "Résumé de vérification uniquement. Aucune déclaration gouvernementale ni vérification bancaire effectuée."
+  ],
+  "Year-end review and archive": [
+    "Revisión y archivo de cierre anual",
+    "Vérification et archives de fin d’année"
+  ],
+  "Automatic mapping is limited to recorded, reviewed regular Alberta/CAD payments in 2026. Contractor, Quebec, worldwide and incomplete legacy records require the local filing process. Independently review every amount before storing a snapshot.": [
+    "La asignación automática se limita a pagos regulares de Alberta/CAD registrados y revisados en 2026. Contratistas, Quebec, otros países y registros antiguos incompletos requieren el proceso de presentación local. Revise cada importe de forma independiente antes de guardar la instantánea.",
+    "La correspondance automatique est limitée aux paiements réguliers Alberta/CAD enregistrés et vérifiés en 2026. Les entrepreneurs, le Québec, les autres pays et les anciens dossiers incomplets nécessitent la procédure locale. Vérifiez indépendamment chaque montant avant d’enregistrer l’instantané."
+  ],
+  "Tax year": [
+    "Año fiscal",
+    "Année d’imposition"
+  ],
+  "Employer identity": [
+    "Identidad del empleador",
+    "Identité de l’employeur"
+  ],
+  "Save employer identity": [
+    "Guardar identidad del empleador",
+    "Enregistrer l’identité de l’employeur"
+  ],
+  "Save employer identity?": [
+    "¿Guardar identidad del empleador?",
+    "Enregistrer l’identité de l’employeur ?"
+  ],
+  "Changing employer details invalidates the current preview.": [
+    "Cambiar los datos del empleador invalida la vista previa actual.",
+    "Modifier les coordonnées de l’employeur invalide l’aperçu actuel."
+  ],
+  "Employer identity saved.": [
+    "Identidad del empleador guardada.",
+    "Identité de l’employeur enregistrée."
+  ],
+  "Select employee": [
+    "Seleccionar empleado",
+    "Sélectionner un employé"
+  ],
+  "Preview year-end totals": [
+    "Vista previa de totales anuales",
+    "Aperçu des totaux annuels"
+  ],
+  "Independent year-end review reference": [
+    "Referencia de revisión anual independiente",
+    "Référence de vérification annuelle indépendante"
+  ],
+  "I independently reviewed the annual payments and every displayed form amount.": [
+    "He revisado de forma independiente los pagos anuales y cada importe mostrado del formulario.",
+    "J’ai vérifié indépendamment les paiements annuels et chaque montant affiché du formulaire."
+  ],
+  "Confirm independent year-end review": [
+    "Confirmar revisión anual independiente",
+    "Confirmer la vérification annuelle indépendante"
+  ],
+  "Store reviewed year-end snapshot": [
+    "Guardar instantánea anual revisada",
+    "Enregistrer l’instantané annuel vérifié"
+  ],
+  "Store reviewed snapshot?": [
+    "¿Guardar instantánea revisada?",
+    "Enregistrer l’instantané vérifié ?"
+  ],
+  "The server will reject changed payroll or employer totals. This stores a review record and does not file a return.": [
+    "El servidor rechazará cambios en los totales de nómina o del empleador. Esto guarda un registro de revisión y no presenta una declaración.",
+    "Le serveur rejettera les totaux de paie ou d’employeur modifiés. Cela conserve une vérification et ne dépose pas de déclaration."
+  ],
+  "Reviewed snapshot stored. No government filing was submitted.": [
+    "Instantánea revisada guardada. No se presentó declaración gubernamental.",
+    "Instantané vérifié enregistré. Aucune déclaration gouvernementale déposée."
+  ],
+  "Reviewed year-end archive": [
+    "Archivo anual revisado",
+    "Archives annuelles vérifiées"
+  ],
+  "Legacy slips without verified employer provenance are not shown. Reconcile those records separately.": [
+    "No se muestran documentos antiguos sin procedencia verificada del empleador. Concilie esos registros por separado.",
+    "Les anciens relevés sans provenance d’employeur vérifiée ne sont pas affichés. Rapprochez ces dossiers séparément."
+  ],
+  "No reviewed snapshots for this year.": [
+    "No hay instantáneas revisadas para este año.",
+    "Aucun instantané vérifié pour cette année."
+  ],
+  "Open stored snapshot": [
+    "Abrir instantánea guardada",
+    "Ouvrir l’instantané enregistré"
+  ],
+  "Awaiting approval": [
+    "Pendiente de aprobación",
+    "En attente d’approbation"
+  ],
+  "Submitting": [
+    "Enviando",
+    "Envoi en cours"
+  ],
+  "Submitted": [
+    "Enviado",
+    "Envoyé"
+  ],
+  "Processing": [
+    "En procesamiento",
+    "Traitement en cours"
+  ],
+  "Settled": [
+    "Liquidado",
+    "Réglé"
+  ],
+  "Failed": [
+    "Fallido",
+    "Échoué"
+  ],
+  "Cancelled": [
+    "Cancelado",
+    "Annulé"
+  ],
+  "Destination not configured": [
+    "Destino no configurado",
+    "Destination non configurée"
+  ],
+  "Inactive": [
+    "Inactivo",
+    "Inactif"
+  ],
+  "Unsupported country": [
+    "País no compatible",
+    "Pays non pris en charge"
+  ],
+  "Payout records could not be verified.": [
+    "No se pudieron verificar los registros de desembolsos.",
+    "Impossible de vérifier les dossiers de versement."
+  ],
+  "Payout records could not be loaded.": [
+    "No se pudieron cargar los registros de desembolsos.",
+    "Impossible de charger les dossiers de versement."
+  ],
+  "Banking and payout status": [
+    "Estado bancario y de desembolsos",
+    "État bancaire et des versements"
+  ],
+  "Direct deposit is disabled. This page only inspects saved status and history. Make bank payments separately and record them through Payroll & manual payments. No bank details are collected here.": [
+    "El depósito directo está desactivado. Esta página solo consulta estados e historial guardados. Realice pagos bancarios por separado y regístrelos en Nómina y pagos manuales. Aquí no se recopilan datos bancarios.",
+    "Le dépôt direct est désactivé. Cette page consulte seulement les états et l’historique enregistrés. Effectuez les paiements bancaires séparément et consignez-les dans Paie et paiements manuels. Aucune coordonnée bancaire n’est recueillie ici."
+  ],
+  "Saved payout configuration": [
+    "Configuración de desembolsos guardada",
+    "Configuration de versement enregistrée"
+  ],
+  "No payout configuration saved.": [
+    "No hay configuración de desembolsos guardada.",
+    "Aucune configuration de versement enregistrée."
+  ],
+  "A configured destination or historical settled status does not enable new payouts.": [
+    "Un destino configurado o un estado histórico liquidado no habilita nuevos desembolsos.",
+    "Une destination configurée ou un ancien état réglé n’active pas de nouveaux versements."
+  ],
+  "Country and currency capabilities": [
+    "Capacidades por país y moneda",
+    "Capacités par pays et devise"
+  ],
+  "Employee destination status": [
+    "Estado del destino del empleado",
+    "État de la destination de l’employé"
+  ],
+  "No destination records.": [
+    "No hay registros de destinos.",
+    "Aucun dossier de destination."
+  ],
+  "Destination configured": [
+    "Destino configurado",
+    "Destination configurée"
+  ],
+  "Saved payroll payout eligibility": [
+    "Elegibilidad guardada de desembolso de nómina",
+    "Admissibilité enregistrée au versement de paie"
+  ],
+  "No payout payroll records.": [
+    "No hay registros de nómina para desembolsos.",
+    "Aucun dossier de versement de paie."
+  ],
+  "Historical payout batches": [
+    "Lotes históricos de desembolsos",
+    "Lots historiques de versements"
+  ],
+  "No payout batches.": [
+    "No hay lotes de desembolsos.",
+    "Aucun lot de versements."
+  ],
+  "Inspect batch history": [
+    "Consultar historial del lote",
+    "Consulter l’historique du lot"
+  ],
+  "Choose a valid employee, tax year and form.": [
+    "Elija un empleado, año fiscal y formulario válidos.",
+    "Choisissez un employé, une année et un formulaire valides."
+  ],
+  "Review the preview and enter an independent review reference.": [
+    "Revise la vista previa e introduzca una referencia de revisión independiente.",
+    "Vérifiez l’aperçu et saisissez une référence de vérification indépendante."
+  ],
+  "Operating name": [
+    "Nombre comercial",
+    "Nom commercial"
+  ],
+  "Legal name": [
+    "Nombre legal",
+    "Dénomination légale"
+  ],
+  "Business number": [
+    "Número de empresa",
+    "Numéro d’entreprise"
+  ],
+  "Payroll account number": [
+    "Número de cuenta de nómina",
+    "Numéro de compte de retenues sur la paie"
+  ],
+  "City": [
+    "Ciudad",
+    "Ville"
+  ],
+  "Province": [
+    "Provincia",
+    "Province"
+  ],
+  "Postal code": [
+    "Código postal",
+    "Code postal"
+  ],
+  "Phone": [
+    "Teléfono",
+    "Téléphone"
+  ],
+  "Payroll email": [
+    "Correo de nómina",
+    "Courriel de paie"
+  ],
+  "Box 14 — Employment income": [
+    "Casilla 14 — Ingresos laborales",
+    "Case 14 — Revenus d’emploi"
+  ],
+  "Box 16 — CPP": [
+    "Casilla 16 — CPP",
+    "Case 16 — RPC"
+  ],
+  "Box 16A — CPP2": [
+    "Casilla 16A — CPP2",
+    "Case 16A — RPC2"
+  ],
+  "Box 18 — EI": [
+    "Casilla 18 — EI",
+    "Case 18 — AE"
+  ],
+  "Box 22 — Income tax": [
+    "Casilla 22 — Impuesto sobre la renta",
+    "Case 22 — Impôt sur le revenu"
+  ],
+  "Box 24 — Insurable earnings": [
+    "Casilla 24 — Ingresos asegurables",
+    "Case 24 — Gains assurables"
+  ],
+  "Box 26 — Pensionable earnings": [
+    "Casilla 26 — Ingresos sujetos a pensión",
+    "Case 26 — Gains ouvrant droit à pension"
+  ],
+  "Employer CPP and CPP2": [
+    "CPP y CPP2 patronales",
+    "RPC et RPC2 de l’employeur"
+  ],
+  "Employer EI": [
+    "EI patronal",
+    "AE de l’employeur"
+  ]
+});
+
+Object.assign(screenCopy, {"Employee: {name}. Form: {form}. Tax year: {year}.":["Empleado: {name}. Formulario: {form}. Año fiscal: {year}.","Employé : {name}. Formulaire : {form}. Année d’imposition : {year}."]});

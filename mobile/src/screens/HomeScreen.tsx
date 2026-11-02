@@ -352,6 +352,8 @@ export default function HomeScreen() {
       eyebrow: 'COMPANY MANAGEMENT',
       title: 'People, access & operations',
       tools: [
+        ['Year-end review and archive', 'description', 'YearEnd', '#A7F3D0'],
+        ['Banking and payout status', 'account-balance', 'PayoutStatus', '#A7F3D0'],
         ['Payroll & manual payments', 'payments', 'ManualPayroll', '#A7F3D0'],
         ['Crew clock', 'more-time', 'CrewClock', '#A7F3D0'],
         ['Kiosk', 'pin', 'Kiosk', '#FDBA74'],

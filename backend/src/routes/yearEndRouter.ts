@@ -1,326 +1,344 @@
-import express, { Request, Response } from 'express';
-import { pool } from '../config/database';
-import { verifyToken } from '../utils/auth';
-import {companyActor,manages} from '../middleware/companyActor';
+import express from "express";
+import { pool } from "../config/database";
+import { companyActor, manages } from "../middleware/companyActor";
 import {
   compileT4Slip,
   compileT4ASlip,
   compileRL1Slip,
-} from '../services/yearEndService';
-
+  yearEndError,
+  yearEndRequest,
+  yearEndPreviewHash,
+} from "../services/yearEndService";
 const router = express.Router();
-// Global company-defined deductions are not mapped to Canadian statutory form boxes.
-router.use(['/preview','/finalize'],companyActor,async(req,res,next)=>{
- if(!manages(res.locals.actor))return res.status(403).json({success:false,message:'Payroll manager access required'});
- try{
-  const company=res.locals.actor.company_id;
-  const rules=await pool.query('SELECT rules FROM company_payroll_rule_versions WHERE company_id=$1 ORDER BY revision DESC LIMIT 1',[company]);
-  const globalRecords=await pool.query("SELECT pi.id FROM payroll_items pi JOIN payrolls p ON p.id=pi.payroll_id WHERE p.company_id=$1 AND pi.calculation_snapshot->>'engine'='company_rules_v1' LIMIT 1",[company]);
-  if(rules.rows[0]?.rules?.engine==='company_rules_v1'||globalRecords.rowCount)return res.status(409).json({success:false,message:'Statutory year-end form generation is not implemented for company-configured worldwide payroll. Use your local filing process.'});
-  next();
- }catch{return res.status(503).json({success:false,message:'Could not verify payroll jurisdiction before generating tax forms'});}
-});
-
-// ─── Helper: get company ID ──────────────────────────────────────
-const getCompanyId = async (req: Request): Promise<string | null> => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+router.use(companyActor, (_req, res, next) =>
+  manages(res.locals.actor)
+    ? next()
+    : res.status(403).json({
+        success: false,
+        message: "Payroll manager access is required",
+      }),
+);
+router.use(["/preview", "/finalize"], async (_req, res, next) => {
   try {
-    const decoded = verifyToken(req);
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
-    return userRes.rows[0]?.company_id || null;
-  } catch { return null; }
+    const company = res.locals.actor.company_id;
+    const rules = await pool.query(
+      "SELECT rules FROM company_payroll_rule_versions WHERE company_id=$1 ORDER BY revision DESC LIMIT 1",
+      [company],
+    );
+    const records = await pool.query(
+      "SELECT pi.id FROM payroll_items pi JOIN payrolls p ON p.id=pi.payroll_id WHERE p.company_id=$1 AND pi.calculation_snapshot->>'engine'='company_rules_v1' LIMIT 1",
+      [company],
+    );
+    if (
+      rules.rows[0]?.rules?.engine === "company_rules_v1" ||
+      records.rows.length
+    )
+      return res.status(409).json({
+        success: false,
+        message:
+          "Statutory year-end form generation is not implemented for company-configured worldwide payroll. Use your local filing process.",
+      });
+    next();
+  } catch {
+    return res.status(503).json({
+      success: false,
+      message:
+        "Could not verify payroll jurisdiction before generating tax forms",
+    });
+  }
+});
+const fail = (res: any, e: any) =>
+  res.status(e.status || 503).json({
+    success: false,
+    message: e.status
+      ? e.message
+      : "Year-end service is unavailable. Try again or contact support.",
+  });
+const form = (value: unknown) => {
+  const v = String(value || "").toUpperCase();
+  if (!["T4", "T4A", "RL1"].includes(v))
+    throw yearEndError("Invalid form type", 400);
+  return v;
 };
-
-const requirePayrollManager = async (req: Request): Promise<{ companyId: string; userId: string }> => {
-  const decoded = verifyToken(req);
-  const result = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
-  if (!result.rowCount || !result.rows[0].company_id) throw new Error('Not authenticated');
-  if (!['boss', 'manager', 'admin'].includes(String(result.rows[0].role || ''))) {
-    const error: any = new Error('Payroll manager access is required');
-    error.status = 403;
-    throw error;
-  }
-  return { companyId: String(result.rows[0].company_id), userId: String(decoded.id) };
+function archiveView(row: any) {
+  const snapshot = row.snapshot,
+    manifest =
+      snapshot.t4Manifest || snapshot.t4aManifest || snapshot.rl1Manifest || {};
+  return {
+    id: row.id,
+    employee_id: row.employee_id,
+    tax_year: row.tax_year,
+    form_type: row.form_type,
+    generated_at: row.generated_at,
+    first_name: snapshot.employee?.firstName,
+    last_name: snapshot.employee?.lastName,
+    legal_name: snapshot.employer?.name,
+    company_name: snapshot.employer?.name,
+    snapshot,
+    ...Object.fromEntries(
+      Object.entries(manifest).map(([k, v]) => [
+        k.replace(/^box(?=\d)/, "box_"),
+        v,
+      ]),
+    ),
+    ...snapshot.employerMetrics,
+  };
+}
+const companyFields: Record<string, string> = {
+  name: "name",
+  legalName: "legal_name",
+  businessNumber: "business_number",
+  payrollAccountNumber: "payroll_account_number",
+  address: "address",
+  city: "city",
+  province: "province",
+  postalCode: "postal_code",
+  phone: "phone",
+  email: "email",
 };
-
-const finalizedTables: Record<string, string> = {
-  T4: 'generated_t4_slips',
-  T4A: 'generated_t4a_slips',
-  RL1: 'generated_rl1_slips',
-};
-
-// GET /api/year-end/finalized – company-scoped finalized slip archive
-router.get('/finalized', async (req: Request, res: Response) => {
+router.get("/employees", async (_req, res) => {
   try {
-    const { companyId } = await requirePayrollManager(req);
-    const taxYear = req.query.taxYear ? Number(req.query.taxYear) : null;
-    const employeeId = req.query.employeeId ? String(req.query.employeeId) : null;
-    const formType = req.query.formType ? String(req.query.formType).toUpperCase() : null;
-    if (taxYear !== null && (!Number.isInteger(taxYear) || taxYear < 2000 || taxYear > new Date().getFullYear() + 1)) {
-      return res.status(400).json({ success: false, message: 'Invalid tax year' });
-    }
-    if (formType && !finalizedTables[formType]) {
-      return res.status(400).json({ success: false, message: 'Invalid form type' });
-    }
-
+    const a = res.locals.actor,
+      people = await pool.query(
+        "SELECT id,COALESCE(full_name,first_name||' '||last_name,email) name FROM users WHERE company_id=$1 ORDER BY last_name,first_name,id",
+        [a.company_id],
+      );
+    res.json({
+      success: true,
+      actorId: a.id,
+      companyId: a.company_id,
+      manager: true,
+      people: people.rows,
+    });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+router.get("/company", async (_req, res) => {
+  try {
     const result = await pool.query(
-      `SELECT archive.*, u.first_name, u.last_name FROM (
-         SELECT id::text, employee_id, tax_year, generated_at, 'T4'::text AS form_type
-         FROM generated_t4_slips
-         UNION ALL
-         SELECT id::text, employee_id, tax_year, generated_at, 'T4A'::text AS form_type
-         FROM generated_t4a_slips
-         UNION ALL
-         SELECT id::text, employee_id, tax_year, generated_at, 'RL1'::text AS form_type
-         FROM generated_rl1_slips
-       ) archive
-       JOIN users u ON u.id = archive.employee_id
-       WHERE u.company_id = $1
-         AND ($2::integer IS NULL OR archive.tax_year = $2)
-         AND ($3::uuid IS NULL OR archive.employee_id = $3)
-         AND ($4::text IS NULL OR archive.form_type = $4)
-       ORDER BY archive.generated_at DESC`,
-      [companyId, taxYear, employeeId, formType]
+      "SELECT id,name,legal_name,business_number,payroll_account_number,address,city,province,postal_code,phone,email FROM companies WHERE id=$1",
+      [res.locals.actor.company_id],
     );
-    const slips = result.rows.map(row => ({
-      ...row,
-      employee_name: `${row.first_name || ''} ${row.last_name || ''}`.trim(),
-    }));
-    res.json({ success: true, slips });
-  } catch (error: any) {
-    console.error('Finalized year-end archive error:', error);
-    res.status(error.status || 500).json({ success: false, message: error.message });
+    res.json({ success: true, company: result.rows[0] });
+  } catch (e) {
+    fail(res, e);
   }
 });
-
-// GET /api/year-end/finalized/:formType/:id – reopen one stored slip
-router.get('/finalized/:formType/:id', async (req: Request, res: Response) => {
+router.patch("/company", async (req, res) => {
   try {
-    const { companyId } = await requirePayrollManager(req);
-    const formType = String(req.params.formType || '').toUpperCase();
-    const table = finalizedTables[formType];
-    if (!table) return res.status(400).json({ success: false, message: 'Invalid form type' });
+    const keys = Object.keys(req.body || {});
+    if (!keys.length || keys.some((k) => !Object.hasOwn(companyFields, k)))
+      throw yearEndError("Choose valid employer identity fields.", 400);
+    const values = keys.map((k) => {
+      if (
+        typeof req.body[k] !== "string" ||
+        req.body[k].length >
+          (
+            {
+              name: 255,
+              legalName: 255,
+              address: 255,
+              businessNumber: 15,
+              payrollAccountNumber: 20,
+              city: 120,
+              province: 2,
+              postalCode: 10,
+              phone: 50,
+              email: 255,
+            } as Record<string, number>
+          )[k]
+      )
+        throw yearEndError(
+          "Employer identity values must be bounded text.",
+          400,
+        );
+      return req.body[k].trim();
+    });
+    if (keys.includes("name") && !values[keys.indexOf("name")])
+      throw yearEndError("Operating name is required.", 400);
+    await pool.query(
+      "UPDATE companies SET " +
+        keys.map((k, i) => companyFields[k] + "=$" + (i + 1)).join(",") +
+        " WHERE id=$" +
+        (keys.length + 1),
+      [...values, res.locals.actor.company_id],
+    );
+    res.json({ success: true, message: "Employer identity saved." });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+router.get("/finalized", async (req, res) => {
+  try {
+    const a = res.locals.actor,
+      year = req.query.taxYear === undefined ? null : Number(req.query.taxYear),
+      employee =
+        req.query.employeeId === undefined
+          ? null
+          : String(req.query.employeeId),
+      type = req.query.formType ? form(req.query.formType) : null;
+    if (
+      year !== null &&
+      (!Number.isInteger(year) ||
+        year < 2000 ||
+        year > new Date().getFullYear() + 1)
+    )
+      throw yearEndError("Invalid tax year", 400);
+    if (
+      employee &&
+      !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+        employee,
+      )
+    )
+      throw yearEndError("Invalid employee identifier", 400);
     const result = await pool.query(
-      `SELECT s.*, u.first_name, u.last_name, u.email, c.name AS company_name,
-              c.legal_name, c.business_number, c.payroll_account_number
-       FROM ${table} s
-       JOIN users u ON u.id = s.employee_id
-       JOIN companies c ON c.id = u.company_id
-       WHERE s.id::text = $1 AND u.company_id = $2`,
-      [String(req.params.id), companyId]
+      `SELECT id,employee_id,tax_year,form_type,generated_at,snapshot->'employee'->>'firstName' first_name,snapshot->'employee'->>'lastName' last_name FROM reviewed_year_end_slips WHERE company_id=$1 AND ($2::integer IS NULL OR tax_year=$2) AND ($3::uuid IS NULL OR employee_id=$3) AND ($4::text IS NULL OR form_type=$4) ORDER BY generated_at DESC LIMIT 500`,
+      [a.company_id, year, employee, type],
     );
-    if (!result.rowCount) return res.status(404).json({ success: false, message: 'Finalized slip not found' });
-    res.json({ success: true, formType, slip: result.rows[0] });
-  } catch (error: any) {
-    console.error('Finalized year-end slip error:', error);
-    res.status(error.status || 500).json({ success: false, message: error.message });
+    res.json({
+      success: true,
+      actorId: a.id,
+      companyId: a.company_id,
+      slips: result.rows.map((r) => ({
+        ...r,
+        employee_name: `${r.first_name || ""} ${r.last_name || ""}`.trim(),
+      })),
+      legacyArchiveRequiresProvenanceReview: true,
+    });
+  } catch (e) {
+    fail(res, e);
   }
 });
-
-// ─── GET /api/year-end/employee/:employeeId/forms ────────────────
-router.get('/employee/:employeeId/forms', async (req: Request, res: Response) => {
+router.get("/finalized/:formType/:id", async (req, res) => {
   try {
-    const { companyId } = await requirePayrollManager(req);
-
-    const employeeId = Array.isArray(req.params.employeeId)
-      ? req.params.employeeId[0]
-      : req.params.employeeId;
-
-    // Accept both numeric and UUID
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(employeeId);
-    if (!isUUID && isNaN(Number(employeeId))) {
-      return res.status(400).json({ success: false, message: 'Invalid employee ID' });
-    }
-
+    const type = form(req.params.formType),
+      a = res.locals.actor;
     const result = await pool.query(
-      `SELECT id, first_name, last_name, employment_type, province
-       FROM users 
-       WHERE id = $1 AND company_id = $2`,
-      [employeeId, companyId]
+      "SELECT * FROM reviewed_year_end_slips WHERE id::text=$1 AND company_id=$2 AND form_type=$3",
+      [String(req.params.id), a.company_id, type],
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Employee not found' });
-    }
-    const emp = result.rows[0];
-
-    const forms: string[] = [];
-    if (emp.employment_type === 'EMPLOYEE') {
-      forms.push('T4');
-      if (emp.province === 'QC') forms.push('RL1');
-    } else if (emp.employment_type === 'CONTRACTOR') {
-      forms.push('T4A');
-    } else {
-      forms.push('T4');
-    }
-
-    res.json({ success: true, employee: emp, availableForms: forms });
-  } catch (error) {
-    console.error('Error fetching employee forms:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    if (!result.rows[0]) throw yearEndError("Finalized slip not found", 404);
+    res.json({
+      success: true,
+      formType: type,
+      slip: archiveView(result.rows[0]),
+    });
+  } catch (e) {
+    fail(res, e);
   }
 });
-
-// ─── GET /api/year-end/preview ────────────────────────────────────
-router.get('/preview', async (req: Request, res: Response) => {
+router.get("/employee/:employeeId/forms", async (req, res) => {
   try {
-    const { companyId } = await requirePayrollManager(req);
-
-    const { employeeId, taxYear, formType } = req.query;
-    if (!employeeId || !taxYear || !formType) {
-      return res.status(400).json({ success: false, message: 'Missing required parameters' });
-    }
-
-    const id = String(employeeId);
-    const year = Number(taxYear);
-    if (!/^[0-9a-f-]{36}$/i.test(id) && !/^\d+$/.test(id)) {
-      return res.status(400).json({ success: false, message: 'Invalid employee ID' });
-    }
-    if (isNaN(year)) {
-      return res.status(400).json({ success: false, message: 'Invalid tax year' });
-    }
-
-    let result;
-    switch (formType) {
-      case 'T4':
-        result = await compileT4Slip(id, year, companyId);
-        break;
-      case 'T4A':
-        result = await compileT4ASlip(id, year, companyId);
-        break;
-      case 'RL1':
-        result = await compileRL1Slip(id, year, companyId);
-        break;
-      default:
-        return res.status(400).json({ success: false, message: 'Invalid form type' });
-    }
-
-    res.json({ success: true, preview: result });
-  } catch (error: any) {
-    console.error('Preview error:', error);
-    res.status(error.status || 500).json({ success: false, error: error.message });
+    const request = yearEndRequest(
+      req.params.employeeId,
+      new Date().getFullYear(),
+      "T4",
+    );
+    const result = await pool.query(
+      "SELECT id,first_name,last_name,employment_type,province FROM users WHERE id=$1 AND company_id=$2",
+      [request.employeeId, res.locals.actor.company_id],
+    );
+    const employee = result.rows[0];
+    if (!employee) throw yearEndError("Employee not found", 404);
+    res.json({
+      success: true,
+      employee,
+      availableForms:
+        employee.employment_type === "CONTRACTOR"
+          ? ["T4A"]
+          : employee.province === "QC"
+            ? ["T4", "RL1"]
+            : ["T4"],
+    });
+  } catch (e) {
+    fail(res, e);
   }
 });
-
-// ─── POST /api/year-end/finalize ──────────────────────────────────
-router.post('/finalize', async (req: Request, res: Response) => {
-  const client = await pool.connect();
+const compile = async (r: any, company: string, db?: any) =>
+  r.formType === "T4"
+    ? compileT4Slip(r.employeeId, r.taxYear, company, db)
+    : r.formType === "T4A"
+      ? compileT4ASlip(r.employeeId, r.taxYear, company)
+      : compileRL1Slip(r.employeeId, r.taxYear, company);
+router.get("/preview", async (req, res) => {
   try {
-    const { companyId } = await requirePayrollManager(req);
-
-    const { employeeId, taxYear, formType } = req.body;
-    if (!employeeId || !taxYear || !formType) {
-      return res.status(400).json({ success: false, message: 'Missing required parameters' });
-    }
-
-    // Validate employee belongs to company
-    const empCheck = await pool.query(
-      'SELECT id FROM users WHERE id = $1 AND company_id = $2',
-      [employeeId, companyId]
+    const r = yearEndRequest(
+        req.query.employeeId,
+        req.query.taxYear,
+        req.query.formType,
+      ),
+      a = res.locals.actor,
+      preview = await compile(r, a.company_id);
+    res.json({
+      success: true,
+      preview,
+      previewHash: yearEndPreviewHash(
+        r.employeeId,
+        r.taxYear,
+        r.formType,
+        preview,
+      ),
+    });
+  } catch (e) {
+    fail(res, e);
+  }
+});
+router.post("/finalize", async (req, res) => {
+  let client: any;
+  try {
+    const r = yearEndRequest(
+        req.body?.employeeId,
+        req.body?.taxYear,
+        req.body?.formType,
+      ),
+      a = res.locals.actor,
+      reference = String(req.body?.reviewReference || "").trim();
+    if (
+      typeof req.body.reviewReference !== "string" ||
+      req.body.confirmed !== true ||
+      reference.length < 8 ||
+      reference.length > 500 ||
+      !/^[a-f0-9]{64}$/.test(String(req.body.previewHash || ""))
+    )
+      throw yearEndError(
+        "Refresh the preview, confirm independent year-end review and provide its reference.",
+        400,
+      );
+    client = await pool.connect();
+    await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
+    const preview = await compile(r, a.company_id, client),
+      hash = yearEndPreviewHash(r.employeeId, r.taxYear, r.formType, preview);
+    if (hash !== req.body.previewHash)
+      throw yearEndError(
+        "Payroll or employer details changed. Refresh and review the preview again.",
+      );
+    const saved = await client.query(
+      `INSERT INTO reviewed_year_end_slips(company_id,employee_id,tax_year,form_type,snapshot,preview_hash,reviewed_by,review_reference) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(company_id,employee_id,tax_year,form_type) DO UPDATE SET snapshot=excluded.snapshot,preview_hash=excluded.preview_hash,reviewed_by=excluded.reviewed_by,review_reference=excluded.review_reference,generated_at=NOW() RETURNING id`,
+      [
+        a.company_id,
+        r.employeeId,
+        r.taxYear,
+        r.formType,
+        JSON.stringify(preview),
+        hash,
+        a.id,
+        reference,
+      ],
     );
-    if (empCheck.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Employee not found' });
-    }
-
-    await client.query('BEGIN');
-
-    let result;
-    switch (formType) {
-      case 'T4': {
-        const data = await compileT4Slip(employeeId, Number(taxYear), companyId);
-        const m = data.t4Manifest;
-        const em = data.employerMetrics;
-        await client.query(
-          `INSERT INTO generated_t4_slips
-           (employee_id, tax_year, box_14_employment_income, box_16_cpp_withheld,
-            box_18_ei_withheld, box_22_income_tax_withheld,
-            box_24_insurable_earnings, box_26_pensionable_earnings,
-            employer_cpp_matching, employer_ei_matching)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-           ON CONFLICT (employee_id, tax_year) DO UPDATE SET
-           box_14_employment_income = EXCLUDED.box_14_employment_income,
-           box_16_cpp_withheld = EXCLUDED.box_16_cpp_withheld,
-           box_18_ei_withheld = EXCLUDED.box_18_ei_withheld,
-           box_22_income_tax_withheld = EXCLUDED.box_22_income_tax_withheld,
-           box_24_insurable_earnings = EXCLUDED.box_24_insurable_earnings,
-           box_26_pensionable_earnings = EXCLUDED.box_26_pensionable_earnings,
-           employer_cpp_matching = EXCLUDED.employer_cpp_matching,
-           employer_ei_matching = EXCLUDED.employer_ei_matching,
-           generated_at = CURRENT_TIMESTAMP`,
-          [
-            employeeId,
-            taxYear,
-            m.box14_employment_income,
-            m.box16_cpp_withheld,
-            m.box18_ei_withheld,
-            m.box22_income_tax_withheld,
-            m.box24_insurable_earnings,
-            m.box26_pensionable_earnings,
-            em.employer_cpp_matching,
-            em.employer_ei_matching,
-          ]
-        );
-        result = data;
-        break;
-      }
-      case 'T4A': {
-        const data = await compileT4ASlip(employeeId, Number(taxYear), companyId);
-        const m = data.t4aManifest;
-        await client.query(
-          `INSERT INTO generated_t4a_slips
-           (employee_id, tax_year, box_020_self_employed_fees, box_022_income_tax_withheld)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (employee_id, tax_year) DO UPDATE SET
-           box_020_self_employed_fees = EXCLUDED.box_020_self_employed_fees,
-           box_022_income_tax_withheld = EXCLUDED.box_022_income_tax_withheld`,
-          [employeeId, taxYear, m.box020_self_employed_fees, m.box022_income_tax_withheld]
-        );
-        result = data;
-        break;
-      }
-      case 'RL1': {
-        const data = await compileRL1Slip(employeeId, Number(taxYear), companyId);
-        const m = data.rl1Manifest;
-        await client.query(
-          `INSERT INTO generated_rl1_slips
-           (employee_id, tax_year, box_a_employment_income, box_b_qpp_contribution,
-            box_c_qpip_premium, box_e_quebec_tax_withheld,
-            box_g_pensionable_earnings, box_i_insurable_earnings)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (employee_id, tax_year) DO UPDATE SET
-           box_a_employment_income = EXCLUDED.box_a_employment_income,
-           box_b_qpp_contribution = EXCLUDED.box_b_qpp_contribution,
-           box_c_qpip_premium = EXCLUDED.box_c_qpip_premium,
-           box_e_quebec_tax_withheld = EXCLUDED.box_e_quebec_tax_withheld,
-           box_g_pensionable_earnings = EXCLUDED.box_g_pensionable_earnings,
-           box_i_insurable_earnings = EXCLUDED.box_i_insurable_earnings`,
-          [
-            employeeId,
-            taxYear,
-            m.box_a_employment_income,
-            m.box_b_qpp_contribution,
-            m.box_c_qpip_premium,
-            m.box_e_quebec_tax_withheld,
-            m.box_g_pensionable_earnings,
-            m.box_i_insurable_earnings,
-          ]
-        );
-        result = data;
-        break;
-      }
-      default:
-        throw new Error('Invalid form type');
-    }
-
-    await client.query('COMMIT');
-    res.json({ success: true, message: `${formType} slip finalized`, result });
-  } catch (error: any) {
-    await client.query('ROLLBACK');
-    console.error('Finalize error:', error);
-    res.status(error.status || 500).json({ success: false, error: error.message });
+    await client.query("COMMIT");
+    res.json({
+      success: true,
+      id: saved.rows[0].id,
+      result: preview,
+      message:
+        "Independently reviewed snapshot stored. No government filing was submitted.",
+    });
+  } catch (e) {
+    if (client) await client.query("ROLLBACK").catch(() => {});
+    fail(res, e);
   } finally {
-    client.release();
+    client?.release();
   }
 });
-
 export default router;
