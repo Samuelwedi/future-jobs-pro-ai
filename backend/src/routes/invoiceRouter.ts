@@ -1,3 +1,7 @@
+import {commercialDeliveryRoutes} from './commercialDeliveryRoutes';
+import {assertNoCommercialDelivery} from '../services/commercialDeliveryService';
+import invoicePlanRoutes from './invoicePlanRoutes';
+import {saveInvoicePlan,hasMilestones} from '../services/invoicePlanService';
 import {commercialPdf} from '../services/commercialPdf';
 import Big from 'big.js';
 import {validDate} from '../services/payPeriodCalendar';
@@ -11,6 +15,9 @@ import { companyActor,manages } from '../middleware/companyActor';
 const router = express.Router();
 router.use(companyActor);
 router.use((_req,res,next)=>{if(!manages(res.locals.actor))return res.status(403).json({message:'Manager access required'});next();});
+
+router.use(invoicePlanRoutes);
+router.use(commercialDeliveryRoutes('invoice'));
 
 // ─── Helper ───────────────────────────────────────────────────────
 const getCompanyId = async (req: Request): Promise<string | null> => {
@@ -29,7 +36,7 @@ router.get('/', async (req: Request, res: Response) => {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { status, clientId, start, end, limit = 50, offset = 0 } = req.query;
+    const { status, clientId, projectId, start, end, limit = 50, offset = 0 } = req.query;
     let query = `
       SELECT i.*,
              p.name as project_name,
@@ -43,6 +50,7 @@ router.get('/', async (req: Request, res: Response) => {
     const params: any[] = [companyId];
     let paramCount = 1;
 
+    if (projectId) { query += ` AND i.project_id = $${++paramCount}`; params.push(projectId); }
     if (status) { query += ` AND i.status = $${++paramCount}`; params.push(status); }
     if (clientId) { query += ` AND i.client_id = $${++paramCount}`; params.push(clientId); }
     if (start) { query += ` AND i.issue_date >= $${++paramCount}`; params.push(start); }
@@ -166,7 +174,7 @@ router.post('/', async (req: Request, res: Response) => {
     const validated=validateInvoiceLines(items);
     const requestKey=req.body.requestKey;
     if(requestKey!==undefined&&(typeof requestKey!=='string'||!/^[-_a-zA-Z0-9]{8,100}$/.test(requestKey)))throw Error('Invalid invoice request key.');
-    const requestHash=createHash('sha256').update(JSON.stringify({projectId:projectId||null,clientId:clientId||null,issueDate,dueDate,taxRate:taxRate||0,notes:notes||null,clientNotes:clientNotes||null,items,isRecurring:isRecurring||false,recurringFrequency:recurringFrequency||null,recurringEndDate:recurringEndDate||null})).digest('hex');
+    const requestHash=createHash('sha256').update(JSON.stringify({projectId:projectId||null,clientId:clientId||null,issueDate,dueDate,taxRate:taxRate||0,notes:notes||null,clientNotes:clientNotes||null,items,isRecurring:isRecurring||false,recurringFrequency:recurringFrequency||null,recurringEndDate:recurringEndDate||null,milestoneName:req.body.milestone_name||null,milestonePercentage:req.body.milestone_percentage||null,parentInvoiceId:req.body.parent_invoice_id||null})).digest('hex');
     await client.query('BEGIN');
     await client.query('SELECT id FROM companies WHERE id=$1 FOR UPDATE',[companyId]);
     if(requestKey){const prior=await client.query('SELECT * FROM invoices WHERE company_id=$1 AND creation_request_key=$2',[companyId,requestKey]);if(prior.rowCount){if(prior.rows[0].creation_request_hash!==requestHash){await client.query('ROLLBACK');return res.status(409).json({success:false,message:'This request key was already used for different invoice data.'});}await client.query('COMMIT');return res.json({success:true,invoice:prior.rows[0],replayed:true});}}
@@ -225,6 +233,7 @@ router.post('/', async (req: Request, res: Response) => {
     // If timeEntryIds provided, link them (but they should already be in items)
     // No need to duplicate.
 
+    await saveInvoicePlan(client,companyId,invoiceId,req.body,res.locals.actor.id);
     await client.query('COMMIT');
 
     const invoice = await client.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
@@ -247,7 +256,9 @@ router.put('/:id', async (req: Request, res: Response) => {
   await client.query('SELECT id FROM companies WHERE id=$1 FOR UPDATE',[companyId]);
   const selected=await client.query("SELECT * FROM invoices WHERE id=$1 AND company_id=$2 AND status='draft' FOR UPDATE",[req.params.id,companyId]);
   if(!selected.rowCount){await client.query('ROLLBACK');return res.status(404).json({success:false,message:'Draft invoice not found'});}
+  await assertNoCommercialDelivery(client,'invoice',String(req.params.id));
   const previous=selected.rows[0];
+  if(await hasMilestones(client,String(req.params.id)))throw Error('A contract with milestone invoices cannot be edited.');
   const {issueDate,dueDate,taxRate,notes,clientNotes,status,items}=req.body;
   if(status!==undefined&&status!=='draft')throw Error('Use the invoice issuing or payment workflow to change status.');
   const dates={issue:issueDate??String(previous.issue_date instanceof Date?previous.issue_date.toISOString():previous.issue_date).slice(0,10),due:dueDate??String(previous.due_date instanceof Date?previous.due_date.toISOString():previous.due_date).slice(0,10)};
@@ -256,34 +267,33 @@ router.put('/:id', async (req: Request, res: Response) => {
   let subtotal=previous.subtotal;
   if(items!==undefined){const checked=validateInvoiceLines(items);await lockInvoiceLabor(client,companyId,checked.ids,String(req.params.id),previous.project_id);subtotal=checked.subtotal;await client.query('DELETE FROM invoice_items WHERE invoice_id=$1',[req.params.id]);for(const item of items)await client.query('INSERT INTO invoice_items(invoice_id,description,quantity,unit_price,time_entry_ids) VALUES($1,$2,$3,$4,$5)',[req.params.id,item.description,item.quantity??1,item.unit_price,item.timeEntryIds||[]]);}
   const result=await client.query(`UPDATE invoices SET issue_date=$1,due_date=$2,tax_rate=$3,notes=COALESCE($4,notes),client_notes=COALESCE($5,client_notes),subtotal=$6 WHERE id=$7 AND company_id=$8 AND status='draft' RETURNING *`,[dates.issue,dates.due,taxRate??previous.tax_rate,notes,clientNotes,subtotal,req.params.id,companyId]);
-  await client.query('COMMIT');res.json({success:true,invoice:result.rows[0]});
- }catch(error:any){await client.query('ROLLBACK').catch(()=>{});res.status(400).json({success:false,message:error.message||'Invoice could not be saved'});}finally{client.release();}
+  await saveInvoicePlan(client,companyId,String(req.params.id),req.body,res.locals.actor.id);
+  const saved=await client.query('SELECT * FROM invoices WHERE id=$1',[req.params.id]);
+  await client.query('COMMIT');res.json({success:true,invoice:saved.rows[0]});
+ }catch(error:any){await client.query('ROLLBACK').catch(()=>{});res.status(error.status||400).json({success:false,message:error.message||'Invoice could not be saved'});}finally{client.release();}
 });
 
 // ─── DELETE /api/invoices/:id (draft only) ─────────────────────
-router.delete('/:id', async (req: Request, res: Response) => {
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { id } = req.params;
-    const result = await pool.query(
-      'DELETE FROM invoices WHERE id = $1 AND company_id = $2 AND status = $3 RETURNING id',
-      [id, companyId, 'draft']
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Invoice not found or not draft' });
-    }
-    res.json({ success: true, message: 'Invoice deleted' });
-  } catch (error) {
-    console.error('Error deleting invoice:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+router.delete('/:id',async(req,res)=>{
+ const c=await pool.connect();try{
+  await c.query('BEGIN');await c.query('SELECT id FROM companies WHERE id=$1 FOR UPDATE',[res.locals.actor.company_id]);
+  await assertNoCommercialDelivery(c,'invoice',String(req.params.id));
+  const result=await c.query("DELETE FROM invoices WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING id",[req.params.id,res.locals.actor.company_id]);
+  if(!result.rowCount){await c.query('ROLLBACK');return res.status(404).json({message:'Draft invoice not found'});}await c.query('COMMIT');res.json({success:true});
+ }catch(error:any){await c.query('ROLLBACK');res.status(error.status||400).json({message:error.message});}finally{c.release();}
 });
 
 // Record delivery completed outside the app. No email or synthetic payment link is generated.
 router.post('/:id/send',async(req,res)=>{
- try{const result=await pool.query("UPDATE invoices SET status='sent',sent_at=COALESCE(sent_at,NOW()) WHERE id=$1 AND company_id=$2 AND status IN ('draft','sent') RETURNING *",[req.params.id,res.locals.actor.company_id]);if(!result.rowCount)return res.status(409).json({message:'Draft or sent invoice not found'});res.json({success:true,invoice:result.rows[0],message:'External delivery recorded. No email was sent.'});}catch(error:any){res.status(400).json({message:error.message});}
+ const c=await pool.connect();
+ try{
+  await c.query('BEGIN');await c.query('SELECT id FROM companies WHERE id=$1 FOR UPDATE',[res.locals.actor.company_id]);
+  const found=await c.query('SELECT * FROM invoices WHERE id=$1 AND company_id=$2 FOR UPDATE',[req.params.id,res.locals.actor.company_id]);
+  if(!found.rowCount||!['draft','sent'].includes(found.rows[0].status))throw Error('Draft or sent invoice not found');
+  await assertNoCommercialDelivery(c,'invoice',String(req.params.id));
+  if(await hasMilestones(c,String(req.params.id)))throw Error('Issue the milestone invoices; the contract parent is not payable.');
+  const result=await c.query("UPDATE invoices SET status='sent',sent_at=COALESCE(sent_at,NOW()) WHERE id=$1 RETURNING *",[req.params.id]);await c.query('COMMIT');res.json({success:true,invoice:result.rows[0],message:'External delivery recorded. No email was sent.'});
+ }catch(error:any){await c.query('ROLLBACK');res.status(409).json({message:error.message});}finally{c.release();}
 });
 // Record an already completed external payment, never transfer or charge money.
 router.post('/:id/payments',async(req,res)=>{

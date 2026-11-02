@@ -1,3 +1,4 @@
+import {commercialNumbers} from '../utils/commercialNumbers';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
@@ -12,7 +13,9 @@ import {
   Payment, TrendingUp, TrendingDown, Description,
   Flag, // Added for milestone
 } from '@mui/icons-material';
-import { API_BASE } from '../services/api';
+import { API_BASE,api } from '../services/api';
+import InvoicePlan from '../components/InvoicePlan';
+import CommercialEmail from '../components/CommercialEmail';
 
 // ─── Types ────────────────────────────────────────────────────────
 interface Invoice {
@@ -112,6 +115,8 @@ export default function InvoicesPage() {
   const [unbilled, setUnbilled] = useState<any[]>([]);
   const [unbilledLoading, setUnbilledLoading] = useState(false);
   // ─── Parent invoices for milestone ───
+  const [emailId,setEmailId] = useState('');
+  const [planId,setPlanId] = useState('');
   const [parentInvoices, setParentInvoices] = useState<Invoice[]>([]);
 
   // Customer Hub
@@ -140,7 +145,7 @@ export default function InvoicesPage() {
       const res = await fetch(`${API_BASE}/api/invoices`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) setInvoices(data.invoices);
       else setError(data.message || 'Failed to load invoices');
     } catch (e: any) { setError(e.message); }
@@ -152,7 +157,7 @@ export default function InvoicesPage() {
       const res = await fetch(`${API_BASE}/api/projects`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) setProjects(data.projects);
     } catch (e) { console.error(e); }
   }, [token]);
@@ -162,7 +167,7 @@ export default function InvoicesPage() {
       const res = await fetch(`${API_BASE}/api/users/company`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) setClients(data.users);
     } catch (e) { console.error(e); }
   }, [token]);
@@ -173,7 +178,7 @@ export default function InvoicesPage() {
       const res = await fetch(`${API_BASE}/api/invoices/unbilled?projectId=${projectId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) setUnbilled(data.unbilled);
     } catch (e) { console.error(e); }
     setUnbilledLoading(false);
@@ -181,11 +186,11 @@ export default function InvoicesPage() {
 
   const fetchParentInvoices = async (projectId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/invoices?projectId=${projectId}&status=paid`, {
+      const res = await fetch(`${API_BASE}/api/invoices?projectId=${projectId}&status=draft&limit=200`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
-      if (data.success) setParentInvoices(data.invoices);
+      const data = commercialNumbers(await res.json());
+      if (data.success) setParentInvoices(data.invoices.filter((row:any)=>!row.parent_invoice_id&&!row.is_recurring&&!row.recurring_source_id));
     } catch (e) { console.error(e); }
   };
 
@@ -194,7 +199,7 @@ export default function InvoicesPage() {
       const res = await fetch(`${API_BASE}/api/estimates?status=accepted`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) setAvailableEstimates(data.estimates);
     } catch (e) { console.error(e); }
   };
@@ -236,8 +241,8 @@ export default function InvoicesPage() {
     setForm({
       projectId: invoice.project_id || '',
       clientId: invoice.client_id || '',
-      issueDate: invoice.issue_date,
-      dueDate: invoice.due_date,
+      issueDate: String(invoice.issue_date).slice(0,10),
+      dueDate: String(invoice.due_date).slice(0,10),
       taxRate: invoice.tax_rate,
       notes: invoice.notes || '',
       clientNotes: invoice.client_notes || '',
@@ -255,7 +260,7 @@ export default function InvoicesPage() {
       const res = await fetch(`${API_BASE}/api/invoices/${invoice.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) {
         setForm((prev: any) => ({
           ...prev,
@@ -296,6 +301,7 @@ export default function InvoicesPage() {
     }
     // Validate milestone
     if (form.isMilestone) {
+      if (!form.parentInvoiceId) {alert('Choose a draft contract parent.');return;}
       if (!form.milestoneName) {
         alert('Please enter a milestone name.');
         return;
@@ -336,7 +342,7 @@ export default function InvoicesPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) {
         setDialogOpen(false);
         fetchInvoices();
@@ -353,7 +359,7 @@ export default function InvoicesPage() {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) fetchInvoices();
       else alert(data.message || 'Failed to send');
     } catch (e) { alert('Error sending'); }
@@ -396,7 +402,7 @@ export default function InvoicesPage() {
           reference: paymentRef || undefined,
         }),
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) {
         setPaymentDialogOpen(false);
         fetchInvoices();
@@ -413,7 +419,7 @@ export default function InvoicesPage() {
       const res = await fetch(`${API_BASE}/api/invoices/client/${clientId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) setClientSummary(data);
     } catch (e) { console.error(e); }
     setHubLoading(false);
@@ -428,7 +434,7 @@ export default function InvoicesPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({}),
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success && data.invoice) {
         alert(`Invoice ${data.invoice.invoice_number} created!`);
         fetchInvoices();
@@ -518,6 +524,7 @@ export default function InvoicesPage() {
                 <TableCell>{getStatusChip(inv.status)}</TableCell>
                 <TableCell>
                   <Stack direction="row" spacing={1}>
+                    <Button size="small" onClick={()=>setEmailId(inv.id)}>Email PDF</Button><Button size="small" onClick={()=>setPlanId(inv.id)}>Billing plan</Button>
                     {inv.status === 'draft' && (
                       <>
                         <IconButton size="small" onClick={() => openEditDialog(inv)} color="primary" title="Edit">
@@ -826,7 +833,7 @@ export default function InvoicesPage() {
               </Grid>
               <Grid item xs={12} md={3}>
                 <FormControl fullWidth>
-                  <InputLabel sx={{ color: '#888' }}>Parent Invoice (optional)</InputLabel>
+                  <InputLabel sx={{ color: '#888' }}>Draft contract parent (required)</InputLabel>
                   <Select
                     value={form.parentInvoiceId}
                     onChange={(e) => setForm({ ...form, parentInvoiceId: e.target.value })}
@@ -844,6 +851,7 @@ export default function InvoicesPage() {
             </>
           )}
 
+          {form.isMilestone&&<Grid item xs={12}><Alert severity="info">Use a draft contract with no worked-time links. Its subtotal is the contract budget. The parent cannot be issued once milestones exist.</Alert><Button onClick={async()=>{try{const result=await api.get<any>(`/api/invoices/${form.parentInvoiceId}/milestone-preview?percentage=${form.milestonePercentage}`);setForm({...form,projectId:result.projectId||'',clientId:result.clientId||'',taxRate:Number(result.taxRate||0),items:[{description:form.milestoneName||'Milestone',quantity:1,unit_price:Number(result.subtotal),timeEntryIds:[]}]});}catch(error:any){alert(error.message);}}} disabled={!form.parentInvoiceId||!form.milestonePercentage}>Use milestone amount</Button><Button onClick={()=>void fetchParentInvoices(form.projectId)}>Refresh draft contracts</Button></Grid>}
           {/* ─── Line Items ─── */}
           <Grid item xs={12}>
             <Typography variant="subtitle1" sx={{ color: '#FFF', mt: 2 }}>Line Items</Typography>
@@ -1041,6 +1049,8 @@ export default function InvoicesPage() {
       {activeTab === 0 && renderOverview()}
       {activeTab === 1 && renderCustomerHub()}
 
+    <Dialog open={!!emailId} onClose={()=>setEmailId('')} maxWidth="sm" fullWidth><DialogTitle>Invoice email</DialogTitle><DialogContent>{emailId&&<CommercialEmail key={emailId} kind="invoice" id={emailId} onChange={fetchInvoices}/>}</DialogContent></Dialog>
+    <Dialog open={!!planId} onClose={()=>setPlanId('')} maxWidth="sm" fullWidth><DialogTitle>Invoice billing plan</DialogTitle><DialogContent>{planId&&<InvoicePlan key={planId} id={planId} onCreated={invoice=>{setPlanId('');void fetchInvoices();void openEditDialog(invoice);}}/>}</DialogContent></Dialog>
       {renderCreateDialog()}
       {renderPaymentDialog()}
       {renderConvertDialog()}

@@ -3,6 +3,7 @@ import {Text, View} from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import {BusinessButton as Button, BusinessChoice as Choice, BusinessField as Field, BusinessPage as Page, businessStyles as s, useBusinessAction} from '../components/business/BusinessUI';
 import {api} from '../services/api';
+import CommercialEmail from '../components/business/CommercialEmail';
 import {shareBusinessFile} from '../services/businessDownload';
 import {businessRangeError, positiveMoney} from '../utils/businessValidation';
 import {localExpenseDate} from '../utils/expenseForm';
@@ -76,6 +77,7 @@ export default function EstimatesScreen() {
     {detail && !editor && <View style={s.card}>
       <Text style={s.heading}>{detail.estimate.estimate_number || detail.estimate.id}</Text><Text style={s.body}>{t(detail.estimate.status)} · {t('Total')}: {detail.estimate.total ?? detail.estimate.subtotal}</Text>
       <Button label="Share estimate PDF" disabled={action.busy} onPress={() => void action.run(() => shareBusinessFile(`/estimates/${detail.estimate.id}/pdf`, `estimate-${detail.estimate.id}.pdf`))}/>
+      <CommercialEmail key={detail.estimate.id} kind="estimate" id={detail.estimate.id} onChange={async()=>{await open(detail.estimate.id);await load();}}/>
       {detail.items.map((line: any) => <Text key={line.id} style={s.body}>{line.description}: {line.quantity} × {line.unit_price}</Text>)}
       {detail.estimate.status === 'draft' && <><Button label="Edit draft" disabled={action.busy} onPress={editDraft}/><Button label="Record external delivery" disabled={action.busy} onPress={() => record('send')}/><Button label="Delete draft" disabled={action.busy} onPress={() => action.confirm(t('Delete this draft?'), t('Only a draft can be deleted.'), () => void action.run(async () => {await api.delete('/estimates/' + detail.estimate.id); setDetail(null); await load();}))}/></>}
       {detail.estimate.status === 'sent' && <><Button label="Record client acceptance" disabled={action.busy} onPress={() => record('accept')}/><Button label="Record client rejection" disabled={action.busy} onPress={() => record('reject')}/></>}

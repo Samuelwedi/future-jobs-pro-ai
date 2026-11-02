@@ -1,6 +1,6 @@
 const {test,before,after}=require('node:test');const assert=require('node:assert/strict');const {PGlite}=require('@electric-sql/pglite');const fs=require('node:fs');
 process.env.JWT_SECRET='business-parity-test-only';const jwt=require('jsonwebtoken');const express=require('express');const {pool}=require('../dist/config/database');const {validateInvoiceLines,validateInvoiceHeader}=require('../dist/services/invoiceValidation');
-const db=new PGlite();let server,base,integrationCompany,failLine=false,failEstimate=false,failPayment=false;
+const db=new PGlite();let server,base,integrationCompany,failLine=false,failEstimate=false,failPayment=false,smtp=false;
 const id={company:'00000000-0000-4000-a000-000000000001',other:'00000000-0000-4000-a000-000000000002',boss:'00000000-0000-4000-a000-000000000011',worker:'00000000-0000-4000-a000-000000000012',inactive:'00000000-0000-4000-a000-000000000013',foreign:'00000000-0000-4000-a000-000000000014',payroll:'00000000-0000-4000-a000-000000000021',otherPayroll:'00000000-0000-4000-a000-000000000022',invoice:'00000000-0000-4000-a000-000000000031',project:'00000000-0000-4000-a000-000000000041',time:'00000000-0000-4000-a000-000000000051'};
 const query=async(sql,args)=>{if(failPayment&&sql.startsWith('UPDATE invoices SET paid_amount'))throw Error('Injected payment update failure');if(failEstimate&&sql.startsWith('INSERT INTO estimate_items'))throw Error('Injected estimate line failure');if(failLine&&sql.startsWith('INSERT INTO invoice_items'))throw Error('Injected item write failure');const result=await db.query(sql,args);return{rows:result.rows,rowCount:result.rows.length||result.affectedRows||0};};
 before(async()=>{
@@ -22,10 +22,19 @@ before(async()=>{
  ALTER TABLE payments ALTER COLUMN id SET DEFAULT gen_random_uuid();ALTER TABLE payments ADD COLUMN amount numeric;ALTER TABLE payments ADD COLUMN payment_date date;ALTER TABLE payments ADD COLUMN method text;ALTER TABLE payments ADD COLUMN reference text;ALTER TABLE payments ADD COLUMN notes text;
  CREATE FUNCTION payment_sum() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN UPDATE invoices SET paid_amount=(SELECT COALESCE(SUM(amount),0) FROM payments WHERE invoice_id=NEW.invoice_id) WHERE id=NEW.invoice_id;RETURN NEW;END;$$;CREATE TRIGGER payment_sum_trigger AFTER INSERT ON payments FOR EACH ROW EXECUTE FUNCTION payment_sum();`);
  await db.exec(fs.readFileSync('migrations/20261101_invoice_payment_keys.sql','utf8'));
+ await db.exec(`ALTER TABLE companies ADD COLUMN timezone text default 'UTC';ALTER TABLE invoices ADD COLUMN invoice_number text;`);
+ await db.exec(fs.readFileSync('migrations/20261102_commercial_billing.sql','utf8'));
+ await db.exec(fs.readFileSync('migrations/20261102_commercial_delivery.sql','utf8'));
+ await db.exec(`ALTER TABLE users ADD COLUMN email text;UPDATE users SET email='client@example.test';`);
+
+
 
  require('../dist/services/yearEndService').compileT4Slip=async()=>({t4Manifest:{box14_employment_income:100,box16_cpp_withheld:5,box18_ei_withheld:2,box22_income_tax_withheld:10,box24_insurable_earnings:100,box26_pensionable_earnings:100},employerMetrics:{employer_cpp_matching:5,employer_ei_matching:2.8}});
 
  pool.query=query;pool.connect=async()=>({query,release(){}});
+ require('../dist/services/emailService').commercialMailAvailable=()=>smtp;
+ require('../dist/middleware/trialMiddleware').loadSubscriptionActor=async()=>({subscriptionStatus:'active',entitlementEndsAt:null});
+
  require('../dist/services/integrationService').getIntegrationStatus=async company=>{integrationCompany=company;return{quickbooks:{connected:false},stripe:{connected:false}};};
  const app=express();app.use(express.json());app.use('/api/integrations',require('../dist/routes/integrationRoutes').default);app.use('/api/reports',require('../dist/routes/reportRoutes').default);app.use('/api/payroll/export',require('../dist/routes/payrollExportRoutes').default);app.use('/api/invoices',require('../dist/routes/invoiceRouter').default);app.use('/api/estimates',require('../dist/routes/estimateRouter').default);app.use('/api/year-end',require('../dist/routes/yearEndRouter').default);app.use('/api/evidence-bundles',require('../dist/routes/evidenceBundleRoutes').default);
  server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));base='http://127.0.0.1:'+server.address().port;
@@ -102,3 +111,74 @@ test('external invoice payments roll back, replay safely and never double-count 
 });
 
 test('invoice and estimate PDFs emit binary documents and exclude foreign companies',async()=>{for(const path of ['/estimates/'+estimateId+'/pdf','/invoices/'+id.invoice+'/pdf']){const pdf=await request(path);assert.equal(pdf.status,200,pdf.data);assert.ok(pdf.data.startsWith('%PDF-'));assert.equal((await request(path,id.foreign)).status,404);assert.equal((await request(path,id.worker)).status,403);}});
+
+test('recurrence keeps calendar anchors and company-local billing dates',()=>{
+ const {recurringDate,localBillingDay}=require('../dist/services/invoicePlanService');
+ assert.equal(recurringDate('2024-01-31','monthly',1),'2024-02-29');assert.equal(recurringDate('2024-01-31','monthly',2),'2024-03-31');assert.equal(recurringDate('2026-11-30','quarterly',1),'2027-02-28');assert.equal(recurringDate('2026-12-28','weekly',1),'2027-01-04');
+ assert.equal(localBillingDay('Pacific/Kiritimati',new Date('2026-10-31T12:00:00Z')),'2026-11-01');assert.throws(()=>recurringDate('2026-02-30','monthly',1));
+});
+test('recurring drafts reject early generation and replay the same occurrence after advancement',async()=>{
+ const created=await request('/invoices',id.boss,'POST',{issueDate:'2024-01-31',dueDate:'2024-02-10',taxRate:0,isRecurring:true,recurringFrequency:'monthly',recurringEndDate:'2024-03-31',items:[{description:'Monthly service',quantity:1,unit_price:100}]});assert.equal(created.status,201,created.data);const root=JSON.parse(created.data).invoice.id;
+ const {generateRecurring}=require('../dist/services/invoicePlanService');assert.equal((await request('/invoices/'+root+'/send',id.boss,'POST',{})).status,200);
+ const early=await generateRecurring(id.company,root,1,id.boss,new Date('2024-02-28T12:00Z'));assert.equal(early.pending,true);
+ failLine=true;await assert.rejects(generateRecurring(id.company,root,1,id.boss,new Date('2024-02-29T12:00Z')));failLine=false;assert.equal((await query('SELECT recurring_next_index FROM invoices WHERE id=$1',[root])).rows[0].recurring_next_index,1);
+ const first=await generateRecurring(id.company,root,1,id.boss,new Date('2024-02-29T12:00Z'));assert.equal(new Date(first.invoice.issue_date).toISOString().slice(0,10),'2024-02-29');assert.equal(new Date(first.invoice.due_date).toISOString().slice(0,10),'2024-03-10');assert.equal(first.invoice.status,'draft');
+ const replay=await generateRecurring(id.company,root,1,id.boss,new Date('2024-03-31T12:00Z'));assert.equal(replay.invoice.id,first.invoice.id);assert.equal(replay.replayed,true);
+ const second=await generateRecurring(id.company,root,2,id.boss,new Date('2024-03-31T12:00Z'));assert.equal(new Date(second.invoice.issue_date).toISOString().slice(0,10),'2024-03-31');
+ assert.equal((await generateRecurring(id.company,root,3,id.boss,new Date('2024-05-01T12:00Z'))).ended,true);
+ assert.equal((await request('/invoices/'+root+'/billing-plan',id.foreign)).status,404);
+});
+test('milestones enforce contract subtotal and allocation and block issuing or editing the parent',async()=>{
+ const base={issueDate:'2026-10-01',dueDate:'2026-10-31',taxRate:0,items:[{description:'Contract',quantity:1,unit_price:1000}]};const parent=JSON.parse((await request('/invoices',id.boss,'POST',base)).data).invoice.id;
+ const body={...base,parent_invoice_id:parent,milestone_name:'Deposit',milestone_percentage:30,items:[{description:'Deposit',quantity:1,unit_price:300}]};const first=await request('/invoices',id.boss,'POST',body);assert.equal(first.status,201,first.data);
+ assert.equal((await request('/invoices',id.boss,'POST',{...body,milestone_percentage:80,items:[{description:'Too much',quantity:1,unit_price:800}]})).status,400);
+ assert.equal((await request('/invoices',id.boss,'POST',{...body,items:[{description:'Wrong amount',quantity:1,unit_price:200}]})).status,400);
+ assert.equal((await request('/invoices/'+parent+'/send',id.boss,'POST',{})).status,409);assert.equal((await request('/invoices/'+parent,id.boss,'PUT',base)).status,400);
+ const remaining=await request('/invoices',id.boss,'POST',{...body,milestone_name:'Completion',milestone_percentage:70,items:[{description:'Completion',quantity:1,unit_price:700}]});assert.equal(remaining.status,201,remaining.data);
+ const plan=JSON.parse((await request('/invoices/'+parent+'/billing-plan')).data);assert.equal(plan.milestones.length,2);
+});
+
+async function mailFixture(){const response=await request('/invoices',id.boss,'POST',{issueDate:'2026-10-01',dueDate:'2026-10-31',clientId:id.worker,items:[{description:'Email fixture',quantity:1,unit_price:10}]});assert.equal(response.status,201,response.data);return JSON.parse(response.data).invoice.id;}
+async function emailBody(path,requestKey){const options=JSON.parse((await request(path)).data);return{confirmed:true,requestKey,recipient:options.recipient,fingerprint:options.fingerprint};}
+test('commercial email requires SMTP and consent, freezes pending documents and reuses one queue job',async()=>{
+ const record=await mailFixture(),path='/invoices/'+record+'/email',body=await emailBody(path,'email-fixture-request-1');
+ smtp=false;assert.equal((await request(path,id.boss,'POST',body)).status,503);smtp=true;
+ assert.equal((await request(path,id.boss,'POST',{...body,confirmed:false})).status,400);
+ const first=await request(path,id.boss,'POST',body);assert.equal(first.status,202,first.data);const job=JSON.parse(first.data).job;
+ assert.equal((await request(path,id.boss,'POST',body)).status,200);assert.equal((await request(path,id.boss,'POST',{...body,requestKey:'different-key-pending'})).status,409);
+ assert.equal((await request('/invoices/'+record,id.boss,'PUT',{notes:'Must not edit while queued'})).status,409);assert.equal((await request('/invoices/'+record,id.boss,'DELETE')).status,409);
+ assert.equal((await request(path,id.foreign)).status,404);let sends=0;
+ await require('../dist/services/commercialDeliveryService').runCommercialEmailTick(async(to,subject,text,pdf,filename,messageId)=>{sends++;assert.equal(to,'client@example.test');assert.ok(pdf.subarray(0,5).toString()==='%PDF-');assert.ok(messageId.includes(job.id));});
+ assert.equal(sends,1);const latest=JSON.parse((await request(path)).data).jobs[0];assert.equal(latest.status,'sent');assert.equal((await query('SELECT status FROM invoices WHERE id=$1',[record])).rows[0].status,'sent');
+ await require('../dist/services/commercialDeliveryService').runCommercialEmailTick(async()=>{sends++;});assert.equal(sends,1);
+});
+test('uncertain email sends do not repeat and require verified manager resolution',async()=>{
+ const record=await mailFixture(),path='/invoices/'+record+'/email';const queued=await request(path,id.boss,'POST',await emailBody(path,'email-uncertain-fixture'));const job=JSON.parse(queued.data).job;let attempts=0;const service=require('../dist/services/commercialDeliveryService');
+ await assert.rejects(service.runCommercialEmailTick(async()=>{attempts++;throw Error('Synthetic ambiguous SMTP response');}));
+ assert.equal(JSON.parse((await request(path)).data).jobs[0].status,'uncertain');await service.runCommercialEmailTick(async()=>{attempts++;});assert.equal(attempts,1);
+ assert.equal((await request(path+'/'+job.id,id.boss,'POST',{action:'resolve',delivered:false})).status,400);
+ assert.equal((await request(path+'/'+job.id,id.boss,'POST',{action:'resolve',delivered:false,confirmed:true})).status,200);
+ assert.equal((await request('/invoices/'+record,id.boss,'PUT',{notes:'Resolved after verification'})).status,200);
+});
+test('queued mail cancels when its recipient or source changes instead of sending stale records',async()=>{
+ const record=await mailFixture(),path='/invoices/'+record+'/email';await request(path,id.boss,'POST',await emailBody(path,'email-changed-source'));
+ await query("UPDATE users SET email='changed@example.test' WHERE id=$1",[id.worker]);let sends=0;await require('../dist/services/commercialDeliveryService').runCommercialEmailTick(async()=>{sends++;});assert.equal(sends,0);assert.equal(JSON.parse((await request(path)).data).jobs[0].status,'cancelled');await query("UPDATE users SET email='client@example.test' WHERE id=$1",[id.worker]);
+});
+test('stale in-progress mail becomes uncertain without an automatic retry',async()=>{
+ const record=await mailFixture(),path='/invoices/'+record+'/email';const queued=await request(path,id.boss,'POST',await emailBody(path,'email-interrupted-source'));const job=JSON.parse(queued.data).job;
+ await query("UPDATE commercial_delivery_jobs SET status='sending',started_at=NOW()-interval '11 minutes' WHERE id=$1",[job.id]);let sends=0;await require('../dist/services/commercialDeliveryService').runCommercialEmailTick(async()=>{sends++;});assert.equal(sends,0);assert.equal(JSON.parse((await request(path)).data).jobs[0].status,'uncertain');
+ assert.equal((await request(path+'/'+job.id,id.boss,'POST',{action:'resolve',delivered:true,confirmed:true})).status,200);assert.equal((await query('SELECT status FROM invoices WHERE id=$1',[record])).rows[0].status,'sent');smtp=false;
+});
+
+test('commercial email cancels after workspace entitlement ends',async()=>{
+ smtp=true;const record=await mailFixture(),path='/invoices/'+record+'/email';await request(path,id.boss,'POST',await emailBody(path,'expired-entitlement-email'));
+ const middleware=require('../dist/middleware/trialMiddleware');middleware.loadSubscriptionActor=async()=>({subscriptionStatus:'trialing',entitlementEndsAt:new Date('2000-01-01')});let sends=0;
+ await require('../dist/services/commercialDeliveryService').runCommercialEmailTick(async()=>{sends++;});assert.equal(sends,0);assert.equal(JSON.parse((await request(path)).data).jobs[0].status,'cancelled');middleware.loadSubscriptionActor=async()=>({subscriptionStatus:'active',entitlementEndsAt:null});smtp=false;
+});
+
+test('email confirmation is bound to the displayed recipient and financial document',async()=>{
+ smtp=true;const record=await mailFixture(),path='/invoices/'+record+'/email',body=await emailBody(path,'bound-email-proof-1');
+ assert.equal((await request(path,id.boss,'POST',{...body,recipient:'someoneelse@example.test'})).status,409);
+ assert.equal((await request(path,id.boss,'POST',{...body,fingerprint:'stale'})).status,409);
+ assert.equal((await query('SELECT count(*) n FROM commercial_delivery_jobs WHERE record_id=$1',[record])).rows[0].n,0);smtp=false;
+});

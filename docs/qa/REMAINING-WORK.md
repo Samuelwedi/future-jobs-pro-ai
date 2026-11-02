@@ -92,3 +92,9 @@ Validation for the estimates/year-end/evidence and invoice payment follow-up: ba
 Release wiring: Railway predeploy now runs `run-business-parity-migration.cjs`, which applies the three request-key migrations in one transaction and verifies the required columns before commit. Migration or verification failure stops deployment. No production database was accessed during these source checks.
 
 Final predeploy validation: all 230 backend tests passed, including migration order, rollback and schema-verification failures.
+
+## Current source continuation — final build/publish held
+
+Recurring generation, validated milestone contracts and queued PDF email are now implemented in native/web/backend source. The new workers create draft records or process explicitly requested email; they do not charge cards or transfer money. Live SMTP and scheduled-worker operational acceptance remain open. Original historical lists are retained; this paragraph supersedes their earlier source-gap status for those three features. See the parity audit for exact controls and limits. Final signed build, deployment and publishing remain deferred until parity work is finished, as instructed.
+
+Current validation: backend build and all 239 tests passed; mobile TypeScript and 43 tests passed; web production verification build and 2 financial-response regression tests passed. Email tests use a fake transport. No final signed build, deployment or publishing was started.

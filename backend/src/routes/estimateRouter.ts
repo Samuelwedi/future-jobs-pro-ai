@@ -1,3 +1,5 @@
+import {commercialDeliveryRoutes} from './commercialDeliveryRoutes';
+import {assertNoCommercialDelivery} from '../services/commercialDeliveryService';
 import { commercialPdf } from '../services/commercialPdf';
 import express from 'express';
 import { createHash } from 'crypto';
@@ -8,6 +10,7 @@ import { validDate } from '../services/payPeriodCalendar';
 const router = express.Router();
 router.use(companyActor, (_req, res, next) => { if (!manages(res.locals.actor))
     return res.status(403).json({ message: 'Manager access required' }); next(); });
+router.use(commercialDeliveryRoutes('estimate'));
 const fail = (message: string, status = 400): never => { throw Object.assign(Error(message), { status }); };
 const failure = (res: any, error: any) => res.status(error.status || 400).json({ success: false, message: error.message || 'Estimate action failed' });
 async function tx(company: string, work: (c: any) => Promise<any>) { const c = await pool.connect(); try {
@@ -87,7 +90,7 @@ router.put('/:id', async (req, res) => { try {
     const b = req.body, subtotal = validate(b);
     const estimate = await tx(res.locals.actor.company_id, async (c) => { const r = await c.query('SELECT * FROM estimates WHERE id=$1 AND company_id=$2 FOR UPDATE', [req.params.id, res.locals.actor.company_id]); if (!r.rowCount)
         fail('Estimate not found', 404); if (r.rows[0].status !== 'draft')
-        fail('Only draft estimates can be edited', 409); const customer = await relations(c, res.locals.actor.company_id, b.projectId, b.clientId); await c.query('DELETE FROM estimate_items WHERE estimate_id=$1', [req.params.id]); await lines(c, String(req.params.id), b.items); return (await c.query('UPDATE estimates SET project_id=$1,client_id=$2,issue_date=$3,expiry_date=$4,tax_rate=$5,subtotal=$6,notes=$7,client_notes=$8,updated_at=NOW() WHERE id=$9 AND company_id=$10 RETURNING *', [b.projectId || null, customer, b.issueDate, b.expiryDate || null, b.taxRate || 0, subtotal, b.notes || null, b.clientNotes || null, req.params.id, res.locals.actor.company_id])).rows[0]; });
+        fail('Only draft estimates can be edited', 409); await assertNoCommercialDelivery(c,'estimate',String(req.params.id)); const customer = await relations(c, res.locals.actor.company_id, b.projectId, b.clientId); await c.query('DELETE FROM estimate_items WHERE estimate_id=$1', [req.params.id]); await lines(c, String(req.params.id), b.items); return (await c.query('UPDATE estimates SET project_id=$1,client_id=$2,issue_date=$3,expiry_date=$4,tax_rate=$5,subtotal=$6,notes=$7,client_notes=$8,updated_at=NOW() WHERE id=$9 AND company_id=$10 RETURNING *', [b.projectId || null, customer, b.issueDate, b.expiryDate || null, b.taxRate || 0, subtotal, b.notes || null, b.clientNotes || null, req.params.id, res.locals.actor.company_id])).rows[0]; });
     res.json({ success: true, estimate });
 }
 catch (e) {
@@ -98,7 +101,7 @@ for (const step of ['send', 'accept', 'reject'])
     router.post(`/:id/${step}`, async (req, res) => { try {
         const status = step === 'send' ? 'sent' : step === 'accept' ? 'accepted' : 'rejected';
         const estimate = await tx(res.locals.actor.company_id, async (c) => { const r = await c.query('SELECT * FROM estimates WHERE id=$1 AND company_id=$2 FOR UPDATE', [req.params.id, res.locals.actor.company_id]); if (!r.rowCount)
-            fail('Estimate not found', 404); const row = r.rows[0]; if (row.status === status)
+            fail('Estimate not found', 404); await assertNoCommercialDelivery(c,'estimate',String(req.params.id)); const row = r.rows[0]; if (row.status === status)
             return row; if ((step === 'send' && row.status !== 'draft') || (step !== 'send' && row.status !== 'sent'))
             fail('Estimate status changed; refresh before continuing', 409); return (await c.query(`UPDATE estimates SET status=$1,${step === 'send' ? 'sent_at=NOW(),' : step === 'accept' ? 'accepted_at=NOW(),' : ''}updated_at=NOW() WHERE id=$2 RETURNING *`, [status, req.params.id])).rows[0]; });
         res.json({ success: true, estimate, message: 'External estimate action recorded. No email was sent.' });
@@ -108,7 +111,7 @@ for (const step of ['send', 'accept', 'reject'])
     } });
 router.post('/:id/convert', async (req, res) => { try {
     const result = await tx(res.locals.actor.company_id, async (c) => { const r = await c.query('SELECT * FROM estimates WHERE id=$1 AND company_id=$2 FOR UPDATE', [req.params.id, res.locals.actor.company_id]); if (!r.rowCount)
-        fail('Estimate not found', 404); const e = r.rows[0]; if (e.converted_to_invoice_id) {
+        fail('Estimate not found', 404); await assertNoCommercialDelivery(c,'estimate',String(req.params.id)); const e = r.rows[0]; if (e.converted_to_invoice_id) {
         const prior = await c.query('SELECT * FROM invoices WHERE id=$1 AND company_id=$2', [e.converted_to_invoice_id, res.locals.actor.company_id]);
         if (!prior.rowCount)
             fail('Converted invoice unavailable', 409);
@@ -123,7 +126,7 @@ catch (e) {
     failure(res, e);
 } });
 router.delete('/:id', async (req, res) => { try {
-    const r = await pool.query("DELETE FROM estimates WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING id", [req.params.id, res.locals.actor.company_id]);
+    const r = await tx(res.locals.actor.company_id,async(c)=>{await assertNoCommercialDelivery(c,'estimate',String(req.params.id));return c.query("DELETE FROM estimates WHERE id=$1 AND company_id=$2 AND status='draft' RETURNING id", [req.params.id, res.locals.actor.company_id]);});
     if (!r.rowCount)
         fail('Draft estimate not found', 404);
     res.json({ success: true });

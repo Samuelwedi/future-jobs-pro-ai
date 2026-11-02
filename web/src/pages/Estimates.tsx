@@ -1,3 +1,5 @@
+import {commercialNumbers} from '../utils/commercialNumbers';
+import CommercialEmail from '../components/CommercialEmail';
 import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
@@ -68,6 +70,7 @@ export default function EstimatesPage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [emailId,setEmailId] = useState('');
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null);
 
   // ── Fetch Functions ──
@@ -78,7 +81,7 @@ export default function EstimatesPage() {
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) setEstimates(data.estimates);
       else setError(data.message || 'Failed to load estimates');
     } catch (e: any) { setError(e.message); }
@@ -90,7 +93,7 @@ export default function EstimatesPage() {
       const res = await fetch(`${API_BASE}/api/projects`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) setProjects(data.projects);
     } catch (e) { console.error(e); }
   };
@@ -100,7 +103,7 @@ export default function EstimatesPage() {
       const res = await fetch(`${API_BASE}/api/users/company`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) setClients(data.users);
     } catch (e) { console.error(e); }
   };
@@ -146,7 +149,7 @@ export default function EstimatesPage() {
         const res = await fetch(`${API_BASE}/api/estimates/${estimate.id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const data = await res.json();
+        const data = commercialNumbers(await res.json());
         if (data.success && data.items) {
           setForm(prev => ({ ...prev, items: data.items.map((it: any) => ({
             description: it.description,
@@ -204,7 +207,7 @@ export default function EstimatesPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) {
         setDialogOpen(false);
         fetchEstimates();
@@ -221,7 +224,7 @@ export default function EstimatesPage() {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) fetchEstimates();
       else alert(data.message || 'Failed to send');
     } catch (e) { alert('Error sending'); }
@@ -234,7 +237,7 @@ export default function EstimatesPage() {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) fetchEstimates();
       else alert(data.message || 'Failed to accept');
     } catch (e) { alert('Error accepting'); }
@@ -248,7 +251,7 @@ export default function EstimatesPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({}),
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success && data.invoice) {
         alert(`Invoice ${data.invoice.invoice_number} created!`);
         fetchEstimates();
@@ -286,7 +289,7 @@ export default function EstimatesPage() {
       const res = await fetch(`${API_BASE}/api/estimates/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await res.json();
+      const data = commercialNumbers(await res.json());
       if (data.success) {
         setSelectedEstimate(data.estimate);
         setSelectedEstimate(prev => ({ ...prev!, items: data.items || [] }));
@@ -357,6 +360,7 @@ export default function EstimatesPage() {
                   <TableCell>{getStatusChip(est.status)}</TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={1}>
+                      <Button size="small" onClick={()=>setEmailId(est.id)}>Email PDF</Button>
                       {est.status === 'draft' && (
                         <>
                           <IconButton size="small" onClick={() => openEditDialog(est)} color="primary" title="Edit">
@@ -375,9 +379,7 @@ export default function EstimatesPage() {
                           <IconButton size="small" onClick={() => handleAccept(est.id)} color="success" title="Record client acceptance">
                             <CheckCircle fontSize="small" />
                           </IconButton>
-                          <IconButton size="small" onClick={() => handleConvert(est.id)} color="info" title="Convert to Invoice">
-                            <AttachMoney fontSize="small" />
-                          </IconButton>
+
                         </>
                       )}
                       {est.status === 'accepted' && (
@@ -400,6 +402,7 @@ export default function EstimatesPage() {
       </TableContainer>
 
       {/* Create/Edit Dialog */}
+      <Dialog open={!!emailId} onClose={()=>setEmailId('')} maxWidth="sm" fullWidth><DialogTitle>Estimate email</DialogTitle><DialogContent>{emailId&&<CommercialEmail key={emailId} kind="estimate" id={emailId} onChange={fetchEstimates}/>}</DialogContent></Dialog>
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
           {editId ? 'Edit Estimate' : 'Create Estimate'}

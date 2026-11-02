@@ -1,0 +1,12 @@
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS milestone_name varchar(255);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS milestone_percentage numeric(5,2);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS parent_invoice_id uuid REFERENCES invoices(id);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurring_owner_id uuid REFERENCES users(id);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurring_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurring_source_id uuid REFERENCES invoices(id);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurring_occurrence integer;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurring_next_index integer NOT NULL DEFAULT 1;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurring_next_date date;
+CREATE UNIQUE INDEX IF NOT EXISTS invoice_recurring_occurrence_unique ON invoices(recurring_source_id,recurring_occurrence) WHERE recurring_source_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS invoice_recurring_due ON invoices(recurring_next_date) WHERE recurring_enabled;
+CREATE INDEX IF NOT EXISTS invoice_milestone_parent ON invoices(parent_invoice_id) WHERE parent_invoice_id IS NOT NULL;

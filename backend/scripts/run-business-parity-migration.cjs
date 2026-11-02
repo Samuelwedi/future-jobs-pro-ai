@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const files = ['20261031_invoice_request_keys.sql', '20261101_estimate_request_keys.sql', '20261101_invoice_payment_keys.sql'];
+const files = ['20261031_invoice_request_keys.sql', '20261101_estimate_request_keys.sql', '20261101_invoice_payment_keys.sql', '20261102_commercial_billing.sql', '20261102_commercial_delivery.sql'];
 async function migrate(client) {
   try {
     await client.query('BEGIN');
@@ -10,6 +10,8 @@ async function migrate(client) {
     await client.query('SELECT creation_request_key,creation_request_hash FROM invoices LIMIT 0');
     await client.query('SELECT creation_request_key,creation_request_hash FROM estimates LIMIT 0');
     await client.query('SELECT record_request_key,record_request_hash FROM payments LIMIT 0');
+    await client.query('SELECT recurring_enabled,recurring_next_date,parent_invoice_id FROM invoices LIMIT 0');
+    await client.query('SELECT id,status,fingerprint,pdf FROM commercial_delivery_jobs LIMIT 0');
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});

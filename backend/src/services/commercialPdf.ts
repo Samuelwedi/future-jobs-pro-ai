@@ -1,26 +1,20 @@
 import PDFDocument from 'pdfkit';
 import Big from 'big.js';
 import { pool } from '../config/database';
-export async function commercialPdf(kind: 'invoice' | 'estimate', id: string, companyId: string): Promise<Buffer> {
-    const table = kind === 'invoice' ? 'invoices' : 'estimates', itemTable = kind === 'invoice' ? 'invoice_items' : 'estimate_items', foreignKey = kind === 'invoice' ? 'invoice_id' : 'estimate_id';
-    const client = await pool.connect();
-    let record: any, items: any[];
-    try {
-        await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-        const result = await client.query(`SELECT d.*,c.name company_name,u.first_name,u.last_name FROM ${table} d JOIN companies c ON c.id=d.company_id LEFT JOIN users u ON u.id=d.client_id AND u.company_id=d.company_id WHERE d.id=$1 AND d.company_id=$2`, [id, companyId]);
-        if (!result.rowCount)
-            throw Object.assign(Error('Document not found'), { status: 404 });
-        record = result.rows[0];
-        items = (await client.query(`SELECT description,quantity,unit_price FROM ${itemTable} WHERE ${foreignKey}=$1 ORDER BY id`, [id])).rows;
-        await client.query('COMMIT');
-    }
-    catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
-    }
-    finally {
-        client.release();
-    }
+export type CommercialKind='invoice'|'estimate';
+export async function commercialSnapshot(client:any,kind:CommercialKind,id:string,companyId:string):Promise<{record:any;items:any[]}>{
+ const table=kind==='invoice'?'invoices':'estimates',itemTable=kind==='invoice'?'invoice_items':'estimate_items',foreignKey=kind==='invoice'?'invoice_id':'estimate_id';
+ const result=await client.query(`SELECT d.*,c.name company_name,u.first_name,u.last_name,u.email recipient_email FROM ${table} d JOIN companies c ON c.id=d.company_id LEFT JOIN users u ON u.id=d.client_id AND u.company_id=d.company_id WHERE d.id=$1 AND d.company_id=$2`,[id,companyId]);
+ if(!result.rowCount)throw Object.assign(Error('Document not found'),{status:404});
+ return{record:result.rows[0],items:(await client.query(`SELECT description,quantity,unit_price FROM ${itemTable} WHERE ${foreignKey}=$1 ORDER BY id`,[id])).rows};
+}
+export async function commercialPdf(kind:CommercialKind,id:string,companyId:string):Promise<Buffer>{
+ const client=await pool.connect();let snapshot;
+ try{await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');snapshot=await commercialSnapshot(client,kind,id,companyId);await client.query('COMMIT');}
+ catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+ return renderCommercialPdf(kind,id,snapshot.record,snapshot.items);
+}
+export async function renderCommercialPdf(kind:CommercialKind,id:string,record:any,items:any[]):Promise<Buffer>{
     const pdf = new PDFDocument({ size: 'A4', margin: 40 }), chunks: Buffer[] = [];
     const completed = new Promise<Buffer>((resolve, reject) => { pdf.on('data', chunk => chunks.push(chunk)); pdf.on('end', () => resolve(Buffer.concat(chunks))); pdf.on('error', reject); });
     pdf.fontSize(20).text(kind === 'invoice' ? 'Invoice' : 'Estimate');
