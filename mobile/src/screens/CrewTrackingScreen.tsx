@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import {nativeMapsAvailable} from '../utils/nativeMaps';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -156,12 +158,12 @@ export default function CrewTrackingScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
+        </LocalizedTouchableOpacity>
         <View>
-          <Text style={styles.headerTitle}>Crew Tracker</Text>
-          <Text style={styles.headerSubtitle}>{activeCount} worker{activeCount !== 1 ? 's' : ''} active</Text>
+          <Text style={styles.headerTitle}><ScreenCopy value={"Crew Tracker"}/></Text>
+          <Text style={styles.headerSubtitle}>{activeCount}<ScreenCopy value={"worker"} leading=" "/>{activeCount !== 1 ? 's' : ''}<ScreenCopy value={"active"} leading=" "/></Text>
         </View>
         <TouchableOpacity onPress={onRefresh}>
           <MaterialIcons name="refresh" size={24} color="#00D4FF" />
@@ -222,7 +224,7 @@ export default function CrewTrackingScreen() {
                     <Text style={styles.detailText}>
                       {emp.isMoving ? '🚶 Moving' : `⏱ ${duration}`}
                     </Text>
-                    <Text style={styles.detailText}>• Updated {lastUpdate}</Text>
+                    <Text style={styles.detailText}><ScreenCopy value={"• Updated"} trailing=" "/>{lastUpdate}</Text>
                   </View>
                 </View>
                 <View style={[styles.statusDot, { backgroundColor: emp.isMoving ? '#4CAF50' : '#FF9800' }]} />

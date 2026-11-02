@@ -1,3 +1,5 @@
+import {LocalizedTextInput,LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, Linking,
@@ -23,25 +25,25 @@ export default function ContactScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Contact Us</Text>
+        </LocalizedTouchableOpacity>
+        <Text style={styles.headerTitle}><ScreenCopy value={"Contact Us"}/></Text>
         <View style={{ width: 24 }} />
       </View>
       <ScrollView automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag" style={styles.body}>
-        <Text style={styles.label}>Full Name</Text>
-        <TextInput style={styles.input} placeholder="Your name" placeholderTextColor="#888" value={name} onChangeText={setName} />
-        <Text style={styles.label}>Email</Text>
+        <Text style={styles.label}><ScreenCopy value={"Full Name"}/></Text>
+        <LocalizedTextInput copy={{"placeholder":"Your name"}} style={styles.input}  placeholderTextColor="#888" value={name} onChangeText={setName} />
+        <Text style={styles.label}><ScreenCopy value={"Email"}/></Text>
         <TextInput style={styles.input} placeholder="your@email.com" placeholderTextColor="#888" keyboardType="email-address" value={email} onChangeText={setEmail} />
-        <Text style={styles.label}>Message</Text>
-        <TextInput style={[styles.input, styles.multiline]} placeholder="How can we help?" placeholderTextColor="#888" multiline numberOfLines={5} value={message} onChangeText={setMessage} />
+        <Text style={styles.label}><ScreenCopy value={"Message"}/></Text>
+        <LocalizedTextInput copy={{"placeholder":"How can we help?"}} style={[styles.input, styles.multiline]}  placeholderTextColor="#888" multiline numberOfLines={5} value={message} onChangeText={setMessage} />
         <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-          <Text style={styles.sendBtnText}>Send Message</Text>
+          <Text style={styles.sendBtnText}><ScreenCopy value={"Send Message"}/></Text>
         </TouchableOpacity>
 
         <View style={styles.contactInfo}>
-          <Text style={styles.sectionTitle}>Other ways to reach us</Text>
+          <Text style={styles.sectionTitle}><ScreenCopy value={"Other ways to reach us"}/></Text>
           <TouchableOpacity onPress={() => Linking.openURL('mailto:support@futurejobsproai.com')}>
             <Text style={styles.link}>📧 support@futurejobsproai.com</Text>
           </TouchableOpacity>

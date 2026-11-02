@@ -1,3 +1,5 @@
+import {LocalizedTextInput} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert, Vibration,  FlatList, TextInput, ActivityIndicator } from 'react-native';
@@ -90,18 +92,18 @@ export default function KioskScreen() {
   return <View style={styles.container}>
     <View style={styles.toolbar}>
     <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
-    {manager && <TouchableOpacity style={styles.setupBtn} onPress={() => setSetupOpen(true)}><MaterialIcons name="manage-accounts" size={21} color="#00D4FF" /><Text style={styles.setupText}>Employee PINs</Text></TouchableOpacity>}
+    {manager && <TouchableOpacity style={styles.setupBtn} onPress={() => setSetupOpen(true)}><MaterialIcons name="manage-accounts" size={21} color="#00D4FF" /><Text style={styles.setupText}><ScreenCopy value={"Employee PINs"}/></Text></TouchableOpacity>}
     </View>
     <ScrollView contentContainerStyle={styles.kioskContent} keyboardShouldPersistTaps="handled">
     {manager && <TouchableOpacity accessibilityRole="button" disabled={toggling || enabled === null} onPress={() => void toggleKiosk()} style={{padding:16}}><Text style={styles.setupText}>{enabled === null ? 'Loading kiosk settings…' : `Kiosk is ${enabled ? 'enabled' : 'disabled'} · Tap to ${enabled ? 'disable' : 'enable'}`}</Text></TouchableOpacity>}
-    <View style={styles.header}><Text style={styles.headerTitle}>Kiosk Clock</Text><Text style={styles.headerSubtitle}>Employee PIN clock in and clock out</Text>
-      <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>Use your employee PIN, not a project PIN. Projects do not need a PIN.</Text>
-      {manager ? <TouchableOpacity accessibilityRole="button" onPress={() => setSetupOpen(true)} style={{ padding: 12 }}><Text style={styles.setupText}>No PIN yet? Set up employee PINs</Text></TouchableOpacity>
-        : <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>Ask your manager to create your employee PIN before using the kiosk.</Text>}
+    <View style={styles.header}><Text style={styles.headerTitle}><ScreenCopy value={"Kiosk Clock"}/></Text><Text style={styles.headerSubtitle}><ScreenCopy value={"Employee PIN clock in and clock out"}/></Text>
+      <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}><ScreenCopy value={"Use your employee PIN, not a project PIN. Projects do not need a PIN."}/></Text>
+      {manager ? <TouchableOpacity accessibilityRole="button" onPress={() => setSetupOpen(true)} style={{ padding: 12 }}><Text style={styles.setupText}><ScreenCopy value={"No PIN yet? Set up employee PINs"}/></Text></TouchableOpacity>
+        : <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}><ScreenCopy value={"Ask your manager to create your employee PIN before using the kiosk."}/></Text>}
     </View>
     <View style={styles.modeRow}>
-      <TouchableOpacity style={[styles.modeBtn, mode === 'clock-in' && styles.modeBtnActiveIn]} onPress={() => setMode('clock-in')}><Text style={styles.modeText}>Clock In</Text></TouchableOpacity>
-      <TouchableOpacity style={[styles.modeBtn, mode === 'clock-out' && styles.modeBtnActiveOut]} onPress={() => setMode('clock-out')}><Text style={styles.modeText}>Clock Out</Text></TouchableOpacity>
+      <TouchableOpacity style={[styles.modeBtn, mode === 'clock-in' && styles.modeBtnActiveIn]} onPress={() => setMode('clock-in')}><Text style={styles.modeText}><ScreenCopy value={"Clock In"}/></Text></TouchableOpacity>
+      <TouchableOpacity style={[styles.modeBtn, mode === 'clock-out' && styles.modeBtnActiveOut]} onPress={() => setMode('clock-out')}><Text style={styles.modeText}><ScreenCopy value={"Clock Out"}/></Text></TouchableOpacity>
     </View>
     {mode === 'clock-in' && <TouchableOpacity style={styles.projectBtn} onPress={chooseProject}><Text style={styles.projectText}>{selectedProject?.name || 'Select project'}</Text><MaterialIcons name="expand-more" size={22} color="#00D4FF" /></TouchableOpacity>}
     <View style={styles.pinDisplay}>{[0,1,2,3,4,5].map(index => <View key={index} style={[styles.pinDot, pin.length > index && styles.pinDotFilled]} />)}</View>
@@ -115,12 +117,12 @@ export default function KioskScreen() {
     </ScrollView>
     <Modal visible={setupOpen} animationType="slide" transparent onRequestClose={() => setSetupOpen(false)}>
       <View style={styles.modalOverlay}><View style={styles.modal}>
-        <View style={styles.modalHeader}><View><Text style={styles.modalTitle}>Employee kiosk PINs</Text><Text style={styles.modalCaption}>Choose an employee, then create a private PIN.</Text></View><TouchableOpacity onPress={() => setSetupOpen(false)}><MaterialIcons name="close" size={26} color="#FFF" /></TouchableOpacity></View>
+        <View style={styles.modalHeader}><View><Text style={styles.modalTitle}><ScreenCopy value={"Employee kiosk PINs"}/></Text><Text style={styles.modalCaption}><ScreenCopy value={"Choose an employee, then create a private PIN."}/></Text></View><TouchableOpacity onPress={() => setSetupOpen(false)}><MaterialIcons name="close" size={26} color="#FFF" /></TouchableOpacity></View>
         <FlatList data={employees} keyExtractor={item => item.id} style={{ maxHeight: 320 }} renderItem={({ item }) => {
           const selected = selectedEmployee?.id === item.id;
           return <TouchableOpacity style={[styles.employee, selected && styles.employeeSelected]} onPress={() => setSelectedEmployee(item)}><View><Text style={styles.employeeName}>{item.first_name} {item.last_name}</Text><Text style={styles.employeeEmail}>{item.email}</Text></View>{selected && <MaterialIcons name="check-circle" size={23} color="#00D4FF" />}</TouchableOpacity>;
-        }} ListEmptyComponent={<Text style={styles.empty}>No employees were returned for this company.</Text>} />
-        <TextInput value={newPin} onChangeText={value => setNewPin(value.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" secureTextEntry placeholder="New 4–6 digit PIN" placeholderTextColor="#718096" style={styles.pinInput} />
+        }} ListEmptyComponent={<Text style={styles.empty}><ScreenCopy value={"No employees were returned for this company."}/></Text>} />
+        <LocalizedTextInput copy={{"placeholder":"New 4–6 digit PIN"}} value={newPin} onChangeText={value => setNewPin(value.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" secureTextEntry  placeholderTextColor="#718096" style={styles.pinInput} />
         <TouchableOpacity disabled={working} style={styles.saveBtn} onPress={savePin}><Text style={styles.saveText}>{working ? 'Saving…' : `Save PIN${selectedEmployee ? ` for ${selectedEmployee.first_name}` : ''}`}</Text></TouchableOpacity>
       </View></View>
     </Modal>

@@ -313,3 +313,6 @@ test('temporary-password accounts cannot use protected features until they chang
   assert.notEqual((await request('/operations/swaps',ids.worker)).status,403);
  } finally {await query('UPDATE users SET password_hash=$1,must_change_password=FALSE WHERE id=$2',[previous,ids.worker]);}
 });
+test('Lucy configuration status requires authentication and does not expose provider secrets',async()=>{
+ assert.equal((await request('/lucy/status',null)).status,401);const r=await request('/lucy/status',ids.worker);assert.equal(r.status,200);assert.equal(r.data.capacityVerified,false);assert.equal(r.data.coreCommandsAvailable,true);for(const forbidden of ['apiKey','baseURL','token','secret'])assert.ok(!JSON.stringify(r.data).includes(forbidden));
+});

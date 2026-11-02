@@ -1,3 +1,5 @@
+import {LocalizedTextInput} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // ============================================
 // LOGIN SCREEN
@@ -57,13 +59,13 @@ export default function LoginScreen() {
         <View style={styles.brandMark}>
           <MaterialIcons name="auto-awesome" size={32} color="#07111F" />
         </View>
-        <Text style={styles.eyebrow}>FIELD OPERATIONS, UNIFIED</Text>
+        <Text style={styles.eyebrow}><ScreenCopy value={"FIELD OPERATIONS, UNIFIED"}/></Text>
         <Text style={styles.title}>Future Jobs Pro AI</Text>
-        <Text style={styles.subtitle}>Run the field, protect the work, and pay your team from one command center.</Text>
+        <Text style={styles.subtitle}><ScreenCopy value={"Run the field, protect the work, and pay your team from one command center."}/></Text>
 
-        <TextInput
+        <LocalizedTextInput copy={{"placeholder":"Email"}}
           style={styles.input}
-          placeholder="Email"
+
           placeholderTextColor="#888"
           value={email}
           onChangeText={setEmail}
@@ -71,9 +73,9 @@ export default function LoginScreen() {
           keyboardType="email-address"
         />
         <View style={styles.passwordField}>
-          <TextInput
+          <LocalizedTextInput copy={{"placeholder":"Password"}}
             style={[styles.input, styles.passwordInput]}
-            placeholder="Password"
+
             placeholderTextColor="#888"
             value={password}
             onChangeText={setPassword}
@@ -92,21 +94,21 @@ export default function LoginScreen() {
             <MaterialIcons name={showPassword ? 'visibility-off' : 'visibility'} size={22} color="#A8B5C7" />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.forgotLink} onPress={() => navigation.navigate('ForgotPassword')} disabled={isLoading}><Text style={styles.forgotText}>Forgot password?</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.forgotLink} onPress={() => navigation.navigate('ForgotPassword')} disabled={isLoading}><Text style={styles.forgotText}><ScreenCopy value={"Forgot password?"}/></Text></TouchableOpacity>
         <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={isLoading}>
-          {isLoading ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.buttonText}>Sign In</Text>}
+          {isLoading ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.buttonText}><ScreenCopy value={"Sign In"}/></Text>}
         </TouchableOpacity>
-        <TouchableOpacity style={styles.signupButton} onPress={() => navigation.navigate('Register')} disabled={isLoading}><Text style={styles.signupText}>New to Future Jobs Pro AI? <Text style={styles.signupAccent}>Sign Up</Text></Text></TouchableOpacity>
+        <TouchableOpacity style={styles.signupButton} onPress={() => navigation.navigate('Register')} disabled={isLoading}><Text style={styles.signupText}><ScreenCopy value={"New to Future Jobs Pro AI?"} trailing=" "/><Text style={styles.signupAccent}><ScreenCopy value={"Sign Up"}/></Text></Text></TouchableOpacity>
         <TouchableOpacity style={styles.demoButton} onPress={() => navigation.navigate('Demo')} disabled={isLoading}>
           <MaterialIcons name="play-circle-outline" size={22} color="#67E8F9" />
-          <Text style={styles.demoButtonText}>Explore the interactive demo</Text>
+          <Text style={styles.demoButtonText}><ScreenCopy value={"Explore the interactive demo"}/></Text>
         </TouchableOpacity>
         <View style={styles.trustRow}>
-          <Text style={styles.trustText}>GPS evidence</Text>
+          <Text style={styles.trustText}><ScreenCopy value={"GPS evidence"}/></Text>
           <Text style={styles.trustDot}>•</Text>
-          <Text style={styles.trustText}>AI assistance</Text>
+          <Text style={styles.trustText}><ScreenCopy value={"AI assistance"}/></Text>
           <Text style={styles.trustDot}>•</Text>
-          <Text style={styles.trustText}>Payroll ready</Text>
+          <Text style={styles.trustText}><ScreenCopy value={"Payroll ready"}/></Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

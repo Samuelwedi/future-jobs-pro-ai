@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -31,9 +33,9 @@ export default function ProjectMediaScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
+        </LocalizedTouchableOpacity>
         <Text style={styles.headerTitle}>{projectName}</Text>
         <View style={{ width: 24 }} />
       </View>
@@ -50,7 +52,7 @@ export default function ProjectMediaScreen() {
             <MaterialIcons name="chevron-right" size={24} color="#888" />
           </TouchableOpacity>
         )}
-        ListEmptyComponent={<Text style={styles.emptyText}>No months with media</Text>}
+        ListEmptyComponent={<Text style={styles.emptyText}><ScreenCopy value={"No months with media"}/></Text>}
       />
     </View>
   );

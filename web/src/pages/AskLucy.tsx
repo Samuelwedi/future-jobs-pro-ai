@@ -1,3 +1,4 @@
+import LucyProviderStatus from '../components/LucyProviderStatus';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Avatar, Box, Button, Chip, CircularProgress, IconButton, List, ListItem, ListItemAvatar, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import { CheckCircle, Mic, Send, SmartToy, StopCircle } from '@mui/icons-material';
@@ -103,6 +104,7 @@ export default function AskLucy({initialPrompt = ''}: {initialPrompt?:string}) {
     <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}><LucyWakeControl suspended={voiceBusy} onWake={() => void startVoice(true)} /></Box>
     {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
     {voiceBusy && <Chip label={{ greeting: 'Lucy is responding', listening: 'Listening for your command', thinking: 'Lucy is working', speaking: 'Lucy is reporting back' }[voiceState]} color="info" sx={{ alignSelf: 'center', mb: 1 }} />}
+    <LucyProviderStatus/>
     <Paper sx={{ flex: 1, bgcolor: '#10161E', borderRadius: 3, border: '1px solid #22303E', p: 2, mb: 2, overflowY: 'auto' }}><List>{messages.map((message, index) => <ListItem key={index} sx={{ flexDirection: message.isUser ? 'row-reverse' : 'row', alignItems: 'flex-start' }}>
       {!message.isUser && <ListItemAvatar sx={{ minWidth: 40 }}><Avatar sx={{ bgcolor: '#00D4FF', width: 32, height: 32, fontSize: 14 }}>L</Avatar></ListItemAvatar>}
       <Box sx={{ width: message.isUser ? 'auto' : '100%' }}><ListItemText primary={message.text} primaryTypographyProps={{ color: message.isUser ? '#00D4FF' : '#FFF', fontSize: 14, fontWeight: message.isUser ? 700 : 400, sx: { textAlign: message.isUser ? 'right' : 'left', whiteSpace: 'pre-wrap' } }} />

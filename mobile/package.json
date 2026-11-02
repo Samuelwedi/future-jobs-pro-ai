@@ -68,6 +68,7 @@
     "@react-native-community/cli": "^20.2.0",
     "@types/react": "~19.2.10",
     "patch-package": "^8.0.1",
+    "react-test-renderer": "19.2.0",
     "typescript": "~5.9.2"
   },
   "private": true,

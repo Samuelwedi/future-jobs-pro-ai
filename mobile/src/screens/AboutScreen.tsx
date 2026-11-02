@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React from 'react';
 import { nativeApplicationVersion, nativeBuildVersion } from 'expo-application';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
@@ -10,24 +12,18 @@ export default function AboutScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>About</Text>
+        </LocalizedTouchableOpacity>
+        <Text style={styles.headerTitle}><ScreenCopy value={"About"}/></Text>
         <View style={{ width: 24 }} />
       </View>
       <ScrollView style={styles.body}>
         <Text style={styles.appName}>🚀 Future Jobs Pro AI</Text>
-        <Text style={styles.version}>Version {nativeApplicationVersion || 'Unknown'} · Build {nativeBuildVersion || 'Unknown'}</Text>
-        <Text style={styles.paragraph}>
-          Future Jobs Pro AI was created by Samuel B. to help field service businesses protect their revenue with AI‑powered photo compliance, GPS tracking, and automatic dispute evidence.
-        </Text>
-        <Text style={styles.paragraph}>
-          Built with React Native, Node.js, PostgreSQL, and OpenAI. All data is encrypted at rest and in transit.
-        </Text>
-        <Text style={styles.paragraph}>
-          For support, contact support@futurejobsproai.com
-        </Text>
+        <Text style={styles.version}><ScreenCopy value={"Version"} trailing=" "/>{nativeApplicationVersion || 'Unknown'}<ScreenCopy value={"· Build"} leading=" " trailing=" "/>{nativeBuildVersion || 'Unknown'}</Text>
+        <Text style={styles.paragraph}><ScreenCopy value={"Future Jobs Pro AI was created by Samuel B. to help field service businesses protect their revenue with AI‑powered photo compliance, GPS tracking, and automatic dispute evidence."}/></Text>
+        <Text style={styles.paragraph}><ScreenCopy value={"Built with React Native, Node.js and PostgreSQL. Online features require a network connection."}/></Text>
+        <Text style={styles.paragraph}><ScreenCopy value={"For support, contact support@futurejobsproai.com"}/></Text>
       </ScrollView>
     </View>
   );

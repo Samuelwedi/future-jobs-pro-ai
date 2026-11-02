@@ -1,3 +1,5 @@
+import {LocalizedTextInput,LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {checkOnlineStatus} from '../services/offlineService';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
@@ -144,10 +146,10 @@ export default function ProjectsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Projects</Text>
+        </LocalizedTouchableOpacity>
+        <Text style={styles.headerTitle}><ScreenCopy value={"Projects"}/></Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -157,7 +159,7 @@ export default function ProjectsScreen() {
         renderItem={renderProject}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={<Text style={styles.emptyText}>No projects yet. Tap + to create one.</Text>}
+        ListEmptyComponent={<Text style={styles.emptyText}><ScreenCopy value={"No projects yet. Tap + to create one."}/></Text>}
       />
 
       <TouchableOpacity
@@ -173,23 +175,23 @@ export default function ProjectsScreen() {
           <View style={styles.modalContent}>
             <ScrollView>
               <Text style={styles.modalTitle}>{editingProject ? 'Edit Project' : 'New Project'}</Text>
-              <TextInput
+              <LocalizedTextInput copy={{"placeholder":"Project Name"}}
                 style={styles.input}
-                placeholder="Project Name"
+
                 placeholderTextColor="#888"
                 value={projectName}
                 onChangeText={setProjectName}
               />
-              <TextInput
+              <LocalizedTextInput copy={{"placeholder":"Client Name (optional)"}}
                 style={styles.input}
-                placeholder="Client Name (optional)"
+
                 placeholderTextColor="#888"
                 value={clientName}
                 onChangeText={setClientName}
               />
-              <TextInput
+              <LocalizedTextInput copy={{"placeholder":"Address (optional – used for directions)"}}
                 style={styles.input}
-                placeholder="Address (optional – used for directions)"
+
                 placeholderTextColor="#888"
                 value={projectAddress}
                 onChangeText={setProjectAddress}
@@ -198,7 +200,7 @@ export default function ProjectsScreen() {
               />
               <View style={styles.modalActions}>
                 <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={() => setModalVisible(false)}>
-                  <Text style={styles.btnText}>Cancel</Text>
+                  <Text style={styles.btnText}><ScreenCopy value={"Cancel"}/></Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.btn, styles.saveBtn]} disabled={saving} onPress={handleSaveProject}>
                   <Text style={[styles.btnText, { color: '#0A0A0A' }]}>{saving?'Saving…':'Save'}</Text>

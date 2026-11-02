@@ -1,3 +1,5 @@
+import {LocalizedTextInput,LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -86,13 +88,13 @@ export default function TasksScreen() {
     }
   };
 
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#22D3EE" /><Text style={styles.muted}>Loading the work board…</Text></View>;
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#22D3EE" /><Text style={styles.muted}><ScreenCopy value={"Loading the work board…"}/></Text></View>;
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
-        <View style={{ flex: 1, marginLeft: 14 }}><Text style={styles.title}>Work Board</Text><Text style={styles.muted}>{tasks.length} assignments • {progress}% complete</Text></View>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></LocalizedTouchableOpacity>
+        <View style={{ flex: 1, marginLeft: 14 }}><Text style={styles.title}><ScreenCopy value={"Work Board"}/></Text><Text style={styles.muted}>{tasks.length}<ScreenCopy value={"assignments •"} leading=" " trailing=" "/>{progress}<ScreenCopy value={"% complete"}/></Text></View>
         {isManager ? <TouchableOpacity style={styles.addButton} onPress={() => setShowComposer(value => !value)}><MaterialIcons name={showComposer ? 'close' : 'add'} size={23} color="#06131B" /></TouchableOpacity> : null}
       </View>
 
@@ -100,13 +102,13 @@ export default function TasksScreen() {
 
       {showComposer && isManager ? (
         <View style={styles.composer}>
-          <Text style={styles.sectionLabel}>NEW ASSIGNMENT</Text>
-          <TextInput value={description} onChangeText={setDescription} placeholder="Describe the expected result…" placeholderTextColor="#64748B" multiline style={styles.input} />
+          <Text style={styles.sectionLabel}><ScreenCopy value={"NEW ASSIGNMENT"}/></Text>
+          <LocalizedTextInput copy={{"placeholder":"Describe the expected result…"}} value={description} onChangeText={setDescription}  placeholderTextColor="#64748B" multiline style={styles.input} />
           <ScrollView automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag" horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
-            <TouchableOpacity style={[styles.personChip, !assignedTo && styles.personSelected]} onPress={() => setAssignedTo('')}><Text style={styles.chipText}>Unassigned</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.personChip, !assignedTo && styles.personSelected]} onPress={() => setAssignedTo('')}><Text style={styles.chipText}><ScreenCopy value={"Unassigned"}/></Text></TouchableOpacity>
             {employees.map(person => <TouchableOpacity key={person.id} style={[styles.personChip, assignedTo === person.id && styles.personSelected]} onPress={() => setAssignedTo(person.id)}><Text style={styles.chipText}>{person.first_name} {person.last_name}</Text></TouchableOpacity>)}
           </ScrollView>
-          <TouchableOpacity style={styles.createButton} onPress={createTask}><MaterialIcons name="auto-awesome" size={18} color="#06131B" /><Text style={styles.createText}>Create and notify</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.createButton} onPress={createTask}><MaterialIcons name="auto-awesome" size={18} color="#06131B" /><Text style={styles.createText}><ScreenCopy value={"Create and notify"}/></Text></TouchableOpacity>
         </View>
       ) : null}
 
@@ -119,7 +121,7 @@ export default function TasksScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor="#22D3EE" />}
-        ListEmptyComponent={<View style={styles.empty}><MaterialIcons name="task-alt" size={50} color="#476079" /><Text style={styles.emptyTitle}>Nothing in this lane</Text><Text style={styles.muted}>New work and completed results will appear here.</Text></View>}
+        ListEmptyComponent={<View style={styles.empty}><MaterialIcons name="task-alt" size={50} color="#476079" /><Text style={styles.emptyTitle}><ScreenCopy value={"Nothing in this lane"}/></Text><Text style={styles.muted}><ScreenCopy value={"New work and completed results will appear here."}/></Text></View>}
         renderItem={({ item }) => {
           const meta = statusMeta[item.status] || statusMeta.pending;
           return (
@@ -128,7 +130,7 @@ export default function TasksScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.description}>{item.description}</Text>
                 <View style={styles.metaRow}><Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text><Text style={styles.dotText}>•</Text><Text style={styles.assignee}>{item.assigned_name || 'Unassigned'}</Text></View>
-                <Text style={styles.tapHint}>Tap to {item.status === 'pending' ? 'start work' : item.status === 'in_progress' ? 'mark complete' : 'reopen'}</Text>
+                <Text style={styles.tapHint}><ScreenCopy value={"Tap to"} trailing=" "/>{item.status === 'pending' ? 'start work' : item.status === 'in_progress' ? 'mark complete' : 'reopen'}</Text>
               </View>
               <MaterialIcons name="chevron-right" size={22} color="#64748B" />
             </TouchableOpacity>

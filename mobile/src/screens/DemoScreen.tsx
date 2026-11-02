@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -63,21 +65,21 @@ export default function DemoScreen() {
     <View style={styles.container}>
       <LinearGradient colors={['#071827', '#050A12', '#03070C']} style={StyleSheet.absoluteFill} />
       <View style={styles.header}>
-        <TouchableOpacity accessibilityLabel="Back to sign in" onPress={() => navigation.goBack()} style={styles.iconButton}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Back to sign in"}}  onPress={() => navigation.goBack()} style={styles.iconButton}>
           <MaterialIcons name="arrow-back" size={22} color="#F8FAFC" />
-        </TouchableOpacity>
+        </LocalizedTouchableOpacity>
         <View style={styles.brandLockup}>
           <View style={styles.brandMark}><MaterialIcons name="auto-awesome" size={17} color="#06121D" /></View>
-          <View><Text style={styles.brand}>Future Jobs Pro AI</Text><Text style={styles.brandMeta}>Interactive product story</Text></View>
+          <View><Text style={styles.brand}>Future Jobs Pro AI</Text><Text style={styles.brandMeta}><ScreenCopy value={"Interactive product story"}/></Text></View>
         </View>
-        <View style={styles.demoPill}><View style={styles.demoDot} /><Text style={styles.demoText}>DEMO</Text></View>
+        <View style={styles.demoPill}><View style={styles.demoDot} /><Text style={styles.demoText}><ScreenCopy value={"DEMO"}/></Text></View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
-          <Text style={styles.kicker}>THE INTELLIGENT FIELD OPERATING SYSTEM</Text>
-          <Text style={styles.heroTitle}>Field work,{`\n`}finally connected.</Text>
-          <Text style={styles.heroCopy}>Run the day. Prove the work. Pay the team. Lucy keeps the entire workflow moving—with people in control.</Text>
+          <Text style={styles.kicker}><ScreenCopy value={"THE INTELLIGENT FIELD OPERATING SYSTEM"}/></Text>
+          <Text style={styles.heroTitle}><ScreenCopy value={"Field work,"}/>{`\n`}<ScreenCopy value={"finally connected."}/></Text>
+          <Text style={styles.heroCopy}><ScreenCopy value={"Run the day. Prove the work. Pay the team. Lucy keeps the entire workflow moving—with people in control."}/></Text>
           <View style={styles.valueRow}>
             {[['bolt', 'Real-time', '#67E8F9'], ['verified-user', 'Verifiable', '#A7F3D0'], ['hub', 'One system', '#C4B5FD']].map(([icon, label, color]) => (
               <View key={label} style={styles.valueItem}><MaterialIcons name={icon as IconName} size={17} color={color} /><Text style={styles.valueText}>{label}</Text></View>
@@ -100,8 +102,8 @@ export default function DemoScreen() {
         <LinearGradient colors={story.gradient} style={styles.productWindow}>
           <View style={styles.windowChrome}>
             <View style={styles.windowDots}><View style={styles.windowDot} /><View style={styles.windowDot} /><View style={styles.windowDot} /></View>
-            <Text style={styles.windowLabel}>FUTURE JOBS · LIVE WORKSPACE</Text>
-            <View style={styles.secureChip}><MaterialIcons name="lock" size={11} color="#A7F3D0" /><Text style={styles.secureText}>SECURE</Text></View>
+            <Text style={styles.windowLabel}><ScreenCopy value={"FUTURE JOBS · LIVE WORKSPACE"}/></Text>
+            <View style={styles.secureChip}><MaterialIcons name="lock" size={11} color="#A7F3D0" /><Text style={styles.secureText}><ScreenCopy value={"SECURE"}/></Text></View>
           </View>
           <View style={styles.storyHeader}>
             <View style={[styles.storyIcon, { backgroundColor: `${story.color}20`, borderColor: `${story.color}55` }]}><MaterialIcons name={story.icon} size={24} color={story.color} /></View>
@@ -128,14 +130,14 @@ export default function DemoScreen() {
         <View style={styles.lucySection}>
           <LinearGradient colors={['#34255E', '#19152C']} style={styles.lucyOrb}><MaterialIcons name="graphic-eq" size={29} color="#EDE9FE" /></LinearGradient>
           <View style={styles.lucyBody}>
-            <View style={styles.lucyTitleRow}><Text style={styles.lucyTitle}>Lucy is the connective intelligence</Text><View style={styles.memoryPill}><View style={styles.memoryDot} /><Text style={styles.memoryText}>MEMORY</Text></View></View>
-            <Text style={styles.lucyCopy}>She understands context across the workspace, prepares actions, and asks for confirmation before sensitive changes.</Text>
-            <View style={styles.promptBubble}><Text style={styles.promptText}>“Brief me on today’s risks and prepare the next actions.”</Text></View>
+            <View style={styles.lucyTitleRow}><Text style={styles.lucyTitle}><ScreenCopy value={"Lucy is the connective intelligence"}/></Text><View style={styles.memoryPill}><View style={styles.memoryDot} /><Text style={styles.memoryText}><ScreenCopy value={"MEMORY"}/></Text></View></View>
+            <Text style={styles.lucyCopy}><ScreenCopy value={"She understands context across the workspace, prepares actions, and asks for confirmation before sensitive changes."}/></Text>
+            <View style={styles.promptBubble}><Text style={styles.promptText}><ScreenCopy value={"“Brief me on today’s risks and prepare the next actions.”"}/></Text></View>
           </View>
         </View>
 
         <View style={styles.platformSection}>
-          <Text style={styles.sectionEyebrow}>ONE CONTINUOUS RECORD</Text><Text style={styles.sectionTitle}>From first clock-in to final proof.</Text>
+          <Text style={styles.sectionEyebrow}><ScreenCopy value={"ONE CONTINUOUS RECORD"}/></Text><Text style={styles.sectionTitle}><ScreenCopy value={"From first clock-in to final proof."}/></Text>
           <View style={styles.platformFlow}>
             {[['Capture', 'location-on', '#67E8F9'], ['Understand', 'auto-awesome', '#C4B5FD'], ['Verify', 'verified', '#A7F3D0'], ['Settle', 'payments', '#FDE68A']].map(([label, icon, color], index) => (
               <React.Fragment key={label}>
@@ -147,9 +149,9 @@ export default function DemoScreen() {
         </View>
 
         <TouchableOpacity accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.goBack()}>
-          <LinearGradient colors={['#67E8F9', '#22D3EE']} style={styles.primaryButtonGradient}><Text style={styles.primaryButtonText}>Explore with your own workspace</Text><MaterialIcons name="arrow-forward" size={20} color="#06121D" /></LinearGradient>
+          <LinearGradient colors={['#67E8F9', '#22D3EE']} style={styles.primaryButtonGradient}><Text style={styles.primaryButtonText}><ScreenCopy value={"Explore with your own workspace"}/></Text><MaterialIcons name="arrow-forward" size={20} color="#06121D" /></LinearGradient>
         </TouchableOpacity>
-        <Text style={styles.disclaimer}>This tour uses illustrative data and does not display customer information.</Text>
+        <Text style={styles.disclaimer}><ScreenCopy value={"This tour uses illustrative data and does not display customer information."}/></Text>
       </ScrollView>
     </View>
   );

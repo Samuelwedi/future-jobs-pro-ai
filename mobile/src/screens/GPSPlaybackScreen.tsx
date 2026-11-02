@@ -1,3 +1,4 @@
+import ScreenCopy from '../components/ScreenCopy';
 import {nativeMapsAvailable} from '../utils/nativeMaps';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -259,12 +260,12 @@ export default function GPSPlaybackScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
-          <View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.headerTitle}>GPS Trail History</Text><Text style={styles.historySubtitle}>Verified routes from the last 30 days</Text></View>
+          <View style={{ flex: 1, marginLeft: 12 }}><Text style={styles.headerTitle}><ScreenCopy value={"GPS Trail History"}/></Text><Text style={styles.historySubtitle}><ScreenCopy value={"Verified routes from the last 30 days"}/></Text></View>
           {historyLoading ? <ActivityIndicator color="#00D4FF" /> : <TouchableOpacity onPress={()=>void fetchHistory()}><MaterialIcons name="refresh" size={23} color="#67E8F9" /></TouchableOpacity>}
         </View>
         <ScrollView contentContainerStyle={styles.historyList}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:12}}>{[{id:'',first_name:'All',last_name:'employees'},...employees].map(employee=><TouchableOpacity key={employee.id||'all'} onPress={()=>{setSelectedUserId(employee.id);void fetchHistory(employee.id);}} style={{paddingHorizontal:14,paddingVertical:9,borderRadius:18,marginRight:8,backgroundColor:selectedUserId===employee.id?'#00D4FF':'#172C3E'}}><Text style={{color:selectedUserId===employee.id?'#071018':'#C8D4E2',fontWeight:'800'}}>{employee.first_name} {employee.last_name}</Text></TouchableOpacity>)}</ScrollView>
-          {history.length === 0 && !historyLoading ? <View style={styles.historyEmpty}><MaterialIcons name="route" size={52} color="#476079" /><Text style={styles.emptyText}>No recorded GPS trails in the last 30 days.</Text><Text style={styles.historyHint}>Trails appear after an employee clocks in and location points are recorded.</Text></View> : null}
+          {history.length === 0 && !historyLoading ? <View style={styles.historyEmpty}><MaterialIcons name="route" size={52} color="#476079" /><Text style={styles.emptyText}><ScreenCopy value={"No recorded GPS trails in the last 30 days."}/></Text><Text style={styles.historyHint}><ScreenCopy value={"Trails appear after an employee clocks in and location points are recorded."}/></Text></View> : null}
           {history.map(item => (
             <TouchableOpacity key={item.time_entry_id} style={styles.historyCard} onPress={() => { setPoints([]); setCurrentIndex(0); setSelectedTimeEntryId(item.time_entry_id); }}>
               <View style={styles.historyIcon}><MaterialIcons name="route" size={24} color="#67E8F9" /></View>
@@ -273,7 +274,7 @@ export default function GPSPlaybackScreen() {
                 <Text style={styles.historyProject}>{item.project_name || 'Unassigned project'}</Text>
                 <Text style={styles.historyTime}>{format(new Date(item.clock_in), 'MMM d, yyyy • h:mm a')} {item.clock_out ? `– ${format(new Date(item.clock_out), 'h:mm a')}` : '• Active'}</Text>
               </View>
-              <View style={styles.pointBadge}><Text style={styles.pointBadgeText}>{item.point_count} pts</Text></View>
+              <View style={styles.pointBadge}><Text style={styles.pointBadgeText}>{item.point_count}<ScreenCopy value={"pts"} leading=" "/></Text></View>
               <MaterialIcons name="chevron-right" size={22} color="#64748B" />
             </TouchableOpacity>
           ))}
@@ -286,7 +287,7 @@ export default function GPSPlaybackScreen() {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#00D4FF" />
-        <Text style={styles.loadingText}>Loading GPS trail...</Text>
+        <Text style={styles.loadingText}><ScreenCopy value={"Loading GPS trail..."}/></Text>
       </View>
     );
   }
@@ -295,9 +296,9 @@ export default function GPSPlaybackScreen() {
     return (
       <View style={styles.centered}>
         <MaterialIcons name="gps-off" size={48} color="#666" />
-        <Text style={styles.emptyText}>No GPS data available for this shift</Text>
+        <Text style={styles.emptyText}><ScreenCopy value={"No GPS data available for this shift"}/></Text>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>Go Back</Text>
+          <Text style={styles.backButtonText}><ScreenCopy value={"Go Back"}/></Text>
         </TouchableOpacity>
       </View>
     );
@@ -311,19 +312,19 @@ export default function GPSPlaybackScreen() {
         <TouchableOpacity onPress={() => initialTimeEntryId ? navigation.goBack() : setSelectedTimeEntryId(undefined)} style={styles.backBtn}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>GPS Playback</Text>
+        <Text style={styles.headerTitle}><ScreenCopy value={"GPS Playback"}/></Text>
         <View style={{ width: 24 }} />
       </View>
 
       <View style={styles.statsBar}>
         <View style={styles.statItem}>
           <Text style={styles.statValue}>{totalDistance.toFixed(2)} km</Text>
-          <Text style={styles.statLabel}>Distance</Text>
+          <Text style={styles.statLabel}><ScreenCopy value={"Distance"}/></Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
           <Text style={styles.statValue}>{points.length}</Text>
-          <Text style={styles.statLabel}>Points</Text>
+          <Text style={styles.statLabel}><ScreenCopy value={"Points"}/></Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
@@ -335,7 +336,7 @@ export default function GPSPlaybackScreen() {
                 }), { format: ['hours', 'minutes'] }) || '< 1m'
               : '0m'}
           </Text>
-          <Text style={styles.statLabel}>Duration</Text>
+          <Text style={styles.statLabel}><ScreenCopy value={"Duration"}/></Text>
         </View>
       </View>
 
@@ -382,7 +383,7 @@ export default function GPSPlaybackScreen() {
             );
           })}
         </MapView> : <View style={[styles.map, {alignItems:'center',justifyContent:'center',padding:24}]}>
-          <Text style={{color:'#FFF',textAlign:'center'}}>Map unavailable in this Android build. Route history and playback coordinates remain available below.</Text>
+          <Text style={{color:'#FFF',textAlign:'center'}}><ScreenCopy value={"Map unavailable in this Android build. Route history and playback coordinates remain available below."}/></Text>
           {currentPoint && <Text style={{color:'#00D4FF',marginTop:12}}>{currentPoint.latitude.toFixed(6)}, {currentPoint.longitude.toFixed(6)}</Text>}
         </View>}
         <View style={styles.currentPointBadge}>
@@ -451,13 +452,13 @@ export default function GPSPlaybackScreen() {
       ]}>
         {currentPoint && (
           <ScrollView style={styles.detailsScroll}>
-            <Text style={styles.detailsTitle}>📍 Location Details</Text>
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Time</Text><Text style={styles.detailValue}>{formatTimestamp(currentPoint.timestamp)}</Text></View>
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Coordinates</Text><Text style={styles.detailValue}>{currentPoint.latitude.toFixed(6)}, {currentPoint.longitude.toFixed(6)}</Text></View>
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Accuracy</Text><Text style={[styles.detailValue, { color: getAccuracyColor(currentPoint.accuracy) }]}>{getAccuracyLabel(currentPoint.accuracy)}</Text></View>
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Speed</Text><Text style={styles.detailValue}>{currentPoint.speed ? (currentPoint.speed * 3.6).toFixed(1) : 'N/A'} km/h</Text></View>
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Geofence</Text><Text style={styles.detailValue}>{currentPoint.geofence_status || 'unknown'}</Text></View>
-            <View style={styles.detailRow}><Text style={styles.detailLabel}>Moving</Text><Text style={styles.detailValue}>{currentPoint.is_moving ? '🚶 Yes' : '🛑 No'}</Text></View>
+            <Text style={styles.detailsTitle}><ScreenCopy value={"📍 Location Details"}/></Text>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}><ScreenCopy value={"Time"}/></Text><Text style={styles.detailValue}>{formatTimestamp(currentPoint.timestamp)}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}><ScreenCopy value={"Coordinates"}/></Text><Text style={styles.detailValue}>{currentPoint.latitude.toFixed(6)}, {currentPoint.longitude.toFixed(6)}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}><ScreenCopy value={"Accuracy"}/></Text><Text style={[styles.detailValue, { color: getAccuracyColor(currentPoint.accuracy) }]}>{getAccuracyLabel(currentPoint.accuracy)}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}><ScreenCopy value={"Speed"}/></Text><Text style={styles.detailValue}>{currentPoint.speed ? (currentPoint.speed * 3.6).toFixed(1) : 'N/A'} km/h</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}><ScreenCopy value={"Geofence"}/></Text><Text style={styles.detailValue}>{currentPoint.geofence_status || 'unknown'}</Text></View>
+            <View style={styles.detailRow}><Text style={styles.detailLabel}><ScreenCopy value={"Moving"}/></Text><Text style={styles.detailValue}>{currentPoint.is_moving ? '🚶 Yes' : '🛑 No'}</Text></View>
           </ScrollView>
         )}
       </Animated.View>

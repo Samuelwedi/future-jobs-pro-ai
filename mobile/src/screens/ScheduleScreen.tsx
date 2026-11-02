@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -179,9 +181,9 @@ export default function ScheduleScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
+        </LocalizedTouchableOpacity>
         <View style={{ flex: 1, marginLeft: 16 }}>
           <TouchableOpacity onPress={() => setShowEmployeePicker(true)}>
             <Text style={styles.headerTitle}>{selectedEmployeeName}</Text>
@@ -263,7 +265,7 @@ export default function ScheduleScreen() {
             {item.attachment_url && (
               <View style={styles.attachmentBadge}>
                 <MaterialIcons name="attach-file" size={14} color="#00D4FF" />
-                <Text style={styles.attachmentBadgeText}>Attachment</Text>
+                <Text style={styles.attachmentBadgeText}><ScreenCopy value={"Attachment"}/></Text>
               </View>
             )}
           </TouchableOpacity>
@@ -271,7 +273,7 @@ export default function ScheduleScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={<Text style={styles.empty}>No shifts on this day</Text>}
+        ListEmptyComponent={<Text style={styles.empty}><ScreenCopy value={"No shifts on this day"}/></Text>}
       />
 
       {/* Shift Detail Modal */}
@@ -279,7 +281,7 @@ export default function ScheduleScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Shift Details</Text>
+              <Text style={styles.modalTitle}><ScreenCopy value={"Shift Details"}/></Text>
               <TouchableOpacity onPress={() => setSelectedShift(null)}>
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
@@ -287,36 +289,36 @@ export default function ScheduleScreen() {
             {selectedShift && (
               <ScrollView>
                 {canManage && <View style={{flexDirection:'row', gap:20, paddingBottom:16}}>
-                  <TouchableOpacity onPress={() => { navigation.navigate('CreateShift', {shift:selectedShift, date:selectedShift.date}); setSelectedShift(null); }}><Text style={{color:'#00D4FF'}}>Edit shift</Text></TouchableOpacity>
-                  <TouchableOpacity onPress={() => Alert.alert('Delete shift','Remove this scheduled shift?', [{text:'Cancel'},{text:'Delete',style:'destructive',onPress:async()=>{try { await api.delete(`/schedule/shifts/${selectedShift.id}`); setSelectedShift(null); await fetchShifts(); } catch(e:any) {Alert.alert('Delete failed',e.response?.data?.message || e.message);} }}])}><Text style={{color:'#F44336'}}>Delete shift</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => { navigation.navigate('CreateShift', {shift:selectedShift, date:selectedShift.date}); setSelectedShift(null); }}><Text style={{color:'#00D4FF'}}><ScreenCopy value={"Edit shift"}/></Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => Alert.alert('Delete shift','Remove this scheduled shift?', [{text:'Cancel'},{text:'Delete',style:'destructive',onPress:async()=>{try { await api.delete(`/schedule/shifts/${selectedShift.id}`); setSelectedShift(null); await fetchShifts(); } catch(e:any) {Alert.alert('Delete failed',e.response?.data?.message || e.message);} }}])}><Text style={{color:'#F44336'}}><ScreenCopy value={"Delete shift"}/></Text></TouchableOpacity>
                 </View>}
-                <Text style={styles.detailLabel}>Shift</Text>
+                <Text style={styles.detailLabel}><ScreenCopy value={"Shift"}/></Text>
                 <Text style={styles.detailValue}>{selectedShift.name}</Text>
-                <Text style={styles.detailLabel}>Project</Text>
+                <Text style={styles.detailLabel}><ScreenCopy value={"Project"}/></Text>
                 <Text style={styles.detailValue}>{selectedShift.project_name}</Text>
                 {selectedShift.project_address && (
                   <>
-                    <Text style={styles.detailLabel}>Address</Text>
+                    <Text style={styles.detailLabel}><ScreenCopy value={"Address"}/></Text>
                     <Text style={styles.detailValue}>{selectedShift.project_address}</Text>
                   </>
                 )}
-                <Text style={styles.detailLabel}>Time</Text>
+                <Text style={styles.detailLabel}><ScreenCopy value={"Time"}/></Text>
                 <Text style={styles.detailValue}>{selectedShift.start_time} → {selectedShift.end_time}</Text>
                 {selectedShift.notes && (
                   <>
-                    <Text style={styles.detailLabel}>Notes</Text>
+                    <Text style={styles.detailLabel}><ScreenCopy value={"Notes"}/></Text>
                     <Text style={styles.detailValue}>{selectedShift.notes}</Text>
                   </>
                 )}
                 {selectedShift.attachment_url && (
                   <>
-                    <Text style={styles.detailLabel}>Attachment</Text>
+                    <Text style={styles.detailLabel}><ScreenCopy value={"Attachment"}/></Text>
                     <TouchableOpacity
                       style={styles.downloadBtn}
                       onPress={() => Linking.openURL(selectedShift.attachment_url!)}
                     >
                       <MaterialIcons name="download" size={20} color="#00D4FF" />
-                      <Text style={styles.downloadBtnText}>Open Attachment</Text>
+                      <Text style={styles.downloadBtnText}><ScreenCopy value={"Open Attachment"}/></Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -330,7 +332,7 @@ export default function ScheduleScreen() {
                   }}
                 >
                   <MaterialIcons name="home" size={20} color="#0A0A0A" />
-                  <Text style={styles.goHomeBtnText}>Go to Home to Clock In</Text>
+                  <Text style={styles.goHomeBtnText}><ScreenCopy value={"Go to Home to Clock In"}/></Text>
                 </TouchableOpacity>
 
                 {selectedShift.project_address && (
@@ -339,7 +341,7 @@ export default function ScheduleScreen() {
                     onPress={() => handleOpenDirections(selectedShift.project_address)}
                   >
                     <MaterialIcons name="directions" size={20} color="#0A0A0A" />
-                    <Text style={styles.directionsBtnText}>Get Directions</Text>
+                    <Text style={styles.directionsBtnText}><ScreenCopy value={"Get Directions"}/></Text>
                   </TouchableOpacity>
                 )}
               </ScrollView>
@@ -353,7 +355,7 @@ export default function ScheduleScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Employee</Text>
+              <Text style={styles.modalTitle}><ScreenCopy value={"Select Employee"}/></Text>
               <TouchableOpacity onPress={() => setShowEmployeePicker(false)}>
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
@@ -366,7 +368,7 @@ export default function ScheduleScreen() {
                 setShowEmployeePicker(false);
               }}
             >
-              <Text style={styles.employeeName}>Me ({(user?.firstName || '') + ' ' + (user?.lastName || '')})</Text>
+              <Text style={styles.employeeName}><ScreenCopy value={"Me ("}/>{(user?.firstName || '') + ' ' + (user?.lastName || '')})</Text>
             </TouchableOpacity>
             {employees.map(emp => (
               <TouchableOpacity

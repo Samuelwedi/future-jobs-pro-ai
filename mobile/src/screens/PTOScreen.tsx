@@ -1,3 +1,5 @@
+import {LocalizedTextInput,LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
@@ -68,19 +70,19 @@ export default function PTOScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Time Off</Text>
+        </LocalizedTouchableOpacity>
+        <Text style={styles.headerTitle}><ScreenCopy value={"Time Off"}/></Text>
         <TouchableOpacity onPress={() => setModalVisible(true)}>
           <MaterialIcons name="add-circle" size={32} color="#00D4FF" />
         </TouchableOpacity>
       </View>
       {balance && (
         <View style={styles.balanceRow}>
-          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.vacation_days}</Text><Text style={styles.balanceLabel}>Vacation</Text></View>
-          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.sick_days}</Text><Text style={styles.balanceLabel}>Sick</Text></View>
-          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.personal_days}</Text><Text style={styles.balanceLabel}>Personal</Text></View>
+          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.vacation_days}</Text><Text style={styles.balanceLabel}><ScreenCopy value={"Vacation"}/></Text></View>
+          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.sick_days}</Text><Text style={styles.balanceLabel}><ScreenCopy value={"Sick"}/></Text></View>
+          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.personal_days}</Text><Text style={styles.balanceLabel}><ScreenCopy value={"Personal"}/></Text></View>
         </View>
       )}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -94,26 +96,26 @@ export default function PTOScreen() {
               <Text style={styles.requestType}>{r.type.toUpperCase()}</Text>
               {r.user_name?<Text style={{color:'#00D4FF',fontWeight:'800',marginTop:3}}>{r.user_name}</Text>:null}
               <Text style={styles.requestDates}>{r.start_date} → {r.end_date}</Text>
-              <Text style={styles.duration}>{calendarDays(r)} calendar day{calendarDays(r)===1?'':'s'}</Text>
+              <Text style={styles.duration}>{calendarDays(r)}<ScreenCopy value={"calendar day"} leading=" "/>{calendarDays(r)===1?'':'s'}</Text>
               {r.reason ? <Text style={styles.requestReason}>{r.reason}</Text> : null}
-              <Text style={styles.requestReason}>Submitted {new Date(r.created_at).toLocaleString()}</Text>
-              {r.manager_note?<Text style={styles.requestReason}>Manager note: {r.manager_note}</Text>:null}
-              {manager&&r.status==='pending'?<View style={{flexDirection:'row',gap:8,marginTop:10}}><TouchableOpacity onPress={()=>openDecision(r,'approved')} style={{backgroundColor:'#1F7A46',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>Approve</Text></TouchableOpacity><TouchableOpacity onPress={()=>openDecision(r,'rejected')} style={{backgroundColor:'#9C3541',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>Reject</Text></TouchableOpacity></View>:null}
+              <Text style={styles.requestReason}><ScreenCopy value={"Submitted"} trailing=" "/>{new Date(r.created_at).toLocaleString()}</Text>
+              {r.manager_note?<Text style={styles.requestReason}><ScreenCopy value={"Manager note:"} trailing=" "/>{r.manager_note}</Text>:null}
+              {manager&&r.status==='pending'?<View style={{flexDirection:'row',gap:8,marginTop:10}}><TouchableOpacity onPress={()=>openDecision(r,'approved')} style={{backgroundColor:'#1F7A46',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}><ScreenCopy value={"Approve"}/></Text></TouchableOpacity><TouchableOpacity onPress={()=>openDecision(r,'rejected')} style={{backgroundColor:'#9C3541',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}><ScreenCopy value={"Reject"}/></Text></TouchableOpacity></View>:null}
             </View>
             <View style={[styles.statusBadge, { backgroundColor: getStatusColor(r.status) }]}><Text style={styles.statusText}>{r.status}</Text></View>
           </TouchableOpacity>
         ))}
-        {visibleRequests.length === 0 && <Text style={styles.emptyText}>No {filter==='all'?'':filter} PTO requests</Text>}
+        {visibleRequests.length === 0 && <Text style={styles.emptyText}><ScreenCopy value={"No"} trailing=" "/>{filter==='all'?'':filter}<ScreenCopy value={"PTO requests"} leading=" "/></Text>}
       </ScrollView>
       <Modal visible={modalVisible} onRequestClose={() => setModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-            <Text style={styles.modalTitle}>Request Time Off</Text>
-            <Text style={styles.label}>Start Date (YYYY-MM-DD)</Text>
+            <Text style={styles.modalTitle}><ScreenCopy value={"Request Time Off"}/></Text>
+            <Text style={styles.label}><ScreenCopy value={"Start Date (YYYY-MM-DD)"}/></Text>
             <TextInput style={styles.input} value={startDate} onChangeText={setStartDate} placeholder="2025-07-01" placeholderTextColor="#888" />
-            <Text style={styles.label}>End Date (YYYY-MM-DD)</Text>
+            <Text style={styles.label}><ScreenCopy value={"End Date (YYYY-MM-DD)"}/></Text>
             <TextInput style={styles.input} value={endDate} onChangeText={setEndDate} placeholder="2025-07-03" placeholderTextColor="#888" />
-            <Text style={styles.label}>Type</Text>
+            <Text style={styles.label}><ScreenCopy value={"Type"}/></Text>
             <View style={styles.typeRow}>
               {['vacation','sick','personal'].map(t => (
                 <TouchableOpacity key={t} onPress={() => setLeaveType(t)} style={[styles.typeBtn, leaveType === t && styles.typeBtnActive]}>
@@ -121,26 +123,26 @@ export default function PTOScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-            <Text style={styles.label}>Reason (optional)</Text>
-            <TextInput style={styles.input} value={reason} onChangeText={setReason} placeholder="Family vacation..." placeholderTextColor="#888" />
+            <Text style={styles.label}><ScreenCopy value={"Reason (optional)"}/></Text>
+            <LocalizedTextInput copy={{"placeholder":"Family vacation..."}} style={styles.input} value={reason} onChangeText={setReason}  placeholderTextColor="#888" />
             <View style={styles.modalActions}>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity onPress={handleSubmitRequest} style={styles.submitBtn}><Text style={styles.submitText}>Submit</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.cancelBtn}><Text style={styles.cancelText}><ScreenCopy value={"Cancel"}/></Text></TouchableOpacity>
+              <TouchableOpacity onPress={handleSubmitRequest} style={styles.submitBtn}><Text style={styles.submitText}><ScreenCopy value={"Submit"}/></Text></TouchableOpacity>
             </View>
           </ScrollView>
         </View>
       </Modal>
       <Modal visible={Boolean(selected)&&!decision} animationType="fade" transparent onRequestClose={()=>setSelected(null)}>
         <View style={styles.modalOverlay}><ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">{selected&&<>
-          <Text style={styles.modalTitle}>PTO request details</Text>
+          <Text style={styles.modalTitle}><ScreenCopy value={"PTO request details"}/></Text>
           <Text style={styles.detailName}>{selected.user_name||'My request'}</Text>
           {selected.user_email?<Text style={styles.detailMuted}>{selected.user_email}</Text>:null}
-          <View style={styles.detailGrid}><Text style={styles.detailLabel}>Type</Text><Text style={styles.detailValue}>{selected.type}</Text><Text style={styles.detailLabel}>Dates</Text><Text style={styles.detailValue}>{selected.start_date} → {selected.end_date}</Text><Text style={styles.detailLabel}>Duration</Text><Text style={styles.detailValue}>{calendarDays(selected)} calendar day(s)</Text><Text style={styles.detailLabel}>Status</Text><Text style={styles.detailValue}>{selected.status}</Text><Text style={styles.detailLabel}>Reason</Text><Text style={styles.detailValue}>{selected.reason||'No reason supplied'}</Text><Text style={styles.detailLabel}>Submitted</Text><Text style={styles.detailValue}>{new Date(selected.created_at).toLocaleString()}</Text>{selected.manager_note?<><Text style={styles.detailLabel}>Manager note</Text><Text style={styles.detailValue}>{selected.manager_note}</Text></>:null}{selected.approved_by_name?<><Text style={styles.detailLabel}>Decided by</Text><Text style={styles.detailValue}>{selected.approved_by_name}</Text></>:null}</View>
-          <TouchableOpacity onPress={()=>setSelected(null)} style={styles.submitBtn}><Text style={styles.submitText}>Close</Text></TouchableOpacity>
+          <View style={styles.detailGrid}><Text style={styles.detailLabel}><ScreenCopy value={"Type"}/></Text><Text style={styles.detailValue}>{selected.type}</Text><Text style={styles.detailLabel}><ScreenCopy value={"Dates"}/></Text><Text style={styles.detailValue}>{selected.start_date} → {selected.end_date}</Text><Text style={styles.detailLabel}><ScreenCopy value={"Duration"}/></Text><Text style={styles.detailValue}>{calendarDays(selected)}<ScreenCopy value={"calendar day(s)"} leading=" "/></Text><Text style={styles.detailLabel}><ScreenCopy value={"Status"}/></Text><Text style={styles.detailValue}>{selected.status}</Text><Text style={styles.detailLabel}><ScreenCopy value={"Reason"}/></Text><Text style={styles.detailValue}>{selected.reason||'No reason supplied'}</Text><Text style={styles.detailLabel}><ScreenCopy value={"Submitted"}/></Text><Text style={styles.detailValue}>{new Date(selected.created_at).toLocaleString()}</Text>{selected.manager_note?<><Text style={styles.detailLabel}><ScreenCopy value={"Manager note"}/></Text><Text style={styles.detailValue}>{selected.manager_note}</Text></>:null}{selected.approved_by_name?<><Text style={styles.detailLabel}><ScreenCopy value={"Decided by"}/></Text><Text style={styles.detailValue}>{selected.approved_by_name}</Text></>:null}</View>
+          <TouchableOpacity onPress={()=>setSelected(null)} style={styles.submitBtn}><Text style={styles.submitText}><ScreenCopy value={"Close"}/></Text></TouchableOpacity>
         </>}</ScrollView></View>
       </Modal>
       <Modal visible={Boolean(selected)&&Boolean(decision)} animationType="fade" transparent onRequestClose={()=>!saving&&setDecision(null)}>
-        <View style={styles.modalOverlay}><ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"><Text style={styles.modalTitle}>{decision==='approved'?'Approve':'Reject'} PTO request</Text><Text style={styles.detailMuted}>{selected?.user_name} · {selected?calendarDays(selected):0} day(s)</Text><Text style={styles.label}>{decision==='rejected'?'Reason (required)':'Manager note (optional)'}</Text><TextInput style={[styles.input,{minHeight:84}]} multiline value={managerNote} onChangeText={setManagerNote} placeholder="Add decision details" placeholderTextColor="#888"/><View style={styles.modalActions}><TouchableOpacity disabled={saving} onPress={()=>setDecision(null)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity><TouchableOpacity disabled={saving} onPress={decide} style={[styles.submitBtn,decision==='rejected'&&{backgroundColor:'#F44336'}]}><Text style={styles.submitText}>{saving?'Saving…':'Confirm'}</Text></TouchableOpacity></View></ScrollView></View>
+        <View style={styles.modalOverlay}><ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"><Text style={styles.modalTitle}>{decision==='approved'?'Approve':'Reject'}<ScreenCopy value={"PTO request"} leading=" "/></Text><Text style={styles.detailMuted}>{selected?.user_name} · {selected?calendarDays(selected):0}<ScreenCopy value={"day(s)"} leading=" "/></Text><Text style={styles.label}>{decision==='rejected'?'Reason (required)':'Manager note (optional)'}</Text><LocalizedTextInput copy={{"placeholder":"Add decision details"}} style={[styles.input,{minHeight:84}]} multiline value={managerNote} onChangeText={setManagerNote}  placeholderTextColor="#888"/><View style={styles.modalActions}><TouchableOpacity disabled={saving} onPress={()=>setDecision(null)} style={styles.cancelBtn}><Text style={styles.cancelText}><ScreenCopy value={"Cancel"}/></Text></TouchableOpacity><TouchableOpacity disabled={saving} onPress={decide} style={[styles.submitBtn,decision==='rejected'&&{backgroundColor:'#F44336'}]}><Text style={styles.submitText}>{saving?'Saving…':'Confirm'}</Text></TouchableOpacity></View></ScrollView></View>
       </Modal>
     </View>
   );

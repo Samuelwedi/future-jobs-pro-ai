@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -158,7 +160,7 @@ export default function MonthMediaTypeScreen() {
         {isVideo && (
           <View style={styles.thumbnailPlaceholder}>
             <Ionicons name="videocam" size={32} color="#FFF" />
-            <Text style={styles.thumbnailLabel}>Video</Text>
+            <Text style={styles.thumbnailLabel}><ScreenCopy value={"Video"}/></Text>
           </View>
         )}
         {isVoice && (
@@ -221,9 +223,9 @@ export default function MonthMediaTypeScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={28} color="#FFF" />
-        </TouchableOpacity>
+        </LocalizedTouchableOpacity>
         <Text style={styles.headerTitle}>
           {projectName || 'Project'} - {yearMonth || ''} - {typeLabels[mediaType || ''] || mediaType || 'Media'}
         </Text>
@@ -236,7 +238,7 @@ export default function MonthMediaTypeScreen() {
         renderItem={renderMediaItem}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No {typeLabels[mediaType || ''] || 'media'} for this month</Text>
+          <Text style={styles.emptyText}><ScreenCopy value={"No"} trailing=" "/>{typeLabels[mediaType || ''] || 'media'}<ScreenCopy value={"for this month"} leading=" "/></Text>
         }
       />
 
@@ -251,8 +253,8 @@ export default function MonthMediaTypeScreen() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity style={styles.closeModalBtn} onPress={closeModal} accessibilityRole="button" accessibilityLabel="Close media preview"><Ionicons name="arrow-back" size={28} color="#FFF" /></TouchableOpacity>
-            <Text style={styles.modalTitle} numberOfLines={1}>Media preview</Text>
+            <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Close media preview"}} style={styles.closeModalBtn} onPress={closeModal} accessibilityRole="button" ><Ionicons name="arrow-back" size={28} color="#FFF" /></LocalizedTouchableOpacity>
+            <Text style={styles.modalTitle} numberOfLines={1}><ScreenCopy value={"Media preview"}/></Text>
             <View style={styles.headerSpacer} />
           </View>
 
@@ -268,9 +270,9 @@ export default function MonthMediaTypeScreen() {
                   {videoError ? (
                     <View style={styles.videoErrorContainer}>
                       <Ionicons name="alert-circle" size={48} color="#F44336" />
-                      <Text style={styles.videoErrorText}>Could not load video</Text>
+                      <Text style={styles.videoErrorText}><ScreenCopy value={"Could not load video"}/></Text>
                       <TouchableOpacity onPress={() => { setVideoError(false); setVideoLoading(true); }}>
-                        <Text style={{ color: '#00D4FF', marginTop: 8 }}>Retry</Text>
+                        <Text style={{ color: '#00D4FF', marginTop: 8 }}><ScreenCopy value={"Retry"}/></Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -303,12 +305,12 @@ export default function MonthMediaTypeScreen() {
                       <Text style={styles.voiceTranscript}>
                         {selectedMedia.transcript || 'No transcript available'}
                       </Text>
-                      {selectedMedia.duration && <Text style={styles.voiceDuration}>Duration: {selectedMedia.duration}s</Text>}
+                      {selectedMedia.duration && <Text style={styles.voiceDuration}><ScreenCopy value={"Duration:"} trailing=" "/>{selectedMedia.duration}s</Text>}
                     </>
                   ) : (
                     <View style={styles.noAudioContainer}>
                       <Ionicons name="alert-circle" size={64} color="#888" />
-                      <Text style={styles.noAudioText}>Audio file not available</Text>
+                      <Text style={styles.noAudioText}><ScreenCopy value={"Audio file not available"}/></Text>
                     </View>
                   )}
                 </ScrollView>
