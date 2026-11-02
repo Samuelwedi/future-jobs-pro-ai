@@ -29,7 +29,9 @@ jobs:
   propose:
     outputs:
       has_patch: ${{ steps.screen.outputs.has_patch }}
-    runs-on: ubuntu-latest
+    # Ubuntu 26.04 breaks codex-action drop-sudo socket ACL verification (upstream #188).
+    # Keep privilege removal enabled on the compatible runner image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
