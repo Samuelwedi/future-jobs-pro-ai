@@ -1,3 +1,5 @@
+import AdministrationScreen from './src/screens/AdministrationScreen';
+import OperationsScreen from './src/screens/OperationsScreen';
 import ChangeTemporaryPasswordScreen from './src/screens/ChangeTemporaryPasswordScreen';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { ScreenFrame } from './src/components/ScreenFrame';
@@ -201,7 +203,7 @@ function AppNavigator() {
             <Stack.Screen name="PTO" component={PTOScreen} />
             <Stack.Screen name="Kiosk" component={KioskScreen} />
             <Stack.Screen name="GPSPlayback" component={GPSPlaybackScreen} />
-            <Stack.Screen name="Team" component={TeamScreen} />
+            <Stack.Screen name="Administration" component={AdministrationScreen} /><Stack.Screen name="Operations" component={OperationsScreen} /><Stack.Screen name="Team" component={TeamScreen} />
             <Stack.Screen name="Subscription" component={SubscriptionScreen} />
             <Stack.Screen name="Contact" component={ContactScreen} />
             <Stack.Screen name="Privacy" component={PrivacyScreen} />

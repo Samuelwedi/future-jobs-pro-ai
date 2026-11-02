@@ -17,20 +17,22 @@ export default function EvidenceScreen() {
     const [entries, setEntries] = useState<any[]>([]), [id, setId] = useState(''), [data, setData] = useState<Options | null>(null);
     const [selected, setSelected] = useState<Record<string, boolean>>({});
     const [generated, setGenerated] = useState({ gpsVideo: true, timePdf: true, voiceVideos: true });
-    const sequence = useRef(0);
+    const sequence = useRef(0),exportAbort=useRef<AbortController|null>(null);
     const load = useCallback(async () => { const current = ++sequence.current; const result = await api.get<any>('/evidence-bundles/recent'); if (current === sequence.current)
         setEntries(result.entries || []); }, []);
-    useFocusEffect(useCallback(() => { void load().catch(cause => action.setError(cause.message)); return () => { sequence.current++; }; }, [load]));
+    useFocusEffect(useCallback(() => { void load().catch(cause => action.setError(cause.message)); return () => { sequence.current++; exportAbort.current?.abort(); }; }, [load]));
     const open = (entryId: string) => action.run(async () => { setData(null); setId(entryId); const result = await api.get<Options>('/evidence-bundles/time-entry/' + entryId); setSelected(Object.fromEntries([...result.photos, ...result.voiceNotes, ...result.attachments].map(row => [row.id, true]))); setData(result); });
-    const download = (path: string, name: string, body?: unknown) => action.run(() => shareBusinessFile('/evidence-bundles/' + path, name, body));
+    const shareEvidence=async(path:string,name:string,body?:unknown)=>{const controller=new AbortController();exportAbort.current=controller;try{await shareBusinessFile(path,name,body,controller.signal);}finally{if(exportAbort.current===controller)exportAbort.current=null;}};
+    const download = (path: string, name: string, body?: unknown) => action.run(() => shareEvidence('/evidence-bundles/' + path, name, body));
     const packageDownload = () => action.confirm(t('Generate evidence package?'), t('The package contains the selected originals, derived records, GPS data and verification manifest.'), () => void action.run(async () => {
         if (!data)
             return;
-        await shareBusinessFile(`/evidence-bundles/time-entry/${id}/download`, `evidence-${id}.zip`, { photoIds: data.photos.filter(row => selected[row.id]).map(row => row.id), voiceNoteIds: data.voiceNotes.filter(row => selected[row.id]).map(row => row.id), attachmentIds: data.attachments.filter(row => selected[row.id]).map(row => row.id), includeGpsVideo: generated.gpsVideo, includeTimeEntryPdf: generated.timePdf, includeVoiceVideos: generated.voiceVideos });
+        await shareEvidence(`/evidence-bundles/time-entry/${id}/download`, `evidence-${id}.zip`, { photoIds: data.photos.filter(row => selected[row.id]).map(row => row.id), voiceNoteIds: data.voiceNotes.filter(row => selected[row.id]).map(row => row.id), attachmentIds: data.attachments.filter(row => selected[row.id]).map(row => row.id), includeGpsVideo: generated.gpsVideo, includeTimeEntryPdf: generated.timePdf, includeVoiceVideos: generated.voiceVideos });
     }));
     return <Page title="Evidence center" {...action}>
   <Text style={s.body}>{t('Select evidence from stored work records. Generated media is derived evidence; original timestamps and coordinates remain authoritative.')}</Text>
-  <Text style={s.body}>{t('Mobile sharing supports packages up to 25 MB. Choose fewer files for larger records.')}</Text>
+  <Text style={s.body}>{t('Mobile sharing supports packages up to 250 MB. Choose fewer files for larger records.')}</Text>
+  {action.busy&&<Button label="Cancel export" onPress={()=>exportAbort.current?.abort()}/>}
   <Button label="Refresh" disabled={action.busy} onPress={() => void action.run(load)}/>
   {data && <View style={s.card}>
    <Text style={s.heading}>{data.entry.employee_name} · {data.entry.project_name || t('No project')}</Text><Text style={s.body}>{data.entry.clock_in} — {data.entry.clock_out || t('Active')}</Text><Text style={s.body}>GPS: {data.gps.length}</Text>

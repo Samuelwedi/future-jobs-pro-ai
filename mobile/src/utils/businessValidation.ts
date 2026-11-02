@@ -8,10 +8,10 @@ export function businessDownloadPath(path:string):boolean {
 }
 export function validateBusinessBytes(bytes:Uint8Array,mime:string):void {
  if(!bytes.length||bytes.length>25*1024*1024)throw Error('Choose a smaller selection (maximum 25 MB).');
- if(!['application/pdf','text/csv','application/zip','video/mp4'].includes(mime))throw Error('The server did not return a supported document or video.');
+ if(!['application/pdf','text/csv','application/zip','video/mp4','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(mime))throw Error('The server did not return a supported document or video.');
  const header=String.fromCharCode(...bytes.subarray(0,12));
  if(mime==='application/pdf'&&!header.startsWith('%PDF-'))throw Error('The server did not return a PDF document.');
- if(mime==='application/zip'&&!(bytes[0]===80&&bytes[1]===75&&((bytes[2]===3&&bytes[3]===4)||(bytes[2]===5&&bytes[3]===6))))throw Error('The server did not return a ZIP package.');
+ if((mime==='application/zip'||mime.startsWith('application/vnd.openxmlformats-officedocument.'))&&!(bytes[0]===80&&bytes[1]===75&&((bytes[2]===3&&bytes[3]===4)||(bytes[2]===5&&bytes[3]===6))))throw Error('The server did not return a ZIP package.');
  if(mime==='video/mp4'&&header.slice(4,8)!=='ftyp')throw Error('The server did not return an MP4 video.');
  if(mime==='text/csv'&&/^\s*(<!doctype|<html|\{|\[)/i.test(header))throw Error('The server did not return CSV data.');
 }

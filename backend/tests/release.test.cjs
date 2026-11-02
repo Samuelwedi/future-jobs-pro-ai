@@ -53,6 +53,7 @@ before(async()=>{
  await db.exec(fs.readFileSync(require('path').join(__dirname,'../migrations/20260930_payroll_rules.sql'),'utf8'));
  await db.exec(fs.readFileSync(require('path').join(__dirname,'../migrations/20261002_company_overtime_policy.sql'),'utf8'));
  await query("UPDATE companies SET overtime_mode='daily',overtime_daily_threshold_hours=8");
+ await db.exec(fs.readFileSync(require('path').join(__dirname,'../migrations/20261102_commercial_delivery.sql'),'utf8'));
  pool.query=query;pool.connect=async()=>({query,release(){}});
  const email=require('../dist/services/emailService');email.sendPasswordResetEmail=async(_email,link)=>{resetLink=link;if(simulateResetEmailFailure)throw new Error('Simulated SMTP outage');};
  await query('UPDATE users SET password_hash=$1',[await require('bcryptjs').hash('OldPassword123!',10)]);
@@ -198,7 +199,11 @@ test('invoice draft links approved labor, rejects stale preview, retries safely 
  const repeat=await request('/operations/invoices/confirm',ids.boss,'POST',body);assert.equal(repeat.data.invoiceId,r.data.invoiceId);
  assert.equal((await request('/operations/invoices/preview',ids.boss,'POST',b)).status,409);
  await query("UPDATE invoices SET status='sent' WHERE id=$1",[r.data.invoiceId]);assert.equal((await request('/operations/actions/'+r.data.actionId+'/undo',ids.boss,'POST',{})).status,409);
- await query("UPDATE invoices SET status='draft' WHERE id=$1",[r.data.invoiceId]);assert.equal((await request('/operations/actions/'+r.data.actionId+'/undo',ids.boss,'POST',{})).status,200);
+ await query("UPDATE invoices SET status='draft' WHERE id=$1",[r.data.invoiceId]);
+ await query("INSERT INTO commercial_delivery_jobs(company_id,kind,record_id,requested_by,request_key,recipient,fingerprint,message_id,status,pdf) VALUES($1,'invoice',$2,$3,'undo-email-fixture','fixture@example.test','fixture','fixture-message','queued',$4)",[ids.company,r.data.invoiceId,ids.boss,Buffer.from('fixture')]);
+ assert.equal((await request('/operations/actions/'+r.data.actionId+'/undo',ids.boss,'POST',{})).status,409);
+ assert.equal((await query('SELECT id FROM invoices WHERE id=$1',[r.data.invoiceId])).rowCount,1);
+ await query('DELETE FROM commercial_delivery_jobs WHERE record_id=$1',[r.data.invoiceId]);assert.equal((await request('/operations/actions/'+r.data.actionId+'/undo',ids.boss,'POST',{})).status,200);
  assert.equal((await query('SELECT * FROM invoice_items')).rowCount,0);
 });
 test('staff cover checks skills, availability, overlapping shifts and weekly limits; assignment undo',async()=>{

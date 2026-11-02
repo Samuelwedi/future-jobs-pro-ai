@@ -25,6 +25,7 @@ test('private chat attachments, room photos, and effective profile rates',async(
   await query("INSERT INTO chat_rooms(id,company_id,is_group,name,created_by) VALUES('group-test',$1,true,'Crew',$2)",[company,boss]);
   for(const u of [boss,worker,inactive])await query("INSERT INTO chat_room_members VALUES('group-test',$1)",[u]);
   await query("INSERT INTO compensation_history(user_id,hourly_rate,effective_date,created_at) VALUES($1,22.5,'2020-01-01','2020-01-01'),($1,25,'2020-01-01','2020-01-02'),($1,30,'2099-01-01','2021-01-01')",[worker]);
+  await db.exec(require('fs').readFileSync(require('path').join(__dirname,'../migrations/20261102_bulk_compensation.sql'),'utf8'));
   pool.query=query;pool.connect=async()=>({query,release(){}});
   const express=require('express'),jwt=require('jsonwebtoken');const app=express();app.use(express.json());app.use('/api/chat',require('../dist/routes/chatRoutes').default);app.use('/api/users',require('../dist/routes/userRoutes').default);app.use('/api/payroll',require('../dist/routes/payrollRouter').default);
   server=await new Promise(resolve=>{const s=app.listen(0,'127.0.0.1',()=>resolve(s));});const base=`http://127.0.0.1:${server.address().port}`;
@@ -49,7 +50,7 @@ test('private chat attachments, room photos, and effective profile rates',async(
   assert.equal((await request('/api/payroll/employees/rate',worker,'POST',{employeeId:worker,hourlyRate:50})).status,403);
   assert.equal((await request('/api/payroll/employees/rate',boss,'POST',{employeeId:foreign,hourlyRate:50})).status,403);
   for(const body of [{employeeId:worker,hourlyRate:'bad'},{employeeId:worker,hourlyRate:26,effectiveDate:'2026-02-30'}])assert.equal((await request('/api/payroll/employees/rate',boss,'POST',body)).status,400);
-  assert.equal((await request('/api/payroll/employees/compensation',boss,'POST',{employeeIds:[worker,worker],raiseType:'fixed',raiseValue:2,effectiveDate:'2020-01-03'})).status,200);
+  const raise={employeeIds:[worker,worker],raiseType:'fixed',raiseValue:2,effectiveDate:'2020-01-03'};const raisePreview=await (await request('/api/payroll/employees/compensation/preview',boss,'POST',raise)).json();assert.equal((await request('/api/payroll/employees/compensation',boss,'POST',{...raise,fingerprint:raisePreview.fingerprint,requestKey:'profile-raise-fixture',confirmed:true})).status,200);
   assert.equal((await (await request('/api/users/me',worker)).json()).user.current_rate,27);
   const message=await request('/api/chat/message',worker,'POST',{roomId:'group-test',message:'Text still works'});assert.equal(message.status,200);
   await query("DELETE FROM chat_room_members WHERE user_id=$1",[worker]);assert.equal((await request(path,worker)).status,403);

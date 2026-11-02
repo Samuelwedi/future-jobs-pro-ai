@@ -1,16 +1,10 @@
+import {storedZip as zip} from './storedZip';
 import crypto from 'crypto';
 import { pool } from '../config/database';
 import { generateGpsTrailVideo, generateTimeEntryPdf, generateVoiceCaptionVideo } from './evidenceMediaService';
 
 type ZipEntry = { name: string; data: Buffer };
 type Selection = { photoIds?: string[]; voiceNoteIds?: string[]; attachmentIds?: string[]; includeGpsVideo?: boolean; includeTimeEntryPdf?: boolean; includeVoiceVideos?: boolean };
-const crcTable = Array.from({ length: 256 }, (_, n) => { let c=n; for(let k=0;k<8;k++) c=(c&1)?0xedb88320^(c>>>1):c>>>1; return c>>>0; });
-function crc32(data: Buffer) { let c=0xffffffff; for(const byte of data)c=crcTable[(c^byte)&255]^(c>>>8); return (c^0xffffffff)>>>0; }
-function zip(entries: ZipEntry[]): Buffer {
-  const local: Buffer[]=[]; const central: Buffer[]=[]; let offset=0;
-  for(const entry of entries){ const name=Buffer.from(entry.name.replace(/[^\w.\-/ ]/g,'_')); const crc=crc32(entry.data); const h=Buffer.alloc(30); h.writeUInt32LE(0x04034b50); h.writeUInt16LE(20,4); h.writeUInt16LE(0,6); h.writeUInt16LE(0,8); h.writeUInt32LE(crc,14); h.writeUInt32LE(entry.data.length,18); h.writeUInt32LE(entry.data.length,22); h.writeUInt16LE(name.length,26); local.push(h,name,entry.data); const ch=Buffer.alloc(46); ch.writeUInt32LE(0x02014b50); ch.writeUInt16LE(20,4); ch.writeUInt16LE(20,6); ch.writeUInt32LE(crc,16); ch.writeUInt32LE(entry.data.length,20); ch.writeUInt32LE(entry.data.length,24); ch.writeUInt16LE(name.length,28); ch.writeUInt32LE(offset,42); central.push(ch,name); offset+=h.length+name.length+entry.data.length; }
-  const center=Buffer.concat(central); const end=Buffer.alloc(22); end.writeUInt32LE(0x06054b50); end.writeUInt16LE(entries.length,8); end.writeUInt16LE(entries.length,10); end.writeUInt32LE(center.length,12); end.writeUInt32LE(offset,16); return Buffer.concat([...local,center,end]);
-}
 function esc(value: unknown) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c] || c)); }
 async function fetchMedia(url: string, maxBytes = 75*1024*1024) { const response=await fetch(url,{signal:AbortSignal.timeout(30000)}); if(!response.ok)throw new Error(`Media download failed (${response.status})`); const data=Buffer.from(await response.arrayBuffer()); if(data.length>maxBytes)throw new Error('Media is larger than 75 MB'); return data; }
 function ext(url:string,mime?:string){ const fromUrl=(url.split('?')[0].match(/\.[a-z0-9]{2,5}$/i)||[])[0]; if(fromUrl)return fromUrl; if(mime?.includes('pdf'))return '.pdf'; if(mime?.includes('video'))return '.mp4'; if(mime?.includes('audio'))return '.m4a'; return '.bin'; }
@@ -45,7 +39,7 @@ export async function buildEvidenceZip(companyId:string,userId:string,timeEntryI
   if(selection.includeTimeEntryPdf!==false){const pdf=await generateTimeEntryPdf(companyId,timeEntryId);entries.push({name:`generated/${pdf.fileName}`,data:pdf.buffer});}
   if(selection.includeGpsVideo!==false){try{const video=await generateGpsTrailVideo(companyId,timeEntryId);entries.push({name:`generated/${video.fileName}`,data:video.buffer});}catch(error:any){entries.push({name:'generated/gps-video-not-created.txt',data:Buffer.from(error.message)});}}
   if(selection.includeVoiceVideos!==false){for(const note of voices){try{const video=await generateVoiceCaptionVideo(companyId,String(note.id));entries.push({name:`generated/${video.fileName}`,data:video.buffer});}catch(error:any){entries.push({name:`generated/voice-${note.id}-video-not-created.txt`,data:Buffer.from(error.message)});}}}
-  let total=entries.reduce((n,e)=>n+e.data.length,0); const addRemote=async(folder:string,item:any,index:number)=>{if(!item.url)return; const body=await fetchMedia(item.url); total+=body.length;if(total>250*1024*1024)throw new Error('Selected package exceeds 250 MB'); entries.push({name:`${folder}/${String(index+1).padStart(3,'0')}-${String(item.file_name||item.id)}${ext(item.url,item.file_type)}`,data:body});};
+  let total=entries.reduce((n,e)=>n+e.data.length,0); const addRemote=async(folder:string,item:any,index:number)=>{if(!item.url)return; const body=await fetchMedia(item.url); total+=body.length;if(total>250*1024*1024)throw new Error('Selected package exceeds 250 MB'); entries.push({name:`${folder}/${String(index+1).padStart(3,'0')}-${String(item.file_name||item.id).replace(/[\\/\x00-\x1f]/g,'_')}${ext(item.url,item.file_type)}`,data:body});};
   for(let i=0;i<photos.length;i++)await addRemote(photos[i].file_type==='video'?'videos':'photos',photos[i],i);
   for(let i=0;i<voices.length;i++){await addRemote('voice-notes',voices[i],i);entries.push({name:`voice-notes/${String(i+1).padStart(3,'0')}-${voices[i].id}.txt`,data:Buffer.from(voices[i].transcript||'No transcript')});}
   for(let i=0;i<attachments.length;i++)await addRemote('documents',attachments[i],i);

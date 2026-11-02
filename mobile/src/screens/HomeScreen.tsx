@@ -353,6 +353,8 @@ export default function HomeScreen() {
       tools: [
         ['Crew clock', 'more-time', 'CrewClock', '#A7F3D0'],
         ['Kiosk', 'pin', 'Kiosk', '#FDBA74'],
+        ['Administration', 'admin-panel-settings', 'Administration', '#67E8F9'],
+        ['Operations', 'dashboard', 'Operations', '#A7F3D0'],
         ['Team & roles', 'admin-panel-settings', 'Team', '#67E8F9'],
         ['Company', 'business', 'CompanySettings', '#A7F3D0'],
         ['Payroll', 'payments', 'Payroll', '#A7F3D0'],

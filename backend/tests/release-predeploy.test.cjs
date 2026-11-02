@@ -13,7 +13,7 @@ const {migrate,files}=require('../scripts/run-business-parity-migration.cjs');
 test('business schema is verified before commit and is wired into Railway predeploy',async()=>{
  assert.ok(steps.includes('run-business-parity-migration.cjs'));const queries=[];
  await migrate({query:async sql=>{queries.push(sql);}});
- assert.equal(queries[0],'BEGIN');assert.equal(queries.at(-1),'COMMIT');assert.equal(queries.filter(sql=>sql.includes('ALTER TABLE')||sql.includes('CREATE TABLE IF NOT EXISTS commercial_delivery_jobs')).length,files.length);
+ assert.equal(queries[0],'BEGIN');assert.equal(queries.at(-1),'COMMIT');assert.equal(queries.filter(sql=>sql.includes('ALTER TABLE')||sql.includes('CREATE TABLE IF NOT EXISTS')).length,files.length);
  for(const table of ['invoices','estimates','payments'])assert.ok(queries.some(sql=>sql.includes('FROM '+table+' LIMIT 0')));
 });
 test('business migration rolls back and rejects when a schema change or verification fails',async()=>{

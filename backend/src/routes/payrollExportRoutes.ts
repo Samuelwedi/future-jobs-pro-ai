@@ -1,3 +1,4 @@
+import {payrollOfficeExport} from '../services/payrollOfficeExport';
 import express from 'express';
 import PDFDocument from 'pdfkit';
 import {pool} from '../config/database';
@@ -7,7 +8,7 @@ const router=express.Router();
 router.use(companyActor,(_req,res,next)=>{if(!manages(res.locals.actor))return res.status(403).json({message:'Manager access required'});next();});
 router.get('/',async(req,res)=>{
  try{
-  const format=String(req.query.format||'csv');if(!['csv','pdf'].includes(format))return res.status(400).json({message:'Choose PDF or CSV export.'});
+  const format=String(req.query.format||'csv');if(!['csv','pdf','excel','word'].includes(format))return res.status(400).json({message:'Choose PDF, CSV, Excel or Word export.'});
   const start=String(req.query.start||'all'),end=String(req.query.end||'all'),employee=String(req.query.employeeId||'');
   if((start==='all')!==(end==='all'))throw Error('Choose both dates or all dates.');
   if(start!=='all'){if(!validDate(start)||!validDate(end))throw Error('Use valid calendar dates.');validateRange(start,end);}
@@ -20,6 +21,7 @@ router.get('/',async(req,res)=>{
   const data=rows.rows.map(r=>{const snap=r.calculation_snapshot;return [r.payroll_id,`${r.first_name||''} ${r.last_name||''}`.trim(),String(r.period_start instanceof Date?r.period_start.toISOString():r.period_start).slice(0,10),String(r.period_end instanceof Date?r.period_end.toISOString():r.period_end).slice(0,10),r.status,r.hours,r.hourly_rate,snap?.gross??'',snap?.net??'',snap?.currency??''];});
   res.set('Cache-Control','no-store');
   if(format==='csv'){const cell=(v:unknown)=>{let text=String(v??'');if(/^[=+\-@\t\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};res.type('text/csv').set('Content-Disposition','attachment; filename="payroll.csv"');return res.send('\uFEFF'+[headers,...data].map(row=>row.map(cell).join(',')).join('\r\n'));}
+  if(format==='excel'||format==='word'){const ext=format==='excel'?'xlsx':'docx',mime=format==='excel'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'application/vnd.openxmlformats-officedocument.wordprocessingml.document';return res.type(mime).set('Content-Disposition',`attachment; filename="payroll.${ext}"`).send(payrollOfficeExport(format,headers,data));}
   const document=new PDFDocument({margin:36,size:'A4'});res.type('application/pdf').set('Content-Disposition','attachment; filename="payroll.pdf"');document.pipe(res);document.fontSize(18).text('Payroll records');document.fontSize(10).text('Draft preparation is not a reviewed calculation or a payment. Net pay is shown only for saved calculations.').moveDown();
   if(!data.length)document.text('No payroll records for this range.');
   for(const row of data){if(document.y>700)document.addPage();document.fontSize(11).text(`${row[1]} | ${row[2]} - ${row[3]} | ${row[4]}`);document.fontSize(9).text(`Hours: ${row[5]} | Rate: ${row[6]} | Gross: ${row[7]} | Net: ${row[8]} ${row[9]}`).moveDown();}document.end();
