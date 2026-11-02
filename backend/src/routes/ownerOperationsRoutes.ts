@@ -31,8 +31,6 @@ router.post('/repairs',async(req:AgentRequest,res)=>{
   if(!incident){await db.query('ROLLBACK');return res.status(409).json({message:'Incident is unavailable or resolved'});}
   const scope=repairScope(incident.component,incident.summary);
   if(!scope){await db.query('ROLLBACK');return res.status(422).json({message:'This incident could not be routed to an application repair scope.'});}
-  const count=(await db.query("SELECT count(*)::int AS n FROM owner_repair_jobs WHERE created_at>now()-interval '24 hours'")).rows[0].n;
-  if(count>=2){await db.query('ROLLBACK');return res.status(429).json({message:'Daily repair limit reached (2).'});}
   const existing=await db.query("SELECT id FROM owner_repair_jobs WHERE incident_id=$1 AND status IN ('queued','dispatching','running')",[id]);
   if(existing.rowCount){await db.query('ROLLBACK');return res.status(409).json({message:'A repair is already in progress'});}
   const result=await db.query('INSERT INTO owner_repair_jobs(owner_id,incident_id,scope,feature) VALUES($1,$2,$3,$4) RETURNING *',[req.supportAgent!.id,id,scope,repairFeature(incident.component,incident.summary)]);
