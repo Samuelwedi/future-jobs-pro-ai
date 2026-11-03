@@ -1,0 +1,8 @@
+{
+  "method": "Static screen text, literal control labels/placeholders and shared translation props only. Raw JSX needs translation wiring even when a dictionary entry exists. Dynamic labels/alerts, non-screen components, dates, web copy and runtime provider text require separate review. Brand identities and numeric/email examples are excluded. This is not full localization acceptance.",
+  "screensScanned": 55,
+  "screensWithFindings": 0,
+  "unwrappedLiteralText": 0,
+  "missingLiteralKeys": 0,
+  "files": []
+}

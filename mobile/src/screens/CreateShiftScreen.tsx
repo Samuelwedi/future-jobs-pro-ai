@@ -1,3 +1,5 @@
+import {LocalizedTextInput,LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
@@ -156,34 +158,34 @@ export default function CreateShiftScreen() {
   return (
     <ScrollView automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag" style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
+        </LocalizedTouchableOpacity>
         <Text style={styles.headerTitle}>{editing ? 'Edit Shift' : 'Create Shift'}</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <Text style={styles.dateLabel}>Date: {format(date, 'EEE, MMM d, yyyy')}</Text>
+      <Text style={styles.dateLabel}><ScreenCopy value={"Date:"} trailing=" "/>{format(date, 'EEE, MMM d, yyyy')}</Text>
 
-      <TextInput
+      <LocalizedTextInput copy={{"placeholder":"Shift Name"}}
         style={styles.input}
-        placeholder="Shift Name"
+
         placeholderTextColor="#888"
         value={shiftName}
         onChangeText={setShiftName}
       />
 
       <View style={styles.row}>
-        <TextInput
+        <LocalizedTextInput copy={{"placeholder":"Start (HH:MM)"}}
           style={[styles.input, { flex: 1 }]}
-          placeholder="Start (HH:MM)"
+
           placeholderTextColor="#888"
           value={startTime}
           onChangeText={setStartTime}
         />
-        <TextInput
+        <LocalizedTextInput copy={{"placeholder":"End (HH:MM)"}}
           style={[styles.input, { flex: 1, marginLeft: 8 }]}
-          placeholder="End (HH:MM)"
+
           placeholderTextColor="#888"
           value={endTime}
           onChangeText={setEndTime}
@@ -192,9 +194,9 @@ export default function CreateShiftScreen() {
 
       {/* Project Picker */}
       <View style={styles.projectSearchContainer}>
-        <TextInput
+        <LocalizedTextInput copy={{"placeholder":"Search project..."}}
           style={styles.input}
-          placeholder="Search project..."
+
           placeholderTextColor="#888"
           value={projectSearchText}
           onChangeText={setProjectSearchText}
@@ -224,7 +226,7 @@ export default function CreateShiftScreen() {
         )}
         {showProjectDropdown && projectSearchText.length > 0 && filteredProjects.length === 0 && (
           <View style={styles.projectDropdown}>
-            <Text style={styles.noProjectsText}>No projects found</Text>
+            <Text style={styles.noProjectsText}><ScreenCopy value={"No projects found"}/></Text>
           </View>
         )}
       </View>
@@ -239,9 +241,9 @@ export default function CreateShiftScreen() {
         </Text>
       </TouchableOpacity>
 
-      <TextInput
+      <LocalizedTextInput copy={{"placeholder":"Notes (optional)"}}
         style={styles.input}
-        placeholder="Notes (optional)"
+
         placeholderTextColor="#888"
         value={notes}
         onChangeText={setNotes}

@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS compensation_bulk_requests(company_id uuid NOT NULL REFERENCES companies(id),request_key text NOT NULL,payload_hash text NOT NULL,result jsonb NOT NULL,created_by uuid NOT NULL REFERENCES users(id),created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(company_id,request_key));

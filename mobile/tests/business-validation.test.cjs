@@ -1,0 +1,16 @@
+const{test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const path=require('node:path');const{stripTypeScriptTypes}=require('node:module');const code=stripTypeScriptTypes(fs.readFileSync(path.join(__dirname,'../src/utils/businessValidation.ts'),'utf8'),{mode:'transform'}).replace(/export /g,'');const{bytesBase64,businessRangeError,positiveMoney,integrationAuthUrl}=new Function(code+';return{bytesBase64,businessRangeError,positiveMoney,integrationAuthUrl}')();
+test('binary exports preserve bytes including PDF and CSV unicode data',()=>{for(let length=0;length<200;length++){const buffer=Buffer.from(Array.from({length},(_,i)=>(i*89+length)%256));assert.equal(bytesBase64(buffer),buffer.toString('base64'));}const long=Buffer.alloc(40001,255);assert.equal(bytesBase64(long),long.toString('base64'));});
+test('business ranges and currency inputs reject impossible dates and non-finite values',()=>{assert.equal(businessRangeError('2024-02-29','2024-03-01'),null);assert.ok(businessRangeError('2026-02-30','2026-03-01'));assert.ok(businessRangeError('2026-10-31','2026-10-01'));for(const value of ['Infinity','1e4','-1','0','1000001','1.234'])assert.equal(positiveMoney(value),false);assert.equal(positiveMoney('0',true),true);});
+test('OAuth opens only the exact HTTPS provider and rejects credential or host tricks',()=>{assert.ok(integrationAuthUrl('stripe','https://connect.stripe.com/oauth/authorize?state=test'));assert.ok(integrationAuthUrl('quickbooks','https://appcenter.intuit.com/connect/oauth2'));for(const url of ['http://connect.stripe.com','https://connect.stripe.com.evil.test','https://evil.test@connect.stripe.com','https://connect.stripe.com:444','javascript:alert(1)'])assert.throws(()=>integrationAuthUrl('stripe',url));});
+const {businessDownloadPath,validateBusinessBytes}=new Function(code+';return{businessDownloadPath,validateBusinessBytes}')();
+test('business download routing accepts only specific relative report and evidence endpoints',()=>{
+ const id='00000000-0000-4000-a000-000000000001';
+ for(const path of ['/payroll/export?format=csv','/reports/comprehensive',`/evidence-bundles/time-entry/${id}/download`,`/evidence-bundles/voice-note/${id}/caption-video`])assert.equal(businessDownloadPath(path),true,path);
+ for(const path of ['https://evil.test/reports/comprehensive','//evil.test/reports/comprehensive','/reports/comprehensive/../../users','/reports/comprehensive#fragment',`/evidence-bundles/time-entry/${id}/download/extra`,'/users'])assert.equal(businessDownloadPath(path),false,path);
+});
+test('business file sharing rejects wrong binary signatures and HTML/JSON responses',()=>{
+ const bytes=value=>new Uint8Array(Buffer.from(value));
+ validateBusinessBytes(bytes('%PDF-1.7'),'application/pdf');validateBusinessBytes(new Uint8Array([80,75,3,4,0]),'application/zip');validateBusinessBytes(new Uint8Array([0,0,0,20,102,116,121,112,109,112,52,50]),'video/mp4');validateBusinessBytes(bytes('Name,Hours\nA,2'),'text/csv');
+ for(const mime of ['application/pdf','application/zip','video/mp4','text/csv','text/html','application/json'])assert.throws(()=>validateBusinessBytes(bytes('{"error":true}'),mime));
+ assert.throws(()=>validateBusinessBytes(new Uint8Array(0),'application/pdf'));
+});

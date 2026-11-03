@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect } from 'react';
 import {
@@ -247,7 +249,7 @@ export default function CrewClockScreen() {
           </View>
         </View>
         <Text style={styles.project}>{item.projectName}</Text>
-        <Text style={styles.clockIn}>Clocked in: {formatClockInTime(item.clockIn)}</Text>
+        <Text style={styles.clockIn}><ScreenCopy value={"Clocked in:"} trailing=" "/>{formatClockInTime(item.clockIn)}</Text>
         {item.latitude && item.longitude && (
           <Text style={styles.location}>📍 {item.latitude.toFixed(6)}, {item.longitude.toFixed(6)}</Text>
         )}
@@ -256,7 +258,7 @@ export default function CrewClockScreen() {
           onPress={() => handleForceClockOut(item.userId, item.timeEntryId)}
         >
           <MaterialIcons name="logout" size={20} color="#FFF" />
-          <Text style={styles.clockOutText}>Clock Out</Text>
+          <Text style={styles.clockOutText}><ScreenCopy value={"Clock Out"}/></Text>
         </TouchableOpacity>
       </View>
     );
@@ -289,18 +291,17 @@ export default function CrewClockScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
+        </LocalizedTouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.headerTitle}>Crew Clock</Text>
+          <Text style={styles.headerTitle}><ScreenCopy value={"Crew Clock"}/></Text>
           <Text style={styles.headerSubtitle}>
-            {officeCity ? `📍 ${officeCity} • ` : ''}{activeEmployees.length} currently clocked in
-          </Text>
+            {officeCity ? `📍 ${officeCity} • ` : ''}{activeEmployees.length}<ScreenCopy value={"currently clocked in"} leading=" "/></Text>
         </View>
         <TouchableOpacity onPress={openBulkModal} style={styles.bulkBtn}>
           <MaterialIcons name="people" size={24} color="#00D4FF" />
-          <Text style={styles.bulkBtnText}>Bulk clock</Text>
+          <Text style={styles.bulkBtnText}><ScreenCopy value={"Bulk clock"}/></Text>
         </TouchableOpacity>
       </View>
 
@@ -322,7 +323,7 @@ export default function CrewClockScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <MaterialIcons name="people-outline" size={48} color="#444" />
-            <Text style={styles.emptyText}>No one is currently clocked in</Text>
+            <Text style={styles.emptyText}><ScreenCopy value={"No one is currently clocked in"}/></Text>
           </View>
         }
       />
@@ -332,7 +333,7 @@ export default function CrewClockScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Bulk Actions</Text>
+              <Text style={styles.modalTitle}><ScreenCopy value={"Bulk Actions"}/></Text>
               <TouchableOpacity onPress={() => setBulkModalVisible(false)}>
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
@@ -368,9 +369,9 @@ export default function CrewClockScreen() {
 
             {/* Employee List */}
             <View style={styles.selectionRow}>
-              <Text style={styles.selectionCount}>{selectedEmployeeIds.size} selected</Text>
-              <TouchableOpacity onPress={() => setSelectedEmployeeIds(new Set(allEmployees.map(employee => employee.id)))}><Text style={styles.selectionLink}>Select all</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setSelectedEmployeeIds(new Set())}><Text style={styles.selectionLink}>Clear</Text></TouchableOpacity>
+              <Text style={styles.selectionCount}>{selectedEmployeeIds.size}<ScreenCopy value={"selected"} leading=" "/></Text>
+              <TouchableOpacity onPress={() => setSelectedEmployeeIds(new Set(allEmployees.map(employee => employee.id)))}><Text style={styles.selectionLink}><ScreenCopy value={"Select all"}/></Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setSelectedEmployeeIds(new Set())}><Text style={styles.selectionLink}><ScreenCopy value={"Clear"}/></Text></TouchableOpacity>
             </View>
             {bulkDataLoading && <ActivityIndicator color="#00D4FF" style={{ marginVertical: 20 }} />}
             <FlatList
@@ -378,7 +379,7 @@ export default function CrewClockScreen() {
               keyExtractor={(item) => item.id}
               renderItem={renderBulkEmployee}
               contentContainerStyle={styles.bulkList}
-              ListEmptyComponent={<Text style={styles.emptyText}>No employees found</Text>}
+              ListEmptyComponent={<Text style={styles.emptyText}><ScreenCopy value={"No employees found"}/></Text>}
             />
 
             {/* Action Buttons */}
@@ -388,14 +389,14 @@ export default function CrewClockScreen() {
                 onPress={handleBulkClockIn}
                 disabled={bulkLoading}
               >
-                <Text style={styles.modalActionText}>Clock In</Text>
+                <Text style={styles.modalActionText}><ScreenCopy value={"Clock In"}/></Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalActionBtn, { backgroundColor: '#FF6B6B' }]}
                 onPress={handleBulkClockOut}
                 disabled={bulkLoading}
               >
-                <Text style={styles.modalActionText}>Clock Out</Text>
+                <Text style={styles.modalActionText}><ScreenCopy value={"Clock Out"}/></Text>
               </TouchableOpacity>
             </View>
             {bulkLoading && <ActivityIndicator color="#00D4FF" style={{ marginTop: 12 }} />}

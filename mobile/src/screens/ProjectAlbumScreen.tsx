@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import { albumThumbnailSize } from '../utils/responsiveLayout';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -97,17 +99,17 @@ export default function ProjectAlbumScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+          <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
             <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Project Album</Text>
+          </LocalizedTouchableOpacity>
+          <Text style={styles.headerTitle}><ScreenCopy value={"Project Album"}/></Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.emptyState}>
           <MaterialIcons name="photo-library" size={64} color="#888" />
-          <Text style={styles.emptyText}>No project selected</Text>
+          <Text style={styles.emptyText}><ScreenCopy value={"No project selected"}/></Text>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Text style={styles.backBtnText}>Go Back</Text>
+            <Text style={styles.backBtnText}><ScreenCopy value={"Go Back"}/></Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -117,13 +119,13 @@ export default function ProjectAlbumScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
+        </LocalizedTouchableOpacity>
         <View style={{ flex: 1, marginLeft: 16 }}>
           <Text style={styles.headerTitle}>{projectName}</Text>
           <Text style={styles.headerSubtitle}>
-            {photos.length} photo{photos.length !== 1 ? 's' : ''}
+            {photos.length}<ScreenCopy value={"photo"} leading=" "/>{photos.length !== 1 ? 's' : ''}
           </Text>
         </View>
         <View style={{ width: 24 }} />
@@ -141,16 +143,16 @@ export default function ProjectAlbumScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>No photos yet. Take some new photos!</Text>
+          <Text style={styles.empty}><ScreenCopy value={"No photos yet. Take some new photos!"}/></Text>
         }
       />
 
       {/* Full‑screen photo modal */}
       <Modal visible={!!selectedPhoto} onRequestClose={() => setSelectedPhoto(null)} animationType="fade" transparent>
         <View style={styles.fullscreenOverlay}>
-          <TouchableOpacity style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close photo preview" onPress={() => setSelectedPhoto(null)}>
+          <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Close photo preview"}} style={styles.closeBtn} accessibilityRole="button"  onPress={() => setSelectedPhoto(null)}>
             <MaterialIcons name="close" size={30} color="#FFF" />
-          </TouchableOpacity>
+          </LocalizedTouchableOpacity>
           {selectedPhoto && (
             <Image
               source={{ uri: selectedPhoto.s3_key }}
@@ -159,7 +161,7 @@ export default function ProjectAlbumScreen() {
             />
           )}
           {selectedPhoto?.taken_by && (
-            <Text style={styles.fullscreenBy}>Taken by: {selectedPhoto.taken_by}</Text>
+            <Text style={styles.fullscreenBy}><ScreenCopy value={"Taken by:"} trailing=" "/>{selectedPhoto.taken_by}</Text>
           )}
         </View>
       </Modal>

@@ -1,3 +1,4 @@
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
@@ -218,9 +219,9 @@ export default function VoiceNoteScreen() {
   if (!projectId) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>Please select a project first</Text>
+        <Text style={styles.errorText}><ScreenCopy value={"Please select a project first"}/></Text>
         <TouchableOpacity style={styles.backButton} onPress={goBack}>
-          <Text style={styles.backButtonText}>Go Back</Text>
+          <Text style={styles.backButtonText}><ScreenCopy value={"Go Back"}/></Text>
         </TouchableOpacity>
       </View>
     );
@@ -230,7 +231,7 @@ export default function VoiceNoteScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#00D4FF" />
-        <Text style={styles.loadingText}>Requesting microphone permission...</Text>
+        <Text style={styles.loadingText}><ScreenCopy value={"Requesting microphone permission..."}/></Text>
       </View>
     );
   }
@@ -238,7 +239,7 @@ export default function VoiceNoteScreen() {
     return (
       <View style={styles.center}>
         <MaterialIcons name="mic-off" size={64} color="#F44336" />
-        <Text style={styles.errorText}>Microphone access required</Text>
+        <Text style={styles.errorText}><ScreenCopy value={"Microphone access required"}/></Text>
       </View>
     );
   }
@@ -247,8 +248,8 @@ export default function VoiceNoteScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#00D4FF" />
-        <Text style={styles.processingTitle}>🤖 AI is Processing</Text>
-        <Text style={styles.processingText}>Transcribing and extracting information...</Text>
+        <Text style={styles.processingTitle}><ScreenCopy value={"🤖 AI is Processing"}/></Text>
+        <Text style={styles.processingText}><ScreenCopy value={"Transcribing and extracting information..."}/></Text>
       </View>
     );
   }
@@ -256,24 +257,24 @@ export default function VoiceNoteScreen() {
   if (result) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.resultContent}>
-        <Text style={styles.resultTitle}>✅ Voice Note Processed</Text>
+        <Text style={styles.resultTitle}><ScreenCopy value={"✅ Voice Note Processed"}/></Text>
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>📧 Client Summary</Text>
+          <Text style={styles.cardLabel}><ScreenCopy value={"📧 Client Summary"}/></Text>
           <Text style={styles.summaryText}>{result.clientSummary}</Text>
         </View>
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>📝 Full Transcript</Text>
+          <Text style={styles.cardLabel}><ScreenCopy value={"📝 Full Transcript"}/></Text>
           <Text style={styles.transcriptText}>{result.transcript}</Text>
         </View>
         {result.structuredData.actions.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.cardLabel}>🔧 Actions</Text>
+            <Text style={styles.cardLabel}><ScreenCopy value={"🔧 Actions"}/></Text>
             {result.structuredData.actions.map((a, i) => <Text key={i} style={styles.item}>• {a}</Text>)}
           </View>
         )}
         {result.structuredData.parts.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.cardLabel}>🧰 Parts/Equipment</Text>
+            <Text style={styles.cardLabel}><ScreenCopy value={"🧰 Parts/Equipment"}/></Text>
             <View style={styles.tagContainer}>
               {result.structuredData.parts.map((p, i) => <View key={i} style={styles.tag}><Text style={styles.tagText}>{p}</Text></View>)}
             </View>
@@ -281,10 +282,10 @@ export default function VoiceNoteScreen() {
         )}
         <View style={styles.buttonRow}>
           <TouchableOpacity style={styles.secondaryButton} onPress={() => setResult(null)}>
-            <Text style={styles.secondaryButtonText}>New Note</Text>
+            <Text style={styles.secondaryButtonText}><ScreenCopy value={"New Note"}/></Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.primaryButton} onPress={goBack}>
-            <Text style={styles.primaryButtonText}>Done</Text>
+            <Text style={styles.primaryButtonText}><ScreenCopy value={"Done"}/></Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -297,7 +298,7 @@ export default function VoiceNoteScreen() {
         <TouchableOpacity onPress={goBack}>
           <MaterialIcons name="close" size={28} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Voice Note</Text>
+        <Text style={styles.headerTitle}><ScreenCopy value={"Voice Note"}/></Text>
         <View style={{ width: 28 }} />
       </View>
 
@@ -318,7 +319,7 @@ export default function VoiceNoteScreen() {
           if (busy.current) return;
           busy.current = true;
           void processRecording(retryUri).finally(() => { busy.current = false; });
-        }}><Text style={styles.secondaryButtonText}>Retry saved recording</Text></TouchableOpacity>}
+        }}><Text style={styles.secondaryButtonText}><ScreenCopy value={"Retry saved recording"}/></Text></TouchableOpacity>}
         <TouchableOpacity onPress={isRecording ? stopRecording : startRecording}>
           <View style={[styles.recordButton, { backgroundColor: isRecording ? '#F44336' : '#00D4FF' }]}>
             <MaterialIcons name={isRecording ? 'stop' : 'mic'} size={40} color="#FFF" />

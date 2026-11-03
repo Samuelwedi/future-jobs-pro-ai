@@ -1,3 +1,5 @@
+import {LocalizedTextInput,LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
@@ -90,18 +92,18 @@ export default function SelectEmployeesScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Employees</Text>
+        </LocalizedTouchableOpacity>
+        <Text style={styles.headerTitle}><ScreenCopy value={"Select Employees"}/></Text>
         <TouchableOpacity onPress={done}>
-          <Text style={styles.doneText}>Done</Text>
+          <Text style={styles.doneText}><ScreenCopy value={"Done"}/></Text>
         </TouchableOpacity>
       </View>
 
-      <TextInput
+      <LocalizedTextInput copy={{"placeholder":"Search employees..."}}
         style={styles.searchInput}
-        placeholder="Search employees..."
+
         placeholderTextColor="#888"
         value={searchText}
         onChangeText={setSearchText}
@@ -124,7 +126,7 @@ export default function SelectEmployeesScreen() {
             )}
           </TouchableOpacity>
         )}
-        ListEmptyComponent={<Text style={styles.empty}>No employees found</Text>}
+        ListEmptyComponent={<Text style={styles.empty}><ScreenCopy value={"No employees found"}/></Text>}
       />
     </View>
   );

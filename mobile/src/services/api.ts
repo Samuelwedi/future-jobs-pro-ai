@@ -1,3 +1,5 @@
+import {fetch as expoFetch} from 'expo/fetch';
+import {businessDownloadPath} from '../utils/businessValidation';
 // ============================================
 // MOBILE API SERVICE (with DELETE support & 401 handling)
 // Future Jobs Pro AI – Created by Samuel B.
@@ -158,6 +160,22 @@ class ApiService {
     const response = await this.client.delete<T>(url);
 
     return response.data;
+  }
+
+  async openBusinessStream(path:string,body:unknown,signal:AbortSignal){
+    if(!businessDownloadPath(path))throw Error('Unsupported business download');
+    const token=await SecureStore.getItemAsync('authToken');if(!token)throw Error('Sign in to continue.');
+    const response=await expoFetch(API_URL+path,{method:body===undefined?'GET':'POST',redirect:'error',signal,headers:{Authorization:`Bearer ${token}`,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)});
+    if(response.status===401){await this.clearToken();this.onUnauthorized?.();}if(response.status===402)this.onSubscriptionRequired?.();
+    if(!response.ok){let message=`Download failed (${response.status})`;try{const result=await response.json();message=result.message||message;}catch{}throw Error(message);}
+    if(!response.body)throw Error('Download stream unavailable.');
+    return{reader:response.body.getReader(),mime:String(response.headers.get('content-type')||'').split(';')[0],assertCurrent:async()=>{if(token!==await SecureStore.getItemAsync('authToken'))throw Error('Account changed. Export cancelled.');}};
+  }
+
+  async downloadBusinessFile(path: string, body?: unknown): Promise<{data:ArrayBuffer;mime:string}> {
+    if (!businessDownloadPath(path)) throw new Error('Unsupported business download');
+    const response = await this.client.request<ArrayBuffer>({url:path,method:body === undefined?'GET':'POST',data:body,responseType:'arraybuffer'});
+    return {data:response.data,mime:String(response.headers['content-type']||'').split(';')[0]};
   }
 
   async uploadFileWithData<T>(

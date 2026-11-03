@@ -1,3 +1,4 @@
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
@@ -62,11 +63,11 @@ export default function HistoryScreen() {
   const color = (kind: Kind) => kind === 'time' ? '#00D4FF' : kind === 'task' ? '#4CAF50' : '#AB47BC';
   const icon = (kind: Kind) => kind === 'time' ? 'schedule' : kind === 'task' ? 'assignment-turned-in' : 'beach-access';
 
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /><Text style={styles.muted}>Building your activity timeline…</Text></View>;
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#00D4FF" /><Text style={styles.muted}><ScreenCopy value={"Building your activity timeline…"}/></Text></View>;
   return <View style={styles.container}>
     <View style={styles.header}>
       <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}><Ionicons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
-      <View><Text style={styles.title}>History</Text><Text style={styles.muted}>Your work, tasks and time off</Text></View>
+      <View><Text style={styles.title}><ScreenCopy value={"History"}/></Text><Text style={styles.muted}><ScreenCopy value={"Your work, tasks and time off"}/></Text></View>
       <TouchableOpacity onPress={() => { setRefreshing(true); load(); }} style={styles.headerButton}><Ionicons name="refresh" size={23} color="#00D4FF" /></TouchableOpacity>
     </View>
     <View style={styles.summary}>{([['time', 'Shifts'], ['task', 'Tasks'], ['pto', 'PTO']] as [Kind, string][]).map(([kind, label]) => <View key={kind} style={styles.stat}><Text style={styles.statValue}>{count(kind)}</Text><Text style={styles.statLabel}>{label}</Text></View>)}</View>
@@ -74,7 +75,7 @@ export default function HistoryScreen() {
     <FlatList data={visible} keyExtractor={item => item.id} contentContainerStyle={styles.list}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor="#00D4FF" />}
       renderItem={({ item }) => <View style={styles.card}><View style={[styles.icon, { backgroundColor: `${color(item.kind)}20` }]}><MaterialIcons name={icon(item.kind) as any} size={24} color={color(item.kind)} /></View><View style={styles.body}><View style={styles.row}><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.date}>{new Date(item.occurredAt).toLocaleDateString()}</Text></View><Text style={styles.subtitle}>{item.subtitle}</Text>{item.detail ? <Text style={styles.detail}>{item.detail}</Text> : null}<Text style={[styles.status, { color: color(item.kind) }]}>{item.status.toUpperCase()}</Text></View></View>}
-      ListEmptyComponent={<View style={styles.empty}><MaterialIcons name="history" size={48} color="#45505F" /><Text style={styles.emptyTitle}>{error || 'No activity yet'}</Text><Text style={styles.emptyText}>Shifts, assigned tasks and PTO from the last 90 days appear here.</Text></View>} />
+      ListEmptyComponent={<View style={styles.empty}><MaterialIcons name="history" size={48} color="#45505F" /><Text style={styles.emptyTitle}>{error || 'No activity yet'}</Text><Text style={styles.emptyText}><ScreenCopy value={"Shifts, assigned tasks and PTO from the last 90 days appear here."}/></Text></View>} />
   </View>;
 }
 

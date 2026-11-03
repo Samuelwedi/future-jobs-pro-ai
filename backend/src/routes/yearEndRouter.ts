@@ -1,3 +1,4 @@
+import {createHash} from 'crypto';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
@@ -9,6 +10,8 @@ import {
 } from '../services/yearEndService';
 
 const router = express.Router();
+router.use(companyActor,(_req,res,next)=>{if(!manages(res.locals.actor))return res.status(403).json({message:'Payroll manager access required'});next();});
+const previewHash=(employeeId:unknown,taxYear:unknown,formType:unknown,value:unknown)=>createHash('sha256').update(JSON.stringify({employeeId:String(employeeId),taxYear:Number(taxYear),formType,value})).digest('hex');
 // Global company-defined deductions are not mapped to Canadian statutory form boxes.
 router.use(['/preview','/finalize'],companyActor,async(req,res,next)=>{
  if(!manages(res.locals.actor))return res.status(403).json({success:false,message:'Payroll manager access required'});
@@ -34,9 +37,9 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
 
 const requirePayrollManager = async (req: Request): Promise<{ companyId: string; userId: string }> => {
   const decoded = verifyToken(req);
-  const result = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
+  const result = await pool.query('SELECT company_id, role FROM users WHERE id = $1 AND COALESCE(is_active,TRUE)=TRUE', [decoded.id]);
   if (!result.rowCount || !result.rows[0].company_id) throw new Error('Not authenticated');
-  if (!['boss', 'manager', 'admin'].includes(String(result.rows[0].role || ''))) {
+  if (!['boss', 'owner', 'manager', 'admin'].includes(String(result.rows[0].role || ''))) {
     const error: any = new Error('Payroll manager access is required');
     error.status = 403;
     throw error;
@@ -195,7 +198,7 @@ router.get('/preview', async (req: Request, res: Response) => {
         return res.status(400).json({ success: false, message: 'Invalid form type' });
     }
 
-    res.json({ success: true, preview: result });
+    res.json({ success: true, preview: result, previewHash:previewHash(id,year,formType,result) });
   } catch (error: any) {
     console.error('Preview error:', error);
     res.status(error.status || 500).json({ success: false, error: error.message });
@@ -222,12 +225,17 @@ router.post('/finalize', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
+    if(!Number.isInteger(Number(taxYear))||Number(taxYear)<2000||Number(taxYear)>new Date().getFullYear()+1)return res.status(400).json({message:'Invalid tax year'});
+    const compile = formType==='T4'?compileT4Slip:formType==='T4A'?compileT4ASlip:formType==='RL1'?compileRL1Slip:null;
+    if(!compile)return res.status(400).json({message:'Invalid form type'});
+    const reviewed:any=await compile(employeeId,Number(taxYear),companyId);
+    if(req.body.previewHash!==previewHash(employeeId,taxYear,formType,reviewed))return res.status(409).json({message:'Payroll or identity changed, or preview is missing. Load and review a fresh preview before finalizing.'});
     await client.query('BEGIN');
 
     let result;
     switch (formType) {
       case 'T4': {
-        const data = await compileT4Slip(employeeId, Number(taxYear), companyId);
+        const data = reviewed;
         const m = data.t4Manifest;
         const em = data.employerMetrics;
         await client.query(
@@ -264,7 +272,7 @@ router.post('/finalize', async (req: Request, res: Response) => {
         break;
       }
       case 'T4A': {
-        const data = await compileT4ASlip(employeeId, Number(taxYear), companyId);
+        const data = reviewed;
         const m = data.t4aManifest;
         await client.query(
           `INSERT INTO generated_t4a_slips
@@ -279,7 +287,7 @@ router.post('/finalize', async (req: Request, res: Response) => {
         break;
       }
       case 'RL1': {
-        const data = await compileRL1Slip(employeeId, Number(taxYear), companyId);
+        const data = reviewed;
         const m = data.rl1Manifest;
         await client.query(
           `INSERT INTO generated_rl1_slips

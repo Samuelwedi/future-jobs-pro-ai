@@ -1,3 +1,5 @@
+import {LocalizedTextInput} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,14 +28,14 @@ export default function RegisterScreen() {
     finally { setLoading(false); }
   };
   return <SafeAreaView edges={[]} style={styles.safe}><KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <Text style={styles.title}>Create your account</Text><Text style={styles.subtitle}>Start using Future Jobs Pro AI</Text>
-    <View style={styles.row}><TextInput style={[styles.input, styles.half]} placeholder="First name" placeholderTextColor="#718096" value={form.firstName} onChangeText={v => update('firstName', v)} textContentType="givenName" /><TextInput style={[styles.input, styles.half]} placeholder="Last name" placeholderTextColor="#718096" value={form.lastName} onChangeText={v => update('lastName', v)} textContentType="familyName" /></View>
-    <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#718096" value={form.email} onChangeText={v => update('email', v)} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} textContentType="emailAddress" />
-    <TextInput style={styles.input} placeholder="Password (8+ characters)" placeholderTextColor="#718096" value={form.password} onChangeText={v => update('password', v)} secureTextEntry={!visible} autoCapitalize="none" textContentType="newPassword" />
-    <TextInput style={styles.input} placeholder="Confirm password" placeholderTextColor="#718096" value={form.confirmPassword} onChangeText={v => update('confirmPassword', v)} secureTextEntry={!visible} autoCapitalize="none" textContentType="newPassword" onSubmitEditing={submit} />
+    <Text style={styles.title}><ScreenCopy value={"Create your account"}/></Text><Text style={styles.subtitle}><ScreenCopy value={"Start using Future Jobs Pro AI"}/></Text>
+    <View style={styles.row}><LocalizedTextInput copy={{"placeholder":"First name"}} style={[styles.input, styles.half]}  placeholderTextColor="#718096" value={form.firstName} onChangeText={v => update('firstName', v)} textContentType="givenName" /><LocalizedTextInput copy={{"placeholder":"Last name"}} style={[styles.input, styles.half]}  placeholderTextColor="#718096" value={form.lastName} onChangeText={v => update('lastName', v)} textContentType="familyName" /></View>
+    <LocalizedTextInput copy={{"placeholder":"Email"}} style={styles.input}  placeholderTextColor="#718096" value={form.email} onChangeText={v => update('email', v)} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} textContentType="emailAddress" />
+    <LocalizedTextInput copy={{"placeholder":"Password (8+ characters)"}} style={styles.input}  placeholderTextColor="#718096" value={form.password} onChangeText={v => update('password', v)} secureTextEntry={!visible} autoCapitalize="none" textContentType="newPassword" />
+    <LocalizedTextInput copy={{"placeholder":"Confirm password"}} style={styles.input}  placeholderTextColor="#718096" value={form.confirmPassword} onChangeText={v => update('confirmPassword', v)} secureTextEntry={!visible} autoCapitalize="none" textContentType="newPassword" onSubmitEditing={submit} />
     <TouchableOpacity style={styles.link} onPress={()=>setVisible(!visible)}><Text style={styles.linkText}>{visible ? 'Hide passwords' : 'Show passwords'}</Text></TouchableOpacity>
-    <TouchableOpacity style={styles.primary} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#07111F" /> : <Text style={styles.primaryText}>Sign Up</Text>}</TouchableOpacity>
-    <TouchableOpacity style={styles.link} onPress={() => navigation.goBack()} disabled={loading}><Text style={styles.linkText}>Already have an account? Sign In</Text></TouchableOpacity>
+    <TouchableOpacity style={styles.primary} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#07111F" /> : <Text style={styles.primaryText}><ScreenCopy value={"Sign Up"}/></Text>}</TouchableOpacity>
+    <TouchableOpacity style={styles.link} onPress={() => navigation.goBack()} disabled={loading}><Text style={styles.linkText}><ScreenCopy value={"Already have an account? Sign In"}/></Text></TouchableOpacity>
   </ScrollView></KeyboardAvoidingView></SafeAreaView>;
 }
 

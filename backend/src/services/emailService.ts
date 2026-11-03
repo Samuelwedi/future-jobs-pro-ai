@@ -11,6 +11,7 @@ if (isSMTPConfigured()) {
   transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587'),
+    connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 60000,
     secure: process.env.SMTP_SECURE === 'true',
     auth: {
       user: process.env.SMTP_USER,
@@ -200,4 +201,11 @@ export async function sendVerificationEmail(to: string, link: string): Promise<v
     subject: 'Verify your Future Jobs Pro AI email',
     html: `<h2>Verify your email</h2><p><a href="${safeLink}">Verify email address</a></p><p>This link expires in one hour. If you did not request it, ignore this email.</p>`,
   });
+}
+
+export const commercialMailAvailable=():boolean=>Boolean(transporter);
+export async function sendCommercialDocumentEmail(to:string,subject:string,text:string,pdf:Buffer,filename:string,messageId:string):Promise<void>{
+ if(!transporter)throw Error('Commercial email is unavailable.');
+ const result=await transporter.sendMail({from:process.env.SMTP_FROM||'noreply@futurejobsproai.com',to,subject,text,messageId,attachments:[{filename,content:pdf,contentType:'application/pdf'}]});
+ if(!result.accepted?.length||result.rejected?.length)throw Error('Email acceptance could not be verified.');
 }

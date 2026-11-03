@@ -1,3 +1,5 @@
+import {LocalizedTextInput,LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -63,21 +65,21 @@ export default function NewChatScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>New Chat</Text>
+        </LocalizedTouchableOpacity>
+        <Text style={styles.headerTitle}><ScreenCopy value={"New Chat"}/></Text>
         <View style={{ width: 24 }} />
       </View>
       <View style={styles.toggleRow}>
         <TouchableOpacity onPress={() => { setIsGroup(false); setSelectedIds([]); }} style={[styles.toggle, !isGroup && styles.toggleActive]}>
-          <Text style={[styles.toggleText, !isGroup && styles.toggleTextActive]}>Direct</Text>
+          <Text style={[styles.toggleText, !isGroup && styles.toggleTextActive]}><ScreenCopy value={"Direct"}/></Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => { setIsGroup(true); setSelectedIds([]); }} style={[styles.toggle, isGroup && styles.toggleActive]}>
-          <Text style={[styles.toggleText, isGroup && styles.toggleTextActive]}>Group</Text>
+          <Text style={[styles.toggleText, isGroup && styles.toggleTextActive]}><ScreenCopy value={"Group"}/></Text>
         </TouchableOpacity>
       </View>
-      {isGroup && <TextInput style={styles.groupNameInput} placeholder="Group name" placeholderTextColor="#888" value={groupName} onChangeText={setGroupName} />}
+      {isGroup && <LocalizedTextInput copy={{"placeholder":"Group name"}} style={styles.groupNameInput}  placeholderTextColor="#888" value={groupName} onChangeText={setGroupName} />}
       <FlatList data={users} renderItem={renderUser} keyExtractor={item => item.id} contentContainerStyle={styles.list} />
       <TouchableOpacity style={styles.createBtn} onPress={createChat}>
         <Text style={styles.createBtnText}>{isGroup ? 'Create Group' : 'Start Chat'}</Text>

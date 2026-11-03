@@ -1,3 +1,5 @@
+import {LocalizedTextInput} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState } from 'react';
 import { ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,10 +22,10 @@ export default function ForgotPasswordScreen() {
     finally { setLoading(false); }
   };
   return <SafeAreaView edges={[]} style={styles.safe}><KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-    <Text style={styles.title}>Reset your password</Text><Text style={styles.subtitle}>Enter the email used to sign in. We’ll send a secure link that expires in one hour.</Text>
-    <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#718096" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} textContentType="emailAddress" onSubmitEditing={submit} />
-    <TouchableOpacity style={styles.primary} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#07111F" /> : <Text style={styles.primaryText}>Send Reset Link</Text>}</TouchableOpacity>
-    <TouchableOpacity style={styles.link} onPress={() => navigation.goBack()} disabled={loading}><Text style={styles.linkText}>Back to Sign In</Text></TouchableOpacity>
+    <Text style={styles.title}><ScreenCopy value={"Reset your password"}/></Text><Text style={styles.subtitle}><ScreenCopy value={"Enter the email used to sign in. We’ll send a secure link that expires in one hour."}/></Text>
+    <LocalizedTextInput copy={{"placeholder":"Email"}} style={styles.input}  placeholderTextColor="#718096" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} textContentType="emailAddress" onSubmitEditing={submit} />
+    <TouchableOpacity style={styles.primary} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#07111F" /> : <Text style={styles.primaryText}><ScreenCopy value={"Send Reset Link"}/></Text>}</TouchableOpacity>
+    <TouchableOpacity style={styles.link} onPress={() => navigation.goBack()} disabled={loading}><Text style={styles.linkText}><ScreenCopy value={"Back to Sign In"}/></Text></TouchableOpacity>
   </ScrollView></KeyboardAvoidingView></SafeAreaView>;
 }
 

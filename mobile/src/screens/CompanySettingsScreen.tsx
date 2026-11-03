@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import TimezonePicker from '../components/TimezonePicker';
 import React, { useState, useEffect } from 'react';
 import {
@@ -234,10 +236,10 @@ export default function CompanySettingsScreen() {
   return (
     <ScrollView automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag" style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Company Settings</Text>
+        </LocalizedTouchableOpacity>
+        <Text style={styles.headerTitle}><ScreenCopy value={"Company Settings"}/></Text>
         <TouchableOpacity onPress={saveSettings} disabled={saving}>
           <Text style={[styles.saveBtn, saving && { opacity: 0.5 }]}>
             {saving ? 'Saving...' : 'Save'}
@@ -255,7 +257,7 @@ export default function CompanySettingsScreen() {
         )}
         <TouchableOpacity style={styles.uploadBtn} onPress={pickLogo}>
           <MaterialIcons name="upload" size={20} color="#00D4FF" />
-          <Text style={styles.uploadBtnText}>Change Logo</Text>
+          <Text style={styles.uploadBtnText}><ScreenCopy value={"Change Logo"}/></Text>
         </TouchableOpacity>
       </View>
 
@@ -286,7 +288,7 @@ export default function CompanySettingsScreen() {
 
       <Section title="Overtime Rules" icon="timer">
         <View style={styles.switchRow}>
-          <Text style={styles.label}>Enable Overtime</Text>
+          <Text style={styles.label}><ScreenCopy value={"Enable Overtime"}/></Text>
           <Switch
             value={settings.overtime_enabled}
             onValueChange={(val: boolean) => setSettings({ ...settings, overtime_enabled: val })}
@@ -296,7 +298,7 @@ export default function CompanySettingsScreen() {
         </View>
         {settings.overtime_enabled && (
           <>
-            <Text style={styles.label}>Overtime basis</Text>
+            <Text style={styles.label}><ScreenCopy value={"Overtime basis"}/></Text>
             <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
               {([['daily','Daily'],['weekly','Weekly'],['daily_weekly','Daily + weekly']] as const).map(([mode,label])=>(
                 <TouchableOpacity key={mode} accessibilityRole="radio" accessibilityState={{checked:settings.overtime_mode===mode}}
@@ -309,7 +311,7 @@ export default function CompanySettingsScreen() {
             {settings.overtime_mode!=='weekly' && <InputFieldDecimal label="Daily overtime after (hours)" value={dailyStr} onChangeText={setDailyStr} placeholder="8 or 10"/>}
             {settings.overtime_mode!=='daily' && <InputFieldDecimal label="Weekly overtime after (hours)" value={thresholdStr} onChangeText={setThresholdStr} placeholder="40 or 44.5"/>}
             <InputFieldDecimal label="Overtime pay multiplier" value={multiplierStr} onChangeText={setMultiplierStr} placeholder="1.5"/>
-            <Text style={styles.label}>Workweek starts on</Text>
+            <Text style={styles.label}><ScreenCopy value={"Workweek starts on"}/></Text>
             <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
               {days.map((day,index)=><TouchableOpacity key={day} accessibilityRole="radio" accessibilityLabel={day} accessibilityState={{checked:settings.overtime_week_start===index}} onPress={()=>setSettings({...settings,overtime_week_start:index})} style={{padding:10,borderRadius:8,backgroundColor:settings.overtime_week_start===index?'#164856':'#292929'}}><Text style={{color:'#FFF'}}>{day.slice(0,3)}</Text></TouchableOpacity>)}
             </View>
@@ -320,8 +322,8 @@ export default function CompanySettingsScreen() {
         )}
         <TimezonePicker value={settings.timezone} onChange={timezone=>setSettings({...settings,timezone})}/>
         <Text style={{color:'#CCC',lineHeight:21,marginBottom:12}}>{example}</Text>
-        <Text style={{color:'#AAA',lineHeight:21}}>Combined mode uses the greater of daily or weekly overtime for each week, without counting an hour twice. 44.5 hours means 44 hours 30 minutes. Unpaid breaks are excluded; overnight breaks are allocated proportionally between days.</Text>
-        <Text style={{color:'#AAA',lineHeight:21,marginTop:12}}>Changes apply to unlocked time and new payroll drafts. Previously approved entries whose pay changes return for manager review. Existing payroll stays unchanged. Use rules that meet applicable employment requirements.</Text>
+        <Text style={{color:'#AAA',lineHeight:21}}><ScreenCopy value={"Combined mode uses the greater of daily or weekly overtime for each week, without counting an hour twice. 44.5 hours means 44 hours 30 minutes. Unpaid breaks are excluded; overnight breaks are allocated proportionally between days."}/></Text>
+        <Text style={{color:'#AAA',lineHeight:21,marginTop:12}}><ScreenCopy value={"Changes apply to unlocked time and new payroll drafts. Previously approved entries whose pay changes return for manager review. Existing payroll stays unchanged. Use rules that meet applicable employment requirements."}/></Text>
       </Section>
 
       <Section title="Payroll & Branding" icon="palette">

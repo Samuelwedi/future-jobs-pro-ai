@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, Dialog, DialogTitle, DialogContent,
@@ -1037,31 +1037,21 @@ export default function PayrollPage() {
 
   // ─── Main Render ────────────────────────────────────────────────
 
+  const raiseLock=useRef(false),raiseKey=useRef({signature:'',value:''});
   const handleApplyRaise = async () => {
     if (selectedEmployees.length === 0) {
       alert('Select at least one employee');
       return;
     }
+    if(raiseLock.current)return;raiseLock.current=true;
     try {
-      const res = await fetch(`${API_BASE}/api/payroll/employees/compensation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          employeeIds: selectedEmployees,
-          raiseType,
-          raiseValue,
-          effectiveDate: effectiveDate || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        fetchCompEmployees();
-        setSelectedEmployees([]);
-      } else {
-        alert(data.message || 'Failed to apply raise');
-      }
-    } catch (e) { alert('Error applying raise'); }
+      const body={employeeIds:[...selectedEmployees].sort(),raiseType,raiseValue,effectiveDate};
+      const headers={'Content-Type':'application/json',Authorization:`Bearer ${token}`};
+      const previewResponse=await fetch(`${API_BASE}/api/payroll/employees/compensation/preview`,{method:'POST',headers,body:JSON.stringify(body)}),preview=await previewResponse.json();if(!previewResponse.ok)throw Error(preview.message);
+      if(!window.confirm(preview.rows.map((row:any)=>`${row.name}: ${row.current} → ${row.next} (${row.effectiveDate})`).join('\n')))return;
+      const signature=JSON.stringify(body);if(raiseKey.current.signature!==signature)raiseKey.current={signature,value:`raise-${Date.now()}-${Math.random().toString(36).slice(2)}`};
+      const response=await fetch(`${API_BASE}/api/payroll/employees/compensation`,{method:'POST',headers,body:JSON.stringify({...body,fingerprint:preview.fingerprint,confirmed:true,requestKey:raiseKey.current.value})}),data=await response.json();if(!response.ok)throw Error(data.message);alert(data.message);setSelectedEmployees([]);raiseKey.current={signature:'',value:''};await fetchCompEmployees();
+    }catch(e:any){alert(e.message||'Error applying raise');}finally{raiseLock.current=false;}
   };
 
   const handleSaveSettings = async () => {
@@ -1070,7 +1060,7 @@ export default function PayrollPage() {
       const res = await fetch(`${API_BASE}/api/payroll/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(settings),
+        body: JSON.stringify({...settings,payroll_day:Number(settings.payroll_day),default_hourly_rate:Number(settings.default_hourly_rate),overtime_multiplier:Number(settings.overtime_multiplier),tax_rate:Number(settings.tax_rate)}),
       });
       const data = await res.json();
       if (data.success) alert('Settings saved');

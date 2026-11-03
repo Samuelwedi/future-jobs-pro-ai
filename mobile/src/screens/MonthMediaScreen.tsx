@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert,
@@ -54,9 +56,9 @@ export default function MonthMediaScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
+        </LocalizedTouchableOpacity>
         <Text style={styles.headerTitle}>
           {projectName || 'Project'} - {yearMonth || ''}
         </Text>
@@ -83,7 +85,7 @@ export default function MonthMediaScreen() {
           >
             <MaterialIcons name={folder.icon as any} size={40} color={folder.color} />
             <Text style={styles.folderLabel}>{folder.label}</Text>
-            <Text style={styles.folderCount}>{folder.count} items</Text>
+            <Text style={styles.folderCount}>{folder.count}<ScreenCopy value={"items"} leading=" "/></Text>
           </TouchableOpacity>
         ))}
       </View>

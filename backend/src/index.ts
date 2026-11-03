@@ -1,3 +1,5 @@
+import {startCommercialEmailWorker} from './services/commercialDeliveryService';
+import {startRecurringInvoiceWorker} from './services/invoicePlanService';
 import { startOwnerRepairWorker } from './services/ownerRepairService';
 import lucyJarvisRoutes from './routes/lucyJarvisRoutes';
 // ============================================
@@ -859,6 +861,8 @@ app.set('io', io);
 server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   startLucyReliabilityMonitor();
   startOwnerOperationsWorker();
+  startRecurringInvoiceWorker();
+  startCommercialEmailWorker();
 startOwnerRepairWorker();
   if(process.env.OPERATIONS_REPORT_WORKER==='true'){
     let reporting=false;

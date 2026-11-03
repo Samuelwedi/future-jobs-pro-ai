@@ -1,3 +1,4 @@
+import {previewBulkCompensation,applyBulkCompensation} from '../services/bulkCompensationService';
 import { companyOvertimeSettings, refreshCompanyOvertime } from '../services/overtimeService';
 import { readOvertimePolicy } from '../services/overtimePolicy';
 import express, { Request, Response } from 'express';
@@ -6,7 +7,9 @@ import { verifyToken } from '../utils/auth';
 import { generatePayroll } from '../services/payrollGenerator';
 import { generatePayStubPDFBuffer } from '../services/pdfService';
 
+import payrollExportRoutes from './payrollExportRoutes';
 const router = express.Router();
+router.use('/export',payrollExportRoutes);
 router.use(async (req, res, next) => {
   try {
     const token = verifyToken(req);
@@ -162,6 +165,11 @@ router.put('/settings', async (req: Request, res: Response) => {
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const { payroll_schedule, payroll_day, payroll_time, default_hourly_rate, overtime_multiplier, tax_rate } = req.body;
+    if(payroll_schedule!=null && !['','weekly','biweekly','monthly'].includes(payroll_schedule))return res.status(400).json({success:false,message:'Invalid payroll schedule'});
+    if(payroll_day!=null && (!Number.isInteger(payroll_day)||payroll_day<0||payroll_day>31))return res.status(400).json({success:false,message:'Invalid payroll day'});
+    if(payroll_time!=null && (typeof payroll_time!=='string'||!/^([01]\d|2[0-3]):[0-5]\d(?::00)?$/.test(payroll_time)))return res.status(400).json({success:false,message:'Invalid payroll time'});
+    if(default_hourly_rate!=null && (typeof default_hourly_rate!=='number'||!Number.isFinite(default_hourly_rate)||default_hourly_rate<0||default_hourly_rate>10000))return res.status(400).json({success:false,message:'Invalid default hourly rate'});
+    if(tax_rate!=null && (typeof tax_rate!=='number'||!Number.isFinite(tax_rate)||tax_rate<0||tax_rate>100))return res.status(400).json({success:false,message:'Invalid tax rate'});
     if(overtime_multiplier!=null && (typeof overtime_multiplier!=='number'||!Number.isFinite(overtime_multiplier)||overtime_multiplier<1||overtime_multiplier>10))return res.status(400).json({success:false,message:'Overtime multiplier must be between 1 and 10'});
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`payroll:${companyId}`]);
@@ -225,63 +233,8 @@ router.get('/employees/compensation', async (req: Request, res: Response) => {
 });
 
 // ─── POST /api/payroll/employees/compensation ────────────────
-router.post('/employees/compensation', async (req: Request, res: Response) => {
-  const client = await pool.connect();
-  try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { employeeIds, raiseType, raiseValue, effectiveDate } = req.body;
-    if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {
-      return res.status(400).json({ success: false, message: 'employeeIds array required' });
-    }
-    if (!['percentage','fixed'].includes(raiseType) || !Number.isFinite(Number(raiseValue)) || Number(raiseValue) <= 0) {
-      return res.status(400).json({ success: false, message: 'Valid raiseType and raiseValue required' });
-    }
-    const timezone=await pool.query("SELECT COALESCE(NULLIF(to_jsonb(c)->>'timezone',''),'UTC') timezone FROM companies c WHERE id=$1",[companyId]);
-    const today=await pool.query('SELECT (CURRENT_TIMESTAMP AT TIME ZONE $1)::date::text today',[timezone.rows[0].timezone]);
-    const effective = effectiveDate || today.rows[0].today;
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(effective)||!Number.isFinite(Date.parse(effective+'T00:00:00Z'))||new Date(effective+'T00:00:00Z').toISOString().slice(0,10)!==effective)return res.status(400).json({success:false,message:'Use a valid effective date (YYYY-MM-DD)'});
-    const userId = (req as any).user.id;
-    const permitted = await client.query('SELECT id FROM users WHERE company_id=$1 AND id=ANY($2::uuid[])', [companyId, employeeIds]);
-    if (permitted.rowCount !== new Set(employeeIds).size) return res.status(403).json({success:false,message:'Employee is outside your company'});
-    await client.query('BEGIN');
-
-    let updatedCount = 0;
-    for (const empId of new Set<string>(employeeIds)) {
-      const currentRes = await client.query(
-        `SELECT hourly_rate FROM compensation_history WHERE user_id = $1 AND effective_date <= $2 ORDER BY effective_date DESC, created_at DESC LIMIT 1`,
-        [empId, effective]
-      );
-      const currentRate = Number(currentRes.rows[0]?.hourly_rate || 0);
-
-      let newRate = currentRate;
-      if (raiseType === 'percentage') {
-        newRate = currentRate * (1 + raiseValue / 100);
-      } else if (raiseType === 'fixed') {
-        newRate = currentRate + Number(raiseValue);
-      } else {
-        continue;
-      }
-
-      await client.query(
-        `INSERT INTO compensation_history (user_id, hourly_rate, effective_date, created_by)
-         VALUES ($1, $2, $3, $4)`,
-        [empId, newRate, effective, userId]
-      );
-      updatedCount++;
-    }
-
-    await client.query('COMMIT');
-    res.json({ success: true, message: `Compensation updated for ${updatedCount} employees` });
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error updating compensation:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  } finally {
-    client.release();
-  }
-});
+router.post('/employees/compensation/preview',async(req,res)=>{try{res.json(await previewBulkCompensation((req as any).user.company_id,req.body));}catch(e:any){res.status(e.status||400).json({success:false,message:e.message});}});
+router.post('/employees/compensation',async(req,res)=>{try{res.json(await applyBulkCompensation((req as any).user.company_id,(req as any).user.id,req.body));}catch(e:any){res.status(e.status||400).json({success:false,message:e.message});}});
 
 // ─── POST /api/payroll/what-if ──────────────────────────────
 router.post('/what-if', async (req: Request, res: Response) => {

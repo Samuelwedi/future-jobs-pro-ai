@@ -22,6 +22,16 @@ export function compatibleConfig(){
  if(parsed.protocol==='http:'&&!['localhost','127.0.0.1','[::1]'].includes(parsed.hostname)&&!parsed.hostname.endsWith('.railway.internal'))throw new Error('Remote Lucy inference must use HTTPS');
  return {baseURL,model,apiKey:process.env.LUCY_LLM_API_KEY?.trim()||'local-no-key'};
 }
+export function lucyInferenceStatus(){
+ try{const compatible=compatibleConfig();return {configured:Boolean(compatible||process.env.OPENAI_API_KEY?.trim()),provider:compatible?'compatible':process.env.OPENAI_API_KEY?.trim()?'openai':'none',configurationValid:true,paidFallbackEnabled:Boolean(compatible&&process.env.LUCY_ALLOW_PAID_FALLBACK==='true'&&process.env.OPENAI_API_KEY?.trim()),capacityVerified:false};}
+ catch{return {configured:false,provider:'none',configurationValid:false,paidFallbackEnabled:false,capacityVerified:false};}
+}
+export function lucyProviderFailure(error:any){
+ const code=String(error?.code||error?.error?.code||''),type=String(error?.type||error?.error?.type||'');
+ if([code,type].some(value=>['insufficient_quota','billing_hard_limit_reached','credits_exhausted'].includes(value)))return{status:503,code:'provider_credits_exhausted',message:'Lucy’s inference provider has no available credits. Your workspace subscription is separate. Core commands and human support remain available.'};
+ if(error?.status===429)return{status:429,code:'provider_rate_limited',message:'Lucy has reached the AI provider capacity. Please retry later. Your account remains signed in.'};
+ return{status:503,code:'provider_unavailable',message:'Lucy inference is temporarily unavailable. Core commands and human support remain available.'};
+}
 export function lucyInferenceReady(){return Boolean(compatibleConfig()||process.env.OPENAI_API_KEY?.trim());}
 export async function lucyResponse({instructions,input,tools=[],maxOutputTokens=1200}:{instructions:string;input:any[];tools?:any[];maxOutputTokens?:number}){
  const alternate=compatibleConfig();

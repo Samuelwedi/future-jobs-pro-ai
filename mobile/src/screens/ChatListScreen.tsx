@@ -1,3 +1,5 @@
+import {LocalizedTouchableOpacity} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Image,
@@ -58,10 +60,10 @@ export default function ChatListScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Messages</Text>
+        </LocalizedTouchableOpacity>
+        <Text style={styles.headerTitle}><ScreenCopy value={"Messages"}/></Text>
         <View style={{ width: 24 }} />
       </View>
       <FlatList
@@ -70,10 +72,10 @@ export default function ChatListScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={<Text style={styles.emptyText}>No conversations yet</Text>}
+        ListEmptyComponent={<Text style={styles.emptyText}><ScreenCopy value={"No conversations yet"}/></Text>}
       />
       <TouchableOpacity style={styles.newChatBtn} onPress={() => navigation.navigate('NewChat')}>
-        <Text style={styles.newChatBtnText}>+ New Chat</Text>
+        <Text style={styles.newChatBtnText}><ScreenCopy value={"+ New Chat"}/></Text>
       </TouchableOpacity>
     </View>
   );

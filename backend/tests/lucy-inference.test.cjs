@@ -15,3 +15,13 @@ test('configured compatible endpoint works without paid credentials, and rate li
   status=429;await assert.rejects(()=>lucyResponse({instructions:'Test',input:[]}),e=>e.status===429);
  }finally{process.env=env;await new Promise(r=>server.close(r));}
 });
+test('provider configuration status never exposes endpoint credentials or claims capacity',()=>{
+ const {lucyInferenceStatus}=require('../dist/services/lucyInference'),env={...process.env};try{
+  delete process.env.LUCY_LLM_BASE_URL;delete process.env.LUCY_LLM_MODEL;delete process.env.OPENAI_API_KEY;assert.equal(lucyInferenceStatus().provider,'none');
+  process.env.LUCY_LLM_BASE_URL='https://inference.example.test/v1';process.env.LUCY_LLM_MODEL='private-model';process.env.LUCY_LLM_API_KEY='fixture-secret';process.env.OPENAI_API_KEY='fixture-paid-secret';process.env.LUCY_ALLOW_PAID_FALLBACK='true';const status=lucyInferenceStatus();assert.equal(status.provider,'compatible');assert.equal(status.capacityVerified,false);assert.equal(status.paidFallbackEnabled,true);assert.ok(!JSON.stringify(status).includes('secret'));assert.ok(!JSON.stringify(status).includes('example.test'));assert.ok(!JSON.stringify(status).includes('private-model'));
+  delete process.env.LUCY_LLM_MODEL;assert.equal(lucyInferenceStatus().configurationValid,false);
+ }finally{process.env=env;}
+});
+test('upstream credit exhaustion is distinct from workspace billing and temporary rate limiting',()=>{
+ const{lucyProviderFailure}=require('../dist/services/lucyInference');const credits=lucyProviderFailure({status:429,code:'insufficient_quota',message:'private provider detail'});assert.equal(credits.status,503);assert.equal(credits.code,'provider_credits_exhausted');assert.match(credits.message,/subscription is separate/);assert.ok(!credits.message.includes('private provider detail'));const rate=lucyProviderFailure({status:429});assert.equal(rate.status,429);assert.equal(rate.code,'provider_rate_limited');assert.equal(lucyProviderFailure({status:401}).status,503);
+});

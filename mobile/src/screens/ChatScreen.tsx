@@ -1,3 +1,4 @@
+import {LocalizedTextInput,LocalizedTouchableOpacity} from '../components/LocalizedControls';
 import MediaAttachment from '../components/MediaAttachment';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useRef } from 'react';
@@ -96,20 +97,20 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Go back"}} accessibilityRole="button"  style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
+        </LocalizedTouchableOpacity>
         <View style={{flex:1,marginLeft:16}}><Text style={styles.headerTitle}>{roomName || 'Chat'}</Text><Text style={{color:connected?'#55D66B':'#FFB020',fontSize:11}}>{connected?'LIVE':'RECONNECTING'}</Text></View>
         {(room?.avatar_url||room?.other_user_avatar)?<Image source={{uri:room.avatar_url||room.other_user_avatar}} style={{width:40,height:40,borderRadius:20}}/>:null}
-        {room?.can_edit_photo && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change group photo" disabled={uploading} onPress={changeGroupPhoto}><MaterialIcons name="add-a-photo" size={24} color="#67E8F9" /></TouchableOpacity>}
+        {room?.can_edit_photo && <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Change group photo"}} accessibilityRole="button"  disabled={uploading} onPress={changeGroupPhoto}><MaterialIcons name="add-a-photo" size={24} color="#67E8F9" /></LocalizedTouchableOpacity>}
       </View>
       {error?<Text style={{color:'#FF718B',paddingHorizontal:16,paddingVertical:8}}>{error}</Text>:null}
       <FlatList ref={flatListRef} data={messages} renderItem={renderItem} keyExtractor={item => item.id} contentContainerStyle={styles.listContent} />
       {uploading && <ActivityIndicator color="#00D4FF" />}
       <View style={styles.inputBar}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Attach document" disabled={uploading} onPress={chooseFile} style={{padding:8}}><MaterialIcons name="attach-file" size={24} color="#67E8F9" /></TouchableOpacity>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Attach photo or video" disabled={uploading} onPress={chooseMedia} style={{padding:8}}><MaterialIcons name="photo-library" size={24} color="#67E8F9" /></TouchableOpacity>
-        <TextInput style={styles.textInput} value={input} onChangeText={setInput} placeholder="Message..." placeholderTextColor="#888" />
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Attach document"}} accessibilityRole="button"  disabled={uploading} onPress={chooseFile} style={{padding:8}}><MaterialIcons name="attach-file" size={24} color="#67E8F9" /></LocalizedTouchableOpacity>
+        <LocalizedTouchableOpacity copy={{"accessibilityLabel":"Attach photo or video"}} accessibilityRole="button"  disabled={uploading} onPress={chooseMedia} style={{padding:8}}><MaterialIcons name="photo-library" size={24} color="#67E8F9" /></LocalizedTouchableOpacity>
+        <LocalizedTextInput copy={{"placeholder":"Message..."}} style={styles.textInput} value={input} onChangeText={setInput}  placeholderTextColor="#888" />
         <TouchableOpacity style={[styles.sendBtn,(!input.trim()||sending)&&{opacity:.5}]} disabled={!input.trim()||sending} onPress={sendMessage}>
           <Text style={styles.sendText}>{sending?'Sending…':'Send'}</Text>
         </TouchableOpacity>

@@ -1,3 +1,5 @@
+import {LocalizedTextInput} from '../components/LocalizedControls';
+import ScreenCopy from '../components/ScreenCopy';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect } from 'react';
 import {
@@ -133,7 +135,7 @@ export default function TeamScreen() {
         <Text style={styles.memberEmail}>{item.email}</Text>
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
           <Text style={[styles.roleBadge, item.role === 'boss' && styles.roleBoss, item.role === 'manager' && styles.roleManager]}>{item.role}</Text>
-          {item.needs_password_change && <Text style={styles.needsPwBadge}>Needs Password</Text>}
+          {item.needs_password_change && <Text style={styles.needsPwBadge}><ScreenCopy value={"Needs Password"}/></Text>}
         </View>
       </View>
       <View style={styles.actions}>
@@ -161,7 +163,7 @@ export default function TeamScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Team</Text>
+        <Text style={styles.headerTitle}><ScreenCopy value={"Team"}/></Text>
         <View style={{ width: 40 }} />
       </View>
       <FlatList
@@ -170,7 +172,7 @@ export default function TeamScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={<Text style={styles.empty}>No team members</Text>}
+        ListEmptyComponent={<Text style={styles.empty}><ScreenCopy value={"No team members"}/></Text>}
       />
       <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
         <MaterialIcons name="person-add" size={28} color="#0A0A0A" />
@@ -179,24 +181,24 @@ export default function TeamScreen() {
       <Modal visible={modalVisible} onRequestClose={() => setModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-            <Text style={styles.modalTitle}>Invite Employee</Text>
-            <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#888" value={formEmail} onChangeText={setFormEmail} autoCapitalize="none" />
-            <TextInput style={styles.input} placeholder="First Name" placeholderTextColor="#888" value={formFirstName} onChangeText={setFormFirstName} />
-            <TextInput style={styles.input} placeholder="Last Name" placeholderTextColor="#888" value={formLastName} onChangeText={setFormLastName} />
+            <Text style={styles.modalTitle}><ScreenCopy value={"Invite Employee"}/></Text>
+            <LocalizedTextInput copy={{"placeholder":"Email"}} style={styles.input}  placeholderTextColor="#888" value={formEmail} onChangeText={setFormEmail} autoCapitalize="none" />
+            <LocalizedTextInput copy={{"placeholder":"First Name"}} style={styles.input}  placeholderTextColor="#888" value={formFirstName} onChangeText={setFormFirstName} />
+            <LocalizedTextInput copy={{"placeholder":"Last Name"}} style={styles.input}  placeholderTextColor="#888" value={formLastName} onChangeText={setFormLastName} />
             <View style={styles.roleRow}>
               <TouchableOpacity style={[styles.roleBtn, formRole === 'employee' && styles.roleBtnActive]} onPress={() => setFormRole('employee')}>
-                <Text style={[styles.roleBtnText, formRole === 'employee' && styles.roleBtnTextActive]}>Employee</Text>
+                <Text style={[styles.roleBtnText, formRole === 'employee' && styles.roleBtnTextActive]}><ScreenCopy value={"Employee"}/></Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.roleBtn, formRole === 'manager' && styles.roleBtnActive]} onPress={() => setFormRole('manager')}>
-                <Text style={[styles.roleBtnText, formRole === 'manager' && styles.roleBtnTextActive]}>Manager</Text>
+                <Text style={[styles.roleBtnText, formRole === 'manager' && styles.roleBtnTextActive]}><ScreenCopy value={"Manager"}/></Text>
               </TouchableOpacity>
             </View>
             <View style={styles.modalActions}>
               <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.cancelBtn}>
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={styles.cancelText}><ScreenCopy value={"Cancel"}/></Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={handleInvite} style={styles.submitBtn}>
-                <Text style={styles.submitText}>Invite</Text>
+                <Text style={styles.submitText}><ScreenCopy value={"Invite"}/></Text>
               </TouchableOpacity>
             </View>
           </ScrollView>

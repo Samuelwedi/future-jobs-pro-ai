@@ -1,3 +1,4 @@
+import ScreenCopy from '../components/ScreenCopy';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -132,9 +133,9 @@ export default function CameraView() {
   if (!projectId) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>Please select a project first</Text>
+        <Text style={styles.errorText}><ScreenCopy value={"Please select a project first"}/></Text>
         <TouchableOpacity style={styles.backButton} onPress={goBack}>
-          <Text style={styles.backButtonText}>Go Back</Text>
+          <Text style={styles.backButtonText}><ScreenCopy value={"Go Back"}/></Text>
         </TouchableOpacity>
       </View>
     );
@@ -309,13 +310,13 @@ export default function CameraView() {
             style={[styles.modeBtn, mode === 'photo' && styles.modeBtnActive]}
             onPress={() => setMode('photo')}
           >
-            <Text style={[styles.modeText, mode === 'photo' && styles.modeTextActive]}>📸 Photo</Text>
+            <Text style={[styles.modeText, mode === 'photo' && styles.modeTextActive]}><ScreenCopy value={"📸 Photo"}/></Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.modeBtn, mode === 'video' && styles.modeBtnActive]}
             onPress={() => setMode('video')}
           >
-            <Text style={[styles.modeText, mode === 'video' && styles.modeTextActive]}>🎬 Video</Text>
+            <Text style={[styles.modeText, mode === 'video' && styles.modeTextActive]}><ScreenCopy value={"🎬 Video"}/></Text>
           </TouchableOpacity>
         </View>
 
@@ -337,7 +338,7 @@ export default function CameraView() {
 
         {showTemplatePicker && (
           <View style={styles.templatePicker}>
-            <Text style={styles.pickerTitle}>Watermark Style</Text>
+            <Text style={styles.pickerTitle}><ScreenCopy value={"Watermark Style"}/></Text>
             {TEMPLATES.map((t) => (
               <TouchableOpacity
                 key={t.id}

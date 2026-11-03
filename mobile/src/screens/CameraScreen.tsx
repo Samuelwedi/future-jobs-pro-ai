@@ -1,13 +1,14 @@
+import ScreenCopy from '../components/ScreenCopy';
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
 export default function CameraView() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>📸 Camera Screen</Text>
-      <Text style={styles.subtitle}>Camera will load here</Text>
+      <Text style={styles.title}><ScreenCopy value={"📸 Camera Screen"}/></Text>
+      <Text style={styles.subtitle}><ScreenCopy value={"Camera will load here"}/></Text>
       <TouchableOpacity style={styles.button}>
-        <Text style={styles.buttonText}>Take Photo</Text>
+        <Text style={styles.buttonText}><ScreenCopy value={"Take Photo"}/></Text>
       </TouchableOpacity>
     </View>
   );
