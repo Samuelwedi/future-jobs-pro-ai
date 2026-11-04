@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // ============================================
 // LOGIN SCREEN
@@ -24,6 +25,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
 export default function LoginScreen() {
+  const { t } = useLang();
   const safeInsets = useSafeAreaInsets();
   const { login } = useAuth();
   const navigation = useNavigation<any>();
@@ -34,7 +36,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please enter email and password');
+      Alert.alert(t('Error'), t('Please enter email and password'));
       return;
     }
     setIsLoading(true);
@@ -43,7 +45,7 @@ export default function LoginScreen() {
     } catch (error: any) {
       console.error('❌ Login error:', error);
       console.error('❌ Error details:', error.response?.data || error.message);
-      Alert.alert('Login Failed', error.response?.data?.message || 'Invalid credentials');
+      Alert.alert(t('Login Failed'), error.response?.data?.message || t("Invalid credentials"));
     } finally {
       setIsLoading(false);
     }
@@ -57,13 +59,13 @@ export default function LoginScreen() {
         <View style={styles.brandMark}>
           <MaterialIcons name="auto-awesome" size={32} color="#07111F" />
         </View>
-        <Text style={styles.eyebrow}>FIELD OPERATIONS, UNIFIED</Text>
+        <Text style={styles.eyebrow}>{t("FIELD OPERATIONS, UNIFIED")}</Text>
         <Text style={styles.title}>Future Jobs Pro AI</Text>
-        <Text style={styles.subtitle}>Run the field, protect the work, and pay your team from one command center.</Text>
+        <Text style={styles.subtitle}>{t("Run the field, protect the work, and pay your team from one command center.")}</Text>
 
         <TextInput
           style={styles.input}
-          placeholder="Email"
+          placeholder={t("Email")}
           placeholderTextColor="#888"
           value={email}
           onChangeText={setEmail}
@@ -73,7 +75,7 @@ export default function LoginScreen() {
         <View style={styles.passwordField}>
           <TextInput
             style={[styles.input, styles.passwordInput]}
-            placeholder="Password"
+            placeholder={t("Password")}
             placeholderTextColor="#888"
             value={password}
             onChangeText={setPassword}
@@ -85,28 +87,28 @@ export default function LoginScreen() {
             style={styles.passwordToggle}
             onPress={() => setShowPassword(value => !value)}
             accessibilityRole="button"
-            accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+            accessibilityLabel={showPassword ? t("Hide password") : t("Show password")}
             accessibilityState={{ checked: showPassword }}
             hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
           >
             <MaterialIcons name={showPassword ? 'visibility-off' : 'visibility'} size={22} color="#A8B5C7" />
           </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.forgotLink} onPress={() => navigation.navigate('ForgotPassword')} disabled={isLoading}><Text style={styles.forgotText}>Forgot password?</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.forgotLink} onPress={() => navigation.navigate('ForgotPassword')} disabled={isLoading}><Text style={styles.forgotText}>{t("Forgot password?")}</Text></TouchableOpacity>
         <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={isLoading}>
-          {isLoading ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.buttonText}>Sign In</Text>}
+          {isLoading ? <ActivityIndicator color="#0A0A0A" /> : <Text style={styles.buttonText}>{t("Sign In")}</Text>}
         </TouchableOpacity>
-        <TouchableOpacity style={styles.signupButton} onPress={() => navigation.navigate('Register')} disabled={isLoading}><Text style={styles.signupText}>New to Future Jobs Pro AI? <Text style={styles.signupAccent}>Sign Up</Text></Text></TouchableOpacity>
+        <TouchableOpacity style={styles.signupButton} onPress={() => navigation.navigate('Register')} disabled={isLoading}><Text style={styles.signupText}>{t("New to Future Jobs Pro AI?")} <Text style={styles.signupAccent}>{t("Sign Up")}</Text></Text></TouchableOpacity>
         <TouchableOpacity style={styles.demoButton} onPress={() => navigation.navigate('Demo')} disabled={isLoading}>
           <MaterialIcons name="play-circle-outline" size={22} color="#67E8F9" />
-          <Text style={styles.demoButtonText}>Explore the interactive demo</Text>
+          <Text style={styles.demoButtonText}>{t("Explore the interactive demo")}</Text>
         </TouchableOpacity>
         <View style={styles.trustRow}>
-          <Text style={styles.trustText}>GPS evidence</Text>
+          <Text style={styles.trustText}>{t("GPS evidence")}</Text>
           <Text style={styles.trustDot}>•</Text>
-          <Text style={styles.trustText}>AI assistance</Text>
+          <Text style={styles.trustText}>{t("AI assistance")}</Text>
           <Text style={styles.trustDot}>•</Text>
-          <Text style={styles.trustText}>Payroll ready</Text>
+          <Text style={styles.trustText}>{t("Payroll ready")}</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

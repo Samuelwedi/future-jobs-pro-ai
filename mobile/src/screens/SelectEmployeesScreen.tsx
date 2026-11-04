@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
@@ -22,6 +23,7 @@ interface TeamMembersResponse {
 }
 
 export default function SelectEmployeesScreen() {
+  const { t } = useLang();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { user } = useAuth();
@@ -50,7 +52,7 @@ export default function SelectEmployeesScreen() {
     try {
       const companyId = user?.companyId;
       if (!companyId) {
-        Alert.alert('Error', 'Company ID not found');
+        Alert.alert(t('Error'), t('Company ID not found'));
         return;
       }
       const res = await api.get<TeamMembersResponse>(`/team/members/${companyId}`);
@@ -59,7 +61,7 @@ export default function SelectEmployeesScreen() {
       setEmployees(members);
       setFiltered(members);
     } catch (e: any) {
-      Alert.alert('Error', 'Failed to load employees: ' + e.message);
+      Alert.alert(t('Error'), 'Failed to load employees: ' + e.message);
     } finally {
       setLoading(false);
     }
@@ -90,18 +92,18 @@ export default function SelectEmployeesScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Employees</Text>
+        <Text style={styles.headerTitle}>{t("Select Employees")}</Text>
         <TouchableOpacity onPress={done}>
-          <Text style={styles.doneText}>Done</Text>
+          <Text style={styles.doneText}>{t("Done")}</Text>
         </TouchableOpacity>
       </View>
 
       <TextInput
         style={styles.searchInput}
-        placeholder="Search employees..."
+        placeholder={t("Search employees...")}
         placeholderTextColor="#888"
         value={searchText}
         onChangeText={setSearchText}
@@ -124,7 +126,7 @@ export default function SelectEmployeesScreen() {
             )}
           </TouchableOpacity>
         )}
-        ListEmptyComponent={<Text style={styles.empty}>No employees found</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>{t("No employees found")}</Text>}
       />
     </View>
   );

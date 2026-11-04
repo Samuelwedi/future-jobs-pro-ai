@@ -32,6 +32,13 @@ Updated 2026-11-03 (local). The tester report is the current priority; this regi
 - Localization remains partial across the other screens and dynamic/server error messages. These four screens are an expansion, not evidence that the full app is translated.
 - API commit `07208d2` deployed successfully: Railway `b965a418-47de-4f24-9687-374705a41a77`, healthy after startup. Customer-web deployment `dpl_ECZMsi8rYds54e1ouCxkQk7dne2C` is READY on the canonical domains. Signed-in estimate listing loads. Real email delivery was not exercised.
 
+### Authentication and chat localization — 2026-11-04 UTC
+
+- Extended Spanish/French static UI copy to Login, Register, Forgot Password, Change Temporary Password, Chat List, Chat, New Chat and Select Employees. Password visibility labels and chat-mode actions are localized. Brand names, route identifiers, file names and customer-authored messages are unchanged. TypeScript and all 36 mobile tests passed, including translation-key coverage for all 12 screens changed in the two localization continuations.
+- QuickBooks source audit: `quickbooksOAuth.ts` requests accounting scope only. Current integration service supports customers/sales receipts and Stripe-payment import; it contains no QuickBooks Time schedule or payroll-result import worker. The web integration screen now states that distinction explicitly.
+- Provider prerequisite remains unverified: Intuit's current developer documentation limits workforce employee data to approved partners (`qb.employee.read`); Premium Workforce APIs require eligible partner access. The existing accounting OAuth grant does not establish these permissions, and worldwide payroll availability is not established. No paid partner upgrade, new OAuth permission grant, or fabricated synchronization was performed.
+- Official references: https://developer.intuit.com/app/developer/payroll-time/docs/workflows/payroll-employee and https://static.developer.intuit.com/output_html/qbo/docs/get-started/partner-faq.html . Account eligibility and per-country API availability must be verified before activating this integration.
+
 The earlier records below are retained as historical checkpoints; approval and build statements there do not supersede this continuation. All remaining and paused groups are retained.
 
 ## Earlier verified release — 2026-10-31

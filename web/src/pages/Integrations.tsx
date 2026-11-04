@@ -198,6 +198,9 @@ export default function Integrations() {
                 <AccountBalance sx={{ fontSize: 60, color: '#635BFF', mb: 2 }} />,
               )}
             </Grid>
+            <Alert severity="info" sx={{ mt: 3 }}>
+              This connection covers QuickBooks Online accounting. Automatic QuickBooks Time schedules and payroll-result imports are not enabled. A connected accounting account does not activate those services.
+            </Alert>
             <Card sx={{ bgcolor: '#1A1A1A', border: '1px solid #333', borderRadius: 3, mt: 4 }}>
               <CardContent sx={{ p: 4 }}>
                 <Typography variant="h6" sx={{ color: '#FFF', mb: 1 }}>Stripe → QuickBooks</Typography>

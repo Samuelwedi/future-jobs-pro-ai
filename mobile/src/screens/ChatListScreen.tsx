@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Image,
@@ -17,6 +18,7 @@ interface Room {
 }
 
 export default function ChatListScreen() {
+  const { t } = useLang();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -47,7 +49,7 @@ export default function ChatListScreen() {
         </View>}
         <View style={styles.roomInfo}>
           <Text style={styles.roomName}>{title}</Text>
-          <Text style={styles.roomSubtitle}>{item.is_group ? 'Group' : 'Direct message'}</Text>
+          <Text style={styles.roomSubtitle}>{item.is_group ? t('Group') : t("Direct message")}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -58,10 +60,10 @@ export default function ChatListScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Messages</Text>
+        <Text style={styles.headerTitle}>{t("Messages")}</Text>
         <View style={{ width: 24 }} />
       </View>
       <FlatList
@@ -70,10 +72,10 @@ export default function ChatListScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={<Text style={styles.emptyText}>No conversations yet</Text>}
+        ListEmptyComponent={<Text style={styles.emptyText}>{t("No conversations yet")}</Text>}
       />
       <TouchableOpacity style={styles.newChatBtn} onPress={() => navigation.navigate('NewChat')}>
-        <Text style={styles.newChatBtnText}>+ New Chat</Text>
+        <Text style={styles.newChatBtnText}>{t("+ New Chat")}</Text>
       </TouchableOpacity>
     </View>
   );

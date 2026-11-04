@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -6,6 +7,7 @@ import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 
 export default function NewChatScreen() {
+  const { t } = useLang();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [users, setUsers] = useState<any[]>([]);
@@ -30,10 +32,10 @@ export default function NewChatScreen() {
   };
 
   const createChat = async () => {
-    if (selectedIds.length === 0) return Alert.alert('Select at least one person');
+    if (selectedIds.length === 0) return Alert.alert(t('Select at least one person'));
     try {
       if (isGroup) {
-        if (!groupName.trim()) return Alert.alert('Enter a group name');
+        if (!groupName.trim()) return Alert.alert(t('Enter a group name'));
         const res = await api.post<{ success: boolean; roomId: string }>('/chat/create-group', { name: groupName.trim(), creatorId: user?.id, memberIds: selectedIds });
         navigation.replace('Chat', { roomId: res.roomId, roomName: groupName.trim() });
       } else {
@@ -41,7 +43,7 @@ export default function NewChatScreen() {
         const otherUser = users.find(u => u.id === selectedIds[0]);
         navigation.replace('Chat', { roomId: res.roomId, roomName: otherUser ? `${otherUser.first_name} ${otherUser.last_name}` : 'Chat' });
       }
-    } catch (e) { Alert.alert('Error', 'Could not create chat'); }
+    } catch (e) { Alert.alert(t('Error'), t('Could not create chat')); }
   };
 
   const renderUser = ({ item }: { item: any }) => {
@@ -63,24 +65,24 @@ export default function NewChatScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>New Chat</Text>
+        <Text style={styles.headerTitle}>{t("New Chat")}</Text>
         <View style={{ width: 24 }} />
       </View>
       <View style={styles.toggleRow}>
         <TouchableOpacity onPress={() => { setIsGroup(false); setSelectedIds([]); }} style={[styles.toggle, !isGroup && styles.toggleActive]}>
-          <Text style={[styles.toggleText, !isGroup && styles.toggleTextActive]}>Direct</Text>
+          <Text style={[styles.toggleText, !isGroup && styles.toggleTextActive]}>{t("Direct")}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => { setIsGroup(true); setSelectedIds([]); }} style={[styles.toggle, isGroup && styles.toggleActive]}>
-          <Text style={[styles.toggleText, isGroup && styles.toggleTextActive]}>Group</Text>
+          <Text style={[styles.toggleText, isGroup && styles.toggleTextActive]}>{t("Group")}</Text>
         </TouchableOpacity>
       </View>
-      {isGroup && <TextInput style={styles.groupNameInput} placeholder="Group name" placeholderTextColor="#888" value={groupName} onChangeText={setGroupName} />}
+      {isGroup && <TextInput style={styles.groupNameInput} placeholder={t("Group name")} placeholderTextColor="#888" value={groupName} onChangeText={setGroupName} />}
       <FlatList data={users} renderItem={renderUser} keyExtractor={item => item.id} contentContainerStyle={styles.list} />
       <TouchableOpacity style={styles.createBtn} onPress={createChat}>
-        <Text style={styles.createBtnText}>{isGroup ? 'Create Group' : 'Start Chat'}</Text>
+        <Text style={styles.createBtnText}>{isGroup ? t("Create Group") : t("Start Chat")}</Text>
       </TouchableOpacity>
     </View>
   );

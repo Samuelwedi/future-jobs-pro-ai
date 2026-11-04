@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function RegisterScreen() {
+  const { t } = useLang();
   const safeInsets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { register } = useAuth();
@@ -16,24 +18,24 @@ export default function RegisterScreen() {
   const update = (key: keyof typeof form, value: string) => setForm(current => ({ ...current, [key]: value }));
   const submit = async () => {
     const email = form.email.trim().toLowerCase();
-    if (!form.firstName.trim() || !form.lastName.trim()) return Alert.alert('Name required', 'Enter your first and last name.');
-    if (!EMAIL_PATTERN.test(email)) return Alert.alert('Invalid email', 'Enter a valid email address.');
-    if (form.password.length < 8 || form.password.length > 72 || !/[a-zA-Z]/.test(form.password) || !/[^a-zA-Z]/.test(form.password)) return Alert.alert('Choose a stronger password', 'Use 8 to 72 characters with letters and a number or symbol.');
-    if (form.password !== form.confirmPassword) return Alert.alert('Passwords do not match', 'Re-enter the same password.');
+    if (!form.firstName.trim() || !form.lastName.trim()) return Alert.alert(t('Name required'), t('Enter your first and last name.'));
+    if (!EMAIL_PATTERN.test(email)) return Alert.alert(t('Invalid email'), t('Enter a valid email address.'));
+    if (form.password.length < 8 || form.password.length > 72 || !/[a-zA-Z]/.test(form.password) || !/[^a-zA-Z]/.test(form.password)) return Alert.alert(t('Choose a stronger password'), t('Use 8 to 72 characters with letters and a number or symbol.'));
+    if (form.password !== form.confirmPassword) return Alert.alert(t('Passwords do not match'), t('Re-enter the same password.'));
     setLoading(true);
     try { await register({ firstName: form.firstName.trim(), lastName: form.lastName.trim(), email, password: form.password }); }
-    catch (error: any) { Alert.alert('Sign up failed', error.response?.data?.message || 'Could not create your account.'); }
+    catch (error: any) { Alert.alert(t('Sign up failed'), error.response?.data?.message || 'Could not create your account.'); }
     finally { setLoading(false); }
   };
   return <SafeAreaView edges={[]} style={styles.safe}><KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <Text style={styles.title}>Create your account</Text><Text style={styles.subtitle}>Start using Future Jobs Pro AI</Text>
-    <View style={styles.row}><TextInput style={[styles.input, styles.half]} placeholder="First name" placeholderTextColor="#718096" value={form.firstName} onChangeText={v => update('firstName', v)} textContentType="givenName" /><TextInput style={[styles.input, styles.half]} placeholder="Last name" placeholderTextColor="#718096" value={form.lastName} onChangeText={v => update('lastName', v)} textContentType="familyName" /></View>
-    <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#718096" value={form.email} onChangeText={v => update('email', v)} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} textContentType="emailAddress" />
-    <TextInput style={styles.input} placeholder="Password (8+ characters)" placeholderTextColor="#718096" value={form.password} onChangeText={v => update('password', v)} secureTextEntry={!visible} autoCapitalize="none" textContentType="newPassword" />
-    <TextInput style={styles.input} placeholder="Confirm password" placeholderTextColor="#718096" value={form.confirmPassword} onChangeText={v => update('confirmPassword', v)} secureTextEntry={!visible} autoCapitalize="none" textContentType="newPassword" onSubmitEditing={submit} />
-    <TouchableOpacity style={styles.link} onPress={()=>setVisible(!visible)}><Text style={styles.linkText}>{visible ? 'Hide passwords' : 'Show passwords'}</Text></TouchableOpacity>
-    <TouchableOpacity style={styles.primary} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#07111F" /> : <Text style={styles.primaryText}>Sign Up</Text>}</TouchableOpacity>
-    <TouchableOpacity style={styles.link} onPress={() => navigation.goBack()} disabled={loading}><Text style={styles.linkText}>Already have an account? Sign In</Text></TouchableOpacity>
+    <Text style={styles.title}>{t("Create your account")}</Text><Text style={styles.subtitle}>{t("Start using Future Jobs Pro AI")}</Text>
+    <View style={styles.row}><TextInput style={[styles.input, styles.half]} placeholder={t("First name")} placeholderTextColor="#718096" value={form.firstName} onChangeText={v => update('firstName', v)} textContentType="givenName" /><TextInput style={[styles.input, styles.half]} placeholder={t("Last name")} placeholderTextColor="#718096" value={form.lastName} onChangeText={v => update('lastName', v)} textContentType="familyName" /></View>
+    <TextInput style={styles.input} placeholder={t("Email")} placeholderTextColor="#718096" value={form.email} onChangeText={v => update('email', v)} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} textContentType="emailAddress" />
+    <TextInput style={styles.input} placeholder={t("Password (8+ characters)")} placeholderTextColor="#718096" value={form.password} onChangeText={v => update('password', v)} secureTextEntry={!visible} autoCapitalize="none" textContentType="newPassword" />
+    <TextInput style={styles.input} placeholder={t("Confirm password")} placeholderTextColor="#718096" value={form.confirmPassword} onChangeText={v => update('confirmPassword', v)} secureTextEntry={!visible} autoCapitalize="none" textContentType="newPassword" onSubmitEditing={submit} />
+    <TouchableOpacity style={styles.link} onPress={()=>setVisible(!visible)}><Text style={styles.linkText}>{visible ? t("Hide passwords") : t("Show passwords")}</Text></TouchableOpacity>
+    <TouchableOpacity style={styles.primary} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#07111F" /> : <Text style={styles.primaryText}>{t("Sign Up")}</Text>}</TouchableOpacity>
+    <TouchableOpacity style={styles.link} onPress={() => navigation.goBack()} disabled={loading}><Text style={styles.linkText}>{t("Already have an account? Sign In")}</Text></TouchableOpacity>
   </ScrollView></KeyboardAvoidingView></SafeAreaView>;
 }
 

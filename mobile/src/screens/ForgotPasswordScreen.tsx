@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React, { useState } from 'react';
 import { ScrollView, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,23 +8,24 @@ import { api } from '../services/api';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function ForgotPasswordScreen() {
+  const { t } = useLang();
   const safeInsets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const submit = async () => {
     const normalized = email.trim().toLowerCase();
-    if (!EMAIL_PATTERN.test(normalized)) return Alert.alert('Invalid email', 'Enter the email address used for your account.');
+    if (!EMAIL_PATTERN.test(normalized)) return Alert.alert(t('Invalid email'), t('Enter the email address used for your account.'));
     setLoading(true);
-    try { const response = await api.post<{ message: string }>('/auth/forgot-password', { email: normalized }); Alert.alert('Check your email', response.message, [{ text: 'OK', onPress: () => navigation.goBack() }]); }
-    catch (error: any) { Alert.alert('Could not send link', error.response?.data?.message || 'Try again later.'); }
+    try { const response = await api.post<{ message: string }>('/auth/forgot-password', { email: normalized }); Alert.alert(t('Check your email'), response.message, [{ text: 'OK', onPress: () => navigation.goBack() }]); }
+    catch (error: any) { Alert.alert(t('Could not send link'), error.response?.data?.message || 'Try again later.'); }
     finally { setLoading(false); }
   };
   return <SafeAreaView edges={[]} style={styles.safe}><KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-    <Text style={styles.title}>Reset your password</Text><Text style={styles.subtitle}>Enter the email used to sign in. We’ll send a secure link that expires in one hour.</Text>
-    <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#718096" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} textContentType="emailAddress" onSubmitEditing={submit} />
-    <TouchableOpacity style={styles.primary} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#07111F" /> : <Text style={styles.primaryText}>Send Reset Link</Text>}</TouchableOpacity>
-    <TouchableOpacity style={styles.link} onPress={() => navigation.goBack()} disabled={loading}><Text style={styles.linkText}>Back to Sign In</Text></TouchableOpacity>
+    <Text style={styles.title}>{t("Reset your password")}</Text><Text style={styles.subtitle}>{t("Enter the email used to sign in. We’ll send a secure link that expires in one hour.")}</Text>
+    <TextInput style={styles.input} placeholder={t("Email")} placeholderTextColor="#718096" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} textContentType="emailAddress" onSubmitEditing={submit} />
+    <TouchableOpacity style={styles.primary} onPress={submit} disabled={loading}>{loading ? <ActivityIndicator color="#07111F" /> : <Text style={styles.primaryText}>{t("Send Reset Link")}</Text>}</TouchableOpacity>
+    <TouchableOpacity style={styles.link} onPress={() => navigation.goBack()} disabled={loading}><Text style={styles.linkText}>{t("Back to Sign In")}</Text></TouchableOpacity>
   </ScrollView></KeyboardAvoidingView></SafeAreaView>;
 }
 
