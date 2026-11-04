@@ -84,6 +84,9 @@ app.get('/api/health', async (req: Request, res: Response) => {
   });
 });
 
+import contactRoutes from './routes/contactRoutes';
+app.use('/api/contact', contactRoutes);
+
 // All protected HTTP APIs pass through the company-level entitlement gate.
 // Billing, account recovery, signed provider callbacks, kiosk bootstrap and
 // support routes are explicitly handled as public/self-authenticating paths.

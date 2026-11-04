@@ -39,6 +39,13 @@ Updated 2026-11-03 (local). The tester report is the current priority; this regi
 - Provider prerequisite remains unverified: Intuit's current developer documentation limits workforce employee data to approved partners (`qb.employee.read`); Premium Workforce APIs require eligible partner access. The existing accounting OAuth grant does not establish these permissions, and worldwide payroll availability is not established. No paid partner upgrade, new OAuth permission grant, or fabricated synchronization was performed.
 - Official references: https://developer.intuit.com/app/developer/payroll-time/docs/workflows/payroll-employee and https://static.developer.intuit.com/output_html/qbo/docs/get-started/partner-faq.html . Account eligibility and per-country API availability must be verified before activating this integration.
 
+### Contact delivery and work-screen localization — 2026-11-04 UTC
+
+- Fixed false success in both Contact forms. They now POST to a public, rate-limited contact endpoint with a fixed support recipient, bounded/escaped input, explicit SMTP acceptance and failure responses. Failed submissions retain the draft; in-flight submits are locked. The mobile form sends directly without putting contact messages in the offline action queue. No live message was sent during validation.
+- Removed the placeholder phone number and unverified two-hour/24-hour support response promises from Contact. Success means the mail provider accepted the message, not that a person read it or that inbox delivery is established.
+- Added Spanish/French static copy to Tasks, Projects, Contact, Folders and History, including task statuses/actions and key validation messages. The regression covers translation keys across 17 screens changed in these continuations. Other screens, dynamic errors and complete translated device acceptance remain open.
+- Validation: backend TypeScript and all 236 backend tests passed; mobile TypeScript and all 36 mobile tests passed; customer-web production build passed. iOS and Android Hermes exports passed before the final label-only translation adjustments, which passed TypeScript and tests. No new signed build or store submission was started.
+
 The earlier records below are retained as historical checkpoints; approval and build statements there do not supersede this continuation. All remaining and paused groups are retained.
 
 ## Earlier verified release — 2026-10-31

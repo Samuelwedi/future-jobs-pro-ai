@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Alert,
@@ -7,6 +8,7 @@ import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 
 export default function FoldersScreen() {
+  const { t } = useLang();
   const navigation = useNavigation<any>();
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +50,7 @@ export default function FoldersScreen() {
         <MaterialIcons name="error-outline" size={48} color="#F44336" />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity style={styles.retryBtn} onPress={handleRetry}>
-          <Text style={styles.retryBtnText}>Retry</Text>
+          <Text style={styles.retryBtnText}>{t("Retry")}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -57,10 +59,10 @@ export default function FoldersScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Media Folders</Text>
+        <Text style={styles.headerTitle}>{t("Media Folders")}</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -75,12 +77,12 @@ export default function FoldersScreen() {
             <MaterialIcons name="folder" size={32} color="#00D4FF" />
             <View style={styles.projectInfo}>
               <Text style={styles.projectName}>{item.project_name}</Text>
-              <Text style={styles.projectSub}>Tap to view months</Text>
+              <Text style={styles.projectSub}>{t("Tap to view months")}</Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#888" />
           </TouchableOpacity>
         )}
-        ListEmptyComponent={<Text style={styles.emptyText}>No media found</Text>}
+        ListEmptyComponent={<Text style={styles.emptyText}>{t("No media found")}</Text>}
       />
     </View>
   );
