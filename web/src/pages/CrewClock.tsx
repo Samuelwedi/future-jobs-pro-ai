@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Button, Chip, CircularProgress, Alert, IconButton,
@@ -52,6 +52,15 @@ export default function CrewClock() {
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkDataLoading, setBulkDataLoading] = useState(false);
+  const [bulkError, setBulkError] = useState('');
+  const mutationLock = useRef(false);
+  const canManage = ['boss', 'manager'].includes(String(user?.role).toLowerCase());
+  const coordinates = () => new Promise<{latitude:number;longitude:number}>((resolve,reject) => {
+    if (!navigator.geolocation) return reject(new Error('Location is unavailable in this browser.'));
+    navigator.geolocation.getCurrentPosition(position => resolve({latitude:position.coords.latitude,longitude:position.coords.longitude}),
+      () => reject(new Error('Allow location access and try again.')), {enableHighAccuracy:true,timeout:20000,maximumAge:0});
+  });
 
   useEffect(() => {
     fetchActiveEmployees();
@@ -63,6 +72,7 @@ export default function CrewClock() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Could not load active employees');
       setActiveEmployees(data.employees || []);
     } catch (e) {
       console.error(e);
@@ -74,6 +84,7 @@ export default function CrewClock() {
   };
 
   const fetchBulkData = async () => {
+    setBulkDataLoading(true); setBulkError(''); setAllEmployees([]); setProjects([]);
     try {
       const [employeesRes, projectsRes] = await Promise.all([
         fetch(`${API_BASE}/api/users/company/${user?.companyId}`, {
@@ -86,8 +97,11 @@ export default function CrewClock() {
       const employeesData = await employeesRes.json();
       const projectsData = await projectsRes.json();
 
-      // Get clock-in status for each employee (simplified – we can just check active list)
-      const activeIds = new Set(activeEmployees.map(e => e.userId));
+      if (!employeesRes.ok || !projectsRes.ok) throw new Error('Could not load employees and projects.');
+      const activeRes = await fetch(`${API_BASE}/api/gps/active/${user?.companyId}`, {headers:{Authorization:`Bearer ${token}`}});
+      if (!activeRes.ok) throw new Error('Could not refresh crew status.');
+      const activeData = await activeRes.json();
+      const activeIds = new Set((activeData.employees || []).map((e: ActiveEmployee) => e.userId));
       const users = employeesData.users || [];
       const withStatus = users.map((emp: any) => ({
         ...emp,
@@ -97,14 +111,16 @@ export default function CrewClock() {
       setProjects(projectsData.projects || []);
     } catch (e) {
       console.error('Failed to fetch bulk data', e);
-    }
+      setBulkError('Could not load employees, projects and status. Close and reopen to retry.');
+    } finally { setBulkDataLoading(false); }
   };
 
   const openBulkModal = async () => {
-    await fetchBulkData();
+    if (!canManage || mutationLock.current) return;
     setSelectedEmployeeIds([]);
     setSelectedProjectId('');
     setBulkModalOpen(true);
+    await fetchBulkData();
   };
 
   const toggleEmployeeSelection = (id: string) => {
@@ -113,82 +129,56 @@ export default function CrewClock() {
     );
   };
 
-  const handleBulkClockIn = async () => {
-    if (selectedEmployeeIds.length === 0) {
-      alert('Select at least one employee');
-      return;
+  const runBulk = async (direction: 'in' | 'out') => {
+    if (!canManage || mutationLock.current || bulkDataLoading) return;
+    if (selectedEmployeeIds.some(id => !allEmployees.some(employee => employee.id === id))) {
+      setBulkError('Reopen the employee list to refresh status before retrying.'); return;
     }
-    if (!selectedProjectId) {
-      alert('Select a project');
-      return;
+    if (!selectedEmployeeIds.length || (direction === 'in' && !selectedProjectId)) {
+      setBulkError('Select employees and, for clock-in, a project.'); return;
     }
-    setBulkLoading(true);
+    mutationLock.current = true; setBulkLoading(true); setBulkError('');
     try {
-      const res = await fetch(`${API_BASE}/api/time-entries/bulk-clock-in`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          userIds: selectedEmployeeIds,
-          projectId: selectedProjectId,
-          latitude: 0,
-          longitude: 0,
-        }),
+      const location = await coordinates();
+      const res = await fetch(`${API_BASE}/api/time-entries/bulk-clock-${direction}`, {
+        method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify({userIds:selectedEmployeeIds,projectId:selectedProjectId,...location}),
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Clock action was not confirmed. Refresh status before retrying.');
       const results = data.results || [];
-      const successCount = results.filter((r: any) => r.success).length;
-      alert(`${successCount} of ${selectedEmployeeIds.length} employees clocked in.`);
-      setBulkModalOpen(false);
-      fetchActiveEmployees();
-    } catch (e: any) {
-      alert('Bulk clock-in failed: ' + e.message);
-    } finally {
-      setBulkLoading(false);
-    }
-  };
-
-  const handleBulkClockOut = async () => {
-    if (selectedEmployeeIds.length === 0) {
-      alert('Select at least one employee');
-      return;
-    }
-    setBulkLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/time-entries/bulk-clock-out`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          userIds: selectedEmployeeIds,
-          latitude: 0,
-          longitude: 0,
-        }),
+      const successful = new Set(results.filter((r:any)=>r.success === true && selectedEmployeeIds.includes(r.userId)).map((r:any)=>r.userId));
+      const remaining = selectedEmployeeIds.filter(id=>!successful.has(id));
+      const details = remaining.map(id=>{
+        const employee=allEmployees.find(e=>e.id===id);
+        return `${employee ? `${employee.first_name} ${employee.last_name}` : id}: ${results.find((r:any)=>r.userId===id)?.message || 'No confirmed result; refresh status before retrying.'}`;
       });
-      const data = await res.json();
-      const results = data.results || [];
-      const successCount = results.filter((r: any) => r.success).length;
-      alert(`${successCount} of ${selectedEmployeeIds.length} employees clocked out.`);
-      setBulkModalOpen(false);
-      fetchActiveEmployees();
-    } catch (e: any) {
-      alert('Bulk clock-out failed: ' + e.message);
-    } finally {
-      setBulkLoading(false);
-    }
+      alert(`${successful.size} of ${selectedEmployeeIds.length} employees clocked ${direction}.` + (details.length ? `\n\n${details.join('\n')}` : ''));
+      await Promise.all([fetchActiveEmployees(),fetchBulkData()]);
+      setSelectedEmployeeIds(remaining);
+      if (!remaining.length) setBulkModalOpen(false);
+    } catch (e:any) {
+      setBulkError(e.message || 'Action was not confirmed. Refresh status before retrying.');
+    } finally { mutationLock.current = false; setBulkLoading(false); }
   };
+  const handleBulkClockIn = () => runBulk('in');
+  const handleBulkClockOut = () => runBulk('out');
 
   const handleForceClockOut = async (userId: string, timeEntryId: string) => {
-    if (!window.confirm('Force clock out this employee?')) return;
+    if (!canManage || mutationLock.current || !window.confirm('Force clock out this employee?')) return;
+    mutationLock.current = true; setBulkLoading(true);
     try {
-      await fetch(`${API_BASE}/api/crew/clock-out`, {
+      const res = await fetch(`${API_BASE}/api/crew/clock-out`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ userId, timeEntryId }),
       });
+      if (!res.ok) throw new Error((await res.json()).message || 'Clock-out was not confirmed');
       alert('Employee clocked out.');
       fetchActiveEmployees();
     } catch (e: any) {
       alert('Failed: ' + e.message);
-    }
+    } finally { mutationLock.current = false; setBulkLoading(false); }
   };
 
   if (loading) {
@@ -217,7 +207,7 @@ export default function CrewClock() {
           <Button
             variant="contained"
             startIcon={<People />}
-            onClick={openBulkModal}
+            disabled={!canManage || bulkLoading} onClick={openBulkModal}
             sx={{ bgcolor: '#00D4FF', color: '#0A0A0A' }}
           >
             Bulk Actions
@@ -260,13 +250,13 @@ export default function CrewClock() {
                     />
                   </TableCell>
                   <TableCell sx={{ color: '#888' }}>
-                    {emp.latitude && emp.longitude
+                    {emp.latitude != null && emp.longitude != null
                       ? `${emp.latitude.toFixed(5)}, ${emp.longitude.toFixed(5)}`
                       : 'No GPS'}
                   </TableCell>
                   <TableCell>
                     <IconButton
-                      size="small"
+                      disabled={!canManage || bulkLoading} aria-label="Clock out employee" size="small"
                       onClick={() => handleForceClockOut(emp.userId, emp.timeEntryId)}
                       sx={{ color: '#F44336' }}
                     >
@@ -281,17 +271,21 @@ export default function CrewClock() {
       </TableContainer>
 
       {/* Bulk Actions Modal */}
-      <Dialog open={bulkModalOpen} onClose={() => setBulkModalOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={bulkModalOpen} onClose={() => !mutationLock.current && setBulkModalOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF', display: 'flex', justifyContent: 'space-between' }}>
           Bulk Actions
-          <IconButton onClick={() => setBulkModalOpen(false)} sx={{ color: '#FFF' }}>
+          <IconButton disabled={bulkLoading || bulkDataLoading} onClick={() => setBulkModalOpen(false)} sx={{ color: '#FFF' }}>
             <Close />
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ bgcolor: '#0A0A0A' }}>
+          <Alert severity="info" sx={{my:2}}>Bulk actions use this device’s current location. Confirm selected employees are with you at the work site.</Alert>
+          {bulkDataLoading && <CircularProgress size={24}/>}
+          {bulkError && <Alert severity="error" onClose={() => setBulkError('')}>{bulkError}</Alert>}
           <FormControl fullWidth sx={{ mb: 2, mt: 1 }}>
             <InputLabel sx={{ color: '#888' }}>Project</InputLabel>
             <Select
+              disabled={bulkLoading || bulkDataLoading}
               value={selectedProjectId}
               onChange={(e) => setSelectedProjectId(e.target.value)}
               sx={{ color: '#FFF', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#333' } }}
@@ -308,7 +302,7 @@ export default function CrewClock() {
           <Box sx={{ maxHeight: 300, overflow: 'auto' }}>
             {allEmployees.map((emp) => (
               <Box key={emp.id} sx={{ display: 'flex', alignItems: 'center', py: 1, borderBottom: '1px solid #222' }}>
-                <Checkbox
+                <Checkbox disabled={bulkLoading || bulkDataLoading}
                   checked={selectedEmployeeIds.includes(emp.id)}
                   onChange={() => toggleEmployeeSelection(emp.id)}
                   sx={{ color: '#00D4FF' }}
@@ -326,11 +320,11 @@ export default function CrewClock() {
           </Box>
         </DialogContent>
         <DialogActions sx={{ bgcolor: '#1A1A1A' }}>
-          <Button onClick={() => setBulkModalOpen(false)}>Cancel</Button>
+          <Button disabled={bulkLoading || bulkDataLoading} onClick={() => setBulkModalOpen(false)}>Cancel</Button>
           <Button
             variant="contained"
             onClick={handleBulkClockIn}
-            disabled={bulkLoading}
+            disabled={bulkLoading || bulkDataLoading}
             sx={{ bgcolor: '#4CAF50', color: '#FFF' }}
           >
             Clock In
@@ -338,7 +332,7 @@ export default function CrewClock() {
           <Button
             variant="contained"
             onClick={handleBulkClockOut}
-            disabled={bulkLoading}
+            disabled={bulkLoading || bulkDataLoading}
             sx={{ bgcolor: '#F44336', color: '#FFF' }}
           >
             Clock Out

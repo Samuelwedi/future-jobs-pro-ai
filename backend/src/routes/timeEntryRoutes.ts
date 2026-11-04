@@ -1,3 +1,4 @@
+import { bulkClockIn } from '../services/bulkClockService';
 import { companyDate } from '../services/payPeriodCalendar';
 import { completeTimeEntry, employeeOvertime } from '../services/overtimeService';
 import express, { Request, Response } from 'express';
@@ -366,59 +367,12 @@ router.post('/bulk-clock-in', async (req: Request, res: Response) => {
     }
     const decoded = verifyToken(req);
 
-    const userCheck = await pool.query('SELECT role, company_id FROM users WHERE id = $1', [decoded.id]);
-    if (userCheck.rows.length === 0 || !['boss', 'manager'].includes(userCheck.rows[0].role)) {
-      return res.status(403).json({ success: false, message: 'Permission denied' });
-    }
-
-    const { userIds, projectId, latitude, longitude } = req.body;
-    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
-      return res.status(400).json({ success: false, message: 'userIds array required' });
-    }
-    if (!projectId) {
-      return res.status(400).json({ success: false, message: 'projectId required' });
-    }
-
-    const companyCheck = await pool.query(
-      `SELECT company_id FROM users WHERE id = ANY($1::uuid[]) GROUP BY company_id`,
-      [userIds]
-    );
-    if (companyCheck.rows.length !== 1) {
-      return res.status(400).json({ success: false, message: 'All users must belong to the same company' });
-    }
-    if (companyCheck.rows[0].company_id !== userCheck.rows[0].company_id) {
-      return res.status(403).json({ success: false, message: 'Employees must belong to your company' });
-    }
-
-    const results = [];
-    for (const userId of userIds) {
-      const active = await pool.query(
-        'SELECT id FROM time_entries WHERE user_id = $1 AND clock_out IS NULL',
-        [userId]
-      );
-      if (active.rows.length > 0) {
-        results.push({ userId, success: false, message: 'Already clocked in' });
-        continue;
-      }
-
-      const result = await pool.query(
-        `INSERT INTO time_entries (user_id, project_id, clock_in, latitude, longitude, created_at, status)
-         VALUES ($1, $2, NOW(), $3, $4, NOW(), 'active') RETURNING id, clock_in`,
-        [userId, projectId, latitude || 0, longitude || 0]
-      );
-      const entry = result.rows[0];
-      await pool.query(
-        `INSERT INTO gps_tracking (user_id, time_entry_id, project_id, latitude, longitude, timestamp)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [userId, entry.id, projectId, latitude || 0, longitude || 0]
-      );
-      results.push({ userId, success: true, timeEntryId: entry.id });
-    }
+    const results = await bulkClockIn(decoded.id, req.body);
 
     res.json({ success: true, results });
   } catch (error: any) {
     console.error('Bulk clock-in error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Bulk clock-in could not be confirmed. Refresh crew status before retrying.' });
   }
 });
 
