@@ -1,5 +1,5 @@
 import TimezonePicker from '../components/TimezonePicker';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -63,6 +63,9 @@ export default function CompanySettingsScreen() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
+  const [loadError, setLoadError] = useState('');
+  const [loaded, setLoaded] = useState(false);
   const [settings, setSettings] = useState<CompanySettings>({
     id: '',
     name: '',
@@ -93,12 +96,14 @@ export default function CompanySettingsScreen() {
   }, []);
 
   const fetchSettings = async () => {
+    setLoadError(''); setLoaded(false);
     try {
       const companyRes = await api.get<CompanyResponse>(`/companies/${user?.companyId}`);
       const companyData = (companyRes as any).data ?? companyRes;
 
       const settingsRes = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
       const settingsData = (settingsRes as any).data ?? settingsRes;
+      if (!companyData?.id || String(companyData.id) !== String(user?.companyId) || !settingsData?.settings) throw new Error('Incomplete company settings response');
 
       const merged: CompanySettings = {
         id: companyData.id,
@@ -117,6 +122,7 @@ export default function CompanySettingsScreen() {
         default_hourly_rate: settingsData.settings?.default_hourly_rate ?? 20,
       };
       setSettings(merged);
+      setLoaded(true);
       setOriginalSettings(merged);
       // Update string states
       setDailyStr(String(merged.overtime_daily_threshold_hours));
@@ -125,13 +131,14 @@ export default function CompanySettingsScreen() {
       setHourlyRateStr(String(merged.default_hourly_rate));
     } catch (e) {
       console.error('Error fetching settings:', e);
-      Alert.alert('Error', 'Could not load company settings');
+      setLoadError('Could not load company settings. Retry before making changes.');
     } finally {
       setLoading(false);
     }
   };
 
   const saveSettings = async () => {
+    if (!loaded || saveLock.current) return;
     // Convert strings to numbers
     const threshold = thresholdStr.trim() ? Number(thresholdStr) : NaN;
     const daily = dailyStr.trim() ? Number(dailyStr) : NaN;
@@ -151,7 +158,7 @@ export default function CompanySettingsScreen() {
       return;
     }
 
-    setSaving(true);
+    saveLock.current = true; setSaving(true);
     try {
       await api.put(`/companies/${user?.companyId}/settings`, {
         overtime_mode: settings.overtime_mode,
@@ -194,12 +201,12 @@ export default function CompanySettingsScreen() {
       }
 
       Alert.alert('✅ Success', 'Company settings updated.');
-      fetchSettings();
+      await fetchSettings();
     } catch (e: any) {
       console.error('Error saving settings:', e);
       Alert.alert('Error', e?.response?.data?.message || e.message || 'Failed to save settings');
     } finally {
-      setSaving(false);
+      saveLock.current = false; setSaving(false);
     }
   };
 
@@ -231,6 +238,8 @@ export default function CompanySettingsScreen() {
     return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
   }
 
+  if (!loaded) return <View style={[styles.container,{padding:24,justifyContent:'center'}]}><Text accessibilityRole="alert" style={{color:'#FDA4AF',marginBottom:20}}>{loadError || 'Loading company settings…'}</Text><TouchableOpacity accessibilityRole="button" onPress={()=>{setLoading(true);void fetchSettings();}} style={{padding:16}}><Text style={styles.saveBtn}>Retry</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" onPress={()=>navigation.goBack()} style={{padding:16}}><Text style={styles.saveBtn}>Go back</Text></TouchableOpacity></View>;
+
   return (
     <ScrollView automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag" style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={styles.header}>
@@ -245,6 +254,7 @@ export default function CompanySettingsScreen() {
         </TouchableOpacity>
       </View>
 
+      <View pointerEvents={saving ? 'none' : 'auto'} accessibilityElementsHidden={saving} importantForAccessibility={saving ? 'no-hide-descendants' : 'auto'}>
       <View style={styles.logoSection}>
         {settings.logo_url ? (
           <Image source={{ uri: settings.logo_url }} style={styles.logo} />
@@ -334,6 +344,7 @@ export default function CompanySettingsScreen() {
       </Section>
 
 
+      </View>
     </ScrollView>
   );
 }

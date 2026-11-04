@@ -17,10 +17,10 @@ export default function SecurityScreen() {
       </View>
       <ScrollView style={styles.body}>
         {[
-          { title: 'Encryption', desc: 'All data is encrypted at rest using AES‑256 and in transit using TLS 1.3.' },
-          { title: 'Secure Cloud', desc: 'Your data is stored in secure, SOC‑2 compliant cloud infrastructure.' },
-          { title: 'Access Control', desc: 'Role‑based access ensures that only authorised users can view sensitive data.' },
-          { title: 'Compliance', desc: 'We adhere to industry best practices and comply with GDPR and CCPA regulations.' },
+          { title: 'Protect your account', desc: 'Use a unique password and keep your sign-in details private. Never share passwords or API keys in chat or support requests.' },
+          { title: 'Shared devices', desc: 'Sign out when you finish using a shared device. Keep your device software and the app up to date.' },
+          { title: 'Company access', desc: 'Ask your company administrator to review your role if you cannot access a feature. Administrators should review team access when responsibilities change.' },
+          { title: 'Report a concern', desc: 'Use Support to report unexpected account activity. Include what happened and when, without sharing passwords, payment details or other sensitive information.' },
         ].map((item, idx) => (
           <View key={idx} style={{ marginBottom: 24 }}>
             <Text style={styles.sectionTitle}>{item.title}</Text>

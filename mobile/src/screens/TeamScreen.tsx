@@ -1,5 +1,5 @@
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   ScrollView, Text, StyleSheet, FlatList, TouchableOpacity, Alert,
@@ -22,7 +22,7 @@ interface Member {
 }
 
 export default function TeamScreen() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigation = useNavigation();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,13 +32,26 @@ export default function TeamScreen() {
   const [formFirstName, setFormFirstName] = useState('');
   const [formLastName, setFormLastName] = useState('');
   const [formRole, setFormRole] = useState('employee');
-  const [tempPassword, setTempPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const mutationLock = useRef(false);
+  const role = String(user?.role || '').toLowerCase();
+  const canManage = ['boss', 'manager', 'admin'].includes(role);
+  const canChangeRoles = ['boss', 'admin'].includes(role);
+  const runMutation = async (work: () => Promise<void>) => {
+    if (mutationLock.current) return;
+    mutationLock.current = true; setBusy(true);
+    try { await work(); }
+    catch (cause: any) { Alert.alert('Action failed', cause?.response?.data?.message || cause?.message || 'Please try again'); }
+    finally { mutationLock.current = false; setBusy(false); }
+  };
 
   const fetchMembers = async () => {
+    setError('');
     try {
       const res = await api.get<{ success: boolean; members: Member[] }>(`/team/members/${user?.companyId}`);
       setMembers(res.members || []);
-    } catch (e) { console.error(e); }
+    } catch { setError('Could not load your team. Pull down to try again.'); }
     finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -47,39 +60,41 @@ export default function TeamScreen() {
   const onRefresh = () => { setRefreshing(true); fetchMembers(); };
 
   const handleInvite = async () => {
-    if (!formEmail || !formFirstName || !formLastName) {
+    if (!canManage || mutationLock.current) return;
+    if (!formEmail.trim() || !formFirstName.trim() || !formLastName.trim()) {
       Alert.alert('Error', 'Please fill all fields');
       return;
     }
-    try {
-      const res = await api.post<{ success: boolean; tempPassword: string }>('/team/invite', {
+    await runMutation(async () => {
+      const res = await api.post<{ success: boolean; tempPassword: string; emailSent: boolean }>('/team/invite', {
         companyId: user?.companyId,
-        email: formEmail,
-        firstName: formFirstName,
-        lastName: formLastName,
-        role: formRole,
+        email: formEmail.trim().toLowerCase(),
+        firstName: formFirstName.trim(),
+        lastName: formLastName.trim(),
+        role: canChangeRoles ? formRole : 'employee',
         invitedBy: user?.id,
       });
-      setTempPassword(res.tempPassword);
-      Alert.alert('Employee Invited', `Temporary password: ${res.tempPassword}\n\nGive this to the employee. They can change it after logging in.`);
+      Alert.alert('Employee created', `${res.emailSent ? 'The email provider accepted the invitation.' : 'The account was created, but invitation email delivery failed.'}\n\nTemporary password: ${res.tempPassword}\n\nShare this securely. The employee must change it after signing in.`);
       setModalVisible(false);
       setFormEmail(''); setFormFirstName(''); setFormLastName('');
-      fetchMembers();
-    } catch (e: any) { Alert.alert('Error', e.message); }
+      await fetchMembers();
+    });
   };
 
   const handleChangeRole = (member: Member) => {
+    if (!canChangeRoles || busy) return;
     const newRole = member.role === 'employee' ? 'manager' : 'employee';
     Alert.alert('Change Role', `Change ${member.first_name}'s role to ${newRole}?`, [
       { text: 'Cancel' },
-      { text: 'Yes', onPress: async () => {
+      { text: 'Yes', onPress: () => runMutation(async () => {
         await api.put(`/team/${member.id}/role`, { role: newRole, companyId: user?.companyId });
-        fetchMembers();
-      }}
+        await fetchMembers();
+      })}
     ]);
   };
 
   const handleTransferOwnership = (member: Member) => {
+    if (role !== 'boss' || busy) return;
     Alert.alert(
       'Make this manager the Boss?',
       `${member.first_name} ${member.last_name} will become the company owner. Your account will become a manager.`,
@@ -96,18 +111,15 @@ export default function TeamScreen() {
               {
                 text: 'Transfer ownership',
                 style: 'destructive',
-                onPress: async () => {
-                  try {
+                onPress: () => runMutation(async () => {
                     const response = await api.post<{ success: boolean; message: string }>(
                       `/team/${member.id}/transfer-ownership`,
                       { confirmation: 'TRANSFER OWNERSHIP' },
                     );
-                    await fetchMembers();
-                    Alert.alert('Ownership transferred', `${response.message}. Sign out and back in to refresh your access.`);
-                  } catch (error: any) {
-                    Alert.alert('Transfer failed', error?.response?.data?.message || error.message || 'Please try again');
-                  }
-                },
+                    Alert.alert('Ownership transferred', `${response.message}. Sign in again if prompted to refresh your access.`);
+                    const refreshed = await refreshUser().catch(() => null);
+                    if (refreshed) await fetchMembers();
+                }),
               },
             ],
           ),
@@ -117,12 +129,13 @@ export default function TeamScreen() {
   };
 
   const handleRemove = (member: Member) => {
+    if (!canManage || busy) return;
     Alert.alert('Remove Employee', `Are you sure you want to remove ${member.first_name}?`, [
       { text: 'Cancel' },
-      { text: 'Remove', style: 'destructive', onPress: async () => {
+      { text: 'Remove', style: 'destructive', onPress: () => runMutation(async () => {
         await api.delete(`/team/${member.id}`);
-        fetchMembers();
-      }}
+        await fetchMembers();
+      })}
     ]);
   };
 
@@ -137,16 +150,16 @@ export default function TeamScreen() {
         </View>
       </View>
       <View style={styles.actions}>
-        {item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity onPress={() => handleChangeRole(item)}>
+        {canChangeRoles && item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity disabled={busy} accessibilityLabel="Change role" onPress={() => handleChangeRole(item)}>
           <MaterialIcons name="swap-horiz" size={24} color="#00D4FF" />
         </TouchableOpacity>}
-        {user?.role === 'boss' && item.role === 'manager' && <TouchableOpacity
+        {role === 'boss' && item.role === 'manager' && <TouchableOpacity disabled={busy}
           accessibilityLabel={`Make ${item.first_name} the company Boss`}
           onPress={() => handleTransferOwnership(item)}
         >
           <MaterialIcons name="workspace-premium" size={24} color="#FFD54F" />
         </TouchableOpacity>}
-        {item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity onPress={() => handleRemove(item)}>
+        {canManage && item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity disabled={busy} accessibilityLabel="Remove employee" onPress={() => handleRemove(item)}>
           <MaterialIcons name="delete" size={24} color="#F44336" />
         </TouchableOpacity>}
       </View>
@@ -164,39 +177,40 @@ export default function TeamScreen() {
         <Text style={styles.headerTitle}>Team</Text>
         <View style={{ width: 40 }} />
       </View>
+      {error ? <Text accessibilityRole="alert" style={{color:'#FDA4AF',padding:16}}>{error}</Text> : null}
       <FlatList
         data={members}
         renderItem={renderMember}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={<Text style={styles.empty}>No team members</Text>}
+        ListEmptyComponent={!error ? <Text style={styles.empty}>No team members</Text> : null}
       />
-      <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
+      {canManage && <TouchableOpacity disabled={busy} accessibilityLabel="Invite employee" style={styles.fab} onPress={() => setModalVisible(true)}>
         <MaterialIcons name="person-add" size={28} color="#0A0A0A" />
-      </TouchableOpacity>
+      </TouchableOpacity>}
 
-      <Modal visible={modalVisible} onRequestClose={() => setModalVisible(false)} animationType="slide" transparent>
+      <Modal visible={modalVisible} onRequestClose={() => !busy && setModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             <Text style={styles.modalTitle}>Invite Employee</Text>
-            <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#888" value={formEmail} onChangeText={setFormEmail} autoCapitalize="none" />
-            <TextInput style={styles.input} placeholder="First Name" placeholderTextColor="#888" value={formFirstName} onChangeText={setFormFirstName} />
-            <TextInput style={styles.input} placeholder="Last Name" placeholderTextColor="#888" value={formLastName} onChangeText={setFormLastName} />
+            <TextInput editable={!busy} style={styles.input} maxLength={254} keyboardType="email-address" placeholder="Email" placeholderTextColor="#888" value={formEmail} onChangeText={setFormEmail} autoCapitalize="none" />
+            <TextInput editable={!busy} style={styles.input} maxLength={200} placeholder="First Name" placeholderTextColor="#888" value={formFirstName} onChangeText={setFormFirstName} />
+            <TextInput editable={!busy} style={styles.input} maxLength={200} placeholder="Last Name" placeholderTextColor="#888" value={formLastName} onChangeText={setFormLastName} />
             <View style={styles.roleRow}>
-              <TouchableOpacity style={[styles.roleBtn, formRole === 'employee' && styles.roleBtnActive]} onPress={() => setFormRole('employee')}>
+              <TouchableOpacity disabled={busy} style={[styles.roleBtn, formRole === 'employee' && styles.roleBtnActive]} onPress={() => setFormRole('employee')}>
                 <Text style={[styles.roleBtnText, formRole === 'employee' && styles.roleBtnTextActive]}>Employee</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.roleBtn, formRole === 'manager' && styles.roleBtnActive]} onPress={() => setFormRole('manager')}>
+              {canChangeRoles && <TouchableOpacity disabled={busy} style={[styles.roleBtn, formRole === 'manager' && styles.roleBtnActive]} onPress={() => setFormRole('manager')}>
                 <Text style={[styles.roleBtnText, formRole === 'manager' && styles.roleBtnTextActive]}>Manager</Text>
-              </TouchableOpacity>
+              </TouchableOpacity>}
             </View>
             <View style={styles.modalActions}>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.cancelBtn}>
+              <TouchableOpacity disabled={busy} onPress={() => setModalVisible(false)} style={styles.cancelBtn}>
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={handleInvite} style={styles.submitBtn}>
-                <Text style={styles.submitText}>Invite</Text>
+              <TouchableOpacity disabled={busy} onPress={handleInvite} style={styles.submitBtn}>
+                <Text style={styles.submitText}>{busy ? 'Inviting…' : 'Invite'}</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
