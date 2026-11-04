@@ -7,15 +7,17 @@ export async function preflight(env = process.env, request = fetch) {
     catch (error) { checks.push({name, ok:false, reason:error.message}); }
   }
   const required = key => { if (!env[key]?.trim()) throw new Error(`Missing ${key}`); return env[key]; };
-  async function json(url, token, body) {
-    const r = await request(url, {method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
+  async function json(url, token, body, projectToken=false) {
+    const r = await request(url, {method:body?'POST':'GET',headers:{...(projectToken?{'Project-Access-Token':token}:{Authorization:`Bearer ${token}`}), 'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
     if (!r.ok) throw new Error(`Provider HTTP ${r.status}`);
     return r.json();
   }
   await check('GPT repair credential configured', async()=>{required('LUCY_OPENAI_API_KEY');});
   await check('Railway deployment access and baseline', async()=>{
     const token=required('RAILWAY_API_TOKEN');
-    const data=await json('https://backboard.railway.com/graphql/v2',token,{query:'query($serviceId:String!,$environmentId:String!){serviceInstance(serviceId:$serviceId,environmentId:$environmentId){latestDeployment{id status meta}}}',variables:{serviceId:required('RAILWAY_SERVICE_ID'),environmentId:required('RAILWAY_ENVIRONMENT_ID')}});
+    const body={query:'query($serviceId:String!,$environmentId:String!){serviceInstance(serviceId:$serviceId,environmentId:$environmentId){latestDeployment{id status meta}}}',variables:{serviceId:required('RAILWAY_SERVICE_ID'),environmentId:required('RAILWAY_ENVIRONMENT_ID')}};
+    let data=await json('https://backboard.railway.com/graphql/v2',token,body);
+    if(data.errors?.length)data=await json('https://backboard.railway.com/graphql/v2',token,body,true);
     if(data.errors?.length)throw new Error('Railway rejected deployment credential');
     const d=data.data?.serviceInstance?.latestDeployment;
     if(d?.status!=='SUCCESS'||d.meta?.commitHash!==env.BASE_SHA)throw new Error('Deploy the requested source commit to Railway first');

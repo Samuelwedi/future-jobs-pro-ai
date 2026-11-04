@@ -12,15 +12,21 @@ const review = requiresReview(patch, scope);
 const native = scope === 'mobile-audio' || scope === 'mobile';
 const autoDeploy = !review && !native;
 const wait = ms => new Promise(resolve => setTimeout(resolve,ms));
-async function request(url, token, method='GET', body) {
-  const response = await fetch(url, {method, headers:{Authorization:`Bearer ${token}`, 'Content-Type':'application/json', Accept:'application/json'}, body:body ? JSON.stringify(body):undefined, signal:AbortSignal.timeout(30000)});
+async function request(url, token, method='GET', body, projectToken=false) {
+  const response = await fetch(url, {method, headers:{...(projectToken?{'Project-Access-Token':token}:{Authorization:`Bearer ${token}`}), 'Content-Type':'application/json', Accept:'application/json'}, body:body ? JSON.stringify(body):undefined, signal:AbortSignal.timeout(30000)});
   if (!response.ok) throw new Error(`Provider request failed: HTTP ${response.status}`);
   return response.status===204 ? null : response.json();
 }
 const gh = (url,method,body)=>request(`https://api.github.com/repos/${repo}${url ? `/${url}` : ''}`,process.env.GH_TOKEN,method,body);
 const vercel = (url,method,body)=>request(`https://api.vercel.com${url}${url.includes('?')?'&':'?'}teamId=${encodeURIComponent(process.env.VERCEL_TEAM_ID)}`,process.env.VERCEL_TOKEN,method,body);
+let railwayProjectToken=false;
 async function railway(query,variables) {
-  const result=await request('https://backboard.railway.com/graphql/v2',process.env.RAILWAY_API_TOKEN,'POST',{query,variables});
+  let result=await request('https://backboard.railway.com/graphql/v2',process.env.RAILWAY_API_TOKEN,'POST',{query,variables},railwayProjectToken);
+  // Resolve token type using read-only checks only. Never retry a mutation.
+  if(result.errors?.length && !railwayProjectToken && query.startsWith('query')) {
+    const project=await request('https://backboard.railway.com/graphql/v2',process.env.RAILWAY_API_TOKEN,'POST',{query,variables},true);
+    if(!project.errors?.length){railwayProjectToken=true;result=project;}
+  }
   if(result.errors?.length)throw new Error('Railway rejected request');
   return result.data;
 }

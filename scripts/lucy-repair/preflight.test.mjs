@@ -12,3 +12,14 @@ test('preflight requires both live targets on the exact requested source',async(
  const stale=await preflight({...env,BASE_SHA:'b'.repeat(40)},request);
  assert.equal(stale[1].ok,false);assert.equal(stale[2].ok,false);
 });
+
+test('project-scoped Railway tokens use the documented project header',async()=>{
+ const headers=[];
+ const checks=await preflight(env,async(url,options)=>{
+  if(!url.includes('railway'))return {ok:true,json:async()=>({readyState:'READY',projectId:'portal',meta:{githubCommitSha:env.BASE_SHA}})};
+  headers.push(options.headers);
+  return {ok:true,json:async()=>options.headers['Project-Access-Token']?{data:{serviceInstance:{latestDeployment:{status:'SUCCESS',meta:{commitHash:env.BASE_SHA}}}}}:{errors:[{message:'Not authorized'}]}};
+ });
+ assert.equal(checks.every(c=>c.ok),true);assert.equal(headers.length,2);
+ assert.equal(headers[1]['Project-Access-Token'],'test-railway');assert.equal(headers[1].Authorization,undefined);
+});
