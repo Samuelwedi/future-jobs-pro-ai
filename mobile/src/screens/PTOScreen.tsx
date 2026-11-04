@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
@@ -11,6 +12,7 @@ interface PTORequest { id: string; start_date: string; end_date: string; type: s
 interface PTOBalance { vacation_days: number; sick_days: number; personal_days: number; }
 
 export default function PTOScreen() {
+  const { t, lang } = useLang();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [requests, setRequests] = useState<PTORequest[]>([]);
@@ -41,7 +43,7 @@ export default function PTOScreen() {
       ]);
       setRequests(reqRes.requests || []);
       setBalance(balRes.balance || null);
-    } catch (e: any) { console.error(e); setError(e?.message || 'PTO information could not be loaded'); }
+    } catch (e: any) { console.error(e); setError(e?.message || t('PTO information could not be loaded')); }
     finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -49,18 +51,18 @@ export default function PTOScreen() {
 
   const handleSubmitRequest = async () => {
     if (mutationLock.current) return;
-    if (!startDate || !endDate) { Alert.alert('Missing dates'); return; }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) { Alert.alert('Invalid date', 'Use YYYY-MM-DD format.'); return; }
-    try { parseCalendarDate(startDate); parseCalendarDate(endDate); } catch { Alert.alert('Invalid date', 'Enter a real calendar date.'); return; }
-    if (endDate < startDate) { Alert.alert('Invalid range', 'End date cannot be before start date.'); return; }
+    if (!startDate || !endDate) { Alert.alert(t('Missing dates')); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) { Alert.alert(t('Invalid date'), t('Use YYYY-MM-DD format.')); return; }
+    try { parseCalendarDate(startDate); parseCalendarDate(endDate); } catch { Alert.alert(t('Invalid date'), t('Enter a real calendar date.')); return; }
+    if (endDate < startDate) { Alert.alert(t('Invalid range'), t('End date cannot be before start date.')); return; }
     mutationLock.current = true; setSubmitting(true);
     try {
       await api.post('/pto', { start_date: startDate, end_date: endDate, type: leaveType, reason });
-      Alert.alert('Success', 'PTO request submitted!');
+      Alert.alert(t('Success'), t('PTO request submitted!'));
       setModalVisible(false);
       setStartDate(''); setEndDate(''); setReason('');
       fetchData();
-    } catch (e: any) { Alert.alert('Error', e?.response?.data?.message || e.message || 'Failed to submit request'); }
+    } catch (e: any) { Alert.alert(t('Error'), e?.response?.data?.message || e.message || t('Failed to submit request')); }
     finally { mutationLock.current = false; setSubmitting(false); }
   };
 
@@ -68,87 +70,87 @@ export default function PTOScreen() {
   const calendarDays=(request:PTORequest)=>Number(request.calendar_days||Math.max(1,Math.round((new Date(request.end_date).getTime()-new Date(request.start_date).getTime())/86400000)+1));
   const visibleRequests=requests.filter(request=>filter==='all'||request.status===filter);
   const openDecision=(request:PTORequest,status:'approved'|'rejected')=>{setSelected(request);setDecision(status);setManagerNote(request.manager_note||'');};
-  const decide=async()=>{if(!selected||!decision||mutationLock.current)return;if(decision==='rejected'&&managerNote.trim().length<3){Alert.alert('Reason required','Add a reason for rejecting this request.');return;}mutationLock.current=true;setSaving(true);try{await api.patch(`/pto-history/${selected.id}/status`,{status:decision,managerNote:managerNote.trim()});Alert.alert('Updated',`PTO request ${decision}.`);setDecision(null);setSelected(null);setManagerNote('');await fetchData();}catch(cause:any){Alert.alert('Update failed',cause?.response?.data?.message||cause?.message||'Could not update PTO');}finally{mutationLock.current=false;setSaving(false);}};
+  const decide=async()=>{if(!selected||!decision||mutationLock.current)return;if(decision==='rejected'&&managerNote.trim().length<3){Alert.alert(t('Reason required'),t('Add a reason for rejecting this request.'));return;}mutationLock.current=true;setSaving(true);try{await api.patch(`/pto-history/${selected.id}/status`,{status:decision,managerNote:managerNote.trim()});Alert.alert(t('Updated'),t(decision==='approved'?'PTO request approved.':'PTO request rejected.'));setDecision(null);setSelected(null);setManagerNote('');await fetchData();}catch(cause:any){Alert.alert(t('Update failed'),cause?.response?.data?.message||cause?.message||t('Could not update PTO'));}finally{mutationLock.current=false;setSaving(false);}};
 
   if (loading) return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Time Off</Text>
+        <Text style={styles.headerTitle}>{t("Time Off")}</Text>
         <TouchableOpacity onPress={() => setModalVisible(true)}>
           <MaterialIcons name="add-circle" size={32} color="#00D4FF" />
         </TouchableOpacity>
       </View>
       {balance && (
         <View style={styles.balanceRow}>
-          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.vacation_days}</Text><Text style={styles.balanceLabel}>Vacation</Text></View>
-          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.sick_days}</Text><Text style={styles.balanceLabel}>Sick</Text></View>
-          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.personal_days}</Text><Text style={styles.balanceLabel}>Personal</Text></View>
+          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.vacation_days}</Text><Text style={styles.balanceLabel}>{t("Vacation")}</Text></View>
+          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.sick_days}</Text><Text style={styles.balanceLabel}>{t("Sick")}</Text></View>
+          <View style={styles.balanceCard}><Text style={styles.balanceValue}>{balance.personal_days}</Text><Text style={styles.balanceLabel}>{t("Personal")}</Text></View>
         </View>
       )}
-      {!balance && !error ? <Text style={styles.detailMuted}>Leave balances are not configured. Ask your manager about your allowance.</Text> : null}
+      {!balance && !error ? <Text style={styles.detailMuted}>{t("Leave balances are not configured. Ask your manager about your allowance.")}</Text> : null}
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filters} contentContainerStyle={styles.filterContent}>
-        {(['all','pending','approved','rejected'] as const).map(value=><TouchableOpacity key={value} onPress={()=>setFilter(value)} style={[styles.filterBtn,filter===value&&styles.filterBtnActive]}><Text style={[styles.filterText,filter===value&&styles.filterTextActive]}>{value.toUpperCase()} ({value==='all'?requests.length:requests.filter(item=>item.status===value).length})</Text></TouchableOpacity>)}
+        {(['all','pending','approved','rejected'] as const).map(value=><TouchableOpacity key={value} onPress={()=>setFilter(value)} style={[styles.filterBtn,filter===value&&styles.filterBtnActive]}><Text style={[styles.filterText,filter===value&&styles.filterTextActive]}>{t(value).toUpperCase()} ({value==='all'?requests.length:requests.filter(item=>item.status===value).length})</Text></TouchableOpacity>)}
       </ScrollView>
       <ScrollView style={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor="#00D4FF" />}>
         {visibleRequests.map(r => (
           <TouchableOpacity key={r.id} style={styles.requestCard} onPress={()=>setSelected(r)}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.requestType}>{r.type.toUpperCase()}</Text>
+              <Text style={styles.requestType}>{t(r.type).toUpperCase()}</Text>
               {r.user_name?<Text style={{color:'#00D4FF',fontWeight:'800',marginTop:3}}>{r.user_name}</Text>:null}
               <Text style={styles.requestDates}>{r.start_date} → {r.end_date}</Text>
-              <Text style={styles.duration}>{calendarDays(r)} calendar day{calendarDays(r)===1?'':'s'}</Text>
+              <Text style={styles.duration}>{t("Calendar days: {count}", {count:String(calendarDays(r))})}</Text>
               {r.reason ? <Text style={styles.requestReason}>{r.reason}</Text> : null}
-              <Text style={styles.requestReason}>Submitted {new Date(r.created_at).toLocaleString()}</Text>
-              {r.manager_note?<Text style={styles.requestReason}>Manager note: {r.manager_note}</Text>:null}
-              {manager&&r.status==='pending'?<View style={{flexDirection:'row',gap:8,marginTop:10}}><TouchableOpacity onPress={()=>openDecision(r,'approved')} style={{backgroundColor:'#1F7A46',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>Approve</Text></TouchableOpacity><TouchableOpacity onPress={()=>openDecision(r,'rejected')} style={{backgroundColor:'#9C3541',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>Reject</Text></TouchableOpacity></View>:null}
+              <Text style={styles.requestReason}>{t("Submitted")} {new Date(r.created_at).toLocaleString(lang)}</Text>
+              {r.manager_note?<Text style={styles.requestReason}>{t("Manager note:")} {r.manager_note}</Text>:null}
+              {manager&&r.status==='pending'?<View style={{flexDirection:'row',gap:8,marginTop:10}}><TouchableOpacity onPress={()=>openDecision(r,'approved')} style={{backgroundColor:'#1F7A46',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>{t("Approve")}</Text></TouchableOpacity><TouchableOpacity onPress={()=>openDecision(r,'rejected')} style={{backgroundColor:'#9C3541',padding:8,borderRadius:8}}><Text style={{color:'#FFF',fontWeight:'800'}}>{t("Reject")}</Text></TouchableOpacity></View>:null}
             </View>
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(r.status) }]}><Text style={styles.statusText}>{r.status}</Text></View>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(r.status) }]}><Text style={styles.statusText}>{t(r.status)}</Text></View>
           </TouchableOpacity>
         ))}
-        {visibleRequests.length === 0 && <Text style={styles.emptyText}>No {filter==='all'?'':filter} PTO requests</Text>}
+        {visibleRequests.length === 0 && <Text style={styles.emptyText}>{t("No PTO requests in this filter")}</Text>}
       </ScrollView>
       <Modal visible={modalVisible} onRequestClose={() => !submitting && setModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-            <Text style={styles.modalTitle}>Request Time Off</Text>
-            <Text style={styles.label}>Start Date (YYYY-MM-DD)</Text>
+            <Text style={styles.modalTitle}>{t("Request Time Off")}</Text>
+            <Text style={styles.label}>{t("Start Date (YYYY-MM-DD)")}</Text>
             <TextInput style={styles.input} editable={!submitting} maxLength={10} value={startDate} onChangeText={setStartDate} placeholder="2025-07-01" placeholderTextColor="#888" />
-            <Text style={styles.label}>End Date (YYYY-MM-DD)</Text>
+            <Text style={styles.label}>{t("End Date (YYYY-MM-DD)")}</Text>
             <TextInput style={styles.input} editable={!submitting} maxLength={10} value={endDate} onChangeText={setEndDate} placeholder="2025-07-03" placeholderTextColor="#888" />
-            <Text style={styles.label}>Type</Text>
+            <Text style={styles.label}>{t("Type")}</Text>
             <View style={styles.typeRow}>
-              {['vacation','sick','personal','unpaid','other'].map(t => (
-                <TouchableOpacity key={t} disabled={submitting} onPress={() => setLeaveType(t)} style={[styles.typeBtn, leaveType === t && styles.typeBtnActive]}>
-                  <Text style={[styles.typeBtnText, leaveType === t && styles.typeBtnTextActive]}>{t}</Text>
+              {['vacation','sick','personal','unpaid','other'].map(leave => (
+                <TouchableOpacity key={leave} disabled={submitting} onPress={() => setLeaveType(leave)} style={[styles.typeBtn, leaveType === leave && styles.typeBtnActive]}>
+                  <Text style={[styles.typeBtnText, leaveType === leave && styles.typeBtnTextActive]}>{t(leave)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
-            <Text style={styles.label}>Reason (optional)</Text>
-            <TextInput style={styles.input} editable={!submitting} maxLength={5000} value={reason} onChangeText={setReason} placeholder="Family vacation..." placeholderTextColor="#888" />
+            <Text style={styles.label}>{t("Reason (optional)")}</Text>
+            <TextInput style={styles.input} editable={!submitting} maxLength={5000} value={reason} onChangeText={setReason} placeholder={t("Family vacation...")} placeholderTextColor="#888" />
             <View style={styles.modalActions}>
-              <TouchableOpacity disabled={submitting} onPress={() => setModalVisible(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity disabled={submitting} onPress={handleSubmitRequest} style={styles.submitBtn}><Text style={styles.submitText}>{submitting ? 'Submitting…' : 'Submit'}</Text></TouchableOpacity>
+              <TouchableOpacity disabled={submitting} onPress={() => setModalVisible(false)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t("Cancel")}</Text></TouchableOpacity>
+              <TouchableOpacity disabled={submitting} onPress={handleSubmitRequest} style={styles.submitBtn}><Text style={styles.submitText}>{t(submitting ? 'Submitting…' : 'Submit')}</Text></TouchableOpacity>
             </View>
           </ScrollView>
         </View>
       </Modal>
       <Modal visible={Boolean(selected)&&!decision} animationType="fade" transparent onRequestClose={()=>setSelected(null)}>
         <View style={styles.modalOverlay}><ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">{selected&&<>
-          <Text style={styles.modalTitle}>PTO request details</Text>
-          <Text style={styles.detailName}>{selected.user_name||'My request'}</Text>
+          <Text style={styles.modalTitle}>{t("PTO request details")}</Text>
+          <Text style={styles.detailName}>{selected.user_name||t('My request')}</Text>
           {selected.user_email?<Text style={styles.detailMuted}>{selected.user_email}</Text>:null}
-          <View style={styles.detailGrid}><Text style={styles.detailLabel}>Type</Text><Text style={styles.detailValue}>{selected.type}</Text><Text style={styles.detailLabel}>Dates</Text><Text style={styles.detailValue}>{selected.start_date} → {selected.end_date}</Text><Text style={styles.detailLabel}>Duration</Text><Text style={styles.detailValue}>{calendarDays(selected)} calendar day(s)</Text><Text style={styles.detailLabel}>Status</Text><Text style={styles.detailValue}>{selected.status}</Text><Text style={styles.detailLabel}>Reason</Text><Text style={styles.detailValue}>{selected.reason||'No reason supplied'}</Text><Text style={styles.detailLabel}>Submitted</Text><Text style={styles.detailValue}>{new Date(selected.created_at).toLocaleString()}</Text>{selected.manager_note?<><Text style={styles.detailLabel}>Manager note</Text><Text style={styles.detailValue}>{selected.manager_note}</Text></>:null}{selected.approved_by_name?<><Text style={styles.detailLabel}>Decided by</Text><Text style={styles.detailValue}>{selected.approved_by_name}</Text></>:null}</View>
-          <TouchableOpacity onPress={()=>setSelected(null)} style={styles.submitBtn}><Text style={styles.submitText}>Close</Text></TouchableOpacity>
+          <View style={styles.detailGrid}><Text style={styles.detailLabel}>{t("Type")}</Text><Text style={styles.detailValue}>{t(selected.type)}</Text><Text style={styles.detailLabel}>{t("Dates")}</Text><Text style={styles.detailValue}>{selected.start_date} → {selected.end_date}</Text><Text style={styles.detailLabel}>{t("Duration")}</Text><Text style={styles.detailValue}>{t("Calendar days: {count}", {count:String(calendarDays(selected))})}</Text><Text style={styles.detailLabel}>{t("Status")}</Text><Text style={styles.detailValue}>{t(selected.status)}</Text><Text style={styles.detailLabel}>{t("Reason")}</Text><Text style={styles.detailValue}>{selected.reason||t('No reason supplied')}</Text><Text style={styles.detailLabel}>{t("Submitted")}</Text><Text style={styles.detailValue}>{new Date(selected.created_at).toLocaleString(lang)}</Text>{selected.manager_note?<><Text style={styles.detailLabel}>{t("Manager note")}</Text><Text style={styles.detailValue}>{selected.manager_note}</Text></>:null}{selected.approved_by_name?<><Text style={styles.detailLabel}>{t("Decided by")}</Text><Text style={styles.detailValue}>{selected.approved_by_name}</Text></>:null}</View>
+          <TouchableOpacity onPress={()=>setSelected(null)} style={styles.submitBtn}><Text style={styles.submitText}>{t("Close")}</Text></TouchableOpacity>
         </>}</ScrollView></View>
       </Modal>
       <Modal visible={Boolean(selected)&&Boolean(decision)} animationType="fade" transparent onRequestClose={()=>!saving&&setDecision(null)}>
-        <View style={styles.modalOverlay}><ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"><Text style={styles.modalTitle}>{decision==='approved'?'Approve':'Reject'} PTO request</Text><Text style={styles.detailMuted}>{selected?.user_name} · {selected?calendarDays(selected):0} day(s)</Text><Text style={styles.label}>{decision==='rejected'?'Reason (required)':'Manager note (optional)'}</Text><TextInput style={[styles.input,{minHeight:84}]} multiline editable={!saving} maxLength={5000} value={managerNote} onChangeText={setManagerNote} placeholder="Add decision details" placeholderTextColor="#888"/><View style={styles.modalActions}><TouchableOpacity disabled={saving} onPress={()=>setDecision(null)} style={styles.cancelBtn}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity><TouchableOpacity disabled={saving} onPress={decide} style={[styles.submitBtn,decision==='rejected'&&{backgroundColor:'#F44336'}]}><Text style={styles.submitText}>{saving?'Saving…':'Confirm'}</Text></TouchableOpacity></View></ScrollView></View>
+        <View style={styles.modalOverlay}><ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"><Text style={styles.modalTitle}>{t(decision==='approved'?'Approve PTO request':'Reject PTO request')}</Text><Text style={styles.detailMuted}>{selected?.user_name} · {t("Calendar days: {count}", {count:String(selected?calendarDays(selected):0)})}</Text><Text style={styles.label}>{t(decision==='rejected'?'Reason (required)':'Manager note (optional)')}</Text><TextInput style={[styles.input,{minHeight:84}]} multiline editable={!saving} maxLength={5000} value={managerNote} onChangeText={setManagerNote} placeholder={t("Add decision details")} placeholderTextColor="#888"/><View style={styles.modalActions}><TouchableOpacity disabled={saving} onPress={()=>setDecision(null)} style={styles.cancelBtn}><Text style={styles.cancelText}>{t("Cancel")}</Text></TouchableOpacity><TouchableOpacity disabled={saving} onPress={decide} style={[styles.submitBtn,decision==='rejected'&&{backgroundColor:'#F44336'}]}><Text style={styles.submitText}>{t(saving?'Saving…':'Confirm')}</Text></TouchableOpacity></View></ScrollView></View>
       </Modal>
     </View>
   );
