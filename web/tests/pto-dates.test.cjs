@@ -1,0 +1,5 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('fs'),vm=require('vm'),ts=require('typescript'),path=require('path');
+const context={exports:{},Date};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/utils/ptoDates.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,context);
+const {ptoDateKey,formatPTODate}=context.exports;
+test('leave dates preserve the calendar day in both extreme timezones',()=>{const old=process.env.TZ;try{for(const tz of ['America/Adak','Pacific/Kiritimati']){process.env.TZ=tz;assert.equal(formatPTODate('2026-11-04'),new Date(2026,10,4,12).toLocaleDateString());assert.equal(ptoDateKey('2026-11-04T00:00:00.000Z'),'2026-11-04');}}finally{if(old===undefined)delete process.env.TZ;else process.env.TZ=old;}});
+test('invalid leave dates are never normalized into another month',()=>{assert.equal(ptoDateKey('2026-02-30'),'');assert.equal(formatPTODate('bad'),'Unknown');assert.equal(ptoDateKey('2028-02-29'),'2028-02-29');});

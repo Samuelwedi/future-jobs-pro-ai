@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip,
-  CircularProgress, Alert, Stack, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Divider,
+  CircularProgress, Alert, Stack, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Divider, MenuItem,
 } from '@mui/material';
 import { BeachAccess, AddCircleOutline } from '@mui/icons-material';
+import { ptoDateKey, formatPTODate, localToday } from '../utils/ptoDates';
 import { API_BASE } from '../services/api';
 
 export default function PTO() {
@@ -15,6 +16,8 @@ export default function PTO() {
   const [selected,setSelected]=useState<any|null>(null);
   const [managerNote,setManagerNote]=useState('');
   const [saving,setSaving]=useState(false);
+  const mutationLock=useRef(false);
+  const [balanceLoaded,setBalanceLoaded]=useState(false);
   const [requestOpen,setRequestOpen]=useState(false);
   const [balance,setBalance]=useState<any>(null);
   const [form,setForm]=useState({start_date:'',end_date:'',type:'vacation',reason:''});
@@ -23,17 +26,15 @@ export default function PTO() {
   const manager=['boss','manager','admin'].includes(String(user.role||'').toLowerCase());
 
   const visibleRequests = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (view === 'past') return requests.filter(request => new Date(request.end_date) < today);
-    if (view === 'upcoming') return requests.filter(request => new Date(request.end_date) >= today);
+    const today = localToday();
+    if (view === 'past') return requests.filter(request => ptoDateKey(request.end_date) < today);
+    if (view === 'upcoming') return requests.filter(request => ptoDateKey(request.end_date) >= today);
     return requests;
   }, [requests, view]);
 
   const pastCount = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return requests.filter(request => new Date(request.end_date) < today).length;
+    const today = localToday();
+    return requests.filter(request => ptoDateKey(request.end_date) < today).length;
   }, [requests]);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function PTO() {
   }, []);
 
   const fetchPTO = async () => {
+    setError('');
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`${API_BASE}/api/pto-history`, {
@@ -52,7 +54,8 @@ export default function PTO() {
       setRequests(data.requests || []);
       const balanceResponse=await fetch(`${API_BASE}/api/pto/balance`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});
       const balanceData=await balanceResponse.json().catch(()=>({}));
-      if(balanceResponse.ok)setBalance(balanceData.balance);
+      if (!balanceResponse.ok) throw new Error('Could not load leave balances');
+      setBalance(balanceData.balance || null); setBalanceLoaded(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -60,9 +63,9 @@ export default function PTO() {
     }
   };
 
-  const submitRequest=async()=>{setSaving(true);setError('');try{if(!form.start_date||!form.end_date)throw new Error('Start and end dates are required');if(form.end_date<form.start_date)throw new Error('End date cannot be before start date');const token=localStorage.getItem('token');const response=await fetch(`${API_BASE}/api/pto`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(form)});const data=await response.json();if(!response.ok)throw new Error(data.message||'PTO request could not be submitted');setRequestOpen(false);setForm({start_date:'',end_date:'',type:'vacation',reason:''});setNotice('PTO request submitted for review.');await fetchPTO();}catch(cause:any){setError(cause.message);}finally{setSaving(false);}};
+  const submitRequest=async()=>{if(mutationLock.current)return;mutationLock.current=true;setSaving(true);setError('');try{if(!form.start_date||!form.end_date)throw new Error('Start and end dates are required');if(!ptoDateKey(form.start_date)||!ptoDateKey(form.end_date))throw new Error('Enter valid calendar dates');if(form.end_date<form.start_date)throw new Error('End date cannot be before start date');const token=localStorage.getItem('token');const response=await fetch(`${API_BASE}/api/pto`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(form)});const data=await response.json();if(!response.ok)throw new Error(data.message||'PTO request could not be submitted');setRequestOpen(false);setForm({start_date:'',end_date:'',type:'vacation',reason:''});setNotice('PTO request submitted for review.');await fetchPTO();}catch(cause:any){setError(cause.message);}finally{mutationLock.current=false;setSaving(false);}};
 
-  const decide=async(status:'approved'|'rejected')=>{if(!selected)return;setSaving(true);setError('');try{const token=localStorage.getItem('token');const response=await fetch(`${API_BASE}/api/pto-history/${selected.id}/status`,{method:'PATCH',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({status,managerNote})});const data=await response.json();if(!response.ok)throw new Error(data.message||'PTO decision failed');setSelected(null);setManagerNote('');await fetchPTO();}catch(cause:any){setError(cause.message);}finally{setSaving(false);}};
+  const decide=async(status:'approved'|'rejected')=>{if(!selected||mutationLock.current)return;mutationLock.current=true;setSaving(true);setError('');try{const token=localStorage.getItem('token');const response=await fetch(`${API_BASE}/api/pto-history/${selected.id}/status`,{method:'PATCH',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({status,managerNote})});const data=await response.json();if(!response.ok)throw new Error(data.message||'PTO decision failed');setSelected(null);setManagerNote('');await fetchPTO();}catch(cause:any){setError(cause.message);}finally{mutationLock.current=false;setSaving(false);}};
 
   return (
     <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', py: 4 }}>
@@ -77,6 +80,7 @@ export default function PTO() {
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {notice && <Alert severity="success" onClose={()=>setNotice('')} sx={{mb:2}}>{notice}</Alert>}
 
+        {balanceLoaded && !balance && <Alert severity="info" sx={{mb:2}}>Leave balances are not configured. Ask your manager about your allowance.</Alert>}
         {!loading&&<Stack direction={{xs:'column',sm:'row'}} gap={1.5} mb={2}>{balance&&[['Vacation',balance.vacation_days],['Sick',balance.sick_days],['Personal',balance.personal_days]].map(([label,value])=><Paper key={String(label)} sx={{p:2,flex:1,bgcolor:'#101820',border:'1px solid #243341'}}><Typography color="#8295A7" variant="caption">MY {String(label).toUpperCase()} BALANCE</Typography><Typography color="#67E8F9" variant="h5" fontWeight={800}>{String(value)} days</Typography></Paper>)}<Paper sx={{p:2,flex:1,bgcolor:'#101820',border:'1px solid #243341'}}><Typography color="#8295A7" variant="caption">PENDING REVIEW</Typography><Typography color="#FFB454" variant="h5" fontWeight={800}>{requests.filter(request=>request.status==='pending').length}</Typography></Paper></Stack>}
 
         {!loading && !error && (
@@ -112,7 +116,7 @@ export default function PTO() {
                         <TableCell sx={{ color: '#FFF' }}>{req.user_name}<Typography variant="caption" display="block" color="text.secondary">{req.user_email||''}</Typography></TableCell>
                         <TableCell sx={{ color: '#CCC' }}>{req.type}</TableCell>
                         <TableCell sx={{ color: '#CCC' }}>
-                          {new Date(req.start_date).toLocaleDateString()} → {new Date(req.end_date).toLocaleDateString()}
+                          {formatPTODate(req.start_date)} → {formatPTODate(req.end_date)}
                         </TableCell>
                         <TableCell sx={{color:'#CCC'}}>{req.reason||'No reason supplied'}<Typography variant="caption" display="block" color="text.secondary">{Math.max(1,Math.round((new Date(req.end_date).getTime()-new Date(req.start_date).getTime())/86400000)+1)} calendar day(s)</Typography></TableCell>
                         <TableCell>
@@ -134,8 +138,8 @@ export default function PTO() {
           </Paper>
         )}
       </Container>
-      <Dialog open={Boolean(selected)} onClose={()=>!saving&&setSelected(null)} fullWidth maxWidth="sm"><DialogTitle>PTO request details</DialogTitle><DialogContent sx={{display:'grid',gap:1.5,pt:'16px!important'}}>{selected&&<><Typography variant="h6">{selected.user_name}</Typography><Typography color="text.secondary">{selected.user_email}</Typography><Typography><b>Type:</b> {selected.type}</Typography><Typography><b>Dates:</b> {new Date(selected.start_date).toLocaleDateString()} → {new Date(selected.end_date).toLocaleDateString()}</Typography><Typography><b>Duration:</b> {selected.calendar_days||Math.max(1,Math.round((new Date(selected.end_date).getTime()-new Date(selected.start_date).getTime())/86400000)+1)} calendar day(s)</Typography><Typography><b>Reason:</b> {selected.reason||'No reason supplied'}</Typography><Typography><b>Submitted:</b> {selected.created_at?new Date(selected.created_at).toLocaleString():'Unknown'}</Typography><Typography><b>Status:</b> {selected.status}</Typography>{selected.approved_by_name&&<Typography><b>Decided by:</b> {selected.approved_by_name}</Typography>}{selected.manager_note&&<Typography><b>Manager note:</b> {selected.manager_note}</Typography>}<Divider/>{manager&&selected.status==='pending'&&<TextField multiline minRows={2} label="Manager note / rejection reason" value={managerNote} onChange={e=>setManagerNote(e.target.value)}/>}</>}</DialogContent><DialogActions><Button onClick={()=>setSelected(null)}>Close</Button>{manager&&selected?.status==='pending'&&<><Button disabled={saving} color="error" onClick={()=>decide('rejected')}>Reject</Button><Button disabled={saving} variant="contained" color="success" onClick={()=>decide('approved')}>Approve</Button></>}</DialogActions></Dialog>
-      <Dialog open={requestOpen} onClose={()=>!saving&&setRequestOpen(false)} fullWidth maxWidth="sm"><DialogTitle>Request time off</DialogTitle><DialogContent sx={{display:'grid',gap:2,pt:'16px!important'}}><TextField label="Start date" type="date" InputLabelProps={{shrink:true}} value={form.start_date} onChange={event=>setForm({...form,start_date:event.target.value})}/><TextField label="End date" type="date" InputLabelProps={{shrink:true}} value={form.end_date} onChange={event=>setForm({...form,end_date:event.target.value})}/><TextField select label="Leave type" value={form.type} onChange={event=>setForm({...form,type:event.target.value})}>{['vacation','sick','personal','unpaid','other'].map(type=><option key={type} value={type}>{type[0].toUpperCase()+type.slice(1)}</option>)}</TextField><TextField label="Reason or coverage notes" multiline minRows={3} value={form.reason} onChange={event=>setForm({...form,reason:event.target.value})}/></DialogContent><DialogActions><Button disabled={saving} onClick={()=>setRequestOpen(false)}>Cancel</Button><Button disabled={saving} variant="contained" onClick={submitRequest}>{saving?'Submitting…':'Submit request'}</Button></DialogActions></Dialog>
+      <Dialog open={Boolean(selected)} onClose={()=>!saving&&setSelected(null)} fullWidth maxWidth="sm"><DialogTitle>PTO request details</DialogTitle><DialogContent sx={{display:'grid',gap:1.5,pt:'16px!important'}}>{error && <Alert severity="error">{error}</Alert>}{selected&&<><Typography variant="h6">{selected.user_name}</Typography><Typography color="text.secondary">{selected.user_email}</Typography><Typography><b>Type:</b> {selected.type}</Typography><Typography><b>Dates:</b> {formatPTODate(selected.start_date)} → {formatPTODate(selected.end_date)}</Typography><Typography><b>Duration:</b> {selected.calendar_days||Math.max(1,Math.round((new Date(selected.end_date).getTime()-new Date(selected.start_date).getTime())/86400000)+1)} calendar day(s)</Typography><Typography><b>Reason:</b> {selected.reason||'No reason supplied'}</Typography><Typography><b>Submitted:</b> {selected.created_at?new Date(selected.created_at).toLocaleString():'Unknown'}</Typography><Typography><b>Status:</b> {selected.status}</Typography>{selected.approved_by_name&&<Typography><b>Decided by:</b> {selected.approved_by_name}</Typography>}{selected.manager_note&&<Typography><b>Manager note:</b> {selected.manager_note}</Typography>}<Divider/>{manager&&selected.status==='pending'&&<TextField disabled={saving} multiline minRows={2} inputProps={{maxLength:5000}} label="Manager note / rejection reason" value={managerNote} onChange={e=>setManagerNote(e.target.value)}/>}</>}</DialogContent><DialogActions><Button disabled={saving} onClick={()=>setSelected(null)}>Close</Button>{manager&&selected?.status==='pending'&&<><Button disabled={saving} color="error" onClick={()=>decide('rejected')}>Reject</Button><Button disabled={saving} variant="contained" color="success" onClick={()=>decide('approved')}>Approve</Button></>}</DialogActions></Dialog>
+      <Dialog open={requestOpen} onClose={()=>!saving&&setRequestOpen(false)} fullWidth maxWidth="sm"><DialogTitle>Request time off</DialogTitle><DialogContent sx={{display:'grid',gap:2,pt:'16px!important'}}>{error && <Alert severity="error">{error}</Alert>}<TextField disabled={saving} label="Start date" type="date" InputLabelProps={{shrink:true}} value={form.start_date} onChange={event=>setForm({...form,start_date:event.target.value})}/><TextField disabled={saving} label="End date" type="date" InputLabelProps={{shrink:true}} value={form.end_date} onChange={event=>setForm({...form,end_date:event.target.value})}/><TextField disabled={saving} select label="Leave type" value={form.type} onChange={event=>setForm({...form,type:event.target.value})}>{['vacation','sick','personal','unpaid','other'].map(type=><MenuItem key={type} value={type}>{type[0].toUpperCase()+type.slice(1)}</MenuItem>)}</TextField><TextField disabled={saving} inputProps={{maxLength:5000}} label="Reason or coverage notes" multiline minRows={3} value={form.reason} onChange={event=>setForm({...form,reason:event.target.value})}/></DialogContent><DialogActions><Button disabled={saving} onClick={()=>setRequestOpen(false)}>Cancel</Button><Button disabled={saving} variant="contained" onClick={submitRequest}>{saving?'Submitting…':'Submit request'}</Button></DialogActions></Dialog>
     </Box>
   );
 }

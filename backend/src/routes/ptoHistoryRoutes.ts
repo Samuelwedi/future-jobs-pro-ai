@@ -44,6 +44,7 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
     const status=String(req.body.status||'').toLowerCase();
     if(!['approved','rejected'].includes(status)) return res.status(400).json({success:false,message:'Status must be approved or rejected'});
     const managerNote=String(req.body.managerNote||'').trim();
+    if(managerNote.length>5000)return res.status(400).json({success:false,message:'Manager note cannot exceed 5000 characters'});
     if(status==='rejected' && managerNote.length<3) return res.status(400).json({success:false,message:'Add a reason for rejecting this request'});
     const result=await pool.query(
       `UPDATE pto_requests pr SET status=$1,approved_by=$2,approved_at=NOW(),manager_note=$3,updated_at=NOW()
