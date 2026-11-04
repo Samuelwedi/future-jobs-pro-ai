@@ -1,7 +1,9 @@
+import { recordUserEvent } from '../services/adaptiveAIService';
+import { bulkClockIn } from '../services/bulkClockService';
+import { completeTimeEntry } from '../services/overtimeService';
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
-import { recordUserEvent } from '../services/adaptiveAIService';
 
 const router = express.Router();
 
@@ -27,111 +29,55 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/crew/clock-in – clock in all assigned to a shift
-router.post('/clock-in', async (req: Request, res: Response) => {
+// Supervisor actions always resolve the active actor from the database.
+router.use(['/clock-in', '/clock-out'], async (req, res, next) => {
   try {
-    const { shiftId, latitude, longitude } = req.body;
-    if (!shiftId) return res.status(400).json({ success: false, message: 'shiftId is required' });
-
-    const assignResult = await pool.query(
-      `SELECT user_id FROM shift_assignments WHERE shift_id = $1`,
-      [shiftId]
-    );
-    const userIds: string[] = assignResult.rows.map((r: any) => r.user_id);
-    if (userIds.length === 0) {
-      return res.status(400).json({ success: false, message: 'No employees assigned to this shift' });
-    }
-    const shiftResult = await pool.query('SELECT * FROM shifts WHERE id = $1', [shiftId]);
-    const shift = shiftResult.rows[0];
-    const clockedIn: any[] = [];
-    for (const userId of userIds) {
-      const result = await pool.query(
-        `INSERT INTO time_entries (user_id, project_id, clock_in, clock_in_latitude, clock_in_longitude, status)
-         VALUES ($1, $2, NOW(), $3, $4, 'active') RETURNING *`,
-        [userId, shift.project_id, latitude || null, longitude || null]
-      );
-      const entry = result.rows[0];
-      await recordUserEvent({
-        userId,
-        eventType: 'clock_in',
-        eventData: { projectId: shift.project_id, timeEntryId: entry.id, crew: true, shiftId },
-        latitude, longitude,
-      });
-      clockedIn.push({ userId, timeEntryId: entry.id });
-    }
-    res.json({ success: true, message: `${clockedIn.length} crew members clocked in`, clockedIn });
-  } catch (error: any) {
-    console.error('Crew clock-in error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
+    const decoded = verifyToken(req);
+    const actor = await pool.query("SELECT id, company_id, role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE", [decoded.id]);
+    if (!actor.rows[0] || !['boss','manager'].includes(String(actor.rows[0].role).toLowerCase())) return res.status(403).json({success:false,message:'Manager access is required'});
+    res.locals.actor = actor.rows[0]; next();
+  } catch { res.status(401).json({success:false,message:'Not authenticated'}); }
 });
 
-// POST /api/crew/clock-out – clock out a specific user (or all assigned)
+router.post('/clock-in', async (req: Request, res: Response) => {
+  try {
+    const {shiftId,latitude,longitude} = req.body;
+    const actor = res.locals.actor;
+    if (!shiftId) return res.status(400).json({success:false,message:'shiftId is required'});
+    const shift = await pool.query('SELECT id,project_id FROM shifts WHERE id=$1 AND company_id=$2', [shiftId,actor.company_id]);
+    if (!shift.rows.length) return res.status(404).json({success:false,message:'Shift not found'});
+    const assignments = await pool.query('SELECT user_id FROM shift_assignments WHERE shift_id=$1', [shiftId]);
+    const results = await bulkClockIn(actor.id,{userIds:assignments.rows.map(row=>row.user_id),projectId:shift.rows[0].project_id,latitude,longitude});
+    const clockedIn = results.filter(result=>result.success).map(result=>({userId:result.userId,timeEntryId:result.timeEntryId}));
+    for (const entry of clockedIn) await recordUserEvent({userId:entry.userId,eventType:'clock_in',eventData:{projectId:shift.rows[0].project_id,timeEntryId:entry.timeEntryId,crew:true,shiftId},latitude,longitude}).catch(error=>console.error('Crew event logging failed:',error));
+    res.json({success:true,message:`${clockedIn.length} crew members clocked in`,clockedIn,results});
+  } catch (error:any) { res.status(error.status || 500).json({success:false,message:error.status ? error.message : 'Crew clock-in was not confirmed; refresh status before retrying'}); }
+});
+
 router.post('/clock-out', async (req: Request, res: Response) => {
   try {
-    const { shiftId, userId, timeEntryId, latitude, longitude } = req.body;
-
-    // If shiftId is provided, clock out all assigned
+    const {shiftId,userId,timeEntryId,latitude,longitude} = req.body;
+    const actor = res.locals.actor;
+    let targets: Array<{user_id:string;id:string}>;
     if (shiftId) {
-      const assignResult = await pool.query(
-        `SELECT user_id FROM shift_assignments WHERE shift_id = $1`,
-        [shiftId]
-      );
-      const userIds: string[] = assignResult.rows.map((r: any) => r.user_id);
-      if (userIds.length === 0) {
-        return res.status(400).json({ success: false, message: 'No employees assigned to this shift' });
-      }
-      const clockedOut: any[] = [];
-      for (const uid of userIds) {
-        const result = await pool.query(
-          `UPDATE time_entries
-           SET clock_out = NOW(), clock_out_latitude = $1, clock_out_longitude = $2, status = 'completed'
-           WHERE user_id = $3 AND clock_out IS NULL
-           RETURNING *`,
-          [latitude || null, longitude || null, uid]
-        );
-        if (result.rows.length > 0) {
-          const entry = result.rows[0];
-          await recordUserEvent({
-            userId: uid,
-            eventType: 'clock_out',
-            eventData: { projectId: entry.project_id, timeEntryId: entry.id, crew: true, shiftId },
-            latitude, longitude,
-          });
-          clockedOut.push({ userId: uid, timeEntryId: entry.id });
-        }
-      }
-      res.json({ success: true, message: `${clockedOut.length} crew members clocked out`, clockedOut });
-      return;
+      const shift = await pool.query('SELECT id,project_id FROM shifts WHERE id=$1 AND company_id=$2',[shiftId,actor.company_id]);
+      if (!shift.rows.length) return res.status(404).json({success:false,message:'Shift not found'});
+      const active = await pool.query(`SELECT DISTINCT te.id,te.user_id FROM time_entries te
+        JOIN users u ON u.id=te.user_id JOIN shift_assignments sa ON sa.user_id=te.user_id
+        WHERE sa.shift_id=$1 AND u.company_id=$2 AND te.project_id=$3 AND te.clock_out IS NULL`,[shiftId,actor.company_id,shift.rows[0].project_id]);
+      targets=active.rows;
+    } else {
+      if (!userId || !timeEntryId) return res.status(400).json({success:false,message:'userId and timeEntryId are required'});
+      targets=[{user_id:userId,id:timeEntryId}];
     }
-
-    // Otherwise, clock out a specific user by userId + timeEntryId
-    if (!userId || !timeEntryId) {
-      return res.status(400).json({ success: false, message: 'userId and timeEntryId are required when shiftId is not provided' });
+    const clockedOut=[];
+    for (const target of targets) {
+      const entry=await completeTimeEntry(actor.company_id,target.user_id,target.id,latitude,longitude,true);
+      clockedOut.push({userId:target.user_id,timeEntryId:entry.id});
+      await recordUserEvent({userId:target.user_id,eventType:'clock_out',eventData:{projectId:entry.project_id,timeEntryId:entry.id,crew:Boolean(shiftId),shiftId},latitude,longitude}).catch(error=>console.error('Crew event logging failed:',error));
     }
-
-    const result = await pool.query(
-      `UPDATE time_entries
-       SET clock_out = NOW(), clock_out_latitude = $1, clock_out_longitude = $2, status = 'completed'
-       WHERE id = $3 AND user_id = $4 AND clock_out IS NULL
-       RETURNING *`,
-      [latitude || null, longitude || null, timeEntryId, userId]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Active time entry not found' });
-    }
-    const entry = result.rows[0];
-    await recordUserEvent({
-      userId,
-      eventType: 'clock_out',
-      eventData: { projectId: entry.project_id, timeEntryId: entry.id, crew: false },
-      latitude, longitude,
-    });
-    res.json({ success: true, message: 'Clocked out successfully', timeEntryId: entry.id });
-  } catch (error: any) {
-    console.error('Crew clock-out error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
+    res.json({success:true,message:`${clockedOut.length} crew members clocked out`,clockedOut,...(!shiftId ? {timeEntryId:clockedOut[0]?.timeEntryId} : {})});
+  } catch (error:any) { res.status(error.status || 500).json({success:false,message:error.status ? error.message : 'Crew clock-out was not confirmed; refresh status before retrying'}); }
 });
 
 export default router;

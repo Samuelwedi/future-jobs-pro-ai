@@ -1,3 +1,4 @@
+import { personalClockIn } from './bulkClockService';
 import { completeTimeEntry, employeeOvertime, refreshEmployeeOvertime, companyOvertimeSettings, lockCompanyTime } from './overtimeService';
 import { companyDate } from './payPeriodCalendar';
 // ============================================
@@ -9,14 +10,8 @@ import { pool } from '../config/database';
 import { recordUserEvent } from './adaptiveAIService';
 
 export async function clockIn(userId: string, projectId: string, latitude: number, longitude: number) {
-  const result = await pool.query(
-    `INSERT INTO time_entries (user_id, project_id, clock_in, clock_in_latitude, clock_in_longitude, company_id)
-     VALUES ($1, $2, NOW(), $3, $4, (SELECT company_id FROM users WHERE id = $1))
-     RETURNING *`,
-    [userId, projectId, latitude, longitude]
-  );
-  const entry = result.rows[0];
-  await recordUserEvent({ userId, eventType: 'clock_in', eventData: { projectId, timeEntryId: entry.id }, latitude, longitude });
+  const entry = await personalClockIn(userId,{projectId,latitude,longitude});
+  await recordUserEvent({ userId, eventType: 'clock_in', eventData: { projectId, timeEntryId: entry.id }, latitude, longitude }).catch(error=>console.error('Clock event logging failed:',error));
   return entry;
 }
 

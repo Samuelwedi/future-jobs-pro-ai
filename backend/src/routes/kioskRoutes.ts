@@ -1,3 +1,4 @@
+import { kioskClockIn } from '../services/bulkClockService';
 import { completeTimeEntry } from '../services/overtimeService';
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
@@ -91,23 +92,19 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Kiosk is not enabled for your company' });
     }
 
-    const entryResult = await pool.query(
-      `INSERT INTO time_entries (user_id, project_id, clock_in, clock_in_latitude, clock_in_longitude, status)
-       VALUES ($1, $2, NOW(), $3, $4, 'active') RETURNING *`,
-      [user.id, projectId, latitude || null, longitude || null]
-    );
+    const entry = await kioskClockIn(actor.id, user.id, { pin, projectId, latitude, longitude });
 
     await recordUserEvent({
       userId: user.id,
       eventType: 'clock_in',
       eventData: { projectId, kiosk: true },
       latitude, longitude,
-    });
+    }).catch(error => console.error('Kiosk event logging failed after clock-in:', error));
 
-    res.json({ success: true, message: `${user.first_name} clocked in`, timeEntry: entryResult.rows[0] });
+    res.json({ success: true, message: `${user.first_name} clocked in`, timeEntry: entry });
   } catch (error: any) {
     console.error('Kiosk clock-in error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 

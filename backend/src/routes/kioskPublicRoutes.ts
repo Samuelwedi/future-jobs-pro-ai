@@ -1,3 +1,4 @@
+import { publicKioskClockIn } from '../services/bulkClockService';
 import express, { Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { pool } from '../config/database';
@@ -96,21 +97,12 @@ router.post('/clock-in', kioskPinLimit, async (req: Request, res: Response) => {
       return res.status(402).json({ success: false, code: 'SUBSCRIPTION_REQUIRED', message: 'This kiosk is unavailable until the company subscription is active.' });
     }
     if (!company.rows[0]?.kiosk_enabled) return res.status(403).json({ success: false, message: 'Kiosk is disabled' });
-    const active = await pool.query(
-      'SELECT id FROM time_entries WHERE user_id = $1 AND clock_out IS NULL LIMIT 1',
-      [userResult.rows[0].id]
-    );
-    if (active.rowCount) return res.status(409).json({ success: false, message: 'You are already clocked in' });
-    await pool.query(
-      `INSERT INTO time_entries
-       (user_id, project_id, clock_in, clock_in_latitude, clock_in_longitude, status)
-       VALUES ($1, $2, NOW(), $3, $4, 'active')`,
-      [userResult.rows[0].id, projectId, latitude || null, longitude || null]
-    );
+    await publicKioskClockIn(userResult.rows[0].id,{companyId,pin:String(pin),projectId,latitude,longitude});
+
     res.json({ success: true, message: `${userResult.rows[0].first_name} clocked in successfully` });
   } catch (error: any) {
     console.error('Public kiosk clock-in error:', error);
-    res.status(500).json({ success: false, message: 'Clock-in failed' });
+    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Clock-in was not confirmed; refresh status before retrying' });
   }
 });
 

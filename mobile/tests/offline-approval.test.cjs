@@ -9,12 +9,12 @@ function setup(){const saved=new Map();let account='employee',online=true;const 
  return {api:context.exports,get saved(){return JSON.parse(saved.get('offline-queue-v2:'+account)||'[]')},set saved(v){saved.set('offline-queue-v2:'+account,JSON.stringify(v))},set raw(v){saved.set('offline-queue-v2:'+account,v)},replayed,set account(v){account=v},set online(v){online=v},set replay(fn){replay=fn}};
 }
 test('PTO and account records remain reviewable without blocking queued media',async()=>{
- const f=setup();for(const url of ['/pto','/pto-history/request/status','/companies/company/settings','/companies/company/logo','/payroll-rules/policy','/team/user/role','/users/profile','/kiosk/set-pin','/workforce-operations/time-entries/entry/approve','/lucy-v2','/time-entries/bulk-clock-in','/time-entries/bulk-clock-out','/crew/clock-out']){
+ const f=setup();for(const url of ['/pto','/pto-history/request/status','/companies/company/settings','/companies/company/logo','/payroll-rules/policy','/team/user/role','/users/profile','/kiosk/set-pin','/workforce-operations/time-entries/entry/approve','/lucy-v2','/time-entries/bulk-clock-in','/time-entries/bulk-clock-out','/crew/clock-out','/crew/clock-in']){
  await assert.rejects(f.api.queueAction({method:'POST',url}),/online/);assert.equal(f.saved.length,0);
  f.saved=[{id:'old',method:'PATCH',url,timestamp:1,data:{private:'original'}}];await f.api.queueAction({method:'POST',url:'/media/upload',fileUri:'local.jpg'});
  await f.api.processQueue();assert.equal(f.saved.length,1);assert.equal(f.saved[0].id,'old');assert.equal((await f.api.getOfflineQueueState()).items[0].status,'review');f.saved=[];
  }
- assert.equal(f.replayed.length,13);assert.ok(!f.replayed.includes('old'));
+ assert.equal(f.replayed.length,14);assert.ok(!f.replayed.includes('old'));
 });
 test('archive is reversible, retains payloads, and rejects the wrong account or ordinary uploads',async()=>{
  const f=setup();f.saved=[{id:'old',url:'/pto',timestamp:1,data:{reason:'private'},fileUri:'local.jpg'},{id:'media',url:'/media/upload',timestamp:2}];

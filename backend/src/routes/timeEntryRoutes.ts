@@ -1,4 +1,4 @@
-import { bulkClockIn } from '../services/bulkClockService';
+import { bulkClockIn, personalClockIn } from '../services/bulkClockService';
 import { companyDate } from '../services/payPeriodCalendar';
 import { completeTimeEntry, employeeOvertime } from '../services/overtimeService';
 import express, { Request, Response } from 'express';
@@ -147,25 +147,18 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'projectId is required' });
     }
 
-    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
-    if (userCheck.rows.length === 0) {
-      return res.status(400).json({ success: false, message: 'User not found' });
-    }
-    const projectCheck = await pool.query('SELECT id FROM projects WHERE id = $1', [projectId]);
-    if (projectCheck.rows.length === 0) {
-      return res.status(400).json({ success: false, message: 'Project not found' });
-    }
+    const entry = await personalClockIn(userId, { projectId, latitude, longitude });
 
     // ─── Geofence check ───
     const geoRes = await pool.query(
       `SELECT latitude, longitude, geofence_radius, name FROM projects WHERE id = $1`,
       [projectId]
-    );
+    ).catch(() => ({ rows: [] }));
     const geo = geoRes.rows[0] || {};
     const latNum = Number(latitude) || 0;
     const lngNum = Number(longitude) || 0;
 
-    if (geo.latitude !== null && geo.longitude !== null) {
+    if (geo.latitude != null && geo.longitude != null) {
       const distance = haversineDistance(geo.latitude, geo.longitude, latNum, lngNum);
       const radius = geo.geofence_radius || 100;
       if (distance > radius) {
@@ -202,28 +195,7 @@ router.post('/clock-in', async (req: Request, res: Response) => {
       }
     }
 
-    const activeCheck = await pool.query(
-      'SELECT id FROM time_entries WHERE user_id = $1 AND clock_out IS NULL',
-      [userId]
-    );
-    if (activeCheck.rows.length > 0) {
-      return res.status(400).json({ success: false, message: 'Already clocked in' });
-    }
-
-    const result = await pool.query(
-      `INSERT INTO time_entries (user_id, project_id, clock_in, latitude, longitude, created_at, status)
-       VALUES ($1, $2, NOW(), $3, $4, NOW(), 'active') RETURNING id, clock_in`,
-      [userId, projectId, latNum, lngNum]
-    );
-    const entry = result.rows[0];
-
-    await pool.query(
-      `INSERT INTO gps_tracking (user_id, time_entry_id, project_id, latitude, longitude, timestamp)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [userId, entry.id, projectId, latNum, lngNum]
-    );
-
-    await setCompanyOfficeFromClockIn(userId, latNum, lngNum);
+    await setCompanyOfficeFromClockIn(userId, latNum, lngNum).catch(error => console.error('Office location update failed after clock-in:', error));
 
     res.status(201).json({
       success: true,
@@ -233,7 +205,7 @@ router.post('/clock-in', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Clock-in error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.status || 500).json({ success: false, message: error.message });
   }
 });
 
