@@ -48,6 +48,15 @@ test('review candidates are never reported as deployed',async()=>{
  assert.equal(row.status,'blocked');assert.match(row.error,/Owner approval required/);
  jobs=[{name:'deploy',conclusion:'success'}];
 });
+test('failed connection checks are reported before repair generation',async()=>{
+ const incident='00000000-0000-4000-8000-000000000006';
+ await db.query("INSERT INTO owner_repair_jobs(owner_id,incident_id,scope,status,workflow_run_id) VALUES($1,$2,'portal-app','running','123')",[owner,incident]);
+ run={...run,conclusion:'failure'};jobs=[{name:'connections',conclusion:'failure'},{name:'propose',conclusion:'skipped'}];
+ await runOwnerRepairTick();
+ const row=(await db.query('SELECT * FROM owner_repair_jobs WHERE incident_id=$1',[incident])).rows[0];
+ assert.equal(row.status,'failed');assert.match(row.error,/Deployment connection checks failed/);assert.match(row.error,/No repair was generated/);
+ run={...run,conclusion:'success'};jobs=[{name:'deploy',conclusion:'success'}];
+});
 test('disabled owner is blocked before dispatch and active duplicate incidents are rejected',async()=>{
  await db.query('UPDATE platform_support_agents SET is_active=false');
  const incident='00000000-0000-4000-8000-000000000003';

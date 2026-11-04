@@ -16,7 +16,7 @@ router.get('/',async(req:AgentRequest,res)=>{
  pool.query('SELECT * FROM owner_operations_jobs WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 100',[req.supportAgent!.id]),
  pool.query('SELECT * FROM owner_operations_schedules WHERE owner_id=$1',[req.supportAgent!.id]),
  pool.query('SELECT * FROM owner_operations_audit WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 100',[req.supportAgent!.id]), operationsSnapshot(),pool.query('SELECT * FROM owner_sales_leads WHERE owner_id=$1 ORDER BY updated_at DESC LIMIT 200',[req.supportAgent!.id]),pool.query('SELECT * FROM owner_repair_jobs WHERE owner_id=$1 ORDER BY created_at DESC LIMIT 50',[req.supportAgent!.id])]);
- res.json({repairEnabled:repairEnabled(),repairs:repairs.rows,leads:leads.rows,jobs:jobs.rows,schedules:schedules.rows,audit:audit.rows,snapshot,workerEnabled:process.env.OWNER_OPERATIONS_WORKER==='true',apiConfigured:Boolean(process.env.OPENAI_API_KEY?.trim()),dailyRunLimit:12});
+ res.json({repairEnabled:repairEnabled(),repairs:repairs.rows,leads:leads.rows,jobs:jobs.rows,schedules:schedules.rows,audit:audit.rows,snapshot,workerEnabled:process.env.OWNER_OPERATIONS_WORKER==='true',apiConfigured:Boolean(process.env.OPENAI_API_KEY?.trim()),dailyRunLimit:null});
  }catch{res.status(503).json({message:'Operations schema or data sources unavailable. Run the owner operations migration.'});}
 });
 router.post('/repairs',async(req:AgentRequest,res)=>{

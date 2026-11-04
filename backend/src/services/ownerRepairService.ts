@@ -54,6 +54,12 @@ export async function runOwnerRepairTick() {
     const complete=run.status==='completed';
     let status=complete?'failed':'running';
     let error:string|null=complete?'Repair did not pass all checks. Review the workflow; no resolution has been recorded.':null;
+    if(complete && run.conclusion!=='success') {
+     const result=await github(`actions/runs/${run.id}/jobs?per_page=100`);
+     const failed=(Array.isArray(result.jobs)?result.jobs:[]).find((j:any)=>j.conclusion==='failure');
+     const reasons:Record<string,string>={connections:'Deployment connection checks failed. Open the workflow to check credentials and live commit alignment. No repair was generated.',propose:'GPT repair generation or proposal screening failed. Open the workflow for the failed step. No code was deployed.',verify:'The generated repair failed build or regression checks. No code was deployed.',deploy:'Publication or deployment failed. Check the workflow for deployment and rollback status.'};
+     if(failed && reasons[failed.name])error=reasons[failed.name];
+    }
     if(complete && run.conclusion==='success') {
      // A successful workflow can be a deliberate no-op. Require the actual
      // publication job to succeed before claiming a deployment or native patch.

@@ -3,6 +3,11 @@ run-name: Lucy repair ${{ inputs.request_id }}
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Repair source or check deployment connections only
+        type: choice
+        options: [repair, preflight]
+        default: repair
       request_id:
         description: Random repair request identifier (no customer or incident data)
         type: string
@@ -26,7 +31,32 @@ concurrency:
   group: lucy-production-repair
   cancel-in-progress: false
 jobs:
+  connections:
+    if: inputs.mode == 'preflight' || inputs.scope == 'support-portal' || inputs.scope == 'portal-app'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.base_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check GPT configuration and deployment connections
+        env:
+          LUCY_OPENAI_API_KEY: ${{ secrets.LUCY_OPENAI_API_KEY }}
+          RAILWAY_API_TOKEN: ${{ secrets.LUCY_RAILWAY_API_TOKEN }}
+          VERCEL_TOKEN: ${{ secrets.LUCY_VERCEL_TOKEN }}
+          BASE_SHA: ${{ inputs.base_sha }}
+          RAILWAY_SERVICE_ID: ${{ vars.LUCY_RAILWAY_SERVICE_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ vars.LUCY_RAILWAY_ENVIRONMENT_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.LUCY_VERCEL_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ vars.LUCY_VERCEL_TEAM_ID }}
+        run: node scripts/lucy-repair/preflight.mjs
   propose:
+    needs: connections
+    if: always() && inputs.mode != 'preflight' && (needs.connections.result == 'success' || needs.connections.result == 'skipped')
     outputs:
       has_patch: ${{ steps.screen.outputs.has_patch }}
     # Ubuntu 26.04 breaks codex-action drop-sudo socket ACL verification (upstream #188).

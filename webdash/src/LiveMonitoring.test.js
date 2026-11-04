@@ -68,3 +68,12 @@ test('queues an enabled repair with only the incident identifier', async () => {
   fireEvent.click(await screen.findByText('Fix with Lucy'));
   await waitFor(()=>expect(api.post).toHaveBeenCalledWith('/api/owner-operations/repairs',{incidentId:incident.id}));
 });
+
+test('Fix with Lucy does not queue a repair when fresh diagnostics fail', async () => {
+ const api={get:jest.fn(url=>Promise.resolve({data:url.includes('incidents')?response.data:{repairEnabled:true,repairs:[]}})),post:jest.fn().mockRejectedValue({response:{status:503,data:{message:'Diagnostics are unavailable'}}})};
+ render(<LiveMonitoring client={()=>api} isOwner onUnauthorized={jest.fn()}/>);
+ fireEvent.click(await screen.findByText('Fix with Lucy'));
+ await screen.findByText('Diagnostics are unavailable');
+ expect(api.post).toHaveBeenCalledTimes(1);
+ expect(api.post).toHaveBeenCalledWith('/api/system-reliability/diagnostics',{}, {timeout:15000});
+});

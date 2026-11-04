@@ -71,9 +71,10 @@ test('incident investigations receive the matching technical evidence without cu
  assert.equal(JSON.stringify(lastInput).includes('private-user'),false);
  assert.equal(JSON.stringify(lastInput).includes('private-token'),false);
 });
-test('daily budget includes failures and prevents further calls',async()=>{
+test('completed and failed reviews do not impose a daily quota',async()=>{
  await db.query("INSERT INTO owner_operations_jobs(owner_id,department,instruction,status,started_at) SELECT $1,'it','test','failed',now() FROM generate_series(1,12)",[owner]);
- await runOwnerOperationsTick();assert.equal(requests,3);
+ await db.query("INSERT INTO owner_operations_jobs(owner_id,department,instruction) VALUES($1,'it','Review after previous requests')",[owner]);
+ await runOwnerOperationsTick();assert.equal(requests,4);
 });
 
 test('owner APIs use dedicated authentication rather than customer subscription tokens',()=>{

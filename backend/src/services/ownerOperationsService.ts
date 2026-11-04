@@ -39,9 +39,6 @@ export async function runOwnerOperationsTick() {
     WHERE NOT EXISTS(SELECT 1 FROM owner_operations_jobs WHERE owner_id=$1 AND department=$2 AND status IN ('queued','running'))`,[schedule.owner_id,schedule.department]);
    await client.query("UPDATE owner_operations_schedules SET next_run_at=now()+interval '1 hour'*interval_hours WHERE owner_id=$1 AND department=$2",[schedule.owner_id,schedule.department]);
   }
-  const budget = await client.query("SELECT count(*)::int AS n FROM owner_operations_jobs WHERE started_at > now()-interval '24 hours'");
-  // Hard ceiling includes failed requests; bounded output and no autonomous tool loop.
-  if (budget.rows[0].n >= 12) { await client.query('COMMIT'); return; }
   const picked = await client.query(`SELECT j.* FROM owner_operations_jobs j JOIN platform_support_agents a ON a.id=j.owner_id
     WHERE j.status='queued' AND j.scheduled_for<=now() AND a.is_active AND a.role='owner'
     ORDER BY j.scheduled_for,j.created_at LIMIT 1 FOR UPDATE OF j SKIP LOCKED`);
