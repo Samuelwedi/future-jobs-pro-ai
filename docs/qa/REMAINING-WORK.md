@@ -25,6 +25,13 @@ Updated 2026-11-03 (local). The tester report is the current priority; this regi
 - Verification uses isolated local database fixtures and mocked email delivery. No real estimate, invoice, payroll record or customer email was created during tests. Live inbox receipt remains an external acceptance item.
 - These changes contain no mobile source changes and do not trigger a new paid native build or store submission. Full localization, QuickBooks Time/Payroll live synchronization, device testing, and all retained groups remain open.
 
+### Mobile localization continuation — 2026-11-04 UTC
+
+- Added Spanish/French copy to Support, Timesheet, Schedule and Create Shift: static labels, form placeholders, key alerts, calendar modes and weekdays, support status, selected-employee counts and attachment labels. Date-fns display dates use the selected locale. Route identifiers, API states, user messages, employee/project names and file names are preserved.
+- Mobile TypeScript and all 36 mobile tests passed. Expo production exports produced both iOS and Android Hermes bundles. These source changes are not in the previously built iOS 57 / Android 11 binaries and are held for the final native build; no paid build or submission was started.
+- Localization remains partial across the other screens and dynamic/server error messages. These four screens are an expansion, not evidence that the full app is translated.
+- API commit `07208d2` deployed successfully: Railway `b965a418-47de-4f24-9687-374705a41a77`, healthy after startup. Customer-web deployment `dpl_ECZMsi8rYds54e1ouCxkQk7dne2C` is READY on the canonical domains. Signed-in estimate listing loads. Real email delivery was not exercised.
+
 The earlier records below are retained as historical checkpoints; approval and build statements there do not supersede this continuation. All remaining and paused groups are retained.
 
 ## Earlier verified release — 2026-10-31

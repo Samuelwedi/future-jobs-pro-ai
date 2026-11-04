@@ -1,3 +1,5 @@
+import { es, fr, enUS } from 'date-fns/locale';
+import { useLang } from '../context/LanguageContext';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -8,7 +10,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { API_URL, api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
-import { format, startOfWeek, endOfWeek, parseISO } from 'date-fns';
+import { format as formatDate, startOfWeek, endOfWeek, parseISO } from 'date-fns';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -57,6 +59,8 @@ const getAuthToken = async (): Promise<string | null> => {
 };
 
 export default function TimesheetScreen() {
+  const { t, lang } = useLang();
+  const format = (date: Date, pattern: string) => formatDate(date, pattern, {locale: lang === 'es' ? es : lang === 'fr' ? fr : enUS});
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [entries, setEntries] = useState<TimeEntry[]>([]);
@@ -146,7 +150,7 @@ export default function TimesheetScreen() {
       await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', UTI: 'public.comma-separated-values-text' });
     } catch (e) {
       console.error('Export error:', e);
-      Alert.alert('Error', 'Could not export timesheet: ' + (e instanceof Error ? e.message : ''));
+      Alert.alert(t('Error'), 'Could not export timesheet: ' + (e instanceof Error ? e.message : ''));
     }
   };
 
@@ -196,16 +200,16 @@ export default function TimesheetScreen() {
           timeEntryId,
         }, 'file');
         fetchEntries();
-        Alert.alert('Success', 'Attachment uploaded!');
+        Alert.alert(t('Success'), t('Attachment uploaded!'));
       }
     } catch (e: any) {
-      Alert.alert('Upload failed', e.message);
+      Alert.alert(t('Upload failed'), e.message);
     }
   };
 
   const beginEdit=(entry:TimeEntry)=>{setEditForm({clockIn:new Date(entry.clock_in).toISOString(),clockOut:entry.clock_out?new Date(entry.clock_out).toISOString():'',breakMinutes:String(entry.break_minutes||0),reason:''});setEditing(true);};
-  const saveEdit=async()=>{if(!selectedEntry)return;try{await api.patch(`/workforce-operations/time-entries/${selectedEntry.id}`,{clockIn:editForm.clockIn,clockOut:editForm.clockOut||null,breakMinutes:Number(editForm.breakMinutes),reason:editForm.reason});Alert.alert('Saved','The correction was recorded in the audit trail and returned for approval.');setEditing(false);setSelectedEntry(null);await fetchEntries();}catch(cause:any){Alert.alert('Correction failed',cause?.response?.data?.message||cause?.message||'Could not update the time entry');}};
-  const approveEntry=async()=>{if(!selectedEntry)return;try{await api.post(`/workforce-operations/time-entries/${selectedEntry.id}/approve`,{});Alert.alert('Approved','The time entry is approved for payroll.');setSelectedEntry(null);await fetchEntries();}catch(cause:any){Alert.alert('Approval failed',cause?.response?.data?.message||cause?.message||'Could not approve the entry');}};
+  const saveEdit=async()=>{if(!selectedEntry)return;try{await api.patch(`/workforce-operations/time-entries/${selectedEntry.id}`,{clockIn:editForm.clockIn,clockOut:editForm.clockOut||null,breakMinutes:Number(editForm.breakMinutes),reason:editForm.reason});Alert.alert(t('Saved'),t('The correction was recorded in the audit trail and returned for approval.'));setEditing(false);setSelectedEntry(null);await fetchEntries();}catch(cause:any){Alert.alert(t('Correction failed'),cause?.response?.data?.message||cause?.message||'Could not update the time entry');}};
+  const approveEntry=async()=>{if(!selectedEntry)return;try{await api.post(`/workforce-operations/time-entries/${selectedEntry.id}/approve`,{});Alert.alert(t('Approved'),t('The time entry is approved for payroll.'));setSelectedEntry(null);await fetchEntries();}catch(cause:any){Alert.alert(t('Approval failed'),cause?.response?.data?.message||cause?.message||'Could not approve the entry');}};
 
   const renderSectionHeader = ({ section }: { section: DaySection }) => (
     <View style={styles.sectionHeader}>
@@ -216,7 +220,7 @@ export default function TimesheetScreen() {
       <View style={styles.sectionHoursRow}>
         <Text style={styles.sectionHours}>{section.totalHours.toFixed(2)}h</Text>
         {section.totalOT > 0 && (
-          <Text style={styles.otBadge}>+{section.totalOT.toFixed(1)}h OT</Text>
+          <Text style={styles.otBadge}>+{section.totalOT.toFixed(1)}{t("h OT")}</Text>
         )}
       </View>
     </View>
@@ -232,18 +236,18 @@ export default function TimesheetScreen() {
       <TouchableOpacity style={styles.entryRow} onPress={() => setSelectedEntry(item)}>
         <View style={styles.entryInfo}>
           <View style={styles.entryHeader}>
-            <Text style={styles.projectName}>{item.project_name || 'No project'}</Text>
+            <Text style={styles.projectName}>{item.project_name || t("No project")}</Text>
             {hasAlerts && <MaterialIcons name="warning" size={18} color="#FF9800" />}
             {item.is_manual && <MaterialIcons name="edit" size={16} color="#888" style={{ marginLeft: 4 }} />}
             {hasAttachments && <MaterialIcons name="attach-file" size={16} color="#00D4FF" style={{ marginLeft: 4 }} />}
           </View>
           <Text style={styles.times}>{clockInTime} → {clockOutTime}</Text>
-          {item.break_minutes > 0 && <Text style={styles.breakText}>🕐 Break: {item.break_minutes}m</Text>}
+          {item.break_minutes > 0 && <Text style={styles.breakText}>{t("🕐 Break:")} {item.break_minutes}m</Text>}
         </View>
         <View style={styles.hoursCol}>
           <Text style={styles.hours}>{item.hours || '0.00'}h</Text>
           {parseFloat(item.overtimeHours || '0') > 0 && (
-            <Text style={styles.otText}>OT {item.overtimeHours}h</Text>
+            <Text style={styles.otText}>{t("OT")} {item.overtimeHours}h</Text>
           )}
         </View>
       </TouchableOpacity>
@@ -259,10 +263,10 @@ export default function TimesheetScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Timesheet</Text>
+        <Text style={styles.headerTitle}>{t("Timesheet")}</Text>
         <TouchableOpacity onPress={handleExport} style={{ padding: 8 }}>
           <MaterialIcons name="file-download" size={24} color="#00D4FF" />
         </TouchableOpacity>
@@ -284,19 +288,19 @@ export default function TimesheetScreen() {
         </TouchableOpacity>
       </View>
 
-      {timezone && <Text style={{ color: '#AAA', textAlign: 'center' }}>Company timezone: {timezone}</Text>}
+      {timezone && <Text style={{ color: '#AAA', textAlign: 'center' }}>{t("Company timezone:")} {timezone}</Text>}
       <View style={styles.weeklySummary}>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryValue}>{weeklyTotal.toFixed(1)}h</Text>
-          <Text style={styles.summaryLabel}>Regular</Text>
+          <Text style={styles.summaryLabel}>{t("Regular")}</Text>
         </View>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryValue}>{weeklyOT.toFixed(1)}h</Text>
-          <Text style={styles.summaryLabel}>Overtime</Text>
+          <Text style={styles.summaryLabel}>{t("Overtime")}</Text>
         </View>
         <View style={styles.summaryItem}>
           <Text style={styles.summaryValue}>{entries.length}</Text>
-          <Text style={styles.summaryLabel}>Shifts</Text>
+          <Text style={styles.summaryLabel}>{t("Shifts")}</Text>
         </View>
       </View>
 
@@ -304,7 +308,7 @@ export default function TimesheetScreen() {
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
           <TouchableOpacity onPress={fetchEntries} style={styles.retryBtn}>
-            <Text style={styles.retryText}>Retry</Text>
+            <Text style={styles.retryText}>{t("Retry")}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -315,7 +319,7 @@ export default function TimesheetScreen() {
           renderSectionHeader={renderSectionHeader}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-          ListEmptyComponent={<Text style={styles.empty}>No time entries this week</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>{t("No time entries this week")}</Text>}
         />
       )}
 
@@ -324,35 +328,35 @@ export default function TimesheetScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Shift Details</Text>
+              <Text style={styles.modalTitle}>{t("Shift Details")}</Text>
               <TouchableOpacity onPress={() => setSelectedEntry(null)}>
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
             </View>
             {selectedEntry && (
               <ScrollView>
-                <Text style={styles.detailLabel}>Project</Text>
+                <Text style={styles.detailLabel}>{t("Project")}</Text>
                 <Text style={styles.detailValue}>{selectedEntry.project_name}</Text>
-                <Text style={styles.detailLabel}>Address</Text>
-                <Text style={styles.detailValue}>{selectedEntry.project_address || 'No address'}</Text>
-                <Text style={styles.detailLabel}>Clock In</Text>
+                <Text style={styles.detailLabel}>{t("Address")}</Text>
+                <Text style={styles.detailValue}>{selectedEntry.project_address || t("No address")}</Text>
+                <Text style={styles.detailLabel}>{t("Clock In")}</Text>
                 <Text style={styles.detailValue}>{format(parseISO(selectedEntry.clock_in), 'MMM d, yyyy h:mm a')}</Text>
-                <Text style={styles.detailLabel}>Clock Out</Text>
-                <Text style={styles.detailValue}>{selectedEntry.clock_out ? format(parseISO(selectedEntry.clock_out), 'h:mm a') : 'Active'}</Text>
-                <Text style={styles.detailLabel}>Regular</Text>
+                <Text style={styles.detailLabel}>{t("Clock Out")}</Text>
+                <Text style={styles.detailValue}>{selectedEntry.clock_out ? format(parseISO(selectedEntry.clock_out), 'h:mm a') : t("Active")}</Text>
+                <Text style={styles.detailLabel}>{t("Regular")}</Text>
                 <Text style={styles.detailValue}>{selectedEntry.regularHours}h</Text>
-                <Text style={styles.detailLabel}>Overtime</Text>
+                <Text style={styles.detailLabel}>{t("Overtime")}</Text>
                 <Text style={styles.detailValue}>{selectedEntry.overtimeHours}h</Text>
                 {selectedEntry.break_minutes > 0 && (
                   <>
-                    <Text style={styles.detailLabel}>Break</Text>
+                    <Text style={styles.detailLabel}>{t("Break")}</Text>
                     <Text style={styles.detailValue}>{selectedEntry.break_minutes}m</Text>
                   </>
                 )}
-                {editing?<View style={{gap:10,marginTop:16}}><TextInput style={styles.editInput} value={editForm.clockIn} onChangeText={value=>setEditForm({...editForm,clockIn:value})} placeholder="Clock in ISO date/time" placeholderTextColor="#778"/><TextInput style={styles.editInput} value={editForm.clockOut} onChangeText={value=>setEditForm({...editForm,clockOut:value})} placeholder="Clock out ISO date/time" placeholderTextColor="#778"/><TextInput keyboardType="number-pad" style={styles.editInput} value={editForm.breakMinutes} onChangeText={value=>setEditForm({...editForm,breakMinutes:value})} placeholder="Break minutes" placeholderTextColor="#778"/><TextInput multiline style={styles.editInput} value={editForm.reason} onChangeText={value=>setEditForm({...editForm,reason:value})} placeholder="Required correction reason" placeholderTextColor="#778"/><TouchableOpacity style={styles.gpsBtn} onPress={saveEdit}><Text style={styles.gpsBtnText}>Save audited correction</Text></TouchableOpacity></View>:null}
+                {editing?<View style={{gap:10,marginTop:16}}><TextInput style={styles.editInput} value={editForm.clockIn} onChangeText={value=>setEditForm({...editForm,clockIn:value})} placeholder={t("Clock in ISO date/time")} placeholderTextColor="#778"/><TextInput style={styles.editInput} value={editForm.clockOut} onChangeText={value=>setEditForm({...editForm,clockOut:value})} placeholder={t("Clock out ISO date/time")} placeholderTextColor="#778"/><TextInput keyboardType="number-pad" style={styles.editInput} value={editForm.breakMinutes} onChangeText={value=>setEditForm({...editForm,breakMinutes:value})} placeholder={t("Break minutes")} placeholderTextColor="#778"/><TextInput multiline style={styles.editInput} value={editForm.reason} onChangeText={value=>setEditForm({...editForm,reason:value})} placeholder={t("Required correction reason")} placeholderTextColor="#778"/><TouchableOpacity style={styles.gpsBtn} onPress={saveEdit}><Text style={styles.gpsBtnText}>{t("Save audited correction")}</Text></TouchableOpacity></View>:null}
                 {selectedEntry.alerts.length > 0 && (
                   <>
-                    <Text style={styles.detailLabel}>Alerts</Text>
+                    <Text style={styles.detailLabel}>{t("Alerts")}</Text>
                     {selectedEntry.alerts.map((a, i) => (
                       <Text key={i} style={styles.alertText}>⚠️ {a}</Text>
                     ))}
@@ -360,16 +364,16 @@ export default function TimesheetScreen() {
                 )}
                 <TouchableOpacity style={styles.attachBtn} onPress={() => handleAttachFile(selectedEntry.id)}>
                   <MaterialIcons name="attach-file" size={20} color="#0A0A0A" />
-                  <Text style={styles.attachBtnText}>Attach File</Text>
+                  <Text style={styles.attachBtnText}>{t("Attach File")}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.gpsBtn} onPress={() => {
                   setSelectedEntry(null);
                   navigation.navigate('GPSPlayback', { timeEntryId: selectedEntry.id });
                 }}>
                   <MaterialIcons name="play-circle" size={20} color="#0A0A0A" />
-                  <Text style={styles.gpsBtnText}>Replay GPS Trail</Text>
+                  <Text style={styles.gpsBtnText}>{t("Replay GPS Trail")}</Text>
                 </TouchableOpacity>
-                {isBossOrManager&&!selectedEntry.payroll_locked?<><TouchableOpacity style={styles.managerBtn} onPress={()=>beginEdit(selectedEntry)}><MaterialIcons name="edit" size={20} color="#071018"/><Text style={styles.managerBtnText}>Correct time entry</Text></TouchableOpacity>{selectedEntry.clock_out&&selectedEntry.approval_status!=='approved'?<TouchableOpacity style={[styles.managerBtn,{backgroundColor:'#55D66B'}]} onPress={approveEntry}><MaterialIcons name="check-circle" size={20} color="#071018"/><Text style={styles.managerBtnText}>Approve for payroll</Text></TouchableOpacity>:null}</>:null}
+                {isBossOrManager&&!selectedEntry.payroll_locked?<><TouchableOpacity style={styles.managerBtn} onPress={()=>beginEdit(selectedEntry)}><MaterialIcons name="edit" size={20} color="#071018"/><Text style={styles.managerBtnText}>{t("Correct time entry")}</Text></TouchableOpacity>{selectedEntry.clock_out&&selectedEntry.approval_status!=='approved'?<TouchableOpacity style={[styles.managerBtn,{backgroundColor:'#55D66B'}]} onPress={approveEntry}><MaterialIcons name="check-circle" size={20} color="#071018"/><Text style={styles.managerBtnText}>{t("Approve for payroll")}</Text></TouchableOpacity>:null}</>:null}
               </ScrollView>
             )}
           </View>
@@ -381,7 +385,7 @@ export default function TimesheetScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Employee</Text>
+              <Text style={styles.modalTitle}>{t("Select Employee")}</Text>
               <TouchableOpacity onPress={() => setShowUserPicker(false)}>
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
@@ -393,7 +397,7 @@ export default function TimesheetScreen() {
                 setShowUserPicker(false);
               }}
             >
-              <Text style={styles.employeeName}>Me ({user?.firstName} {user?.lastName})</Text>
+              <Text style={styles.employeeName}>{t("Me (")}{user?.firstName} {user?.lastName})</Text>
               {selectedUserId === user?.id && <MaterialIcons name="check-circle" size={22} color="#00D4FF" />}
             </TouchableOpacity>
             {employees.map(emp => (

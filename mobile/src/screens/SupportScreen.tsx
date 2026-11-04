@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import MediaAttachment from '../components/MediaAttachment';
 import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +24,7 @@ interface ActiveTicket {
 }
 
 export default function SupportScreen() {
+  const { t } = useLang();
   const safeInsets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const listRef = useRef<FlatList<SupportMessage>>(null);
@@ -115,10 +117,10 @@ export default function SupportScreen() {
           <Ionicons name="arrow-back" size={23} color="#FFF" />
         </TouchableOpacity>
         <View style={styles.headerCopy}>
-          <Text style={styles.headerTitle}>Customer care</Text>
+          <Text style={styles.headerTitle}>{t("Customer care")}</Text>
           <View style={styles.statusRow}>
             <View style={[styles.statusDot, { backgroundColor: agentActive ? '#34D399' : '#FBBF24' }]} />
-            <Text style={styles.headerMeta}>{agentActive ? 'Agent connected' : ticket ? 'Request in queue' : 'Lucy + human support'}</Text>
+            <Text style={styles.headerMeta}>{agentActive ? t("Agent connected") : ticket ? t("Request in queue") : t("Lucy + human support")}</Text>
           </View>
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('AIAssistant')} style={styles.lucyButton}>
@@ -127,38 +129,38 @@ export default function SupportScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color="#67E8F9" /><Text style={styles.loadingText}>Opening support workspace…</Text></View>
+        <View style={styles.center}><ActivityIndicator color="#67E8F9" /><Text style={styles.loadingText}>{t("Opening support workspace…")}</Text></View>
       ) : !ticket ? (
         <View style={styles.emptyState}>
           <View style={styles.supportMark}><MaterialIcons name="support-agent" size={38} color="#07111F" /></View>
-          <Text style={styles.emptyTitle}>Help when you need it</Text>
-          <Text style={styles.emptyText}>Lucy can resolve common questions. When you need a person, create a private ticket for a Future Jobs Pro AI support agent.</Text>
+          <Text style={styles.emptyTitle}>{t("Help when you need it")}</Text>
+          <Text style={styles.emptyText}>{t("Lucy can resolve common questions. When you need a person, create a private ticket for a Future Jobs Pro AI support agent.")}</Text>
           <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.navigate('AIAssistant')}>
-            <MaterialIcons name="auto-awesome" size={20} color="#07111F" /><Text style={styles.primaryButtonText}>Ask Lucy first</Text>
+            <MaterialIcons name="auto-awesome" size={20} color="#07111F" /><Text style={styles.primaryButtonText}>{t("Ask Lucy first")}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.secondaryButton} onPress={requestAgent} disabled={requesting}>
             {requesting ? <ActivityIndicator color="#67E8F9" /> : <MaterialIcons name="headset-mic" size={20} color="#67E8F9" />}
-            <Text style={styles.secondaryButtonText}>Request a support agent</Text>
+            <Text style={styles.secondaryButtonText}>{t("Request a support agent")}</Text>
           </TouchableOpacity>
-          {Boolean(error) && <Text style={styles.errorText}>{error}</Text>}
+          {Boolean(error) && <Text style={styles.errorText}>{t(error)}</Text>}
         </View>
       ) : (
         <>
           <View style={styles.ticketStrip}>
-            <View><Text style={styles.ticketEyebrow}>PRIVATE SUPPORT TICKET</Text><Text style={styles.ticketId}>#{ticket.id.slice(0, 8).toUpperCase()}</Text></View>
-            <View style={styles.secureBadge}><MaterialIcons name="lock" size={14} color="#34D399" /><Text style={styles.secureText}>Secure</Text></View>
+            <View><Text style={styles.ticketEyebrow}>{t("PRIVATE SUPPORT TICKET")}</Text><Text style={styles.ticketId}>#{ticket.id.slice(0, 8).toUpperCase()}</Text></View>
+            <View style={styles.secureBadge}><MaterialIcons name="lock" size={14} color="#34D399" /><Text style={styles.secureText}>{t("Secure")}</Text></View>
           </View>
           <FlatList
             ref={listRef}
             data={messages}
             contentContainerStyle={styles.messageList}
             keyExtractor={(item) => item.id}
-            ListEmptyComponent={<Text style={styles.emptyThread}>Your ticket is open. Send a message and an agent will respond here.</Text>}
+            ListEmptyComponent={<Text style={styles.emptyThread}>{t("Your ticket is open. Send a message and an agent will respond here.")}</Text>}
             renderItem={({ item }) => {
               const mine = item.senderType === 'customer';
               return (
                 <View style={[styles.messageWrap, mine ? styles.messageMine : styles.messageTheirs]}>
-                  <Text style={styles.sender}>{mine ? 'You' : item.senderName || (item.senderType === 'lucy' ? 'Lucy' : 'Support agent')}</Text>
+                  <Text style={styles.sender}>{mine ? t("You") : item.senderName || (item.senderType === 'lucy' ? 'Lucy' : t("Support agent"))}</Text>
                   <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleTheirs]}>{item.attachment_id?<MediaAttachment path={`/support/attachments/${item.attachment_id}/content`} name={item.attachment_name||'attachment'} mime={item.attachment_type||'application/octet-stream'}/>:<Text style={[styles.messageText, mine && styles.messageTextMine]}>{item.message}</Text>}</View>
                   <Text style={styles.time}>{new Date(item.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
                 </View>
@@ -166,10 +168,10 @@ export default function SupportScreen() {
             }}
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           />
-          {Boolean(error) && <Text style={styles.inlineError}>{error}</Text>}
+          {Boolean(error) && <Text style={styles.inlineError}>{t(error)}</Text>}
           <View style={styles.inputBar}>
-            <TouchableOpacity accessibilityLabel="Attach support media" disabled={sending||ticket.status!=='open'} onPress={()=>void attach()} style={{padding:12}}><MaterialIcons name="attach-file" size={24} color="#67E8F9"/></TouchableOpacity>
-            <TextInput style={styles.input} placeholder={ticket.status === 'open' ? 'Write a message…' : 'This ticket is closed'} placeholderTextColor="#64748B" value={input} onChangeText={setInput} editable={ticket.status === 'open'} multiline maxLength={5000} />
+            <TouchableOpacity accessibilityLabel={t("Attach support media")} disabled={sending||ticket.status!=='open'} onPress={()=>void attach()} style={{padding:12}}><MaterialIcons name="attach-file" size={24} color="#67E8F9"/></TouchableOpacity>
+            <TextInput style={styles.input} placeholder={ticket.status === 'open' ? t("Write a message…") : t("This ticket is closed")} placeholderTextColor="#64748B" value={input} onChangeText={setInput} editable={ticket.status === 'open'} multiline maxLength={5000} />
             <TouchableOpacity style={[styles.sendButton, (!input.trim() || sending) && styles.sendDisabled]} onPress={send} disabled={!input.trim() || sending}>
               {sending ? <ActivityIndicator color="#07111F" size="small" /> : <MaterialIcons name="send" size={22} color="#07111F" />}
             </TouchableOpacity>
