@@ -183,6 +183,7 @@ export default function SchedulePage() {
 
   // ---------- Dialog Controls ----------
   const openCreateDialog = (date: Date) => {
+    setError('');
     setEditingShift(null);
     setEditingRecurring(null);
     setSelectedDate(moment(date));
@@ -201,6 +202,7 @@ export default function SchedulePage() {
   };
 
   const openEditDialog = (event: any) => {
+    setError('');
     const resource = event.resource;
     if (resource.recurring_shift_id) {
       // Edit recurring rule
@@ -457,7 +459,7 @@ export default function SchedulePage() {
           <Button variant="contained" startIcon={<Add />} onClick={() => openCreateDialog(new Date())} sx={{ bgcolor: '#00D4FF', color: '#041016', fontWeight: 800 }}>Create shift</Button>
         </Box>
 
-        {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
+        {error && !dialogOpen && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
 
         <Paper sx={{ bgcolor: '#1A1A1A', borderRadius: 2, p: 2, border: '1px solid #333' }}>
           <BigCalendar
@@ -499,11 +501,12 @@ export default function SchedulePage() {
         </Paper>
 
         {/* ===== Dialog ===== */}
-        <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+        <Dialog open={dialogOpen} onClose={() => { if (!saving) setDialogOpen(false); }} maxWidth="sm" fullWidth>
           <DialogTitle sx={{ bgcolor: '#1A1A1A', color: '#FFF' }}>
             {editingShift || editingRecurring ? 'Edit Shift' : 'New Shift'}
           </DialogTitle>
           <DialogContent sx={{ bgcolor: '#1A1A1A' }}>
+            {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
             <FormControlLabel
               control={<Switch checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />}
               label="Recurring (weekly)"
@@ -613,7 +616,8 @@ export default function SchedulePage() {
                   Delete
                 </Button>
               )}
-              <Button variant="contained" disabled={saving} onClick={handleSave} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', ml: 'auto' }}>
+              <Button disabled={saving} onClick={() => setDialogOpen(false)} sx={{ ml: 'auto' }}>Cancel</Button>
+              <Button variant="contained" disabled={saving} onClick={handleSave} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', ml: 1 }}>
                 {saving ? `Saving${pendingFiles.length ? ` & uploading ${pendingFiles.length}` : ''}…` : editingShift || editingRecurring ? 'Update' : 'Create'}
               </Button>
             </Box>

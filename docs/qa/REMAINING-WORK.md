@@ -12,6 +12,11 @@ Updated 2026-11-03 (local). The tester report is the current priority; this regi
 - Email-delivery correction: invoices send their escaped line-item summary to a client in the same company and only mark sent after SMTP acceptance; accidental repeat sends and paid/cancelled invoices are rejected. Explicit reminders preserve overdue/viewed status and are limited to once per minute per invoice. No nonexistent public payment link is manufactured. Generic and attachment email failures now propagate, and pay-stub responses reflect provider acceptance. Tests mock delivery: no customer email was sent as part of verification. Inbox delivery and payment acceptance remain unverified.
 - A provider accepting an email is not evidence of inbox delivery. If SMTP acknowledgement or the following database commit is uncertain, the API requests checking delivery before retrying rather than claiming success.
 
+- Email correction deployed as `57d56c9` to Railway (`7295e0c2-82f2-47f2-bed8-ab75336be9de`, SUCCESS), customer web (`dpl_84cMJj1dsUY8S8JQJ9cMZsGqZQ3A`, READY), and owner portal (`dpl_EAht8G6E7mDmM8PPGAutcvtJss2o`, READY). Full backend suite passed 226 tests before one additional resend regression; subsequent rebuild and all 9 delivery-focused tests passed. Customer web build passed.
+- Authenticated read-only customer acceptance: dashboard, schedule/create form, invoices, support and timesheets loaded. QuickBooks and Stripe both display Connected for the signed-in company. No records were changed and no messages were sent. Connection status does not establish QuickBooks Time/Payroll sync or real billing acceptance.
+- Follow-up UI: corrected integration-label encoding; added a visible Cancel button and in-dialog error feedback to scheduling. Dismissal is disabled while saving.
+- Further source gap: estimate Send currently changes status without delivering an email. This is still open, alongside full mobile localization, overnight schedule acceptance, and the retained groups below. Full parity is not complete.
+
 The earlier records below are retained as historical checkpoints; approval and build statements there do not supersede this continuation. All remaining and paused groups are retained.
 
 ## Earlier verified release — 2026-10-31

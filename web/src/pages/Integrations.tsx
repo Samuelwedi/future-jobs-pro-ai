@@ -148,7 +148,7 @@ export default function Integrations() {
                     disabled={working !== null}
                     onClick={() => void disconnect(provider)}
                   >
-                    {working === `disconnect-${provider}` ? 'Disconnectingâ€¦' : 'Disconnect'}
+                    {working === `disconnect-${provider}` ? 'Disconnecting…' : 'Disconnect'}
                   </Button>
                 </Box>
               </Box>
@@ -160,7 +160,7 @@ export default function Integrations() {
                 startIcon={working === `connect-${provider}` ? <CircularProgress size={18} /> : <LinkIcon />}
                 sx={{ bgcolor: color, color: '#FFF', px: 4, py: 1.5 }}
               >
-                {working === `connect-${provider}` ? 'Opening sign-inâ€¦' : `Connect ${title}`}
+                {working === `connect-${provider}` ? 'Opening sign-in…' : `Connect ${title}`}
               </Button>
             )}
           </CardContent>
@@ -200,7 +200,7 @@ export default function Integrations() {
             </Grid>
             <Card sx={{ bgcolor: '#1A1A1A', border: '1px solid #333', borderRadius: 3, mt: 4 }}>
               <CardContent sx={{ p: 4 }}>
-                <Typography variant="h6" sx={{ color: '#FFF', mb: 1 }}>Stripe â†’ QuickBooks</Typography>
+                <Typography variant="h6" sx={{ color: '#FFF', mb: 1 }}>Stripe → QuickBooks</Typography>
                 <Typography variant="body2" sx={{ color: '#AAA', mb: 3 }}>
                   Import the 25 most recent successful Stripe payments. Existing mappings prevent duplicate receipts.
                 </Typography>
@@ -210,7 +210,7 @@ export default function Integrations() {
                   disabled={!status.stripe.connected || !status.quickbooks.connected || working !== null}
                   onClick={() => void syncPayments()}
                 >
-                  {working === 'sync' ? 'Synchronizingâ€¦' : 'Sync now'}
+                  {working === 'sync' ? 'Synchronizing…' : 'Sync now'}
                 </Button>
               </CardContent>
             </Card>
