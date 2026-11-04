@@ -124,14 +124,14 @@ jobs:
           retention-days: 1
   no-repair:
     needs: propose
-    if: needs.propose.outputs.has_patch == 'false'
+    if: always() && needs.propose.result == 'success' && needs.propose.outputs.has_patch == 'false'
     runs-on: ubuntu-latest
     steps:
       - name: No safe repair found
         run: echo 'No safe justified patch was found. No code was published or deployed. Incident remains open.' >> "$GITHUB_STEP_SUMMARY"
   verify:
     needs: propose
-    if: needs.propose.outputs.has_patch == 'true'
+    if: always() && needs.propose.result == 'success' && needs.propose.outputs.has_patch == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -179,6 +179,7 @@ jobs:
     outputs:
       review_required: ${{ steps.publish.outputs.review_required }}
     needs: verify
+    if: always() && needs.verify.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -207,7 +208,7 @@ jobs:
         run: node scripts/lucy-repair/deploy.mjs
   review-required:
     needs: deploy
-    if: needs.deploy.outputs.review_required == 'true'
+    if: always() && needs.deploy.result == 'success' && needs.deploy.outputs.review_required == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Owner approval required before production
