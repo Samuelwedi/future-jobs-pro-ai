@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import {nativeMapsAvailable} from '../utils/nativeMaps';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -48,6 +49,7 @@ const fetchAddress = async (lat: number, lng: number): Promise<string | null> =>
 };
 
 export default function CrewTrackingScreen() {
+  const { t } = useLang();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [employees, setEmployees] = useState<ActiveEmployee[]>([]);
@@ -104,7 +106,7 @@ export default function CrewTrackingScreen() {
       setAddresses(prev => ({ ...prev, ...newAddresses }));
     } catch (e) {
       console.error('Failed to fetch active employees:', e);
-      Alert.alert('Error', 'Could not load employee locations');
+      Alert.alert(t('Error'), t('Could not load employee locations'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -156,12 +158,12 @@ export default function CrewTrackingScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View>
-          <Text style={styles.headerTitle}>Crew Tracker</Text>
-          <Text style={styles.headerSubtitle}>{activeCount} worker{activeCount !== 1 ? 's' : ''} active</Text>
+          <Text style={styles.headerTitle}>{t("Crew Tracker")}</Text>
+          <Text style={styles.headerSubtitle}>{t("Active workers: {count}", {count: String(activeCount)})}</Text>
         </View>
         <TouchableOpacity onPress={onRefresh}>
           <MaterialIcons name="refresh" size={24} color="#00D4FF" />
@@ -222,7 +224,7 @@ export default function CrewTrackingScreen() {
                     <Text style={styles.detailText}>
                       {emp.isMoving ? '🚶 Moving' : `⏱ ${duration}`}
                     </Text>
-                    <Text style={styles.detailText}>• Updated {lastUpdate}</Text>
+                    <Text style={styles.detailText}>{t("• Updated")} {lastUpdate}</Text>
                   </View>
                 </View>
                 <View style={[styles.statusDot, { backgroundColor: emp.isMoving ? '#4CAF50' : '#FF9800' }]} />

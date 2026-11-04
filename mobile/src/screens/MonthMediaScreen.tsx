@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert,
@@ -7,6 +8,7 @@ import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 
 export default function MonthMediaScreen() {
+  const { t } = useLang();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { projectId, yearMonth, projectName } = route.params || {};
@@ -31,7 +33,7 @@ export default function MonthMediaScreen() {
       setCounts({ photos, videos, voice_notes });
     } catch (e) {
       console.error('Fetch error:', e);
-      Alert.alert('Error', 'Failed to load media counts');
+      Alert.alert(t('Error'), t('Failed to load media counts'));
     } finally {
       setLoading(false);
     }
@@ -54,11 +56,11 @@ export default function MonthMediaScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {projectName || 'Project'} - {yearMonth || ''}
+          {projectName || t('Project')} - {yearMonth || ''}
         </Text>
         <View style={{ width: 24 }} />
       </View>
@@ -77,13 +79,13 @@ export default function MonthMediaScreen() {
                   mediaType: folder.type,
                 });
               } else {
-                Alert.alert('Error', 'Missing project information');
+                Alert.alert(t('Error'), t('Missing project information'));
               }
             }}
           >
             <MaterialIcons name={folder.icon as any} size={40} color={folder.color} />
-            <Text style={styles.folderLabel}>{folder.label}</Text>
-            <Text style={styles.folderCount}>{folder.count} items</Text>
+            <Text style={styles.folderLabel}>{t(folder.label)}</Text>
+            <Text style={styles.folderCount}>{folder.count} {t("items")}</Text>
           </TouchableOpacity>
         ))}
       </View>

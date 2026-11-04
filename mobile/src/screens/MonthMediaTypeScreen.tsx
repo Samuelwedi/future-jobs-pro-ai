@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -12,6 +13,7 @@ import { AudioPlayer, createAudioPlayer } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 
 export default function MonthMediaTypeScreen() {
+  const { t } = useLang();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { projectId, yearMonth, projectName, mediaType } = route.params || {};
@@ -89,7 +91,7 @@ export default function MonthMediaTypeScreen() {
       setMedia(filtered);
     } catch (e) {
       console.error('Fetch error:', e);
-      Alert.alert('Error', 'Failed to load media');
+      Alert.alert(t('Error'), t('Failed to load media'));
     } finally {
       setLoading(false);
     }
@@ -97,7 +99,7 @@ export default function MonthMediaTypeScreen() {
 
   const handlePlayAudio = async (url: string) => {
     if (!url) {
-      Alert.alert('Audio Not Available', 'This voice note does not have an audio file.');
+      Alert.alert(t('Audio Not Available'), t('This voice note does not have an audio file.'));
       return;
     }
     try {
@@ -117,7 +119,7 @@ export default function MonthMediaTypeScreen() {
     } catch (error) {
       releaseAudio();
       setIsPlaying(false); setPlayingUrl(null);
-      if (mounted.current) Alert.alert('Error', 'Could not play audio');
+      if (mounted.current) Alert.alert(t('Error'), t('Could not play audio'));
     }
   };
 
@@ -147,7 +149,7 @@ export default function MonthMediaTypeScreen() {
                 handlePlayAudio(item.url);
               }
             } else {
-              Alert.alert('Audio Not Available', 'This voice note does not have an audio file.');
+              Alert.alert(t('Audio Not Available'), t('This voice note does not have an audio file.'));
             }
             return;
           }
@@ -158,7 +160,7 @@ export default function MonthMediaTypeScreen() {
         {isVideo && (
           <View style={styles.thumbnailPlaceholder}>
             <Ionicons name="videocam" size={32} color="#FFF" />
-            <Text style={styles.thumbnailLabel}>Video</Text>
+            <Text style={styles.thumbnailLabel}>{t("Video")}</Text>
           </View>
         )}
         {isVoice && (
@@ -221,11 +223,11 @@ export default function MonthMediaTypeScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={28} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {projectName || 'Project'} - {yearMonth || ''} - {typeLabels[mediaType || ''] || mediaType || 'Media'}
+          {projectName || t('Project')} - {yearMonth || ''} - {t(typeLabels[mediaType || ''] || 'Media')}
         </Text>
         <View style={{ width: 24 }} />
       </View>
@@ -236,7 +238,7 @@ export default function MonthMediaTypeScreen() {
         renderItem={renderMediaItem}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>No {typeLabels[mediaType || ''] || 'media'} for this month</Text>
+          <Text style={styles.emptyText}>{t("No media for this month")}</Text>
         }
       />
 
@@ -251,8 +253,8 @@ export default function MonthMediaTypeScreen() {
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity style={styles.closeModalBtn} onPress={closeModal} accessibilityRole="button" accessibilityLabel="Close media preview"><Ionicons name="arrow-back" size={28} color="#FFF" /></TouchableOpacity>
-            <Text style={styles.modalTitle} numberOfLines={1}>Media preview</Text>
+            <TouchableOpacity style={styles.closeModalBtn} onPress={closeModal} accessibilityRole="button" accessibilityLabel={t("Close media preview")}><Ionicons name="arrow-back" size={28} color="#FFF" /></TouchableOpacity>
+            <Text style={styles.modalTitle} numberOfLines={1}>{t("Media preview")}</Text>
             <View style={styles.headerSpacer} />
           </View>
 
@@ -268,9 +270,9 @@ export default function MonthMediaTypeScreen() {
                   {videoError ? (
                     <View style={styles.videoErrorContainer}>
                       <Ionicons name="alert-circle" size={48} color="#F44336" />
-                      <Text style={styles.videoErrorText}>Could not load video</Text>
+                      <Text style={styles.videoErrorText}>{t("Could not load video")}</Text>
                       <TouchableOpacity onPress={() => { setVideoError(false); setVideoLoading(true); }}>
-                        <Text style={{ color: '#00D4FF', marginTop: 8 }}>Retry</Text>
+                        <Text style={{ color: '#00D4FF', marginTop: 8 }}>{t("Retry")}</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -303,12 +305,12 @@ export default function MonthMediaTypeScreen() {
                       <Text style={styles.voiceTranscript}>
                         {selectedMedia.transcript || 'No transcript available'}
                       </Text>
-                      {selectedMedia.duration && <Text style={styles.voiceDuration}>Duration: {selectedMedia.duration}s</Text>}
+                      {selectedMedia.duration && <Text style={styles.voiceDuration}>{t("Duration:")} {selectedMedia.duration}s</Text>}
                     </>
                   ) : (
                     <View style={styles.noAudioContainer}>
                       <Ionicons name="alert-circle" size={64} color="#888" />
-                      <Text style={styles.noAudioText}>Audio file not available</Text>
+                      <Text style={styles.noAudioText}>{t("Audio file not available")}</Text>
                     </View>
                   )}
                 </ScrollView>

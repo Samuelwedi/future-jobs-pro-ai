@@ -101,3 +101,9 @@ See `SCREENSHOT-FOLLOWUP-20261031.md` for media playback, compatible Lucy infere
 Email verification and web profile persistence are implemented in source, validated locally and pending release. Email links are random, hashed at rest, expire after one hour, and are consumed atomically; old links cannot verify a changed email. Existing accounts are not falsely marked verified or locked out of billing. Mobile Profile and web Settings expose status and email resend; confirmation uses the public verification page. SMTP failure is returned explicitly. Live delivery acceptance remains open.
 
 Validation for this source follow-up: backend build and all 215 tests passed; mobile TypeScript and 34 tests passed; customer web production build passed. Physical devices, SMTP delivery and store acceptance remain open.
+
+### Media and GPS localization continuation — 2026-11-04 UTC
+
+- Extended Spanish/French static copy across Project Album, Project Media, Month Media, Month Media Type, GPS Playback and Crew Tracking. Translated media categories and complete count/empty-state messages avoid joining English plural suffixes into translated sentences. User names and content are preserved. Dynamic errors and remaining screens still require localization.
+- Mobile TypeScript and 36 regression tests pass; translation coverage now includes 23 screens in these continuations. No new signed native build or store submission was initiated.
+- Confirmed contact-delivery API deployment `42aac52e-8fe9-4a09-a4fc-6ea65e128f0d` SUCCESS and web deployment `dpl_4iYmhp7T8CEGTC9cx3tnqs3tpJYo` READY on the canonical domains, both at `c5df4e2`. Live mailbox delivery has not been exercised.

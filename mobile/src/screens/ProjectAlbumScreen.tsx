@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import { albumThumbnailSize } from '../utils/responsiveLayout';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useCallback } from 'react';
@@ -29,6 +30,7 @@ interface Photo {
 }
 
 export default function ProjectAlbumScreen() {
+  const { t } = useLang();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
@@ -97,17 +99,17 @@ export default function ProjectAlbumScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
             <MaterialIcons name="arrow-back" size={24} color="#FFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Project Album</Text>
+          <Text style={styles.headerTitle}>{t("Project Album")}</Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.emptyState}>
           <MaterialIcons name="photo-library" size={64} color="#888" />
-          <Text style={styles.emptyText}>No project selected</Text>
+          <Text style={styles.emptyText}>{t("No project selected")}</Text>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-            <Text style={styles.backBtnText}>Go Back</Text>
+            <Text style={styles.backBtnText}>{t("Go Back")}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -117,13 +119,13 @@ export default function ProjectAlbumScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 16 }}>
           <Text style={styles.headerTitle}>{projectName}</Text>
           <Text style={styles.headerSubtitle}>
-            {photos.length} photo{photos.length !== 1 ? 's' : ''}
+            {t("Photos: {count}", {count: String(photos.length)})}
           </Text>
         </View>
         <View style={{ width: 24 }} />
@@ -141,14 +143,14 @@ export default function ProjectAlbumScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>No photos yet. Take some new photos!</Text>
+          <Text style={styles.empty}>{t("No photos yet. Take some new photos!")}</Text>
         }
       />
 
       {/* Full‑screen photo modal */}
       <Modal visible={!!selectedPhoto} onRequestClose={() => setSelectedPhoto(null)} animationType="fade" transparent>
         <View style={styles.fullscreenOverlay}>
-          <TouchableOpacity style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close photo preview" onPress={() => setSelectedPhoto(null)}>
+          <TouchableOpacity style={styles.closeBtn} accessibilityRole="button" accessibilityLabel={t("Close photo preview")} onPress={() => setSelectedPhoto(null)}>
             <MaterialIcons name="close" size={30} color="#FFF" />
           </TouchableOpacity>
           {selectedPhoto && (
@@ -159,7 +161,7 @@ export default function ProjectAlbumScreen() {
             />
           )}
           {selectedPhoto?.taken_by && (
-            <Text style={styles.fullscreenBy}>Taken by: {selectedPhoto.taken_by}</Text>
+            <Text style={styles.fullscreenBy}>{t("Taken by:")} {selectedPhoto.taken_by}</Text>
           )}
         </View>
       </Modal>
