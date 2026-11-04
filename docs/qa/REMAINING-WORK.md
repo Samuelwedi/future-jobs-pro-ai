@@ -1,8 +1,20 @@
 # Future Jobs Pro AI — retained work register
 
-Updated 2026-10-31. The tester report is the current priority; this register remains open alongside it. Historical failures are not evidence that the current deployed release failed.
+Updated 2026-11-03 (local). The tester report is the current priority; this register remains open alongside it. Historical failures are not evidence that the current deployed release failed.
 
-## Current verified release
+## Latest continuation — 2026-11-03 (local)
+
+- Lucy repair run `41774413412` passed 218 backend, 35 mobile and 14 portal tests plus customer-web and portal builds. The reviewed mobile recording guard was integrated as `5a039ac92f9adb49c278d5e149571bb51632ed4b`.
+- Railway deployment `b5ebaa69-2430-4ad8-b244-f0c3f5b42fa4` succeeded and portal deployment `dpl_DF1vv46mRbng83w8pdGXegY2Abia` was READY for that commit. Customer web remains on `f6e08b9bf17c843ffa762041e03542641006d93d`; its web source is identical to this checkpoint.
+- Signed builds containing the guard succeeded: iOS 1.2.8 (57), `242964ad-afb0-4a92-9ace-de890f7c4685`; Android 1.2.8 (11), `31b1fa27-5e22-46e5-acd4-c104afe2c6fa`. The additional USD 3 plus tax pair was explicitly approved. Neither was submitted. Physical-device acceptance is still open.
+- The repair worker has no daily limit. GPT generation, isolated verification and candidate publication have been exercised. Automatic production deployment is restricted to eligible portal repairs; broader/sensitive changes require review. Native store submission remains human-controlled.
+- Expo Doctor on the successful iOS build reported available patch updates for Expo, expo-dev-client, expo-location and expo-sharing. These were not incorporated into the verified binary.
+- Email-delivery correction: invoices send their escaped line-item summary to a client in the same company and only mark sent after SMTP acceptance; accidental repeat sends and paid/cancelled invoices are rejected. Explicit reminders preserve overdue/viewed status and are limited to once per minute per invoice. No nonexistent public payment link is manufactured. Generic and attachment email failures now propagate, and pay-stub responses reflect provider acceptance. Tests mock delivery: no customer email was sent as part of verification. Inbox delivery and payment acceptance remain unverified.
+- A provider accepting an email is not evidence of inbox delivery. If SMTP acknowledgement or the following database commit is uncertain, the API requests checking delivery before retrying rather than claiming success.
+
+The earlier records below are retained as historical checkpoints; approval and build statements there do not supersede this continuation. All remaining and paused groups are retained.
+
+## Earlier verified release — 2026-10-31
 
 - 2026-10-31: PR #4 merged as `79fc245b8f4564dee89d46847bc1a6a315e9dba3`. Railway production deployment `481dc079-d376-43fa-b1b0-f85e9142a4f3` is Active; release migrations completed and live health is healthy.
 - Customer website production deployment `dpl_EprYJCjhCvPyjUWQUHZn2kcE1xbH` is READY on the same merge commit and assigned to futurejobsproai.com.

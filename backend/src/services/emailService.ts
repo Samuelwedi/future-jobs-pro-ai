@@ -12,6 +12,9 @@ if (isSMTPConfigured()) {
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587'),
     secure: process.env.SMTP_SECURE === 'true',
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
@@ -24,22 +27,11 @@ if (isSMTPConfigured()) {
 
 // ─── Send email (generic) ───
 export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-  if (!transporter) {
-    console.log(`📧 [Samuel B.] Email would be sent to ${to} – Subject: ${subject}`);
-    console.log('   (Email sending is disabled – SMTP not configured)');
-    return;
-  }
-  try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com',
-      to,
-      subject,
-      html,
-    });
-    console.log(`✅ Email sent to ${to}`);
-  } catch (error) {
-    console.error(`❌ Failed to send email to ${to}:`, error);
-  }
+  if (!transporter) throw new Error('SMTP is not configured');
+  const result = await transporter.sendMail({
+    from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com', to, subject, html,
+  });
+  if (!result.accepted?.length || result.rejected?.length) throw new Error('Email was not accepted by the mail provider');
 }
 
 export async function sendPasswordResetEmail(to: string, resetLink: string): Promise<void> {
@@ -61,23 +53,12 @@ export async function sendEmailWithAttachment(
   html: string,
   attachment: { filename: string; content: Buffer; contentType: string }
 ): Promise<void> {
-  if (!transporter) {
-    console.log(`📧 [Samuel B.] Email would be sent to ${to} – Subject: ${subject}`);
-    console.log('   (Email sending is disabled – SMTP not configured)');
-    return;
-  }
-  try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com',
-      to,
-      subject,
-      html,
-      attachments: [attachment],
-    });
-    console.log(`✅ Email with attachment sent to ${to}`);
-  } catch (error) {
-    console.error(`❌ Failed to send email with attachment to ${to}:`, error);
-  }
+  if (!transporter) throw new Error('SMTP is not configured');
+  const result = await transporter.sendMail({
+    from: process.env.SMTP_FROM || 'noreply@futurejobsproai.com', to, subject, html,
+    attachments: [attachment],
+  });
+  if (!result.accepted?.length || result.rejected?.length) throw new Error('Email attachment was not accepted by the mail provider');
 }
 
 // ─── Pay Stub Email ─────────────────────────────────────────────

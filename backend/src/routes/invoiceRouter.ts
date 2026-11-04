@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
+import { deliverInvoice, InvoiceDeliveryError } from '../services/invoiceDeliveryService';
 import { companyActor,manages } from '../middleware/companyActor';
 
 const router = express.Router();
@@ -308,27 +309,11 @@ router.post('/:id/send', async (req: Request, res: Response) => {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { id } = req.params;
-    // Generate payment link (you can integrate Stripe here)
-    const paymentLink = `${process.env.FRONTEND_URL}/pay/invoice/${id}`;
-
-    const result = await pool.query(
-      `UPDATE invoices
-       SET status = 'sent', sent_at = NOW(), payment_link = $1
-       WHERE id = $2 AND company_id = $3
-       RETURNING *`,
-      [paymentLink, id, companyId]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Invoice not found' });
-    }
-
-    // TODO: Send email to client (using your emailService)
-
-    res.json({ success: true, invoice: result.rows[0] });
+    const invoice = await deliverInvoice(req.params.id as string, companyId, req.body?.resend === true);
+    res.json({ success: true, invoice, delivery: 'accepted' });
   } catch (error) {
-    console.error('Error sending invoice:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    const status = error instanceof InvoiceDeliveryError ? error.status : 503;
+    res.status(status).json({ success: false, message: error instanceof InvoiceDeliveryError ? error.message : 'Invoice delivery is unavailable' });
   }
 });
 

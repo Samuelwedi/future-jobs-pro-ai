@@ -90,6 +90,7 @@ export async function generatePayStubs(payrollId: string, sendEmail: boolean = t
     );
     const stubId = result.rows[0].id;
 
+    let emailSent = false;
     // Send email if requested
     if (sendEmail && data.employeeEmail && data.employeeEmail !== 'no-email@example.com') {
       try {
@@ -100,6 +101,7 @@ export async function generatePayStubs(payrollId: string, sendEmail: boolean = t
           pdfBuffer,
           `paystub_${stubId}.pdf`
         );
+        emailSent = true;
         // Update sent_at
         await pool.query('UPDATE pay_stubs SET sent_at = NOW() WHERE id = $1', [stubId]);
         console.log(`📧 Pay stub email sent to ${data.employeeEmail}`);
@@ -113,7 +115,7 @@ export async function generatePayStubs(payrollId: string, sendEmail: boolean = t
       employeeId: item.employee_id,
       employeeName: data.employeeName,
       pdfUrl,
-      sent: sendEmail,
+      sent: emailSent,
     });
   }
   return payStubs;

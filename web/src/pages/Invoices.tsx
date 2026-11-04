@@ -345,11 +345,12 @@ export default function InvoicesPage() {
     } catch (e) { alert('Error saving invoice'); }
   };
 
-  const handleSend = async (id: string) => {
+  const handleSend = async (id: string, resend = false) => {
     try {
       const res = await fetch(`${API_BASE}/api/invoices/${id}/send`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resend }),
       });
       const data = await res.json();
       if (data.success) fetchInvoices();
@@ -527,7 +528,7 @@ export default function InvoicesPage() {
                     )}
                     {inv.status === 'sent' && (
                       <>
-                        <IconButton size="small" onClick={() => handleSend(inv.id)} color="info" title="Resend">
+                        <IconButton size="small" onClick={() => handleSend(inv.id, true)} color="info" title="Resend">
                           <Send fontSize="small" />
                         </IconButton>
                         <IconButton size="small" onClick={() => openPaymentDialog(inv.id, inv.paid_amount, inv.total)} color="success" title="Record Payment">
@@ -536,7 +537,7 @@ export default function InvoicesPage() {
                       </>
                     )}
                     {inv.status === 'overdue' && (
-                      <IconButton size="small" onClick={() => handleSend(inv.id)} color="error" title="Send Reminder">
+                      <IconButton size="small" onClick={() => handleSend(inv.id, true)} color="error" title="Send Reminder">
                         <Send fontSize="small" />
                       </IconButton>
                     )}
