@@ -12,9 +12,33 @@ const key=(id:string)=>`offline-queue-v2:${id}`;
 // Apply this to both new work and old queued records before replay.
 export function requiresOnlineConfirmation(url:string){
  const path=url.split('?')[0].toLowerCase();
- return /\/(auth|pto|pto-history|companies|payroll-rules|payroll|manual-payroll|direct-deposit|payouts?|stripe|subscriptions?|billing|approvals?|lucy|invoices?|expenses|integrations)(\/|$)/.test(path);
+ return /\/(auth|team|users|kiosk|workforce-operations|pto|pto-history|companies|payroll-rules|payroll|manual-payroll|direct-deposit|payouts?|stripe|subscriptions?|billing|approvals?|lucy(?:-v2)?|invoices?|expenses|integrations)(\/|$)/.test(path);
 }
-async function read(id:string):Promise<any[]>{const raw=await AsyncStorage.getItem(key(id));return raw?JSON.parse(raw):[];}
+type QueuedAction = {id:string;timestamp:number;url:string;method:string;archived?:boolean;fileUri?:string;[key:string]:any};
+async function read(id:string):Promise<QueuedAction[]>{
+ const raw=await AsyncStorage.getItem(key(id));const value=raw?JSON.parse(raw):[];
+ if(!Array.isArray(value)||value.some(item=>!item||typeof item.id!=='string'||typeof item.url!=='string'))throw new Error('Offline records could not be read. They have not been changed.');
+ return value;
+}
+export type OfflineQueueItem = {id:string;timestamp:number;category:string;status:'queued'|'review'|'archived'};
+export async function getOfflineQueueState():Promise<{ownerId:string;items:OfflineQueueItem[]}>{
+ const ownerId=await owner();const queue=await read(ownerId);
+ if(await owner()!==ownerId)throw new Error('Account changed. Reopen offline sync.');
+ return {ownerId,items:queue.map(action=>({id:action.id,timestamp:action.timestamp,
+  category:/^\/pto(?:-history)?(?:\/|$)/.test(action.url)?'Time off':/^\/companies(?:\/|$)/.test(action.url)?'Company settings':action.fileUri?'Media upload':'Saved action',
+  status:action.archived?'archived':requiresOnlineConfirmation(action.url)?'review':'queued'}))};
+}
+// Archive is reversible and only allowed for actions that cannot be replayed.
+// Retain the original payload and files; never turn approval into a background action.
+export async function setOfflineReviewArchived(actionId:string,expectedOwner:string,archived:boolean){
+ await exclusive(async()=>{
+  const id=await owner();if(id!==expectedOwner)throw new Error('Account changed. Reopen offline sync.');
+  const queue=await read(id);const action=queue.find(item=>item.id===actionId);
+  if(!action||!requiresOnlineConfirmation(action.url))throw new Error('This item is not available for review.');
+  if(await owner()!==id)throw new Error('Account changed. Reopen offline sync.');
+  action.archived=archived;await AsyncStorage.setItem(key(id),JSON.stringify(queue));
+ });
+}
 export async function checkOnlineStatus(){try{const state=await Network.getNetworkStateAsync();isOnline=Boolean(state.isConnected)&&state.isInternetReachable!==false;return isOnline;}catch{return isOnline;}}
 export function getOnlineStatus(){return isOnline;}
 export function listenToNetworkChanges(callback:(online:boolean)=>void){const timer=setInterval(async()=>callback(await checkOnlineStatus()),10000);return()=>clearInterval(timer);}
@@ -28,11 +52,12 @@ async function run(){
  const id=await owner();
  while(true){
   if(await owner()!==id)return;
-  const action=(await read(id))[0];if(!action)return;
+  const action=(await read(id)).find(item=>!item.archived&&!requiresOnlineConfirmation(item.url));if(!action)return;
   // Replay bypasses enqueueing, and acknowledged items are removed one at a time.
-  if(requiresOnlineConfirmation(action.url))throw new Error('A queued account, billing, or payroll action requires review while online');
+  // Restricted records remain visible for review but do not block evidence uploads.
+  if(await owner()!==id)return;
   await api.replayQueued(action);
   await exclusive(async()=>{const queue=await read(id);await AsyncStorage.setItem(key(id),JSON.stringify(queue.filter(item=>item.id!==action.id)));});
  }
 }
-export async function getPendingCount(){try{return(await read(await owner())).length;}catch{return 0;}}
+export async function getPendingCount(){try{return(await read(await owner())).filter(item=>!item.archived).length;}catch{return 0;}}

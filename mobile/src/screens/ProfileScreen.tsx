@@ -1,3 +1,4 @@
+import OfflineSyncPanel from '../components/OfflineSyncPanel';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -216,6 +217,8 @@ export default function ProfileScreen() {
         <MaterialIcons name="lock-outline" size={20} color="#FFF" />
         <Text style={styles.actionText}>{t("Change Password")}</Text>
       </TouchableOpacity>
+
+      <OfflineSyncPanel />
 
       {/* ----- Subscription Button (boss/manager only) ----- */}
       {(user?.role === 'boss' || user?.role === 'manager') && (

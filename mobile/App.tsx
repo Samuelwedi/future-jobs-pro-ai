@@ -147,6 +147,7 @@ function AppNavigator() {
   }, [isAuthenticated, user?.id, user?.mustChangePassword]);
 
   useEffect(() => {
+    if (!isAuthenticated || !user?.id) return;
     const cleanup = listenToNetworkChanges(async (online) => {
       if (online && !isProcessing.current) {
         isProcessing.current = true;
@@ -155,7 +156,7 @@ function AppNavigator() {
       }
     });
     return cleanup;
-  }, []);
+  }, [isAuthenticated, user?.id]);
 
   if (isLoading) return null;
 
