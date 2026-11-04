@@ -133,8 +133,8 @@ export default function EstimatesPage() {
     setForm({
       projectId: estimate.project_id || '',
       clientId: estimate.client_id || '',
-      issueDate: estimate.issue_date,
-      expiryDate: estimate.expiry_date || '',
+      issueDate: estimate.issue_date.slice(0, 10),
+      expiryDate: estimate.expiry_date?.slice(0, 10) || '',
       taxRate: estimate.tax_rate,
       notes: estimate.notes || '',
       clientNotes: estimate.client_notes || '',
@@ -351,7 +351,7 @@ export default function EstimatesPage() {
                   <TableCell sx={{ color: '#FFF' }}>{est.client_name || '—'}</TableCell>
                   <TableCell sx={{ color: '#FFF' }}>{est.project_name || '—'}</TableCell>
                   <TableCell sx={{ color: '#FFF' }}>{est.issue_date}</TableCell>
-                  <TableCell sx={{ color: '#FFF' }}>${est.total.toFixed(2)}</TableCell>
+                  <TableCell sx={{ color: '#FFF' }}>${Number(est.total).toFixed(2)}</TableCell>
                   <TableCell>{getStatusChip(est.status)}</TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={1}>
@@ -558,18 +558,18 @@ export default function EstimatesPage() {
                     <TableRow key={idx}>
                       <TableCell sx={{ color: '#FFF' }}>{item.description}</TableCell>
                       <TableCell sx={{ color: '#FFF' }} align="right">{item.quantity}</TableCell>
-                      <TableCell sx={{ color: '#FFF' }} align="right">${item.unit_price.toFixed(2)}</TableCell>
+                      <TableCell sx={{ color: '#FFF' }} align="right">${Number(item.unit_price).toFixed(2)}</TableCell>
                       <TableCell sx={{ color: '#FFF' }} align="right">${(item.quantity * item.unit_price).toFixed(2)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
               <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                <Typography variant="body1" sx={{ color: '#888' }}>Subtotal: ${selectedEstimate.subtotal.toFixed(2)}</Typography>
+                <Typography variant="body1" sx={{ color: '#888' }}>Subtotal: ${Number(selectedEstimate.subtotal).toFixed(2)}</Typography>
                 {selectedEstimate.tax_rate > 0 && (
-                  <Typography variant="body1" sx={{ color: '#888', ml: 2 }}>Tax: ${selectedEstimate.tax_amount.toFixed(2)}</Typography>
+                  <Typography variant="body1" sx={{ color: '#888', ml: 2 }}>Tax: ${Number(selectedEstimate.tax_amount).toFixed(2)}</Typography>
                 )}
-                <Typography variant="h6" sx={{ color: '#00D4FF', ml: 3 }}>Total: ${selectedEstimate.total.toFixed(2)}</Typography>
+                <Typography variant="h6" sx={{ color: '#00D4FF', ml: 3 }}>Total: ${Number(selectedEstimate.total).toFixed(2)}</Typography>
               </Box>
               {selectedEstimate.notes && (
                 <Typography variant="body2" sx={{ color: '#888', mt: 2 }}>Notes: {selectedEstimate.notes}</Typography>

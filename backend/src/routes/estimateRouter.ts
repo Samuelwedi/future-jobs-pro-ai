@@ -1,6 +1,8 @@
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
+import { deliverEstimate, EstimateDeliveryError } from '../services/estimateDeliveryService';
+import { saveEstimate, EstimateSaveError } from '../services/estimateSaveService';
 
 const router = express.Router();
 
@@ -83,64 +85,20 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // ─── POST /api/estimates ─────────────────────────────────────────
-router.post('/', async (req: Request, res: Response) => {
-  const client = await pool.connect();
+const saveHandler = (editing: boolean) => async (req: Request, res: Response) => {
   try {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const { projectId, clientId, issueDate, expiryDate, taxRate, notes, clientNotes, items } = req.body;
-
-    if (!issueDate || !items || items.length === 0) {
-      return res.status(400).json({ success: false, message: 'issueDate and items required' });
-    }
-
-    let subtotal = 0;
-    for (const item of items) {
-      subtotal += (item.quantity || 1) * item.unit_price;
-    }
-
-    const userId = (req as any).user?.id || null;
-
-    const result = await client.query(
-      `INSERT INTO estimates
-       (company_id, project_id, client_id, issue_date, expiry_date, tax_rate, subtotal, notes, client_notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING id`,
-      [
-        companyId,
-        projectId || null,
-        clientId || null,
-        issueDate,
-        expiryDate || null,
-        taxRate || 0,
-        subtotal,
-        notes || null,
-        clientNotes || null,
-        userId,
-      ]
-    );
-    const estimateId = result.rows[0].id;
-
-    for (const item of items) {
-      await client.query(
-        `INSERT INTO estimate_items (estimate_id, description, quantity, unit_price)
-         VALUES ($1, $2, $3, $4)`,
-        [estimateId, item.description, item.quantity || 1, item.unit_price]
-      );
-    }
-
-    await client.query('COMMIT');
-    const estimate = await client.query('SELECT * FROM estimates WHERE id = $1', [estimateId]);
-    res.status(201).json({ success: true, estimate: estimate.rows[0] });
+    const estimate = await saveEstimate(companyId, verifyToken(req).id, req.body, editing ? String(req.params.id) : undefined);
+    return res.status(editing ? 200 : 201).json({ success: true, estimate });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error creating estimate:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  } finally {
-    client.release();
+    if (error instanceof EstimateSaveError) return res.status(error.status).json({ success: false, message: error.message });
+    console.error('Error saving estimate:', error);
+    return res.status(500).json({ success: false, message: 'Estimate could not be saved' });
   }
-});
+};
+router.post('/', saveHandler(false));
+router.put('/:id', saveHandler(true));
 
 // ─── POST /api/estimates/:id/send ──────────────────────────────
 router.post('/:id/send', async (req: Request, res: Response) => {
@@ -148,18 +106,10 @@ router.post('/:id/send', async (req: Request, res: Response) => {
     const companyId = await getCompanyId(req);
     if (!companyId) return res.status(401).json({ success: false, message: 'Not authenticated' });
 
-    const { id } = req.params;
-    const result = await pool.query(
-      `UPDATE estimates SET status = 'sent', sent_at = NOW()
-       WHERE id = $1 AND company_id = $2
-       RETURNING *`,
-      [id, companyId]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Estimate not found' });
-    }
-    res.json({ success: true, estimate: result.rows[0] });
+    const estimate = await deliverEstimate(String(req.params.id), companyId);
+    res.json({ success: true, estimate });
   } catch (error) {
+    if (error instanceof EstimateDeliveryError) return res.status(error.status).json({ success: false, message: error.message });
     console.error('Error sending estimate:', error);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
@@ -174,12 +124,12 @@ router.post('/:id/accept', async (req: Request, res: Response) => {
     const { id } = req.params;
     const result = await pool.query(
       `UPDATE estimates SET status = 'accepted', accepted_at = NOW()
-       WHERE id = $1 AND company_id = $2
+       WHERE id = $1 AND company_id = $2 AND status = 'sent'
        RETURNING *`,
       [id, companyId]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Estimate not found' });
+      return res.status(409).json({ success: false, message: 'Only a sent estimate in your company can be accepted' });
     }
     res.json({ success: true, estimate: result.rows[0] });
   } catch (error) {
@@ -198,21 +148,36 @@ router.post('/:id/convert', async (req: Request, res: Response) => {
     const { id } = req.params;
     const { invoiceDate, dueDate } = req.body;
 
-    // Get estimate with items
+    await client.query('BEGIN');
+    // Lock conversion so retries cannot create duplicate invoices.
     const estimateRes = await client.query(
-      `SELECT * FROM estimates WHERE id = $1 AND company_id = $2`,
+      `SELECT * FROM estimates WHERE id = $1 AND company_id = $2 FOR UPDATE`,
       [id, companyId]
     );
     if (estimateRes.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, message: 'Estimate not found' });
     }
     const estimate = estimateRes.rows[0];
+    if (estimate.status === 'converted' && estimate.converted_to_invoice_id) {
+      const existing = await client.query('SELECT * FROM invoices WHERE id=$1 AND company_id=$2', [estimate.converted_to_invoice_id, companyId]);
+      await client.query('COMMIT');
+      return res.json({ success: true, invoice: existing.rows[0], message: 'Estimate already converted' });
+    }
+    if (!['sent', 'accepted'].includes(estimate.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, message: 'Only sent or accepted estimates can be converted' });
+    }
 
     const itemsRes = await client.query(
       'SELECT * FROM estimate_items WHERE estimate_id = $1',
       [id]
     );
 
+    if (!itemsRes.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, message: 'Estimate has no line items' });
+    }
     // Create invoice from estimate
     const invoiceResult = await client.query(
       `INSERT INTO invoices

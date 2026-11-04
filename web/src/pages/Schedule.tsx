@@ -12,6 +12,7 @@ import {
 import { Add, Delete, DragIndicator, Repeat, AttachFile, UploadFile, Close } from '@mui/icons-material';
 import { API_BASE } from '../services/api';
 import ResourceAttachments from '../components/ResourceAttachments';
+import { shiftRange } from '../utils/shiftRange';
 
 const localizer = momentLocalizer(moment);
 
@@ -26,6 +27,8 @@ interface Shift {
   end_time: string;
   notes?: string;
   attachments?: any[];
+  attachment_url?: string | null;
+  attachment_type?: string | null;
   assignments?: any[];
   project_name?: string;
   recurring_shift_id?: string | null;
@@ -212,8 +215,8 @@ export default function SchedulePage() {
         setEditingShift(null);
         setFormName(rec.title || '');
         setFormProjectId(rec.project_id || '');
-        setFormStart(rec.start_time);
-        setFormEnd(rec.end_time);
+        setFormStart(rec.start_time.slice(0, 5));
+        setFormEnd(rec.end_time.slice(0, 5));
         setFormNotes('');
         setFormEmployees([rec.employee_id]);
         setIsRecurring(true);
@@ -227,11 +230,12 @@ export default function SchedulePage() {
     // One‑off shift
     const shift = resource;
     setEditingShift(shift);
+    setSelectedDate(moment(shift.date));
     setEditingRecurring(null);
     setFormName(shift.name);
     setFormProjectId(shift.project_id);
-    setFormStart(shift.start_time);
-    setFormEnd(shift.end_time);
+    setFormStart(shift.start_time.slice(0, 5));
+    setFormEnd(shift.end_time.slice(0, 5));
     setFormNotes(shift.notes || '');
     setFormEmployees(shift.assignments?.map((a: any) => a.user_id) || []);
     setIsRecurring(false);
@@ -291,12 +295,13 @@ export default function SchedulePage() {
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({
               name: formName,
-              date: editingShift.date,
+              date: selectedDate?.format('YYYY-MM-DD'),
+              projectId: formProjectId,
               startTime: formStart,
               endTime: formEnd,
               notes: formNotes,
-              attachmentUrl: null,
-              attachmentType: null,
+              attachmentUrl: editingShift.attachment_url || null,
+              attachmentType: editingShift.attachment_type || null,
               employeeIds: formEmployees,
             }),
           });
@@ -363,8 +368,7 @@ export default function SchedulePage() {
       events.push({
         id: s.id,
         title: `${s.name} (${s.project_name || 'No Project'})`,
-        start: moment(`${s.date} ${s.start_time}`).toDate(),
-        end: moment(`${s.date} ${s.end_time}`).toDate(),
+        ...shiftRange(s.date, s.start_time, s.end_time),
         resource: s,
         recurring: false,
         recurringShiftId: s.recurring_shift_id || null,
@@ -379,17 +383,11 @@ export default function SchedulePage() {
       const ruleEnd = rule.end_date ? moment(rule.end_date) : moment().add(6, 'months');
       while (current.isSameOrBefore(ruleEnd) && current.isSameOrBefore(endDate)) {
         if (current.day() === rule.day_of_week) {
-          const start = moment(current);
-          const [sh, sm] = rule.start_time.split(':').map(Number);
-          start.set({ hour: sh, minute: sm, second: 0 });
-          const end = moment(current);
-          const [eh, em] = rule.end_time.split(':').map(Number);
-          end.set({ hour: eh, minute: em, second: 0 });
+          const range = shiftRange(current.format('YYYY-MM-DD'), rule.start_time, rule.end_time);
           events.push({
             id: `rec-${rule.id}-${current.format('YYYY-MM-DD')}`,
             title: `${rule.title || 'Recurring Shift'} (${rule.project_name || 'No Project'})`,
-            start: start.toDate(),
-            end: end.toDate(),
+            ...range,
             resource: {
               ...rule,
               recurring_shift_id: rule.id,
@@ -616,7 +614,7 @@ export default function SchedulePage() {
                   Delete
                 </Button>
               )}
-              <Button disabled={saving} onClick={() => setDialogOpen(false)} sx={{ ml: 'auto' }}>Cancel</Button>
+              <Button disabled={saving} onClick={() => { setDialogOpen(false); setError(''); }} sx={{ ml: 'auto' }}>Cancel</Button>
               <Button variant="contained" disabled={saving} onClick={handleSave} sx={{ bgcolor: '#00D4FF', color: '#0A0A0A', ml: 1 }}>
                 {saving ? `Saving${pendingFiles.length ? ` & uploading ${pendingFiles.length}` : ''}…` : editingShift || editingRecurring ? 'Update' : 'Create'}
               </Button>
