@@ -41,3 +41,23 @@ test('unchanged quiet meter readings still finish recording after sustained sile
   poll(2200, -60);
   assert.deepEqual(finished, [recorder]);
 });
+
+test('assistant ignores a new recording while the previous voice request is finishing', async () => {
+  const start = source.match(/const startRecording = async \(\) => \{[\s\S]*?(?=\n  const stopRecording =)/);
+  assert.ok(start, 'screen has a start recording handler');
+  const calls = [];
+  const context = vm.createContext({
+    generation: { current: 0 },
+    current: () => true,
+    startingRecording: { current: false },
+    finishingRecording: { current: true },
+    recorderRef: { current: { isRecording: false } },
+    requestRecordingPermissionsAsync: async () => { calls.push('permission'); return { granted: true }; },
+    setAudioModeAsync: async () => calls.push('audio mode'),
+    audioRecorder: { start: async () => { calls.push('start'); return false; } },
+    Alert: { alert: () => calls.push('alert') },
+  });
+  await vm.runInContext(`${start[0]}\nstartRecording();`, context);
+  assert.deepEqual(calls, []);
+  assert.equal(context.startingRecording.current, false);
+});

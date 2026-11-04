@@ -339,7 +339,7 @@ export default function AIAssistantScreen() {
 
   const startRecording = async () => {
     const epoch = generation.current;
-    if (!current(epoch) || startingRecording.current || recorderRef.current?.isRecording) return;
+    if (!current(epoch) || startingRecording.current || finishingRecording.current || recorderRef.current?.isRecording) return;
     startingRecording.current = true;
     try {
       const permission = await requestRecordingPermissionsAsync();
