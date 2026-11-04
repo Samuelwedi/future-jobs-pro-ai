@@ -1,5 +1,5 @@
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import * as Location from 'expo-location';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -37,7 +38,7 @@ interface AllEmployee {
   first_name: string;
   last_name: string;
   email: string;
-  is_clocked_in: boolean;
+  is_clocked_in: boolean | null;
 }
 
 interface Project {
@@ -61,6 +62,16 @@ export default function CrewClockScreen() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkDataLoading, setBulkDataLoading] = useState(false);
+  const [bulkError, setBulkError] = useState('');
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const mutationLock = useRef(false);
+  const canManage = ['boss', 'manager'].includes(String(user?.role).toLowerCase());
+  const currentCoordinates = async () => {
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (permission.status !== 'granted') throw new Error('Location permission is required for bulk clock actions.');
+    const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+    return { latitude: position.coords.latitude, longitude: position.coords.longitude };
+  };
 
   // ─── Fetch company city ───
   const fetchCompanyCity = async () => {
@@ -91,6 +102,8 @@ export default function CrewClockScreen() {
   // ─── Fetch all employees & projects for bulk modal ───
   const fetchBulkData = async () => {
     setBulkDataLoading(true);
+    setBulkError('');
+    setAllEmployees([]); setProjects([]);
     try {
       const [employeesRes, projectsRes] = await Promise.all([
         api.get<{ users: AllEmployee[] }>(`/users/company/${user?.companyId}`),
@@ -104,7 +117,7 @@ export default function CrewClockScreen() {
             const activeRes = await api.get<{ entry?: any }>(`/time-entries/active?userId=${emp.id}`);
             return { ...emp, is_clocked_in: !!activeRes.entry };
           } catch {
-            return { ...emp, is_clocked_in: false };
+            return { ...emp, is_clocked_in: null };
           }
         })
       );
@@ -112,7 +125,7 @@ export default function CrewClockScreen() {
       setProjects(projectsRes.projects || []);
     } catch (error) {
       console.error('Failed to fetch bulk data:', error);
-      Alert.alert('Error', 'Could not load employee list');
+      setBulkError('Could not load employees and projects. Close and reopen to retry.');
     } finally {
       setBulkDataLoading(false);
     }
@@ -125,6 +138,8 @@ export default function CrewClockScreen() {
 
   // ─── Open bulk modal ───
   const openBulkModal = () => {
+    if (!canManage || mutationLock.current) return;
+    setProjectPickerOpen(false);
     fetchBulkData();
     setSelectedEmployeeIds(new Set());
     setSelectedProjectId('');
@@ -133,6 +148,7 @@ export default function CrewClockScreen() {
 
   // ─── Toggle employee selection ───
   const toggleEmployeeSelection = (id: string) => {
+    if (mutationLock.current || bulkDataLoading) return;
     const newSet = new Set(selectedEmployeeIds);
     if (newSet.has(id)) newSet.delete(id);
     else newSet.add(id);
@@ -141,6 +157,10 @@ export default function CrewClockScreen() {
 
   // ─── Bulk clock‑in ───
   const handleBulkClockIn = async () => {
+    if (!canManage || mutationLock.current || bulkDataLoading || bulkError) return;
+    if (Array.from(selectedEmployeeIds).some(id => allEmployees.find(employee => employee.id === id)?.is_clocked_in == null)) {
+      Alert.alert('Status unavailable', 'Reopen the employee list to refresh status before retrying.'); return;
+    }
     if (selectedEmployeeIds.size === 0) {
       Alert.alert('No employees selected', 'Please select at least one employee.');
       return;
@@ -149,62 +169,81 @@ export default function CrewClockScreen() {
       Alert.alert('No project selected', 'Please select a project.');
       return;
     }
-    setBulkLoading(true);
+    mutationLock.current = true; setBulkLoading(true);
     try {
+      const coordinates = await currentCoordinates();
       const userIds = Array.from(selectedEmployeeIds);
       const response = await api.post('/time-entries/bulk-clock-in', {
         userIds,
         projectId: selectedProjectId,
-        latitude: 0,
-        longitude: 0,
+        ...coordinates,
       });
       const results = (response as any).results || [];
-      const successCount = results.filter((r: any) => r.success).length;
+      const successIds = new Set<string>(results.filter((r: any) => r.success === true && userIds.includes(r.userId)).map((r: any) => r.userId));
+      const successCount = successIds.size;
+      const remaining = userIds.filter(id => !successIds.has(id));
+      const details = remaining.map(id => {
+        const employee = allEmployees.find(item => item.id === id);
+        const result = results.find((item: any) => item.userId === id);
+        return `${employee ? `${employee.first_name} ${employee.last_name}` : id}: ${result?.message || 'No confirmed result. Refresh status before retrying.'}`;
+      }).join('\n');
       Alert.alert(
         'Bulk Clock-In Complete',
-        `${successCount} of ${userIds.length} employees clocked in successfully.`
+        `${successCount} of ${userIds.length} employees clocked in successfully.${details ? `\n\n${details}` : ''}`
       );
       // Refresh both lists
       await Promise.all([fetchActiveEmployees(), fetchBulkData()]);
-      setSelectedEmployeeIds(new Set());
+      setSelectedEmployeeIds(new Set(remaining));
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Bulk clock-in failed');
+      Alert.alert('Error', error.response?.data?.message || (!error.isAxiosError && error.message) || 'Clock-in was not confirmed. Refresh crew status before retrying.');
     } finally {
-      setBulkLoading(false);
+      mutationLock.current = false; setBulkLoading(false);
     }
   };
 
   // ─── Bulk clock‑out ───
   const handleBulkClockOut = async () => {
+    if (!canManage || mutationLock.current || bulkDataLoading || bulkError) return;
+    if (Array.from(selectedEmployeeIds).some(id => allEmployees.find(employee => employee.id === id)?.is_clocked_in == null)) {
+      Alert.alert('Status unavailable', 'Reopen the employee list to refresh status before retrying.'); return;
+    }
     if (selectedEmployeeIds.size === 0) {
       Alert.alert('No employees selected', 'Please select at least one employee.');
       return;
     }
-    setBulkLoading(true);
+    mutationLock.current = true; setBulkLoading(true);
     try {
+      const coordinates = await currentCoordinates();
       const userIds = Array.from(selectedEmployeeIds);
       const response = await api.post('/time-entries/bulk-clock-out', {
         userIds,
-        latitude: 0,
-        longitude: 0,
+        ...coordinates,
       });
       const results = (response as any).results || [];
-      const successCount = results.filter((r: any) => r.success).length;
+      const successIds = new Set<string>(results.filter((r: any) => r.success === true && userIds.includes(r.userId)).map((r: any) => r.userId));
+      const successCount = successIds.size;
+      const remaining = userIds.filter(id => !successIds.has(id));
+      const details = remaining.map(id => {
+        const employee = allEmployees.find(item => item.id === id);
+        const result = results.find((item: any) => item.userId === id);
+        return `${employee ? `${employee.first_name} ${employee.last_name}` : id}: ${result?.message || 'No confirmed result. Refresh status before retrying.'}`;
+      }).join('\n');
       Alert.alert(
         'Bulk Clock-Out Complete',
-        `${successCount} of ${userIds.length} employees clocked out successfully.`
+        `${successCount} of ${userIds.length} employees clocked out successfully.${details ? `\n\n${details}` : ''}`
       );
       await Promise.all([fetchActiveEmployees(), fetchBulkData()]);
-      setSelectedEmployeeIds(new Set());
+      setSelectedEmployeeIds(new Set(remaining));
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Bulk clock-out failed');
+      Alert.alert('Error', error.response?.data?.message || (!error.isAxiosError && error.message) || 'Clock-out was not confirmed. Refresh crew status before retrying.');
     } finally {
-      setBulkLoading(false);
+      mutationLock.current = false; setBulkLoading(false);
     }
   };
 
   // ─── Individual force clock‑out ───
   const handleForceClockOut = async (userId: string, timeEntryId: string) => {
+    if (!canManage || mutationLock.current) return;
     Alert.alert(
       'Force Clock Out',
       'Are you sure you want to clock out this employee?',
@@ -214,13 +253,15 @@ export default function CrewClockScreen() {
           text: 'Clock Out',
           style: 'destructive',
           onPress: async () => {
+            if (mutationLock.current) return;
+            mutationLock.current = true; setBulkLoading(true);
             try {
               await api.post('/crew/clock-out', { userId, timeEntryId });
               Alert.alert('✅ Clocked Out', 'Employee has been clocked out.');
-              fetchActiveEmployees();
+              await fetchActiveEmployees();
             } catch (e: any) {
               Alert.alert('Error', e.message || 'Failed to clock out');
-            }
+            } finally { mutationLock.current = false; setBulkLoading(false); }
           },
         },
       ]
@@ -248,16 +289,16 @@ export default function CrewClockScreen() {
         </View>
         <Text style={styles.project}>{item.projectName}</Text>
         <Text style={styles.clockIn}>Clocked in: {formatClockInTime(item.clockIn)}</Text>
-        {item.latitude && item.longitude && (
+        {item.latitude != null && item.longitude != null && (
           <Text style={styles.location}>📍 {item.latitude.toFixed(6)}, {item.longitude.toFixed(6)}</Text>
         )}
-        <TouchableOpacity
+        {canManage && <TouchableOpacity disabled={bulkLoading}
           style={styles.clockOutBtn}
           onPress={() => handleForceClockOut(item.userId, item.timeEntryId)}
         >
           <MaterialIcons name="logout" size={20} color="#FFF" />
           <Text style={styles.clockOutText}>Clock Out</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
       </View>
     );
   };
@@ -267,6 +308,7 @@ export default function CrewClockScreen() {
     const isSelected = selectedEmployeeIds.has(item.id);
     return (
       <TouchableOpacity
+        disabled={bulkLoading || bulkDataLoading || item.is_clocked_in === null}
         style={[styles.bulkEmployeeItem, isSelected && styles.bulkEmployeeSelected]}
         onPress={() => toggleEmployeeSelection(item.id)}
       >
@@ -274,7 +316,7 @@ export default function CrewClockScreen() {
           <Text style={styles.bulkEmployeeName}>{item.first_name} {item.last_name}</Text>
           <View style={styles.bulkStatusContainer}>
             <View style={[styles.bulkStatusDot, { backgroundColor: item.is_clocked_in ? '#4CAF50' : '#888' }]} />
-            <Text style={styles.bulkStatusText}>{item.is_clocked_in ? 'Clocked In' : 'Clocked Out'}</Text>
+            <Text style={styles.bulkStatusText}>{item.is_clocked_in === null ? 'Status unavailable — reopen to retry' : item.is_clocked_in ? 'Clocked In' : 'Clocked Out'}</Text>
           </View>
         </View>
         {isSelected && <MaterialIcons name="check-circle" size={24} color="#00D4FF" />}
@@ -298,7 +340,7 @@ export default function CrewClockScreen() {
             {officeCity ? `📍 ${officeCity} • ` : ''}{activeEmployees.length} currently clocked in
           </Text>
         </View>
-        <TouchableOpacity onPress={openBulkModal} style={styles.bulkBtn}>
+        <TouchableOpacity disabled={!canManage || bulkLoading} onPress={openBulkModal} style={styles.bulkBtn}>
           <MaterialIcons name="people" size={24} color="#00D4FF" />
           <Text style={styles.bulkBtnText}>Bulk clock</Text>
         </TouchableOpacity>
@@ -312,9 +354,9 @@ export default function CrewClockScreen() {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => {
+            onRefresh={async () => {
               setRefreshing(true);
-              fetchActiveEmployees();
+              await fetchActiveEmployees();
             }}
             tintColor="#00D4FF"
           />
@@ -328,12 +370,12 @@ export default function CrewClockScreen() {
       />
 
       {/* ─── Bulk Actions Modal ─── */}
-      <Modal visible={bulkModalVisible} onRequestClose={() => setBulkModalVisible(false)} animationType="slide" transparent>
+      <Modal visible={bulkModalVisible} onRequestClose={() => !mutationLock.current && setBulkModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Bulk Actions</Text>
-              <TouchableOpacity onPress={() => setBulkModalVisible(false)}>
+              <TouchableOpacity disabled={bulkLoading} onPress={() => setBulkModalVisible(false)}>
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
             </View>
@@ -341,22 +383,8 @@ export default function CrewClockScreen() {
             {/* Project Selector */}
             <TouchableOpacity
               style={styles.modalProjectSelector}
-              onPress={() => {
-                // Simple toggle: show a dropdown of projects
-                // For simplicity, we'll just cycle through projects or open another modal
-                // Here we show a simple list; you can enhance with a picker
-                Alert.alert(
-                  'Select Project',
-                  projects.map(p => p.name).join('\n'),
-                  [
-                    ...projects.map(p => ({
-                      text: p.name,
-                      onPress: () => setSelectedProjectId(p.id),
-                    })),
-                    { text: 'Cancel', style: 'cancel' },
-                  ]
-                );
-              }}
+              disabled={bulkLoading || bulkDataLoading || !!bulkError}
+              onPress={() => setProjectPickerOpen(value => !value)}
             >
               <Text style={styles.modalProjectText}>
                 {selectedProjectId
@@ -366,11 +394,17 @@ export default function CrewClockScreen() {
               <MaterialIcons name="arrow-drop-down" size={24} color="#00D4FF" />
             </TouchableOpacity>
 
+            {projectPickerOpen && <ScrollView style={{maxHeight:160}} nestedScrollEnabled>
+              {projects.map(project => <TouchableOpacity key={project.id} disabled={bulkLoading} accessibilityRole="button" accessibilityState={{selected: selectedProjectId === project.id}} onPress={() => {setSelectedProjectId(project.id);setProjectPickerOpen(false);}} style={{padding:14}}><Text style={styles.modalProjectText}>{project.name}</Text></TouchableOpacity>)}
+              {!projects.length && <Text style={styles.emptyText}>No projects available</Text>}
+            </ScrollView>}
+            <Text style={styles.bulkStatusText}>Bulk actions use this device’s current location. Confirm that selected employees are with you at the work site.</Text>
+            {bulkError ? <Text accessibilityRole="alert" style={{color:'#FDA4AF',padding:12}}>{bulkError}</Text> : null}
             {/* Employee List */}
             <View style={styles.selectionRow}>
               <Text style={styles.selectionCount}>{selectedEmployeeIds.size} selected</Text>
-              <TouchableOpacity onPress={() => setSelectedEmployeeIds(new Set(allEmployees.map(employee => employee.id)))}><Text style={styles.selectionLink}>Select all</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setSelectedEmployeeIds(new Set())}><Text style={styles.selectionLink}>Clear</Text></TouchableOpacity>
+              <TouchableOpacity disabled={bulkLoading || bulkDataLoading || !!bulkError} onPress={() => setSelectedEmployeeIds(new Set(allEmployees.filter(employee => employee.is_clocked_in !== null).map(employee => employee.id)))}><Text style={styles.selectionLink}>Select all</Text></TouchableOpacity>
+              <TouchableOpacity disabled={bulkLoading || bulkDataLoading || !!bulkError} onPress={() => setSelectedEmployeeIds(new Set())}><Text style={styles.selectionLink}>Clear</Text></TouchableOpacity>
             </View>
             {bulkDataLoading && <ActivityIndicator color="#00D4FF" style={{ marginVertical: 20 }} />}
             <FlatList
@@ -386,14 +420,14 @@ export default function CrewClockScreen() {
               <TouchableOpacity
                 style={[styles.modalActionBtn, { backgroundColor: '#4CAF50' }]}
                 onPress={handleBulkClockIn}
-                disabled={bulkLoading}
+                disabled={bulkLoading || bulkDataLoading || !!bulkError || !selectedEmployeeIds.size}
               >
                 <Text style={styles.modalActionText}>Clock In</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalActionBtn, { backgroundColor: '#FF6B6B' }]}
                 onPress={handleBulkClockOut}
-                disabled={bulkLoading}
+                disabled={bulkLoading || bulkDataLoading || !!bulkError || !selectedEmployeeIds.size}
               >
                 <Text style={styles.modalActionText}>Clock Out</Text>
               </TouchableOpacity>

@@ -12,7 +12,7 @@ const key=(id:string)=>`offline-queue-v2:${id}`;
 // Apply this to both new work and old queued records before replay.
 export function requiresOnlineConfirmation(url:string){
  const path=url.split('?')[0].toLowerCase();
- return /\/(auth|team|users|kiosk|workforce-operations|pto|pto-history|companies|payroll-rules|payroll|manual-payroll|direct-deposit|payouts?|stripe|subscriptions?|billing|approvals?|lucy(?:-v2)?|invoices?|expenses|integrations)(\/|$)/.test(path);
+ return /\/(?:time-entries\/bulk-clock-(?:in|out)|crew\/clock-out)(?:\/|$)/.test(path) || /\/(auth|team|users|kiosk|workforce-operations|pto|pto-history|companies|payroll-rules|payroll|manual-payroll|direct-deposit|payouts?|stripe|subscriptions?|billing|approvals?|lucy(?:-v2)?|invoices?|expenses|integrations)(\/|$)/.test(path);
 }
 type QueuedAction = {id:string;timestamp:number;url:string;method:string;archived?:boolean;fileUri?:string;[key:string]:any};
 async function read(id:string):Promise<QueuedAction[]>{
