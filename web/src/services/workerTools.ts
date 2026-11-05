@@ -6,20 +6,42 @@ export const units:Record<UnitFamily,Record<string,number>>={
  weight:{g:.001,kg:1,lb:.45359237,ton:907.18474,'metric ton':1000},temperature:{C:1,F:1,K:1}
 };
 export function parseMeasure(input:string):number{
- const s=input.trim().toLowerCase().replace(/[′’]/g,"'").replace(/[″”]/g,'"'); if(!s)throw Error('Enter a measurement');
- const ft=s.match(/^(-?\d+(?:\.\d+)?)\s*(?:ft|')\s*(?:(\d+(?:\.\d+)?)\s*)?(?:(\d+)\s*\/\s*(\d+))?\s*(?:in|")?$/);
- if(ft){const sign=Number(ft[1])<0?-1:1;return Number(ft[1])*.3048+sign*((Number(ft[2]||0)+(ft[3]?Number(ft[3])/Number(ft[4]):0))*.0254);}
- const mixed=s.match(/^(-?\d+)?\s*(?:(\d+)\s*\/\s*(\d+))?\s*(mm|cm|m|in|ft|yd|km|mi)?$/);
- if(!mixed)throw Error('Use 12.5, 3 1/2, or 5\' 7 1/4"'); const whole=Number(mixed[1]||0),frac=mixed[2]?Number(mixed[2])/Number(mixed[3]):0;
- if(mixed[3]&&Number(mixed[3])===0)throw Error('Fraction denominator cannot be zero'); const value=whole<0?whole-frac:whole+frac;
- return value*(units.length[mixed[4]||'ft']);
+ const s=input.trim().toLowerCase().replace(/[′’]/g,"'").replace(/[″”]/g,'"');
+ const feet=s.match(/^(-?)(\d+(?:\.\d+)?)\s*(?:ft|')\s*(?:(\d+(?:\.\d+)?)\s*)?(?:(\d+)\s*\/\s*(\d+))?\s*(?:in|")?$/);
+ if(feet){
+  const inches=Number(feet[3]||0),num=Number(feet[4]||0),den=Number(feet[5]||1);
+  if(den===0||inches>=12||num>=den)throw Error('Use inches below 12 and a proper fraction.');
+  const value=(Number(feet[2])*.3048+(inches+num/den)*.0254)*(feet[1]?-1:1);
+  if(!Number.isFinite(value))throw Error('Enter a finite measurement');return value;
+ }
+ const match=s.match(/^(-?)(?:(\d+(?:\.\d+)?)(?:\s+(\d+)\s*\/\s*(\d+))?|(\d+)\s*\/\s*(\d+))\s*(mm|cm|m|in|ft|yd|km|mi)?$/);
+ if(!match)throw Error('Enter a decimal, fraction, or feet and inches.');
+ const den=Number(match[4]||match[6]||1),num=Number(match[3]||match[5]||0);
+ if(den===0)throw Error('Fraction denominator cannot be zero');
+ const value=(Number(match[2]||0)+num/den)*(match[1]?-1:1)*units.length[match[7]||'ft'];
+ if(!Number.isFinite(value))throw Error('Enter a finite measurement');return value;
+}
+export function parseToolNumber(input:string):number{
+ const text=input.trim();const value=Number(text);
+ if(!text||!Number.isFinite(value))throw Error('Enter a finite number in every field.');
+ return value;
 }
 export function convert(value:number,family:UnitFamily,from:string,to:string){
  if(family==='temperature'){const c=from==='C'?value:from==='F'?(value-32)*5/9:value-273.15;return to==='C'?c:to==='F'?c*9/5+32:c+273.15;}
  return value*units[family][from]/units[family][to];
 }
-export function fraction(value:number,precision=16){const sign=value<0?'-':'';const a=Math.abs(value),whole=Math.floor(a),num=Math.round((a-whole)*precision);if(!num)return `${sign}${whole}`;const gcd=(x:number,y:number):number=>y?gcd(y,x%y):x,g=gcd(num,precision);return `${sign}${whole?whole+' ':''}${num/g}/${precision/g}`;}
-export function formatFeet(meters:number,precision=16){const inches=meters/.0254,feet=Math.floor(Math.abs(inches)/12),rem=Math.abs(inches)-feet*12;return `${meters<0?'-':''}${feet}' ${fraction(rem,precision)}"`;}
+export function fraction(value:number,precision=16){
+ if(!Number.isFinite(value)||![2,4,8,16,32,64].includes(precision))throw Error('Invalid measurement or precision');
+ const ticks=Math.round(Math.abs(value)*precision),whole=Math.floor(ticks/precision),num=ticks%precision,sign=value<0?'-':'';
+ if(!num)return `${sign}${whole}`;
+ const gcd=(x:number,y:number):number=>y?gcd(y,x%y):x,g=gcd(num,precision);
+ return `${sign}${whole?whole+' ':''}${num/g}/${precision/g}`;
+}
+export function formatFeet(meters:number,precision=16){
+ if(!Number.isFinite(meters)||![2,4,8,16,32,64].includes(precision))throw Error('Invalid measurement or precision');
+ const ticks=Math.round(Math.abs(meters/.0254)*precision),feet=Math.floor(ticks/(12*precision)),rem=(ticks%(12*precision))/precision;
+ return `${meters<0?'-':''}${feet}' ${fraction(rem,precision)}"`;
+}
 export type CalcField={key:string;label:string;unit?:string;default?:number};
 export type Calculator={id:string;name:string;category:string;description:string;fields:CalcField[];solve:(v:Record<string,number>)=>Record<string,string>};
 const n=(v:Record<string,number>,k:string)=>Number(v[k]||0),f=(x:number,d=2)=>Number.isFinite(x)?x.toLocaleString(undefined,{maximumFractionDigits:d}):'—';
