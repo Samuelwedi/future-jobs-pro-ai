@@ -6,7 +6,19 @@ export default function Privacy() {
     <Box sx={{ bgcolor: '#0A0A0A', minHeight: '100vh', py: 6 }}>
       <Container maxWidth="md">
         <Paper sx={{ p: 5, bgcolor: '#1A1A1A', borderRadius: 3, border: '1px solid #333' }}>
-          <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 4 }}>Privacy Policy</Typography>
+          <Typography component="h1" variant="h4" sx={{ color: '#FFF', fontWeight: 'bold', mb: 2 }}>Future Jobs Pro AI Privacy Policy</Typography>
+          <Box sx={{ mb: 4 }}>
+            <Typography sx={{ color: '#DDD', lineHeight: 1.8, mb: 1 }}>
+              This privacy policy applies to Future Jobs Pro AI, listed on Google Play as “future jobs pro AI”,
+              and its website at futurejobsproai.com. The app is provided by Samuel Btsay,
+              listed on Google Play under the developer name “samuel btsay”.
+              In this policy, “we”, “us”, “our”, and “Service” refer to Samuel Btsay and the Future Jobs Pro AI service.
+            </Typography>
+            <Typography sx={{ color: '#DDD', lineHeight: 1.8, overflowWrap: 'anywhere' }}>
+              Android package: com.samuel33.futurejobspro
+            </Typography>
+            <Typography sx={{ color: '#AAA', mt: 1 }}>Last updated: November 5, 2026</Typography>
+          </Box>
           {[
             { title: '1. Information We Collect', text: 'We collect account information (name, email), payment information (processed securely by Stripe), GPS location data (only during work hours), job site photos, voice notes, and usage data.' },
             { title: '2. How We Use It', text: 'We use your data to provide and improve our Service, process payments, generate work verification evidence, and send important updates.' },
