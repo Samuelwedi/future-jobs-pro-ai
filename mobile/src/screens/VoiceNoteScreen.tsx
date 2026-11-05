@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
@@ -33,6 +34,7 @@ interface VoiceNoteResponse {
 }
 
 export default function VoiceNoteScreen() {
+ const { t, lang } = useLang();
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -67,12 +69,12 @@ export default function VoiceNoteScreen() {
           playsInSilentMode: true,
         });
       } else {
-        Alert.alert('Permission Denied', 'Microphone access is required to record voice notes.');
+        Alert.alert(t("Permission Denied"), t("Microphone access is required to record voice notes."));
       }
       } catch {
         if (mounted.current) {
           setHasPermission(false);
-          Alert.alert('Audio unavailable', 'Could not initialize the microphone. Please reopen this screen.');
+          Alert.alert(t("Audio unavailable"), t("Could not initialize the microphone. Please reopen this screen."));
         }
       }
     })();
@@ -108,7 +110,7 @@ export default function VoiceNoteScreen() {
     const epoch = generation.current;
     if (!current(epoch) || busy.current || audioRecorder.isRecording) return;
     if (!hasPermission) {
-      Alert.alert('Permission Required', 'Please grant microphone permission in settings.');
+      Alert.alert(t("Permission Required"), t("Please grant microphone permission in settings."));
       return;
     }
     busy.current = true;
@@ -127,7 +129,7 @@ export default function VoiceNoteScreen() {
       }, 1000);
     } catch (error: any) {
       console.error('Start recording error:', error);
-      if (mounted.current) Alert.alert('Error', `Could not start recording: ${error.message}`);
+      if (mounted.current) Alert.alert(t("Error"), t('Could not start recording: {error}', {error:error.message}));
     } finally {
       busy.current = false;
     }
@@ -149,10 +151,10 @@ export default function VoiceNoteScreen() {
       if (uri) {
         await processRecording(uri);
       } else {
-        Alert.alert('Error', 'No audio file was created.');
+        Alert.alert(t("Error"), t("No audio file was created."));
       }
     } catch (error: any) {
-      if (mounted.current) Alert.alert('Error', `Could not stop recording: ${error.message}`);
+      if (mounted.current) Alert.alert(t("Error"), t('Could not stop recording: {error}', {error:error.message}));
     } finally {
       busy.current = false;
     }
@@ -174,7 +176,7 @@ export default function VoiceNoteScreen() {
         'audio'
       );
       if (!mounted.current) return;
-      if (!response.success || !response.transcript?.trim()) throw new Error('No speech was detected. Please retry your voice note.');
+      if (!response.success || !response.transcript?.trim()) throw new Error(t("No speech was detected. Please retry your voice note."));
       // SAFETY FALLBACK: ensure structuredData exists with empty arrays
       if (!response.structuredData) {
         response.structuredData = {
@@ -198,7 +200,7 @@ export default function VoiceNoteScreen() {
       if (!mounted.current) return;
       const queued = /queued for later/i.test(error.message || '');
       setRetryUri(queued ? null : audioUri);
-      Alert.alert(queued ? 'Upload queued' : 'Processing Failed', error.response?.data?.message || error.message || 'Could not process voice note');
+      Alert.alert(queued ? t("Upload queued") : t("Processing Failed"), error.response?.data?.message || error.message || t("Could not process voice note"));
     } finally {
       if (mounted.current) setIsProcessing(false);
     }
@@ -212,15 +214,15 @@ export default function VoiceNoteScreen() {
 
   const goBack = () => {
     if (navigation.canGoBack()) navigation.goBack();
-    else Alert.alert('Info', 'Return to previous screen.');
+    else Alert.alert(t('Info'), t("Return to previous screen."));
   };
 
   if (!projectId) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>Please select a project first</Text>
+        <Text style={styles.errorText}>{t("Please select a project first")}</Text>
         <TouchableOpacity style={styles.backButton} onPress={goBack}>
-          <Text style={styles.backButtonText}>Go Back</Text>
+          <Text style={styles.backButtonText}>{t("Go Back")}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -230,7 +232,7 @@ export default function VoiceNoteScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#00D4FF" />
-        <Text style={styles.loadingText}>Requesting microphone permission...</Text>
+        <Text style={styles.loadingText}>{t("Requesting microphone permission...")}</Text>
       </View>
     );
   }
@@ -238,7 +240,7 @@ export default function VoiceNoteScreen() {
     return (
       <View style={styles.center}>
         <MaterialIcons name="mic-off" size={64} color="#F44336" />
-        <Text style={styles.errorText}>Microphone access required</Text>
+        <Text style={styles.errorText}>{t("Microphone access required")}</Text>
       </View>
     );
   }
@@ -247,8 +249,8 @@ export default function VoiceNoteScreen() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#00D4FF" />
-        <Text style={styles.processingTitle}>🤖 AI is Processing</Text>
-        <Text style={styles.processingText}>Transcribing and extracting information...</Text>
+        <Text style={styles.processingTitle}>{t("🤖 AI is Processing")}</Text>
+        <Text style={styles.processingText}>{t("Transcribing and extracting information...")}</Text>
       </View>
     );
   }
@@ -256,24 +258,24 @@ export default function VoiceNoteScreen() {
   if (result) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.resultContent}>
-        <Text style={styles.resultTitle}>✅ Voice Note Processed</Text>
+        <Text style={styles.resultTitle}>{t("✅ Voice Note Processed")}</Text>
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>📧 Client Summary</Text>
+          <Text style={styles.cardLabel}>{t("📧 Client Summary")}</Text>
           <Text style={styles.summaryText}>{result.clientSummary}</Text>
         </View>
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>📝 Full Transcript</Text>
+          <Text style={styles.cardLabel}>{t("📝 Full Transcript")}</Text>
           <Text style={styles.transcriptText}>{result.transcript}</Text>
         </View>
         {result.structuredData.actions.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.cardLabel}>🔧 Actions</Text>
+            <Text style={styles.cardLabel}>{t("🔧 Actions")}</Text>
             {result.structuredData.actions.map((a, i) => <Text key={i} style={styles.item}>• {a}</Text>)}
           </View>
         )}
         {result.structuredData.parts.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.cardLabel}>🧰 Parts/Equipment</Text>
+            <Text style={styles.cardLabel}>{t("🧰 Parts/Equipment")}</Text>
             <View style={styles.tagContainer}>
               {result.structuredData.parts.map((p, i) => <View key={i} style={styles.tag}><Text style={styles.tagText}>{p}</Text></View>)}
             </View>
@@ -281,10 +283,10 @@ export default function VoiceNoteScreen() {
         )}
         <View style={styles.buttonRow}>
           <TouchableOpacity style={styles.secondaryButton} onPress={() => setResult(null)}>
-            <Text style={styles.secondaryButtonText}>New Note</Text>
+            <Text style={styles.secondaryButtonText}>{t("New Note")}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.primaryButton} onPress={goBack}>
-            <Text style={styles.primaryButtonText}>Done</Text>
+            <Text style={styles.primaryButtonText}>{t("Done")}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -297,7 +299,7 @@ export default function VoiceNoteScreen() {
         <TouchableOpacity onPress={goBack}>
           <MaterialIcons name="close" size={28} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Voice Note</Text>
+        <Text style={styles.headerTitle}>{t("Voice Note")}</Text>
         <View style={{ width: 28 }} />
       </View>
 
@@ -309,7 +311,7 @@ export default function VoiceNoteScreen() {
         </View>
         {isRecording && <Text style={styles.timer}>{formatDuration(recordingDuration)}</Text>}
         <Text style={styles.aiGuide}>
-          {isRecording ? "🎤 Recording... Speak clearly about the work you did" : "Tap the mic and describe the work you performed"}
+          {isRecording ? t("🎤 Recording... Speak clearly about the work you did") : t("Tap the mic and describe the work you performed")}
         </Text>
       </View>
 
@@ -318,13 +320,13 @@ export default function VoiceNoteScreen() {
           if (busy.current) return;
           busy.current = true;
           void processRecording(retryUri).finally(() => { busy.current = false; });
-        }}><Text style={styles.secondaryButtonText}>Retry saved recording</Text></TouchableOpacity>}
+        }}><Text style={styles.secondaryButtonText}>{t("Retry saved recording")}</Text></TouchableOpacity>}
         <TouchableOpacity onPress={isRecording ? stopRecording : startRecording}>
           <View style={[styles.recordButton, { backgroundColor: isRecording ? '#F44336' : '#00D4FF' }]}>
             <MaterialIcons name={isRecording ? 'stop' : 'mic'} size={40} color="#FFF" />
           </View>
         </TouchableOpacity>
-        <Text style={styles.recordHint}>{isRecording ? 'Tap to Stop' : 'Tap to Record'}</Text>
+        <Text style={styles.recordHint}>{isRecording ? t("Tap to Stop") : t("Tap to Record")}</Text>
       </View>
     </View>
   );

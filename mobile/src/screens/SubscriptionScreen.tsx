@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLang } from '../context/LanguageContext';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -53,19 +54,21 @@ type VerificationResponse = {
 
 const ACTIVE_STATUSES = new Set(['active', 'trialing', 'in_trial', 'grace_period']);
 
+export default function SubscriptionScreen() {
+ const { t, lang } = useLang();
 function friendlyError(error: unknown): string {
   const candidate = error as { response?: { data?: { message?: string } }; message?: string };
-  return candidate?.response?.data?.message || candidate?.message || 'The store could not complete this request.';
+  return candidate?.response?.data?.message || candidate?.message || t("The store could not complete this request.");
 }
 
 function planLabel(tier?: string): string {
-  if (!tier) return 'Plan status unavailable';
-  if (tier==='trial') return 'Free trial';
-  if (FALLBACK_PLAN_COPY[tier]) return FALLBACK_PLAN_COPY[tier].name;
+  if (!tier) return t("Plan status unavailable");
+  if (tier==='trial') return t("Free trial");
+  if (FALLBACK_PLAN_COPY[tier]) return t('Team {count}', {count: tier.replace('team_', '')});
   return tier.charAt(0).toUpperCase() + tier.slice(1);
 }
 
-export default function SubscriptionScreen() {
+
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [status, setStatus] = useState<SubscriptionState>({});
@@ -73,6 +76,7 @@ export default function SubscriptionScreen() {
   const [loadingProducts,setLoadingProducts] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const purchaseLock = useRef(false);
   const [processingProductId, setProcessingProductId] = useState<string | null>(null);
   const [billing, setBilling] = useState<{google:boolean;apple:boolean;canPurchase:boolean;canManageBilling:boolean;complimentary:boolean;googleAccountId:string}|null>(null);
   const storeReady = Boolean(billing?.canPurchase && (Platform.OS === 'android' ? billing.google : billing.apple));
@@ -88,20 +92,20 @@ export default function SubscriptionScreen() {
       });
 
       if (!response.success) {
-        throw new Error(response.message || 'The purchase could not be verified.');
+        throw new Error(response.message || t("The purchase could not be verified."));
       }
 
       await finishTransaction({ purchase, isConsumable: false });
       if (response.subscription) setStatus({...response.subscription,tier:response.subscription.tier||response.subscription.plan});
       void api.get<any>('/subscriptions/capabilities').then(c=>{if(c.success)setBilling(c);}).catch(()=>{});
-      Alert.alert('Subscription activated', 'Your purchase was verified and your workspace is ready.');
+      Alert.alert(t("Subscription activated"), t("Your purchase was verified and your workspace is ready."));
     } catch (error) {
       // Never finish an unverified transaction. The store can safely deliver it again.
-      Alert.alert('Verification pending', friendlyError(error));
+      Alert.alert(t("Verification pending"), friendlyError(error));
     } finally {
-      setProcessingProductId(null);
+      purchaseLock.current = false; setProcessingProductId(null);
     }
-  }, []);
+  }, [t]);
 
   const {
     connected,
@@ -113,12 +117,12 @@ export default function SubscriptionScreen() {
   } = useIAP({
     onPurchaseSuccess: verifyAndFinish,
     onPurchaseError: (error) => {
-      setProcessingProductId(null);
+      purchaseLock.current = false; setProcessingProductId(null);
       if (error.code !== ErrorCode.UserCancelled) {
-        Alert.alert('Purchase not completed', error.message);
+        Alert.alert(t("Purchase not completed"), error.message);
       }
     },
-    onError: (error) => setStoreError(error.message || 'Store products could not be loaded.'),
+    onError: (error) => setStoreError(error.message || t("Store products could not be loaded.")),
   });
 
   const loadStatus = useCallback(async () => {
@@ -130,7 +134,7 @@ export default function SubscriptionScreen() {
     if(results[1].status==='fulfilled')setBilling(results[1].value.success?results[1].value:null);
     else setStoreError(friendlyError(results[1].reason));
     setLoadingStatus(false);setRefreshing(false);
-  }, []);
+  }, [t]);
   useEffect(() => {void loadStatus();}, [loadStatus]);
   const loadProducts = useCallback(async()=>{
     if(!connected)return;
@@ -139,9 +143,9 @@ export default function SubscriptionScreen() {
     for(const key of Object.keys(FALLBACK_PLAN_COPY)){
       try{await fetchProducts({skus:[(Platform.OS==='android'?ANDROID_STORE_PRODUCT_IDS:STORE_PRODUCT_IDS)[key]],type:'subs'});}catch{failed=true;}
     }
-    if(failed)setStoreError('Some plans could not be loaded from the store. Retry, or contact support. Purchases require a store-installed build and an available plan.');
+    if(failed)setStoreError(t("Some plans could not be loaded from the store. Retry, or contact support. Purchases require a store-installed build and an available plan."));
     setLoadingProducts(false);
-  },[connected,fetchProducts]);
+  },[connected,fetchProducts,t]);
   useEffect(()=>{void loadProducts();},[loadProducts]);
 
   useEffect(() => {
@@ -166,29 +170,31 @@ export default function SubscriptionScreen() {
   }, [subscriptions]);
 
   const startPurchase = async (plan: PlanKey) => {
+    if (purchaseLock.current) return;
     if (!storeReady) {
-      Alert.alert('Purchases unavailable', !billing?.canPurchase ? 'Company billing requires the boss or a manager explicitly authorized by the boss.' : 'Store billing is not available yet. Contact billing support. You can remain signed in.');
+      Alert.alert(t("Purchases unavailable"), !billing?.canPurchase ? t("Company billing requires the boss or a manager explicitly authorized by the boss.") : t("Store billing is not available yet. Contact billing support. You can remain signed in."));
       return;
     }
-    if (status.status === 'active' && status.provider && (!(status.currentPeriodEnd || status.expiresAt) || new Date((status.currentPeriodEnd || status.expiresAt)!).getTime()>Date.now())) {
-      Alert.alert('Existing subscription', 'Manage your existing subscription in its billing provider before starting another subscription.');
+    if (ACTIVE_STATUSES.has((status.status || '').toLowerCase()) && status.provider && (!(status.currentPeriodEnd || status.expiresAt) || new Date((status.currentPeriodEnd || status.expiresAt)!).getTime()>Date.now())) {
+      Alert.alert(t("Existing subscription"), t("Manage your existing subscription in its billing provider before starting another subscription."));
       return;
     }
     const product = productsByPlan.get(plan);
     if (!connected || !product || !product.displayPrice) {
       Alert.alert(
-        'Plan not available yet',
-        'This product must be active in App Store Connect or Google Play Console before it can be purchased.',
+        t("Plan not available yet"),
+        t("This product must be active in App Store Connect or Google Play Console before it can be purchased."),
       );
       return;
     }
 
+    purchaseLock.current = true;
     setProcessingProductId(product.id);
     const androidOffer = product.platform === 'android'
       ? product.subscriptionOffers?.find((offer) => Boolean(offer.offerTokenAndroid))
       : undefined;
 
-    if (Platform.OS==='android' && !androidOffer?.offerTokenAndroid) {setProcessingProductId(null);Alert.alert('Plan unavailable','No eligible monthly offer was returned by Google Play. Retry the store plans or contact support.');return;}
+    if (Platform.OS==='android' && !androidOffer?.offerTokenAndroid) {purchaseLock.current = false; setProcessingProductId(null);Alert.alert(t("Plan unavailable"),t("No eligible monthly offer was returned by Google Play. Retry the store plans or contact support."));return;}
     try {
       await requestPurchase({
         request: {
@@ -204,29 +210,31 @@ export default function SubscriptionScreen() {
         type: 'subs',
       });
     } catch (error) {
-      setProcessingProductId(null);
-      Alert.alert('Purchase not started', friendlyError(error));
+      purchaseLock.current = false; setProcessingProductId(null);
+      Alert.alert(t("Purchase not started"), friendlyError(error));
     }
   };
 
   const restore = async () => {
+    if (purchaseLock.current || !billing?.canPurchase || !connected) return;
+    purchaseLock.current = true;
     setProcessingProductId('restore');
     try {
       await getAvailablePurchases({ onlyIncludeActiveItemsIOS: true });
-      Alert.alert('Restore checked', 'Any available active store purchases will be verified. If none appear, confirm you are signed into the store account used to purchase.');
+      Alert.alert(t("Restore checked"), t("Any available active store purchases will be verified. If none appear, confirm you are signed into the store account used to purchase."));
     } catch (error) {
-      setProcessingProductId(null);
-      Alert.alert('Restore failed', friendlyError(error));
+      purchaseLock.current = false; setProcessingProductId(null);
+      Alert.alert(t("Restore failed"), friendlyError(error));
     } finally {
-      setProcessingProductId(null);
+      purchaseLock.current = false; setProcessingProductId(null);
     }
   };
 
   const manageSubscription = async () => {
     const url = status.provider === 'apple' ? 'https://apps.apple.com/account/subscriptions'
       : status.provider === 'google' ? 'https://play.google.com/store/account/subscriptions?package=com.samuel33.futurejobspro' : null;
-    if (!url) return Alert.alert('Web subscription', 'Manage your existing subscription from Billing in the web workspace.');
-    try { await Linking.openURL(url); } catch { Alert.alert('Unable to open store', 'Open your app store subscription settings.'); }
+    if (!url) return Alert.alert(t("Web subscription"), t("Manage your existing subscription from Billing in the web workspace."));
+    try { await Linking.openURL(url); } catch { Alert.alert(t("Unable to open store"), t("Open your app store subscription settings.")); }
   };
   const periodEnd = status.currentPeriodEnd || status.expiresAt;
   const expired = Boolean(periodEnd && new Date(periodEnd).getTime() <= Date.now());
@@ -249,43 +257,46 @@ export default function SubscriptionScreen() {
         }
       >
         <View style={styles.header}>
-          <TouchableOpacity accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.iconButton}>
+          <TouchableOpacity accessibilityLabel={t("Go back")} onPress={() => navigation.goBack()} style={styles.iconButton}>
             <MaterialIcons name="arrow-back" size={23} color="#FFFFFF" />
           </TouchableOpacity>
           <View style={styles.headerCopy}>
             <Text style={styles.eyebrow}>FUTURE JOBS PRO AI</Text>
-            <Text style={styles.title}>{billing?.canPurchase ? 'Choose your workspace plan' : 'Company subscription'}</Text>
-            {billing?.canManageBilling && ['apple','google','stripe'].includes(status.provider||'') && !billing.complimentary && <TouchableOpacity onPress={manageSubscription} accessibilityRole="button"><Text style={styles.restoreText}>Manage existing subscription</Text></TouchableOpacity>}
+            <Text style={styles.title}>{billing?.canPurchase ? t("Choose your workspace plan") : t("Company subscription")}</Text>
+            {billing?.canManageBilling && ['apple','google','stripe'].includes(status.provider||'') && !billing.complimentary && <TouchableOpacity onPress={manageSubscription} accessibilityRole="button"><Text style={styles.restoreText}>{t("Manage existing subscription")}</Text></TouchableOpacity>}
           </View>
           <View style={styles.secureBadge}>
             <Ionicons name="shield-checkmark" size={15} color="#6FE7FF" />
-            <Text style={styles.secureText}>Store secured</Text>
+            <Text style={styles.secureText}>{t("Store secured")}</Text>
           </View>
         </View>
 
-        {!!storeError&&<View style={{padding:16}}><Text accessibilityRole="alert" style={{color:'#FDA4AF'}}>{storeError}</Text><TouchableOpacity onPress={()=>void loadProducts()} disabled={loadingProducts} style={{padding:12}}><Text style={{color:'#67E8F9'}}>{loadingProducts?'Loading plans…':'Retry store plans'}</Text></TouchableOpacity><TouchableOpacity onPress={()=>navigation.navigate('Support')} style={{padding:12}}><Text style={{color:'#67E8F9'}}>Contact billing support</Text></TouchableOpacity></View>}
-        {!active&&!loadingStatus&&<View style={{padding:16}}><Text style={{color:'#FFF'}}>Your trial or subscription has ended. You can still choose a plan, restore a purchase, or contact support here.</Text></View>}
+        {!!storeError&&<View style={{padding:16}}><Text accessibilityRole="alert" style={{color:'#FDA4AF'}}>{storeError}</Text><TouchableOpacity onPress={()=>void loadProducts()} disabled={loadingProducts} style={{padding:12}}><Text style={{color:'#67E8F9'}}>{loadingProducts?t("Loading plans…"):t("Retry store plans")}</Text></TouchableOpacity><TouchableOpacity onPress={()=>navigation.navigate('Support')} style={{padding:12}}><Text style={{color:'#67E8F9'}}>{t("Contact billing support")}</Text></TouchableOpacity></View>}
+        {!active&&!loadingStatus&&<View style={{padding:16}}><Text style={{color:'#FFF'}}>{t("Your trial or subscription has ended. You can still choose a plan, restore a purchase, or contact support here.")}</Text></View>}
         <View style={styles.statusCard}>
           <View style={[styles.statusDot, active ? styles.statusActive : styles.statusInactive]} />
           <View style={styles.statusCopy}>
-            <Text style={styles.statusLabel}>CURRENT WORKSPACE</Text>
-            <Text style={styles.statusTitle}>{loadingStatus ? 'Checking entitlement…' : planLabel(status.tier)}</Text>
+            <Text style={styles.statusLabel}>{t("CURRENT WORKSPACE")}</Text>
+            <Text style={styles.statusTitle}>{loadingStatus ? t("Checking entitlement…") : planLabel(status.tier)}</Text>
             <Text style={styles.statusMeta}>
-              {active ? `Status: ${status.status}` : billing?.canPurchase ? 'Select a company plan' : 'Contact your boss about company access; no individual payment is required'}
-              {renewalDate ? ` · ${status.status==='trialing' ? (expired?'Trial ended':'Trial ends') : expired?'Ended':status.cancelAtPeriodEnd ? 'Ends' : 'Renews'} ${new Date(renewalDate).toLocaleDateString()}` : ''}
+              {active ? `${t('Status')}: ${t(({active:'Active',trialing:'Free trial',in_trial:'Free trial',grace_period:'Grace period'} as Record<string,string>)[status.status || ''] || status.status || '')}` : billing?.canPurchase ? t("Select a company plan") : t("Contact your boss about company access; no individual payment is required")}
+              {renewalDate ? ` · ${status.status==='trialing' ? (expired?t("Trial ended"):t("Trial ends")) : expired?t("Ended"):status.cancelAtPeriodEnd ? t("Ends") : t("Renews")} ${new Date(renewalDate).toLocaleDateString(lang)}` : ''}
             </Text>
           </View>
           {loadingStatus && <ActivityIndicator color="#6FE7FF" />}
         </View>
 
         <View style={styles.promiseRow}>
-          <Promise icon="sparkles" text="Store offers shown at checkout" />
-          <Promise icon="lock-closed" text="Verified by your app store" />
-          <Promise icon="refresh" text="Restore on any signed-in device" />
+          <Promise icon="sparkles" text={t("Store offers shown at checkout")} />
+          <Promise icon="lock-closed" text={t("Verified by your app store")} />
+          <Promise icon="refresh" text={t("Restore on any signed-in device")} />
         </View>
 
         {billing?.canPurchase && (Object.keys(FALLBACK_PLAN_COPY) as PlanKey[]).map((plan, index) => {
           const copy = FALLBACK_PLAN_COPY[plan];
+          const size = Number(plan.replace('team_', ''));
+          const name = t('Team {count}', {count: String(size)});
+          const features = [t('Up to {count} active accounts (owners and workers)', {count:String(size)}), t('Time tracking, GPS and Worker Tools'), t('Scheduling, expenses and reports'), t('{count} operations AI requests/month', {count:String(size*10)}), t('{count} MB knowledge document allowance', {count:String(size*100)})];
           const product = productsByPlan.get(plan);
           const selected = active && (status.tier?.toLowerCase() === plan ||
             (plan === 'professional' && status.tier?.toLowerCase() === 'pro'));
@@ -296,7 +307,7 @@ export default function SubscriptionScreen() {
               {copy.featured && (
                 <View style={styles.featuredPill}>
                   <Ionicons name="flash" size={13} color="#06111D" />
-                  <Text style={styles.featuredText}>MOST POPULAR</Text>
+                  <Text style={styles.featuredText}>{t("MOST POPULAR")}</Text>
                 </View>
               )}
               <View style={styles.planTopRow}>
@@ -305,18 +316,18 @@ export default function SubscriptionScreen() {
                     <Ionicons name={copy.icon} size={22} color="#FFFFFF" />
                   </View>
                   <View>
-                    <Text style={styles.planName}>{copy.name}</Text>
-                    <Text style={styles.planAudience}>{copy.audience}</Text>
+                    <Text style={styles.planName}>{name}</Text>
+                    <Text style={styles.planAudience}>{t(copy.audience)}</Text>
                   </View>
                 </View>
                 <View style={styles.priceBox}>
-                  <Text style={styles.price}>{product?.displayPrice || 'Unavailable'}</Text>
-                  <Text style={styles.interval}>/ month</Text>
+                  <Text style={styles.price}>{product?.displayPrice || t("Unavailable")}</Text>
+                  <Text style={styles.interval}>{t("/ month")}</Text>
                 </View>
               </View>
 
               <View style={styles.divider} />
-              {copy.features.map((feature) => (
+              {features.map((feature) => (
                 <View key={feature} style={styles.featureRow}>
                   <View style={styles.checkCircle}>
                     <Ionicons name="checkmark" size={13} color="#07111F" />
@@ -326,7 +337,7 @@ export default function SubscriptionScreen() {
               ))}
 
               <TouchableOpacity
-                disabled={selected || busy || loadingProducts || !connected || !storeReady || !product?.displayPrice}
+                disabled={selected || !!processingProductId || loadingProducts || !connected || !storeReady || !product?.displayPrice}
                 onPress={() => void startPurchase(plan)}
                 style={[styles.purchaseButton, copy.featured && styles.featuredButton, selected && styles.selectedButton]}
               >
@@ -334,7 +345,7 @@ export default function SubscriptionScreen() {
                   <ActivityIndicator color="#07111F" />
                 ) : (
                   <Text style={[styles.purchaseText, !copy.featured && !selected && styles.secondaryPurchaseText]}>
-                    {selected ? 'Current plan' : loadingProducts ? 'Loading plans…' : !storeReady || !connected || !product?.displayPrice ? 'Purchases unavailable' : `Choose ${copy.name}`}
+                    {selected ? t("Current plan") : loadingProducts ? t("Loading plans…") : !storeReady || !connected || !product?.displayPrice ? t("Purchases unavailable") : t('Choose {plan}', {plan:name})}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -342,25 +353,23 @@ export default function SubscriptionScreen() {
           );
         })}
 
-        <TouchableOpacity disabled={!billing?.canPurchase || processingProductId === 'restore'} onPress={() => void restore()} style={styles.restoreButton}>
+        <TouchableOpacity disabled={!billing?.canPurchase || !connected || !!processingProductId} onPress={() => void restore()} style={styles.restoreButton}>
           {processingProductId === 'restore' ? (
             <ActivityIndicator color="#6FE7FF" />
           ) : (
             <>
               <Ionicons name="cloud-download-outline" size={19} color="#6FE7FF" />
-              <Text style={styles.restoreText}>Restore previous purchase</Text>
+              <Text style={styles.restoreText}>{t("Restore previous purchase")}</Text>
             </>
           )}
         </TouchableOpacity>
 
         <View style={{flexDirection:'row',justifyContent:'center',gap:24,marginTop:12}}>
-          {['privacy','terms'].map(page=><TouchableOpacity key={page} accessibilityRole="link" onPress={()=>Linking.openURL(API_URL.replace(/\/api\/?$/,'')+'/'+page).catch(()=>Alert.alert('Unable to open page','Please open '+page+' from the website.'))}><Text style={styles.restoreText}>{page==='privacy'?'Privacy policy':'Terms of use'}</Text></TouchableOpacity>)}
+          {['privacy','terms'].map(page=><TouchableOpacity key={page} accessibilityRole="link" onPress={()=>Linking.openURL(API_URL.replace(/\/api\/?$/,'')+'/'+page).catch(()=>Alert.alert(t("Unable to open page"),t('Open {page} from the website.', {page:t(page === 'privacy' ? 'Privacy policy' : 'Terms of use')})))}><Text style={styles.restoreText}>{page==='privacy'?t("Privacy policy"):t("Terms of use")}</Text></TouchableOpacity>)}
         </View>
         <Text style={styles.legal}>
-          More than 110 active accounts? Contact support for a company plan.
-          {'\n'}
-          Payment is charged by {Platform.OS === 'ios' ? 'Apple' : Platform.OS === 'android' ? 'Google Play' : 'your app store'}.
-          Subscriptions renew automatically unless cancelled in your store account. Purchases are activated only after secure server verification.
+          {t("More than 110 active accounts? Contact support for a company plan.")}{'\n'}
+          {t('Payment is charged by {store}. Subscriptions renew automatically unless cancelled in your store account. Purchases are activated only after secure server verification.', {store:Platform.OS === 'ios' ? 'Apple' : Platform.OS === 'android' ? 'Google Play' : t('your app store')})}
         </Text>
       </ScrollView>
     </LinearGradient>

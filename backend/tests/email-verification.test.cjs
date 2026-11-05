@@ -11,8 +11,10 @@ const db=new PGlite();let server,base,link,fail=false;
 const id='00000000-0000-4000-a000-000000000001';
 before(async()=>{
  await db.exec(`CREATE TABLE users(id uuid primary key,email text,is_active boolean default true);INSERT INTO users(id,email) VALUES('${id}','owner@example.test')`);
- await db.exec(fs.readFileSync('migrations/20261031_email_verification.sql','utf8'));
- await db.exec(fs.readFileSync('migrations/20261031_email_verification.sql','utf8'));
+ const {migrate}=require('../scripts/run-email-verification-migration.cjs');
+ const migrationClient={query:sql=>db.exec(sql)};
+ await migrate(migrationClient);
+ await migrate(migrationClient);
  pool.query=async(sql,args)=>{const r=await db.query(sql,args);return {rows:r.rows,rowCount:r.rows.length||r.affectedRows||0};};
  mail.sendVerificationEmail=async(to,url)=>{if(fail)throw Error('provider failed');assert.equal(to,'owner@example.test');link=url;};
  const app=express();app.use(express.json());app.use('/api/auth',require('../dist/routes/emailVerificationRoutes').default);

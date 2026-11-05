@@ -2,6 +2,9 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const path=require('node:path');
 const {run,steps}=require('../scripts/run-release-predeploy.cjs');
+test('deployment includes the email verification schema required by Settings',()=>{
+ assert.ok(steps.includes('run-email-verification-migration.cjs'));
+});
 test('single predeploy process runs all migrations in order without shell parsing',()=>{
  const called=[];run((exe,args,opts)=>{assert.equal(exe,process.execPath);assert.equal(opts.shell,false);called.push(path.basename(args[0]));return {status:0};});assert.deepEqual(called,steps);
 });

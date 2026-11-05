@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -22,6 +23,7 @@ interface Member {
 }
 
 export default function TeamScreen() {
+  const { t } = useLang();
   const { user, refreshUser } = useAuth();
   const navigation = useNavigation();
   const [members, setMembers] = useState<Member[]>([]);
@@ -42,7 +44,7 @@ export default function TeamScreen() {
     if (mutationLock.current) return;
     mutationLock.current = true; setBusy(true);
     try { await work(); }
-    catch (cause: any) { Alert.alert('Action failed', cause?.response?.data?.message || cause?.message || 'Please try again'); }
+    catch (cause: any) { Alert.alert(t("Action failed"), cause?.response?.data?.message || cause?.message || t("Please try again")); }
     finally { mutationLock.current = false; setBusy(false); }
   };
 
@@ -51,7 +53,7 @@ export default function TeamScreen() {
     try {
       const res = await api.get<{ success: boolean; members: Member[] }>(`/team/members/${user?.companyId}`);
       setMembers(res.members || []);
-    } catch { setError('Could not load your team. Pull down to try again.'); }
+    } catch { setError(t("Could not load your team. Pull down to try again.")); }
     finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -62,7 +64,7 @@ export default function TeamScreen() {
   const handleInvite = async () => {
     if (!canManage || mutationLock.current) return;
     if (!formEmail.trim() || !formFirstName.trim() || !formLastName.trim()) {
-      Alert.alert('Error', 'Please fill all fields');
+      Alert.alert(t("Error"), t("Please fill all fields"));
       return;
     }
     await runMutation(async () => {
@@ -74,7 +76,7 @@ export default function TeamScreen() {
         role: canChangeRoles ? formRole : 'employee',
         invitedBy: user?.id,
       });
-      Alert.alert('Employee created', `${res.emailSent ? 'The email provider accepted the invitation.' : 'The account was created, but invitation email delivery failed.'}\n\nTemporary password: ${res.tempPassword}\n\nShare this securely. The employee must change it after signing in.`);
+      Alert.alert(t("Employee created"), t('{delivery}\n\nTemporary password: {password}\n\nShare this securely. The employee must change it after signing in.', { delivery: res.emailSent ? t('The email provider accepted the invitation.') : t('The account was created, but invitation email delivery failed.'), password: res.tempPassword }));
       setModalVisible(false);
       setFormEmail(''); setFormFirstName(''); setFormLastName('');
       await fetchMembers();
@@ -84,9 +86,9 @@ export default function TeamScreen() {
   const handleChangeRole = (member: Member) => {
     if (!canChangeRoles || busy) return;
     const newRole = member.role === 'employee' ? 'manager' : 'employee';
-    Alert.alert('Change Role', `Change ${member.first_name}'s role to ${newRole}?`, [
-      { text: 'Cancel' },
-      { text: 'Yes', onPress: () => runMutation(async () => {
+    Alert.alert(t("Change Role"), t('Change {name}’s role to {role}?', {name: member.first_name, role: t(newRole === 'manager' ? 'Manager' : 'Employee')}), [
+      { text: t("Cancel") },
+      { text: t("Yes"), onPress: () => runMutation(async () => {
         await api.put(`/team/${member.id}/role`, { role: newRole, companyId: user?.companyId });
         await fetchMembers();
       })}
@@ -96,27 +98,27 @@ export default function TeamScreen() {
   const handleTransferOwnership = (member: Member) => {
     if (role !== 'boss' || busy) return;
     Alert.alert(
-      'Make this manager the Boss?',
-      `${member.first_name} ${member.last_name} will become the company owner. Your account will become a manager.`,
+      t("Make this manager the Boss?"),
+      t('{name} will become the company owner. Your account will become a manager.', {name: `${member.first_name} ${member.last_name}`}),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t("Cancel"), style: 'cancel' },
         {
           text: 'Continue',
           style: 'destructive',
           onPress: () => Alert.alert(
-            'Final confirmation',
-            'This transfers company-wide Boss permissions. You will need to sign in again so your permissions refresh.',
+            t("Final confirmation"),
+            t("This transfers company-wide Boss permissions. You will need to sign in again so your permissions refresh."),
             [
-              { text: 'Cancel', style: 'cancel' },
+              { text: t("Cancel"), style: 'cancel' },
               {
-                text: 'Transfer ownership',
+                text: t("Transfer ownership"),
                 style: 'destructive',
                 onPress: () => runMutation(async () => {
                     const response = await api.post<{ success: boolean; message: string }>(
                       `/team/${member.id}/transfer-ownership`,
                       { confirmation: 'TRANSFER OWNERSHIP' },
                     );
-                    Alert.alert('Ownership transferred', `${response.message}. Sign in again if prompted to refresh your access.`);
+                    Alert.alert(t("Ownership transferred"), t('{message}. Sign in again if prompted to refresh your access.', {message: response.message}));
                     const refreshed = await refreshUser().catch(() => null);
                     if (refreshed) await fetchMembers();
                 }),
@@ -130,8 +132,8 @@ export default function TeamScreen() {
 
   const handleRemove = (member: Member) => {
     if (!canManage || busy) return;
-    Alert.alert('Remove Employee', `Are you sure you want to remove ${member.first_name}?`, [
-      { text: 'Cancel' },
+    Alert.alert(t("Remove Employee"), t('Are you sure you want to remove {name}?', {name: member.first_name}), [
+      { text: t("Cancel") },
       { text: 'Remove', style: 'destructive', onPress: () => runMutation(async () => {
         await api.delete(`/team/${member.id}`);
         await fetchMembers();
@@ -145,21 +147,21 @@ export default function TeamScreen() {
         <Text style={styles.memberName}>{item.first_name} {item.last_name}</Text>
         <Text style={styles.memberEmail}>{item.email}</Text>
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-          <Text style={[styles.roleBadge, item.role === 'boss' && styles.roleBoss, item.role === 'manager' && styles.roleManager]}>{item.role}</Text>
-          {item.needs_password_change && <Text style={styles.needsPwBadge}>Needs Password</Text>}
+          <Text style={[styles.roleBadge, item.role === 'boss' && styles.roleBoss, item.role === 'manager' && styles.roleManager]}>{t(({boss:'Boss',manager:'Manager',employee:'Employee'} as Record<string,string>)[item.role] || item.role)}</Text>
+          {item.needs_password_change && <Text style={styles.needsPwBadge}>{t("Needs Password")}</Text>}
         </View>
       </View>
       <View style={styles.actions}>
-        {canChangeRoles && item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity disabled={busy} accessibilityLabel="Change role" onPress={() => handleChangeRole(item)}>
+        {canChangeRoles && item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity disabled={busy} accessibilityLabel={t("Change role")} onPress={() => handleChangeRole(item)}>
           <MaterialIcons name="swap-horiz" size={24} color="#00D4FF" />
         </TouchableOpacity>}
         {role === 'boss' && item.role === 'manager' && <TouchableOpacity disabled={busy}
-          accessibilityLabel={`Make ${item.first_name} the company Boss`}
+          accessibilityLabel={t('Make {name} the company Boss', {name: item.first_name})}
           onPress={() => handleTransferOwnership(item)}
         >
           <MaterialIcons name="workspace-premium" size={24} color="#FFD54F" />
         </TouchableOpacity>}
-        {canManage && item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity disabled={busy} accessibilityLabel="Remove employee" onPress={() => handleRemove(item)}>
+        {canManage && item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity disabled={busy} accessibilityLabel={t("Remove employee")} onPress={() => handleRemove(item)}>
           <MaterialIcons name="delete" size={24} color="#F44336" />
         </TouchableOpacity>}
       </View>
@@ -174,7 +176,7 @@ export default function TeamScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Team</Text>
+        <Text style={styles.headerTitle}>{t("Team")}</Text>
         <View style={{ width: 40 }} />
       </View>
       {error ? <Text accessibilityRole="alert" style={{color:'#FDA4AF',padding:16}}>{error}</Text> : null}
@@ -184,33 +186,33 @@ export default function TeamScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={!error ? <Text style={styles.empty}>No team members</Text> : null}
+        ListEmptyComponent={!error ? <Text style={styles.empty}>{t("No team members")}</Text> : null}
       />
-      {canManage && <TouchableOpacity disabled={busy} accessibilityLabel="Invite employee" style={styles.fab} onPress={() => setModalVisible(true)}>
+      {canManage && <TouchableOpacity disabled={busy} accessibilityLabel={t("Invite employee")} style={styles.fab} onPress={() => setModalVisible(true)}>
         <MaterialIcons name="person-add" size={28} color="#0A0A0A" />
       </TouchableOpacity>}
 
       <Modal visible={modalVisible} onRequestClose={() => !busy && setModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
-            <Text style={styles.modalTitle}>Invite Employee</Text>
-            <TextInput editable={!busy} style={styles.input} maxLength={254} keyboardType="email-address" placeholder="Email" placeholderTextColor="#888" value={formEmail} onChangeText={setFormEmail} autoCapitalize="none" />
-            <TextInput editable={!busy} style={styles.input} maxLength={200} placeholder="First Name" placeholderTextColor="#888" value={formFirstName} onChangeText={setFormFirstName} />
-            <TextInput editable={!busy} style={styles.input} maxLength={200} placeholder="Last Name" placeholderTextColor="#888" value={formLastName} onChangeText={setFormLastName} />
+            <Text style={styles.modalTitle}>{t("Invite Employee")}</Text>
+            <TextInput editable={!busy} style={styles.input} maxLength={254} keyboardType="email-address" placeholder={t("Email")} placeholderTextColor="#888" value={formEmail} onChangeText={setFormEmail} autoCapitalize="none" />
+            <TextInput editable={!busy} style={styles.input} maxLength={200} placeholder={t("First Name")} placeholderTextColor="#888" value={formFirstName} onChangeText={setFormFirstName} />
+            <TextInput editable={!busy} style={styles.input} maxLength={200} placeholder={t("Last Name")} placeholderTextColor="#888" value={formLastName} onChangeText={setFormLastName} />
             <View style={styles.roleRow}>
               <TouchableOpacity disabled={busy} style={[styles.roleBtn, formRole === 'employee' && styles.roleBtnActive]} onPress={() => setFormRole('employee')}>
-                <Text style={[styles.roleBtnText, formRole === 'employee' && styles.roleBtnTextActive]}>Employee</Text>
+                <Text style={[styles.roleBtnText, formRole === 'employee' && styles.roleBtnTextActive]}>{t("Employee")}</Text>
               </TouchableOpacity>
               {canChangeRoles && <TouchableOpacity disabled={busy} style={[styles.roleBtn, formRole === 'manager' && styles.roleBtnActive]} onPress={() => setFormRole('manager')}>
-                <Text style={[styles.roleBtnText, formRole === 'manager' && styles.roleBtnTextActive]}>Manager</Text>
+                <Text style={[styles.roleBtnText, formRole === 'manager' && styles.roleBtnTextActive]}>{t("Manager")}</Text>
               </TouchableOpacity>}
             </View>
             <View style={styles.modalActions}>
               <TouchableOpacity disabled={busy} onPress={() => setModalVisible(false)} style={styles.cancelBtn}>
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={styles.cancelText}>{t("Cancel")}</Text>
               </TouchableOpacity>
               <TouchableOpacity disabled={busy} onPress={handleInvite} style={styles.submitBtn}>
-                <Text style={styles.submitText}>{busy ? 'Inviting…' : 'Invite'}</Text>
+                <Text style={styles.submitText}>{busy ? t("Inviting…") : t("Invite")}</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>

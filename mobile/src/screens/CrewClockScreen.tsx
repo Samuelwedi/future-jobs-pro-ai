@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -47,6 +48,7 @@ interface Project {
 }
 
 export default function CrewClockScreen() {
+ const { t, lang } = useLang();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [activeEmployees, setActiveEmployees] = useState<ActiveEmployee[]>([]);
@@ -68,7 +70,7 @@ export default function CrewClockScreen() {
   const canManage = ['boss', 'manager'].includes(String(user?.role).toLowerCase());
   const currentCoordinates = async () => {
     const permission = await Location.requestForegroundPermissionsAsync();
-    if (permission.status !== 'granted') throw new Error('Location permission is required for bulk clock actions.');
+    if (permission.status !== 'granted') throw new Error(t("Location permission is required for bulk clock actions."));
     const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
     return { latitude: position.coords.latitude, longitude: position.coords.longitude };
   };
@@ -92,7 +94,7 @@ export default function CrewClockScreen() {
       setActiveEmployees(res.employees || []);
     } catch (e) {
       console.error('Failed to fetch active employees:', e);
-      Alert.alert('Error', 'Could not load active employees');
+      Alert.alert(t("Error"), t("Could not load active employees"));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -125,7 +127,7 @@ export default function CrewClockScreen() {
       setProjects(projectsRes.projects || []);
     } catch (error) {
       console.error('Failed to fetch bulk data:', error);
-      setBulkError('Could not load employees and projects. Close and reopen to retry.');
+      setBulkError(t("Could not load employees and projects. Close and reopen to retry."));
     } finally {
       setBulkDataLoading(false);
     }
@@ -159,14 +161,14 @@ export default function CrewClockScreen() {
   const handleBulkClockIn = async () => {
     if (!canManage || mutationLock.current || bulkDataLoading || bulkError) return;
     if (Array.from(selectedEmployeeIds).some(id => allEmployees.find(employee => employee.id === id)?.is_clocked_in == null)) {
-      Alert.alert('Status unavailable', 'Reopen the employee list to refresh status before retrying.'); return;
+      Alert.alert(t("Status unavailable"), t("Reopen the employee list to refresh status before retrying.")); return;
     }
     if (selectedEmployeeIds.size === 0) {
-      Alert.alert('No employees selected', 'Please select at least one employee.');
+      Alert.alert(t("No employees selected"), t("Please select at least one employee."));
       return;
     }
     if (!selectedProjectId) {
-      Alert.alert('No project selected', 'Please select a project.');
+      Alert.alert(t("No project selected"), t("Please select a project."));
       return;
     }
     mutationLock.current = true; setBulkLoading(true);
@@ -185,17 +187,17 @@ export default function CrewClockScreen() {
       const details = remaining.map(id => {
         const employee = allEmployees.find(item => item.id === id);
         const result = results.find((item: any) => item.userId === id);
-        return `${employee ? `${employee.first_name} ${employee.last_name}` : id}: ${result?.message || 'No confirmed result. Refresh status before retrying.'}`;
+        return `${employee ? `${employee.first_name} ${employee.last_name}` : id}: ${result?.message || t("No confirmed result. Refresh status before retrying.")}`;
       }).join('\n');
       Alert.alert(
-        'Bulk Clock-In Complete',
-        `${successCount} of ${userIds.length} employees clocked in successfully.${details ? `\n\n${details}` : ''}`
+        t("Bulk Clock-In Complete"),
+        t('{count} of {total} employees clocked in successfully.', {count:String(successCount),total:String(userIds.length)}) + (details ? `\n\n${details}` : '')
       );
       // Refresh both lists
       await Promise.all([fetchActiveEmployees(), fetchBulkData()]);
       setSelectedEmployeeIds(new Set(remaining));
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.message || (!error.isAxiosError && error.message) || 'Clock-in was not confirmed. Refresh crew status before retrying.');
+      Alert.alert(t("Error"), error.response?.data?.message || (!error.isAxiosError && error.message) || t("Clock-in was not confirmed. Refresh crew status before retrying."));
     } finally {
       mutationLock.current = false; setBulkLoading(false);
     }
@@ -205,10 +207,10 @@ export default function CrewClockScreen() {
   const handleBulkClockOut = async () => {
     if (!canManage || mutationLock.current || bulkDataLoading || bulkError) return;
     if (Array.from(selectedEmployeeIds).some(id => allEmployees.find(employee => employee.id === id)?.is_clocked_in == null)) {
-      Alert.alert('Status unavailable', 'Reopen the employee list to refresh status before retrying.'); return;
+      Alert.alert(t("Status unavailable"), t("Reopen the employee list to refresh status before retrying.")); return;
     }
     if (selectedEmployeeIds.size === 0) {
-      Alert.alert('No employees selected', 'Please select at least one employee.');
+      Alert.alert(t("No employees selected"), t("Please select at least one employee."));
       return;
     }
     mutationLock.current = true; setBulkLoading(true);
@@ -226,16 +228,16 @@ export default function CrewClockScreen() {
       const details = remaining.map(id => {
         const employee = allEmployees.find(item => item.id === id);
         const result = results.find((item: any) => item.userId === id);
-        return `${employee ? `${employee.first_name} ${employee.last_name}` : id}: ${result?.message || 'No confirmed result. Refresh status before retrying.'}`;
+        return `${employee ? `${employee.first_name} ${employee.last_name}` : id}: ${result?.message || t("No confirmed result. Refresh status before retrying.")}`;
       }).join('\n');
       Alert.alert(
-        'Bulk Clock-Out Complete',
-        `${successCount} of ${userIds.length} employees clocked out successfully.${details ? `\n\n${details}` : ''}`
+        t("Bulk Clock-Out Complete"),
+        t('{count} of {total} employees clocked out successfully.', {count:String(successCount),total:String(userIds.length)}) + (details ? `\n\n${details}` : '')
       );
       await Promise.all([fetchActiveEmployees(), fetchBulkData()]);
       setSelectedEmployeeIds(new Set(remaining));
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.message || (!error.isAxiosError && error.message) || 'Clock-out was not confirmed. Refresh crew status before retrying.');
+      Alert.alert(t("Error"), error.response?.data?.message || (!error.isAxiosError && error.message) || t("Clock-out was not confirmed. Refresh crew status before retrying."));
     } finally {
       mutationLock.current = false; setBulkLoading(false);
     }
@@ -245,22 +247,22 @@ export default function CrewClockScreen() {
   const handleForceClockOut = async (userId: string, timeEntryId: string) => {
     if (!canManage || mutationLock.current) return;
     Alert.alert(
-      'Force Clock Out',
-      'Are you sure you want to clock out this employee?',
+      t("Force Clock Out"),
+      t("Are you sure you want to clock out this employee?"),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t("Cancel"), style: 'cancel' },
         {
-          text: 'Clock Out',
+          text: t("Clock Out"),
           style: 'destructive',
           onPress: async () => {
             if (mutationLock.current) return;
             mutationLock.current = true; setBulkLoading(true);
             try {
               await api.post('/crew/clock-out', { userId, timeEntryId });
-              Alert.alert('✅ Clocked Out', 'Employee has been clocked out.');
+              Alert.alert(t("✅ Clocked Out"), t("Employee has been clocked out."));
               await fetchActiveEmployees();
             } catch (e: any) {
-              Alert.alert('Error', e.message || 'Failed to clock out');
+              Alert.alert(t("Error"), e.message || t("Failed to clock out"));
             } finally { mutationLock.current = false; setBulkLoading(false); }
           },
         },
@@ -284,11 +286,11 @@ export default function CrewClockScreen() {
         <View style={styles.cardHeader}>
           <Text style={styles.name}>{item.firstName} {item.lastName}</Text>
           <View style={[styles.statusBadge, { backgroundColor: item.isMoving ? '#4CAF50' : '#FF9800' }]}>
-            <Text style={styles.statusText}>{item.isMoving ? 'Moving' : 'Stationary'}</Text>
+            <Text style={styles.statusText}>{item.isMoving ? t("Moving") : t('Stationary')}</Text>
           </View>
         </View>
         <Text style={styles.project}>{item.projectName}</Text>
-        <Text style={styles.clockIn}>Clocked in: {formatClockInTime(item.clockIn)}</Text>
+        <Text style={styles.clockIn}>{t("Clocked in:")} {formatClockInTime(item.clockIn)}</Text>
         {item.latitude != null && item.longitude != null && (
           <Text style={styles.location}>📍 {item.latitude.toFixed(6)}, {item.longitude.toFixed(6)}</Text>
         )}
@@ -297,7 +299,7 @@ export default function CrewClockScreen() {
           onPress={() => handleForceClockOut(item.userId, item.timeEntryId)}
         >
           <MaterialIcons name="logout" size={20} color="#FFF" />
-          <Text style={styles.clockOutText}>Clock Out</Text>
+          <Text style={styles.clockOutText}>{t("Clock Out")}</Text>
         </TouchableOpacity>}
       </View>
     );
@@ -316,7 +318,7 @@ export default function CrewClockScreen() {
           <Text style={styles.bulkEmployeeName}>{item.first_name} {item.last_name}</Text>
           <View style={styles.bulkStatusContainer}>
             <View style={[styles.bulkStatusDot, { backgroundColor: item.is_clocked_in ? '#4CAF50' : '#888' }]} />
-            <Text style={styles.bulkStatusText}>{item.is_clocked_in === null ? 'Status unavailable — reopen to retry' : item.is_clocked_in ? 'Clocked In' : 'Clocked Out'}</Text>
+            <Text style={styles.bulkStatusText}>{item.is_clocked_in === null ? t("Status unavailable — reopen to retry") : item.is_clocked_in ? t("Clocked In") : t("Clocked Out")}</Text>
           </View>
         </View>
         {isSelected && <MaterialIcons name="check-circle" size={24} color="#00D4FF" />}
@@ -331,18 +333,17 @@ export default function CrewClockScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.headerTitle}>Crew Clock</Text>
+          <Text style={styles.headerTitle}>{t("Crew Clock")}</Text>
           <Text style={styles.headerSubtitle}>
-            {officeCity ? `📍 ${officeCity} • ` : ''}{activeEmployees.length} currently clocked in
-          </Text>
+            {officeCity ? `📍 ${officeCity} • ` : ''}{t('{count} employees currently clocked in', {count:String(activeEmployees.length)})}</Text>
         </View>
         <TouchableOpacity disabled={!canManage || bulkLoading} onPress={openBulkModal} style={styles.bulkBtn}>
           <MaterialIcons name="people" size={24} color="#00D4FF" />
-          <Text style={styles.bulkBtnText}>Bulk clock</Text>
+          <Text style={styles.bulkBtnText}>{t("Bulk clock")}</Text>
         </TouchableOpacity>
       </View>
 
@@ -364,7 +365,7 @@ export default function CrewClockScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <MaterialIcons name="people-outline" size={48} color="#444" />
-            <Text style={styles.emptyText}>No one is currently clocked in</Text>
+            <Text style={styles.emptyText}>{t("No one is currently clocked in")}</Text>
           </View>
         }
       />
@@ -374,7 +375,7 @@ export default function CrewClockScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Bulk Actions</Text>
+              <Text style={styles.modalTitle}>{t("Bulk Actions")}</Text>
               <TouchableOpacity disabled={bulkLoading} onPress={() => setBulkModalVisible(false)}>
                 <MaterialIcons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
@@ -396,15 +397,15 @@ export default function CrewClockScreen() {
 
             {projectPickerOpen && <ScrollView style={{maxHeight:160}} nestedScrollEnabled>
               {projects.map(project => <TouchableOpacity key={project.id} disabled={bulkLoading} accessibilityRole="button" accessibilityState={{selected: selectedProjectId === project.id}} onPress={() => {setSelectedProjectId(project.id);setProjectPickerOpen(false);}} style={{padding:14}}><Text style={styles.modalProjectText}>{project.name}</Text></TouchableOpacity>)}
-              {!projects.length && <Text style={styles.emptyText}>No projects available</Text>}
+              {!projects.length && <Text style={styles.emptyText}>{t("No projects available")}</Text>}
             </ScrollView>}
-            <Text style={styles.bulkStatusText}>Bulk actions use this device’s current location. Confirm that selected employees are with you at the work site.</Text>
+            <Text style={styles.bulkStatusText}>{t("Bulk actions use this device’s current location. Confirm that selected employees are with you at the work site.")}</Text>
             {bulkError ? <Text accessibilityRole="alert" style={{color:'#FDA4AF',padding:12}}>{bulkError}</Text> : null}
             {/* Employee List */}
             <View style={styles.selectionRow}>
-              <Text style={styles.selectionCount}>{selectedEmployeeIds.size} selected</Text>
-              <TouchableOpacity disabled={bulkLoading || bulkDataLoading || !!bulkError} onPress={() => setSelectedEmployeeIds(new Set(allEmployees.filter(employee => employee.is_clocked_in !== null).map(employee => employee.id)))}><Text style={styles.selectionLink}>Select all</Text></TouchableOpacity>
-              <TouchableOpacity disabled={bulkLoading || bulkDataLoading || !!bulkError} onPress={() => setSelectedEmployeeIds(new Set())}><Text style={styles.selectionLink}>Clear</Text></TouchableOpacity>
+              <Text style={styles.selectionCount}>{t('{count} selected', {count:String(selectedEmployeeIds.size)})}</Text>
+              <TouchableOpacity disabled={bulkLoading || bulkDataLoading || !!bulkError} onPress={() => setSelectedEmployeeIds(new Set(allEmployees.filter(employee => employee.is_clocked_in !== null).map(employee => employee.id)))}><Text style={styles.selectionLink}>{t("Select all")}</Text></TouchableOpacity>
+              <TouchableOpacity disabled={bulkLoading || bulkDataLoading || !!bulkError} onPress={() => setSelectedEmployeeIds(new Set())}><Text style={styles.selectionLink}>{t("Clear")}</Text></TouchableOpacity>
             </View>
             {bulkDataLoading && <ActivityIndicator color="#00D4FF" style={{ marginVertical: 20 }} />}
             <FlatList
@@ -412,7 +413,7 @@ export default function CrewClockScreen() {
               keyExtractor={(item) => item.id}
               renderItem={renderBulkEmployee}
               contentContainerStyle={styles.bulkList}
-              ListEmptyComponent={<Text style={styles.emptyText}>No employees found</Text>}
+              ListEmptyComponent={<Text style={styles.emptyText}>{t("No employees found")}</Text>}
             />
 
             {/* Action Buttons */}
@@ -422,14 +423,14 @@ export default function CrewClockScreen() {
                 onPress={handleBulkClockIn}
                 disabled={bulkLoading || bulkDataLoading || !!bulkError || !selectedEmployeeIds.size}
               >
-                <Text style={styles.modalActionText}>Clock In</Text>
+                <Text style={styles.modalActionText}>{t("Clock In")}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalActionBtn, { backgroundColor: '#FF6B6B' }]}
                 onPress={handleBulkClockOut}
                 disabled={bulkLoading || bulkDataLoading || !!bulkError || !selectedEmployeeIds.size}
               >
-                <Text style={styles.modalActionText}>Clock Out</Text>
+                <Text style={styles.modalActionText}>{t("Clock Out")}</Text>
               </TouchableOpacity>
             </View>
             {bulkLoading && <ActivityIndicator color="#00D4FF" style={{ marginTop: 12 }} />}

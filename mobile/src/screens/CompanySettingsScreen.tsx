@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import TimezonePicker from '../components/TimezonePicker';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -59,6 +60,7 @@ interface SettingsResponse {
 }
 
 export default function CompanySettingsScreen() {
+ const { t, lang } = useLang();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -103,7 +105,7 @@ export default function CompanySettingsScreen() {
 
       const settingsRes = await api.get<SettingsResponse>(`/companies/${user?.companyId}/settings`);
       const settingsData = (settingsRes as any).data ?? settingsRes;
-      if (!companyData?.id || String(companyData.id) !== String(user?.companyId) || !settingsData?.settings) throw new Error('Incomplete company settings response');
+      if (!companyData?.id || String(companyData.id) !== String(user?.companyId) || !settingsData?.settings) throw new Error(t("Incomplete company settings response"));
 
       const merged: CompanySettings = {
         id: companyData.id,
@@ -131,7 +133,7 @@ export default function CompanySettingsScreen() {
       setHourlyRateStr(String(merged.default_hourly_rate));
     } catch (e) {
       console.error('Error fetching settings:', e);
-      setLoadError('Could not load company settings. Retry before making changes.');
+      setLoadError(t("Could not load company settings. Retry before making changes."));
     } finally {
       setLoading(false);
     }
@@ -146,15 +148,15 @@ export default function CompanySettingsScreen() {
     const hourlyRate = hourlyRateStr.trim() ? Number(hourlyRateStr) : NaN;
 
     if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 168 || !Number.isFinite(daily) || daily <= 0 || daily > 24) {
-      Alert.alert('Invalid Value', 'Enter daily hours greater than 0 up to 24, and weekly hours greater than 0 up to 168. Decimal hours are accepted.');
+      Alert.alert(t("Invalid Value"), t("Enter daily hours greater than 0 up to 24, and weekly hours greater than 0 up to 168. Decimal hours are accepted."));
       return;
     }
     if (!Number.isFinite(multiplier) || multiplier < 1 || multiplier > 10) {
-      Alert.alert('Invalid Value', 'Overtime multiplier must be between 1 and 10.');
+      Alert.alert(t("Invalid Value"), t("Overtime multiplier must be between 1 and 10."));
       return;
     }
     if (!Number.isFinite(hourlyRate) || hourlyRate < 0) {
-      Alert.alert('Invalid Value', 'Hourly rate must be a positive number.');
+      Alert.alert(t("Invalid Value"), t("Hourly rate must be a positive number."));
       return;
     }
 
@@ -200,11 +202,11 @@ export default function CompanySettingsScreen() {
         setLogoFile(null);
       }
 
-      Alert.alert('✅ Success', 'Company settings updated.');
+      Alert.alert('✅ Success', t("Company settings updated."));
       await fetchSettings();
     } catch (e: any) {
       console.error('Error saving settings:', e);
-      Alert.alert('Error', e?.response?.data?.message || e.message || 'Failed to save settings');
+      Alert.alert(t("Error"), e?.response?.data?.message || e.message || t("Failed to save settings"));
     } finally {
       saveLock.current = false; setSaving(false);
     }
@@ -218,7 +220,7 @@ export default function CompanySettingsScreen() {
     });
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const asset = result.assets[0];
-      if (/svg/i.test(asset.mimeType || asset.fileName || asset.uri)) { Alert.alert('Unsupported logo', 'Choose a PNG or JPEG image.'); return; }
+      if (/svg/i.test(asset.mimeType || asset.fileName || asset.uri)) { Alert.alert(t("Unsupported logo"), t("Choose a PNG or JPEG image.")); return; }
       setLogoFile({ uri: asset.uri, name: asset.fileName || 'logo.jpg', type: asset.mimeType || 'image/jpeg' });
       setSettings({ ...settings, logo_url: asset.uri });
     }
@@ -232,24 +234,24 @@ export default function CompanySettingsScreen() {
   const dailyLimit = settings.overtime_enabled && settings.overtime_mode!=='weekly' ? Number(dailyStr) : Infinity;
   const weeklyLimit = settings.overtime_enabled && settings.overtime_mode!=='daily' ? Number(thresholdStr) : Infinity;
   const exampleRegular = Math.max(0,Math.min(45,5*Math.min(9,dailyLimit),weeklyLimit));
-  const example = Number.isFinite(exampleRegular) ? `Example: five 9-hour days = ${exampleRegular.toFixed(2)} regular hours + ${(45-exampleRegular).toFixed(2)} overtime hours.` : 'Enter valid thresholds to see an example.';
+  const example = Number.isFinite(exampleRegular) ? t('Example: five 9-hour days = {regular} regular hours + {overtime} overtime hours.', {regular:exampleRegular.toFixed(2), overtime:(45-exampleRegular).toFixed(2)}) : t("Enter valid thresholds to see an example.");
 
   if (loading) {
     return <ActivityIndicator size="large" color="#00D4FF" style={{ flex: 1, backgroundColor: '#0A0A0A' }} />;
   }
 
-  if (!loaded) return <View style={[styles.container,{padding:24,justifyContent:'center'}]}><Text accessibilityRole="alert" style={{color:'#FDA4AF',marginBottom:20}}>{loadError || 'Loading company settings…'}</Text><TouchableOpacity accessibilityRole="button" onPress={()=>{setLoading(true);void fetchSettings();}} style={{padding:16}}><Text style={styles.saveBtn}>Retry</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" onPress={()=>navigation.goBack()} style={{padding:16}}><Text style={styles.saveBtn}>Go back</Text></TouchableOpacity></View>;
+  if (!loaded) return <View style={[styles.container,{padding:24,justifyContent:'center'}]}><Text accessibilityRole="alert" style={{color:'#FDA4AF',marginBottom:20}}>{loadError || t("Loading company settings…")}</Text><TouchableOpacity accessibilityRole="button" onPress={()=>{setLoading(true);void fetchSettings();}} style={{padding:16}}><Text style={styles.saveBtn}>{t("Retry")}</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" onPress={()=>navigation.goBack()} style={{padding:16}}><Text style={styles.saveBtn}>{t("Go back")}</Text></TouchableOpacity></View>;
 
   return (
     <ScrollView automaticallyAdjustKeyboardInsets keyboardDismissMode="on-drag" style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Company Settings</Text>
+        <Text style={styles.headerTitle}>{t("Company Settings")}</Text>
         <TouchableOpacity onPress={saveSettings} disabled={saving}>
           <Text style={[styles.saveBtn, saving && { opacity: 0.5 }]}>
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? t("Saving...") : t("Save")}
           </Text>
         </TouchableOpacity>
       </View>
@@ -265,38 +267,38 @@ export default function CompanySettingsScreen() {
         )}
         <TouchableOpacity style={styles.uploadBtn} onPress={pickLogo}>
           <MaterialIcons name="upload" size={20} color="#00D4FF" />
-          <Text style={styles.uploadBtnText}>Change Logo</Text>
+          <Text style={styles.uploadBtnText}>{t("Change Logo")}</Text>
         </TouchableOpacity>
       </View>
 
-      <Section title="Company Profile" icon="business">
+      <Section title={t("Company Profile")} icon="business">
         <InputField
-          label="Company Name"
+          label={t('Company Name')}
           value={settings.name}
           onChange={(text: string) => setSettings({ ...settings, name: text })}
         />
         <InputField
-          label="Address"
+          label={t('Address')}
           value={settings.address || ''}
           onChange={(text: string) => setSettings({ ...settings, address: text })}
         />
         <InputField
-          label="Phone"
+          label={t('Phone')}
           value={settings.phone || ''}
           onChange={(text: string) => setSettings({ ...settings, phone: text })}
           keyboardType="phone-pad"
         />
         <InputField
-          label="Email"
+          label={t('Email')}
           value={settings.email || ''}
           onChange={(text: string) => setSettings({ ...settings, email: text })}
           keyboardType="email-address"
         />
       </Section>
 
-      <Section title="Overtime Rules" icon="timer">
+      <Section title={t("Overtime Rules")} icon="timer">
         <View style={styles.switchRow}>
-          <Text style={styles.label}>Enable Overtime</Text>
+          <Text style={styles.label}>{t("Enable Overtime")}</Text>
           <Switch
             value={settings.overtime_enabled}
             onValueChange={(val: boolean) => setSettings({ ...settings, overtime_enabled: val })}
@@ -306,40 +308,40 @@ export default function CompanySettingsScreen() {
         </View>
         {settings.overtime_enabled && (
           <>
-            <Text style={styles.label}>Overtime basis</Text>
+            <Text style={styles.label}>{t("Overtime basis")}</Text>
             <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
               {([['daily','Daily'],['weekly','Weekly'],['daily_weekly','Daily + weekly']] as const).map(([mode,label])=>(
                 <TouchableOpacity key={mode} accessibilityRole="radio" accessibilityState={{checked:settings.overtime_mode===mode}}
                   onPress={()=>setSettings({...settings,overtime_mode:mode})}
                   style={{padding:12,borderRadius:8,borderWidth:1,borderColor:settings.overtime_mode===mode?'#00D4FF':'#555'}}>
-                  <Text style={{color:settings.overtime_mode===mode?'#00D4FF':'#FFF'}}>{label}</Text>
+                  <Text style={{color:settings.overtime_mode===mode?'#00D4FF':'#FFF'}}>{t(label)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
-            {settings.overtime_mode!=='weekly' && <InputFieldDecimal label="Daily overtime after (hours)" value={dailyStr} onChangeText={setDailyStr} placeholder="8 or 10"/>}
-            {settings.overtime_mode!=='daily' && <InputFieldDecimal label="Weekly overtime after (hours)" value={thresholdStr} onChangeText={setThresholdStr} placeholder="40 or 44.5"/>}
-            <InputFieldDecimal label="Overtime pay multiplier" value={multiplierStr} onChangeText={setMultiplierStr} placeholder="1.5"/>
-            <Text style={styles.label}>Workweek starts on</Text>
+            {settings.overtime_mode!=='weekly' && <InputFieldDecimal label={t('Daily overtime after (hours)')} value={dailyStr} onChangeText={setDailyStr} placeholder={t('8 or 10')}/>}
+            {settings.overtime_mode!=='daily' && <InputFieldDecimal label={t('Weekly overtime after (hours)')} value={thresholdStr} onChangeText={setThresholdStr} placeholder={t('40 or 44.5')}/>}
+            <InputFieldDecimal label={t('Overtime pay multiplier')} value={multiplierStr} onChangeText={setMultiplierStr} placeholder="1.5"/>
+            <Text style={styles.label}>{t("Workweek starts on")}</Text>
             <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
-              {days.map((day,index)=><TouchableOpacity key={day} accessibilityRole="radio" accessibilityLabel={day} accessibilityState={{checked:settings.overtime_week_start===index}} onPress={()=>setSettings({...settings,overtime_week_start:index})} style={{padding:10,borderRadius:8,backgroundColor:settings.overtime_week_start===index?'#164856':'#292929'}}><Text style={{color:'#FFF'}}>{day.slice(0,3)}</Text></TouchableOpacity>)}
+              {days.map((day,index)=><TouchableOpacity key={day} accessibilityRole="radio" accessibilityLabel={t(day)} accessibilityState={{checked:settings.overtime_week_start===index}} onPress={()=>setSettings({...settings,overtime_week_start:index})} style={{padding:10,borderRadius:8,backgroundColor:settings.overtime_week_start===index?'#164856':'#292929'}}><Text style={{color:'#FFF'}}>{t(day).slice(0,3)}</Text></TouchableOpacity>)}
             </View>
             <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginBottom:16}}>
-              {([['daily',8],['daily',10],['weekly',40],['weekly',44.5]] as const).map(([mode,hours])=><TouchableOpacity key={mode+hours} onPress={()=>applyPreset(mode,hours)} style={{padding:10,borderWidth:1,borderColor:'#555',borderRadius:8}}><Text style={{color:'#00D4FF'}}>{mode==='daily'?'Daily':'Weekly'} {hours}h</Text></TouchableOpacity>)}
+              {([['daily',8],['daily',10],['weekly',40],['weekly',44.5]] as const).map(([mode,hours])=><TouchableOpacity key={mode+hours} onPress={()=>applyPreset(mode,hours)} style={{padding:10,borderWidth:1,borderColor:'#555',borderRadius:8}}><Text style={{color:'#00D4FF'}}>{t(mode==='daily'?'Daily':'Weekly')} {hours}h</Text></TouchableOpacity>)}
             </View>
           </>
         )}
         <TimezonePicker value={settings.timezone} onChange={timezone=>setSettings({...settings,timezone})}/>
         <Text style={{color:'#CCC',lineHeight:21,marginBottom:12}}>{example}</Text>
-        <Text style={{color:'#AAA',lineHeight:21}}>Combined mode uses the greater of daily or weekly overtime for each week, without counting an hour twice. 44.5 hours means 44 hours 30 minutes. Unpaid breaks are excluded; overnight breaks are allocated proportionally between days.</Text>
-        <Text style={{color:'#AAA',lineHeight:21,marginTop:12}}>Changes apply to unlocked time and new payroll drafts. Previously approved entries whose pay changes return for manager review. Existing payroll stays unchanged. Use rules that meet applicable employment requirements.</Text>
+        <Text style={{color:'#AAA',lineHeight:21}}>{t("Combined mode uses the greater of daily or weekly overtime for each week, without counting an hour twice. 44.5 hours means 44 hours 30 minutes. Unpaid breaks are excluded; overnight breaks are allocated proportionally between days.")}</Text>
+        <Text style={{color:'#AAA',lineHeight:21,marginTop:12}}>{t("Changes apply to unlocked time and new payroll drafts. Previously approved entries whose pay changes return for manager review. Existing payroll stays unchanged. Use rules that meet applicable employment requirements.")}</Text>
       </Section>
 
-      <Section title="Payroll & Branding" icon="palette">
+      <Section title={t('Payroll & Branding')} icon="palette">
         <InputFieldDecimal
-          label="Default Hourly Rate ($)"
+          label={t('Default Hourly Rate ($)')}
           value={hourlyRateStr}
           onChangeText={setHourlyRateStr}
-          placeholder="e.g. 20.00"
+          placeholder={t('e.g. 20.00')}
         />
       </Section>
 

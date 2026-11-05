@@ -1,0 +1,31 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('fs'),vm=require('vm'),ts=require('typescript'),path=require('path');
+function handler(screen,name,context){
+ const filename=path.join(__dirname,'../src/screens/'+screen+'Screen.tsx');
+ const ast=ts.createSourceFile(filename,fs.readFileSync(filename,'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+ let expression;function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)===name)expression=n.initializer;ts.forEachChild(n,visit);}visit(ast);
+ assert.ok(expression,name);const code=ts.transpileModule('result = '+expression.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
+ return vm.runInNewContext(code,context);
+}
+const t=(s,v={})=>s.replace(/\{(\w+)\}/g,(_,k)=>v[k]??'');
+function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
+test('kiosk rapid actions share a lock and release it after a failed request',async()=>{
+ const wait=deferred();let posts=0,alerts=0;
+ const c={t,actionLock:{current:false},pin:'1234',mode:'clock-in',projectId:'project',setWorking(){},setMessage(){},setPin(){},Vibration:{vibrate(){}},Alert:{alert(){alerts++}},api:{post:async()=>{posts++;await wait.promise;throw Error('offline');}}};
+ const action=handler('Kiosk','handleAction',c);const first=action();await action();assert.equal(posts,1);wait.resolve();await first;assert.equal(c.actionLock.current,false);assert.equal(alerts,1);await action();assert.equal(posts,2);
+});
+test('store purchase blocks other plans and restore until store resolution; failure unlocks',async()=>{
+ const wait=deferred();let purchases=0,restores=0;
+ const product={id:'product',displayPrice:'$10',platform:'android',subscriptionOffers:[{offerTokenAndroid:'offer'}]};
+ const c={t,purchaseLock:{current:false},storeReady:true,status:{},ACTIVE_STATUSES:new Set(['active','trialing','in_trial','grace_period']),billing:{canPurchase:true,googleAccountId:'account'},connected:true,productsByPlan:new Map([['team_10',product],['team_35',product]]),Platform:{OS:'android'},user:{id:'user'},setProcessingProductId(){},Alert:{alert(){}},friendlyError:String,requestPurchase:async()=>{purchases++;await wait.promise;throw Error('cancelled');},getAvailablePurchases:async()=>{restores++;}};
+ const purchase=handler('Subscription','startPurchase',c),restore=handler('Subscription','restore',c);
+ const first=purchase('team_10');await purchase('team_35');await restore();assert.equal(purchases,1);assert.equal(restores,0);wait.resolve();await first;assert.equal(c.purchaseLock.current,false);await restore();assert.equal(restores,1);
+});
+test('existing active, trial and grace subscriptions block duplicate subscriptions; expired subscription can recover',async()=>{
+ let purchases=0;const product={id:'product',displayPrice:'$10',platform:'apple'};
+ const c={t,purchaseLock:{current:false},storeReady:true,status:{},ACTIVE_STATUSES:new Set(['active','trialing','in_trial','grace_period']),billing:{canPurchase:true,googleAccountId:'account'},connected:true,productsByPlan:new Map([['team_10',product]]),Platform:{OS:'ios'},user:{id:'user'},setProcessingProductId(){},Alert:{alert(){}},friendlyError:String,requestPurchase:async()=>{purchases++;}};
+ const action=handler('Subscription','startPurchase',c);
+ for(const status of c.ACTIVE_STATUSES){c.status={status,provider:'apple',currentPeriodEnd:'2099-01-01'};await action('team_10');}
+ assert.equal(purchases,0);c.status={status:'active',provider:'apple',currentPeriodEnd:'2000-01-01'};await action('team_10');assert.equal(purchases,1);
+});

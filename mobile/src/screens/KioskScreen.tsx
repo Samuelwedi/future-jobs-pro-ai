@@ -1,5 +1,6 @@
+import { useLang } from '../context/LanguageContext';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert, Vibration,  FlatList, TextInput, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../services/api';
@@ -10,6 +11,7 @@ type Employee = { id: string; first_name: string; last_name: string; email: stri
 type Project = { id: string; name: string };
 
 export default function KioskScreen() {
+  const { t } = useLang();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const manager = ['boss', 'manager'].includes(String(user?.role || '').toLowerCase());
@@ -25,6 +27,8 @@ export default function KioskScreen() {
   const [newPin, setNewPin] = useState('');
   const [setupOpen, setSetupOpen] = useState(false);
   const [working, setWorking] = useState(false);
+  const actionLock = useRef(false);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const selectedProject = useMemo(() => projects.find(project => project.id === projectId), [projects, projectId]);
 
   useEffect(() => {
@@ -38,18 +42,16 @@ export default function KioskScreen() {
       manager && user?.companyId
         ? api.get<any>(`/users/company/${user.companyId}`).then(result => setEmployees(result.users || []))
         : Promise.resolve(),
-    ]).catch(error => Alert.alert('Kiosk setup', error.message || 'Could not load kiosk setup'));
+    ]).catch(error => Alert.alert(t("Kiosk setup"), error.message || t("Could not load kiosk setup")));
   }, [manager, user?.companyId]);
 
-  const chooseProject = () => Alert.alert('Select project', 'Clock-ins will be assigned to this project.', [
-    ...projects.map(project => ({ text: project.name, onPress: () => setProjectId(project.id) })),
-    { text: 'Cancel', style: 'cancel' as const },
-  ]);
+  const chooseProject = () => { if (!actionLock.current) setProjectPickerOpen(true); };
 
   const handleAction = async () => {
-    if (pin.length < 4) return Alert.alert('PIN required', 'Enter a 4 to 6 digit employee PIN.');
-    if (mode === 'clock-in' && !projectId) return Alert.alert('Project required', 'Select a project before clocking in.');
-    setWorking(true);
+    if (actionLock.current) return;
+    if (pin.length < 4) return Alert.alert(t("PIN required"), t("Enter a 4 to 6 digit employee PIN."));
+    if (mode === 'clock-in' && !projectId) return Alert.alert(t("Project required"), t("Select a project before clocking in."));
+    actionLock.current = true; setWorking(true);
     try {
       const endpoint = mode === 'clock-in' ? '/kiosk/clock-in' : '/kiosk/clock-out';
       const response = await api.post<{ message: string }>(endpoint, { pin, projectId });
@@ -57,71 +59,83 @@ export default function KioskScreen() {
       setMessage(response.message);
       setPin('');
     } catch (error: any) {
-      Alert.alert('Kiosk action failed', error.response?.data?.message || error.message || 'Action failed');
+      Alert.alert(t("Kiosk action failed"), error.response?.data?.message || error.message || t("Action failed"));
       setPin('');
-    } finally { setWorking(false); }
+    } finally { actionLock.current = false; setWorking(false); }
   };
 
   const savePin = async () => {
-    if (!selectedEmployee) return Alert.alert('Employee required', 'Choose an employee.');
-    if (!/^\d{4,6}$/.test(newPin)) return Alert.alert('Invalid PIN', 'Use 4 to 6 numbers.');
-    setWorking(true);
+    if (actionLock.current) return;
+    if (!selectedEmployee) return Alert.alert(t("Employee required"), t("Choose an employee."));
+    if (!/^\d{4,6}$/.test(newPin)) return Alert.alert(t("Invalid PIN"), t("Use 4 to 6 numbers."));
+    actionLock.current = true; setWorking(true);
     try {
       const result = await api.post<{ message: string }>('/kiosk/set-pin', { userId: selectedEmployee.id, pin: newPin });
-      Alert.alert('PIN saved', result.message);
+      Alert.alert(t("PIN saved"), result.message);
       setNewPin(''); setSelectedEmployee(null); setSetupOpen(false);
     } catch (error: any) {
-      Alert.alert('Could not save PIN', error.response?.data?.message || error.message);
-    } finally { setWorking(false); }
+      Alert.alert(t("Could not save PIN"), error.response?.data?.message || error.message);
+    } finally { actionLock.current = false; setWorking(false); }
   };
 
   const toggleKiosk = async () => {
-    if (toggling || enabled === null) return;
+    if (actionLock.current || toggling || enabled === null) return;
+    actionLock.current = true;
     setToggling(true);
     try {
       await api.post('/kiosk/toggle', { enabled: !enabled });
       const result = await api.get<any>(`/kiosk/status/${user?.companyId}`);
       setEnabled(result.kiosk_enabled);
-    } catch (error: any) { Alert.alert('Kiosk settings', error.message || 'Could not save settings'); }
-    finally { setToggling(false); }
+    } catch (error: any) { Alert.alert(t("Kiosk settings"), error.message || t("Could not save settings")); }
+    finally { actionLock.current = false; setToggling(false); }
   };
-  const renderKey = (digit: string) => <TouchableOpacity key={digit} style={styles.key} onPress={() => pin.length < 6 && setPin(value => value + digit)}><Text style={styles.keyText}>{digit}</Text></TouchableOpacity>;
+  const renderKey = (digit: string) => <TouchableOpacity key={digit} style={styles.key} disabled={working || toggling} onPress={() => pin.length < 6 && setPin(value => value + digit)}><Text style={styles.keyText}>{digit}</Text></TouchableOpacity>;
 
   return <View style={styles.container}>
     <View style={styles.toolbar}>
     <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}><MaterialIcons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
-    {manager && <TouchableOpacity style={styles.setupBtn} onPress={() => setSetupOpen(true)}><MaterialIcons name="manage-accounts" size={21} color="#00D4FF" /><Text style={styles.setupText}>Employee PINs</Text></TouchableOpacity>}
+    {manager && <TouchableOpacity style={styles.setupBtn} onPress={() => setSetupOpen(true)}><MaterialIcons name="manage-accounts" size={21} color="#00D4FF" /><Text style={styles.setupText}>{t("Employee PINs")}</Text></TouchableOpacity>}
     </View>
     <ScrollView contentContainerStyle={styles.kioskContent} keyboardShouldPersistTaps="handled">
-    {manager && <TouchableOpacity accessibilityRole="button" disabled={toggling || enabled === null} onPress={() => void toggleKiosk()} style={{padding:16}}><Text style={styles.setupText}>{enabled === null ? 'Loading kiosk settings…' : `Kiosk is ${enabled ? 'enabled' : 'disabled'} · Tap to ${enabled ? 'disable' : 'enable'}`}</Text></TouchableOpacity>}
-    <View style={styles.header}><Text style={styles.headerTitle}>Kiosk Clock</Text><Text style={styles.headerSubtitle}>Employee PIN clock in and clock out</Text>
-      <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>Use your employee PIN, not a project PIN. Projects do not need a PIN.</Text>
-      {manager ? <TouchableOpacity accessibilityRole="button" onPress={() => setSetupOpen(true)} style={{ padding: 12 }}><Text style={styles.setupText}>No PIN yet? Set up employee PINs</Text></TouchableOpacity>
-        : <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>Ask your manager to create your employee PIN before using the kiosk.</Text>}
+    {manager && <TouchableOpacity accessibilityRole="button" disabled={working || toggling || enabled === null} onPress={() => void toggleKiosk()} style={{padding:16}}><Text style={styles.setupText}>{enabled === null ? t("Loading kiosk settings…") : t(enabled ? 'Kiosk enabled · Tap to disable' : 'Kiosk disabled · Tap to enable')}</Text></TouchableOpacity>}
+    <View style={styles.header}><Text style={styles.headerTitle}>{t("Kiosk Clock")}</Text><Text style={styles.headerSubtitle}>{t("Employee PIN clock in and clock out")}</Text>
+      <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>{t("Use your employee PIN, not a project PIN. Projects do not need a PIN.")}</Text>
+      {manager ? <TouchableOpacity accessibilityRole="button" onPress={() => setSetupOpen(true)} style={{ padding: 12 }}><Text style={styles.setupText}>{t("No PIN yet? Set up employee PINs")}</Text></TouchableOpacity>
+        : <Text style={[styles.headerSubtitle, { textAlign: 'center' }]}>{t("Ask your manager to create your employee PIN before using the kiosk.")}</Text>}
     </View>
     <View style={styles.modeRow}>
-      <TouchableOpacity style={[styles.modeBtn, mode === 'clock-in' && styles.modeBtnActiveIn]} onPress={() => setMode('clock-in')}><Text style={styles.modeText}>Clock In</Text></TouchableOpacity>
-      <TouchableOpacity style={[styles.modeBtn, mode === 'clock-out' && styles.modeBtnActiveOut]} onPress={() => setMode('clock-out')}><Text style={styles.modeText}>Clock Out</Text></TouchableOpacity>
+      <TouchableOpacity style={[styles.modeBtn, mode === 'clock-in' && styles.modeBtnActiveIn]} disabled={working || toggling} onPress={() => setMode('clock-in')}><Text style={styles.modeText}>{t("Clock In")}</Text></TouchableOpacity>
+      <TouchableOpacity style={[styles.modeBtn, mode === 'clock-out' && styles.modeBtnActiveOut]} disabled={working || toggling} onPress={() => setMode('clock-out')}><Text style={styles.modeText}>{t("Clock Out")}</Text></TouchableOpacity>
     </View>
-    {mode === 'clock-in' && <TouchableOpacity style={styles.projectBtn} onPress={chooseProject}><Text style={styles.projectText}>{selectedProject?.name || 'Select project'}</Text><MaterialIcons name="expand-more" size={22} color="#00D4FF" /></TouchableOpacity>}
+    {mode === 'clock-in' && <TouchableOpacity style={styles.projectBtn} onPress={chooseProject}><Text style={styles.projectText}>{selectedProject?.name || t("Select project")}</Text><MaterialIcons name="expand-more" size={22} color="#00D4FF" /></TouchableOpacity>}
     <View style={styles.pinDisplay}>{[0,1,2,3,4,5].map(index => <View key={index} style={[styles.pinDot, pin.length > index && styles.pinDotFilled]} />)}</View>
     {!!message && <Text style={styles.message}>{message}</Text>}
     <View style={styles.keypad}>
       {['1','2','3','4','5','6','7','8','9'].map(renderKey)}
-      <TouchableOpacity style={styles.key} onPress={() => setPin(value => value.slice(0, -1))}><MaterialIcons name="backspace" size={28} color="#FFF" /></TouchableOpacity>
+      <TouchableOpacity style={styles.key} disabled={working || toggling} onPress={() => setPin(value => value.slice(0, -1))}><MaterialIcons name="backspace" size={28} color="#FFF" /></TouchableOpacity>
       {renderKey('0')}
-      <TouchableOpacity disabled={working} style={[styles.key, styles.keyAction]} onPress={handleAction}>{working ? <ActivityIndicator color="#07151D" /> : <MaterialIcons name={mode === 'clock-in' ? 'login' : 'logout'} size={28} color="#07151D" />}</TouchableOpacity>
+      <TouchableOpacity disabled={working || toggling} style={[styles.key, styles.keyAction]} onPress={handleAction}>{working ? <ActivityIndicator color="#07151D" /> : <MaterialIcons name={mode === 'clock-in' ? 'login' : 'logout'} size={28} color="#07151D" />}</TouchableOpacity>
     </View>
     </ScrollView>
-    <Modal visible={setupOpen} animationType="slide" transparent onRequestClose={() => setSetupOpen(false)}>
+    <Modal visible={projectPickerOpen} transparent animationType="slide" onRequestClose={() => setProjectPickerOpen(false)}>
       <View style={styles.modalOverlay}><View style={styles.modal}>
-        <View style={styles.modalHeader}><View><Text style={styles.modalTitle}>Employee kiosk PINs</Text><Text style={styles.modalCaption}>Choose an employee, then create a private PIN.</Text></View><TouchableOpacity onPress={() => setSetupOpen(false)}><MaterialIcons name="close" size={26} color="#FFF" /></TouchableOpacity></View>
+        <Text style={styles.modalTitle}>{t('Select project')}</Text>
+        <Text style={styles.modalCaption}>{t('Clock-ins will be assigned to this project.')}</Text>
+        <FlatList data={projects} keyExtractor={item => item.id} style={{maxHeight: 320}}
+          renderItem={({item}) => <TouchableOpacity accessibilityRole="button" style={styles.employee} onPress={() => {setProjectId(item.id); setProjectPickerOpen(false);}}><Text style={styles.employeeName}>{item.name}</Text></TouchableOpacity>}
+          ListEmptyComponent={<Text style={styles.empty}>{t('No projects available')}</Text>} />
+        <TouchableOpacity accessibilityRole="button" style={styles.saveBtn} onPress={() => setProjectPickerOpen(false)}><Text style={styles.saveText}>{t('Close')}</Text></TouchableOpacity>
+      </View></View>
+    </Modal>
+    <Modal visible={setupOpen} animationType="slide" transparent onRequestClose={() => !actionLock.current && setSetupOpen(false)}>
+      <View style={styles.modalOverlay}><View style={styles.modal}>
+        <View style={styles.modalHeader}><View><Text style={styles.modalTitle}>{t("Employee kiosk PINs")}</Text><Text style={styles.modalCaption}>{t("Choose an employee, then create a private PIN.")}</Text></View><TouchableOpacity onPress={() => !actionLock.current && setSetupOpen(false)}><MaterialIcons name="close" size={26} color="#FFF" /></TouchableOpacity></View>
         <FlatList data={employees} keyExtractor={item => item.id} style={{ maxHeight: 320 }} renderItem={({ item }) => {
           const selected = selectedEmployee?.id === item.id;
-          return <TouchableOpacity style={[styles.employee, selected && styles.employeeSelected]} onPress={() => setSelectedEmployee(item)}><View><Text style={styles.employeeName}>{item.first_name} {item.last_name}</Text><Text style={styles.employeeEmail}>{item.email}</Text></View>{selected && <MaterialIcons name="check-circle" size={23} color="#00D4FF" />}</TouchableOpacity>;
-        }} ListEmptyComponent={<Text style={styles.empty}>No employees were returned for this company.</Text>} />
-        <TextInput value={newPin} onChangeText={value => setNewPin(value.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" secureTextEntry placeholder="New 4–6 digit PIN" placeholderTextColor="#718096" style={styles.pinInput} />
-        <TouchableOpacity disabled={working} style={styles.saveBtn} onPress={savePin}><Text style={styles.saveText}>{working ? 'Saving…' : `Save PIN${selectedEmployee ? ` for ${selectedEmployee.first_name}` : ''}`}</Text></TouchableOpacity>
+          return <TouchableOpacity style={[styles.employee, selected && styles.employeeSelected]} disabled={working || toggling} onPress={() => setSelectedEmployee(item)}><View><Text style={styles.employeeName}>{item.first_name} {item.last_name}</Text><Text style={styles.employeeEmail}>{item.email}</Text></View>{selected && <MaterialIcons name="check-circle" size={23} color="#00D4FF" />}</TouchableOpacity>;
+        }} ListEmptyComponent={<Text style={styles.empty}>{t("No employees were returned for this company.")}</Text>} />
+        <TextInput editable={!working && !toggling} value={newPin} onChangeText={value => setNewPin(value.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" secureTextEntry placeholder={t("New 4–6 digit PIN")} placeholderTextColor="#718096" style={styles.pinInput} />
+        <TouchableOpacity disabled={working || toggling} style={styles.saveBtn} onPress={savePin}><Text style={styles.saveText}>{working ? t("Saving…") : selectedEmployee ? t('Save PIN for {name}', {name: selectedEmployee.first_name}) : t('Save PIN')}</Text></TouchableOpacity>
       </View></View>
     </Modal>
   </View>;
