@@ -109,8 +109,8 @@ export default function Landing() {
 
         <Grid container spacing={4}>
           {[
-            { icon: <PhotoCamera sx={{ fontSize: 40, color: '#00D4FF' }} />, title: 'AI Photo Compliance', desc: 'Our AI analyzes photos BEFORE upload. Know immediately if your photo will hold up in a dispute.' },
-            { icon: <LocationOn sx={{ fontSize: 40, color: '#4CAF50' }} />, title: 'GPS Breadcrumb Trails', desc: 'Complete location history proves exactly where your team was and for how long.' },
+            { icon: <PhotoCamera sx={{ fontSize: 40, color: '#00D4FF' }} />, title: 'AI Photo Compliance', desc: 'Review automated photo-quality feedback before upload. Evidence still requires human review and does not guarantee a dispute outcome.' },
+            { icon: <LocationOn sx={{ fontSize: 40, color: '#4CAF50' }} />, title: 'GPS Breadcrumb Trails', desc: 'Review recorded location samples and timestamps. Coverage depends on device permissions, connectivity and GPS accuracy.' },
             { icon: <Mic sx={{ fontSize: 40, color: '#FF9800' }} />, title: 'Voice‑to‑Text Notes', desc: 'Hands‑free documentation. Speak your notes and our AI creates professional summaries.' },
             { icon: <Security sx={{ fontSize: 40, color: '#E91E63' }} />, title: 'Dispute Evidence Reports', desc: 'Organize job records, timestamps, photos and location history into a reviewable evidence package.' },
             { icon: <Speed sx={{ fontSize: 40, color: '#9C27B0' }} />, title: 'Real‑Time Profit Tracking', desc: 'See your margin change as work happens. Stop losing money before month‑end.' },

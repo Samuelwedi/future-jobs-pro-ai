@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { Alert, Box, Button, Container, Paper, Typography } from '@mui/material';
 import { API_BASE } from '../services/api';
@@ -9,10 +9,13 @@ export default function VerifyEmail() {
     return value;
   });
   useEffect(() => { window.history.replaceState(null, '', window.location.pathname); }, []);
+  const requestLock = useRef(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const verify = async () => {
+    if (requestLock.current || !token || done) return;
+    requestLock.current = true;
     setBusy(true); setError('');
     try {
       const response = await fetch(`${API_BASE}/api/auth/verify-email`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({token}) });
@@ -20,7 +23,7 @@ export default function VerifyEmail() {
       if (!response.ok) throw new Error(result.message || 'Email could not be verified.');
       setDone(true);
     } catch (cause: any) { setError(cause.message || 'Email could not be verified.'); }
-    finally { setBusy(false); }
+    finally { requestLock.current = false; setBusy(false); }
   };
   return <Box sx={{minHeight:'100vh',bgcolor:'#06101D',display:'grid',placeItems:'center'}}><Container maxWidth="sm"><Paper sx={{p:4}}>
     <Typography variant="h4">{done ? 'Email verified' : 'Verify your email'}</Typography>

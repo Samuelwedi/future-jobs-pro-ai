@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, Container, Paper, Stack, Typography } from '@mui/material';
 import { Lock } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -9,10 +9,13 @@ export default function PaymentRequired() {
   const navigate = useNavigate();
   const {access,error:accessError}=useBillingAccess();
   useEffect(()=>{if(access?.entitled)navigate('/',{replace:true});},[access,navigate]);
+  const requestLock = useRef(false);
   const [error, setError] = useState('');
   const [working, setWorking] = useState(false);
 
   const manageBilling = async () => {
+    if (requestLock.current || !access?.canManageBilling || access.complimentary) return;
+    requestLock.current = true;
     setWorking(true);
     setError('');
     try {
@@ -28,6 +31,7 @@ export default function PaymentRequired() {
     } catch (reason: any) {
       setError(reason.message);
     } finally {
+      requestLock.current = false;
       setWorking(false);
     }
   };
@@ -48,7 +52,7 @@ export default function PaymentRequired() {
             <Button variant="outlined" disabled={working} onClick={manageBilling}>{working ? 'Opening…' : 'Manage existing billing'}</Button>
           </Stack>}
           <BillingPermissions />
-          <Button onClick={()=>{localStorage.removeItem('token');navigate('/login');}}>Sign in with another account</Button>
+          <Button onClick={()=>{localStorage.removeItem('token');localStorage.removeItem('user');navigate('/login');}}>Sign in with another account</Button>
         </Paper>
       </Container>
     </Box>
