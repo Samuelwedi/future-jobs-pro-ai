@@ -54,7 +54,7 @@ export default function HistoryScreen() {
     });
     next.sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
     setItems(next);
-    if (results.every(result => result.status === 'rejected')) setError('History could not be loaded. Pull down to try again.');
+    if (results.every(result => result.status === 'rejected')) setError(t("History could not be loaded. Pull down to try again."));
     setLoading(false); setRefreshing(false);
   }, [user?.id]);
 

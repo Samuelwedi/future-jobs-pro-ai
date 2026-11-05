@@ -36,7 +36,7 @@ export default function ProjectAlbumScreen() {
 
   // ---------- SAFE PARAMS (prevents "Cannot read property 'projectId' of undefined") ----------
   const projectId: string = route?.params?.projectId || '';
-  const projectName: string = route?.params?.projectName || 'Project Album';
+  const projectName: string = route?.params?.projectName || t("Project Album");
 
   const [gridWidth, setGridWidth] = useState(0);
   const itemSize = albumThumbnailSize(gridWidth, NUM_COLUMNS, SPACING);

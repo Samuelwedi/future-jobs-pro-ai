@@ -24,7 +24,7 @@ export default function RegisterScreen() {
     if (form.password !== form.confirmPassword) return Alert.alert(t('Passwords do not match'), t('Re-enter the same password.'));
     setLoading(true);
     try { await register({ firstName: form.firstName.trim(), lastName: form.lastName.trim(), email, password: form.password }); }
-    catch (error: any) { Alert.alert(t('Sign up failed'), error.response?.data?.message || 'Could not create your account.'); }
+    catch (error: any) { Alert.alert(t('Sign up failed'), error.response?.data?.message || t("Could not create your account.")); }
     finally { setLoading(false); }
   };
   return <SafeAreaView edges={[]} style={styles.safe}><KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">

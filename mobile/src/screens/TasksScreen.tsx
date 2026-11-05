@@ -51,7 +51,7 @@ export default function TasksScreen() {
         setEmployees(people.users || []);
       }
     } catch (cause: any) {
-      Alert.alert(t('Tasks unavailable'), cause?.response?.data?.message || cause?.message || 'Could not load tasks.');
+      Alert.alert(t('Tasks unavailable'), cause?.response?.data?.message || cause?.message || t("Could not load tasks."));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -74,7 +74,7 @@ export default function TasksScreen() {
       setAssignedTo('');
       setShowComposer(false);
     } catch (cause: any) {
-      Alert.alert(t('Task not created'), cause?.response?.data?.message || cause?.message || 'Please try again.');
+      Alert.alert(t('Task not created'), cause?.response?.data?.message || cause?.message || t("Please try again."));
     }
   };
 
@@ -84,7 +84,7 @@ export default function TasksScreen() {
       await api.patch(`/tasks/${task.id}`, { status: next });
       setTasks(current => current.map(item => item.id === task.id ? { ...item, status: next } : item));
     } catch (cause: any) {
-      Alert.alert(t('Task not updated'), cause?.response?.data?.message || cause?.message || 'You may only update tasks assigned to you.');
+      Alert.alert(t('Task not updated'), cause?.response?.data?.message || cause?.message || t("You may only update tasks assigned to you."));
     }
   };
 

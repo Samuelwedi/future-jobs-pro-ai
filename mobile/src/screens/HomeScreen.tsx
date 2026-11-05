@@ -101,14 +101,14 @@ export default function HomeScreen() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isClockedIn, activeTimeEntry]);
 
-  const [gpsStatus,setGpsStatus]=useState('GPS status unavailable');
+  const [gpsStatus,setGpsStatus]=useState(t("GPS status unavailable"));
   useEffect(()=>{const listener=DeviceEventEmitter.addListener('gps-tracking-status',setGpsStatus);return()=>listener.remove();},[]);
   useEffect(()=>{
     let mounted=true;
     if(isClockedIn&&activeTimeEntry&&user?.id){
-      setGpsStatus('Starting background tracking…');
+      setGpsStatus(t("Starting background tracking…"));
       startBackgroundLocation({userId:user.id,timeEntryId:activeTimeEntry.id,projectId:activeTimeEntry.project_id}).catch((e:Error)=>{if(mounted)setGpsStatus(e.message);});
-    }else{void stopBackgroundLocation().catch(()=>undefined);setGpsStatus('Off clock');}
+    }else{void stopBackgroundLocation().catch(()=>undefined);setGpsStatus(t("Off clock"));}
     return()=>{mounted=false;};
   },[isClockedIn,activeTimeEntry?.id,user?.id]);
   // Foreground updates remain available if background permission is declined.
@@ -216,12 +216,12 @@ export default function HomeScreen() {
   const handleClockIn = async () => {
     let projectId = null;
     if (selectionMode === 'project') {
-      if (!selectedProject) { Alert.alert('Select a project first'); return; }
+      if (!selectedProject) { Alert.alert(t("Select a project first")); return; }
       projectId = selectedProject.id;
     } else {
-      if (!selectedSchedule) { Alert.alert('Select a schedule first'); return; }
-      if (selectedSchedule.date?.slice(0,10) !== format(new Date(),'yyyy-MM-dd')) { Alert.alert('Schedule unavailable', 'Choose a shift scheduled for today.'); return; }
-      if (!selectedSchedule.project_id) { Alert.alert('This schedule has no project'); return; }
+      if (!selectedSchedule) { Alert.alert(t("Select a schedule first")); return; }
+      if (selectedSchedule.date?.slice(0,10) !== format(new Date(),'yyyy-MM-dd')) { Alert.alert(t("Schedule unavailable"), t("Choose a shift scheduled for today.")); return; }
+      if (!selectedSchedule.project_id) { Alert.alert(t("This schedule has no project")); return; }
       projectId = selectedSchedule.project_id;
     }
     try {
@@ -236,17 +236,17 @@ export default function HomeScreen() {
       // The active shift card confirms clock-in; do not cover the location disclosure.
     } catch (e: any) {
       if (e.response?.status === 400 && e.response?.data?.message?.includes('Already clocked in')) {
-        Alert.alert('Already Clocked In', 'You are already clocked in. Refreshing status...');
+        Alert.alert(t("Already Clocked In"), t("You are already clocked in. Refreshing status..."));
         await loadActiveEntry();
       } else {
-        Alert.alert('Error', e.message || 'Clock-in failed');
+        Alert.alert(t("Error"), e.message || t("Clock-in failed"));
       }
     }
   };
 
   const handleClockOut = async () => {
     if (!activeTimeEntry) {
-      Alert.alert('Error', 'No active time entry');
+      Alert.alert(t("Error"), t("No active time entry"));
       return;
     }
     try {
@@ -258,9 +258,9 @@ export default function HomeScreen() {
       setActiveTimeEntry(null);
       setElapsedSeconds(0);
       await api.recordAIEvent('clock_out', { timeEntryId: activeTimeEntry.id });
-      Alert.alert('Clocked Out', 'Your time entry has been saved.');
+      Alert.alert(t("Clocked Out"), t("Your time entry has been saved."));
     } catch (e: any) {
-      Alert.alert('Error', e.message);
+      Alert.alert(t("Error"), e.message);
     }
   };
 
@@ -295,7 +295,7 @@ export default function HomeScreen() {
       } else if (selectedProject) {
         projectId = selectedProject.id;
       } else {
-        Alert.alert('Select a project first');
+        Alert.alert(t("Select a project first"));
         return;
       }
     }

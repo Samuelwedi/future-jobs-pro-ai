@@ -95,7 +95,7 @@ export default function GPSPlaybackScreen() {
       setHistory(response.history || []);
       setEmployees(people.employees||[]);
     } catch (cause: any) {
-      Alert.alert(t('GPS history unavailable'), cause?.response?.data?.message || cause?.message || 'Could not load GPS history.');
+      Alert.alert(t('GPS history unavailable'), cause?.response?.data?.message || cause?.message || t("Could not load GPS history."));
     } finally {
       setHistoryLoading(false);
       setLoading(false);
@@ -275,7 +275,7 @@ export default function GPSPlaybackScreen() {
                 <Text style={styles.historyProject}>{item.project_name || 'Unassigned project'}</Text>
                 <Text style={styles.historyTime}>{format(new Date(item.clock_in), 'MMM d, yyyy • h:mm a')} {item.clock_out ? `– ${format(new Date(item.clock_out), 'h:mm a')}` : '• Active'}</Text>
               </View>
-              <View style={styles.pointBadge}><Text style={styles.pointBadgeText}>{item.point_count} pts</Text></View>
+              <View style={styles.pointBadge}><Text style={styles.pointBadgeText}>{t('{count} pts',{count:String(item.point_count)})}</Text></View>
               <MaterialIcons name="chevron-right" size={22} color="#64748B" />
             </TouchableOpacity>
           ))}

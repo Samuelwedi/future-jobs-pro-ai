@@ -110,7 +110,7 @@ export default function TimesheetScreen() {
     } catch (e: any) {
       if (sequence !== requestSequence.current) return;
       console.error('Timesheet error:', e);
-      setErrorMsg(e.message || 'Failed to load entries');
+      setErrorMsg(e.message || t("Failed to load entries"));
     } finally {
       if (sequence === requestSequence.current) { setLoading(false); setRefreshing(false); }
     }
@@ -143,14 +143,14 @@ export default function TimesheetScreen() {
 
       const csv = await response.text();
       const directory = FileSystem.cacheDirectory;
-      if (!directory) throw new Error('File storage is unavailable');
+      if (!directory) throw new Error(t("File storage is unavailable"));
       const fileUri = `${directory}timesheet_${weekStart}_${weekEnd}.csv`;
       await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
-      if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is unavailable on this device');
+      if (!(await Sharing.isAvailableAsync())) throw new Error(t("Sharing is unavailable on this device"));
       await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', UTI: 'public.comma-separated-values-text' });
     } catch (e) {
       console.error('Export error:', e);
-      Alert.alert(t('Error'), 'Could not export timesheet: ' + (e instanceof Error ? e.message : ''));
+      Alert.alert(t('Error'), t("Could not export timesheet: ") + (e instanceof Error ? e.message : ''));
     }
   };
 
@@ -208,8 +208,8 @@ export default function TimesheetScreen() {
   };
 
   const beginEdit=(entry:TimeEntry)=>{setEditForm({clockIn:new Date(entry.clock_in).toISOString(),clockOut:entry.clock_out?new Date(entry.clock_out).toISOString():'',breakMinutes:String(entry.break_minutes||0),reason:''});setEditing(true);};
-  const saveEdit=async()=>{if(!selectedEntry)return;try{await api.patch(`/workforce-operations/time-entries/${selectedEntry.id}`,{clockIn:editForm.clockIn,clockOut:editForm.clockOut||null,breakMinutes:Number(editForm.breakMinutes),reason:editForm.reason});Alert.alert(t('Saved'),t('The correction was recorded in the audit trail and returned for approval.'));setEditing(false);setSelectedEntry(null);await fetchEntries();}catch(cause:any){Alert.alert(t('Correction failed'),cause?.response?.data?.message||cause?.message||'Could not update the time entry');}};
-  const approveEntry=async()=>{if(!selectedEntry)return;try{await api.post(`/workforce-operations/time-entries/${selectedEntry.id}/approve`,{});Alert.alert(t('Approved'),t('The time entry is approved for payroll.'));setSelectedEntry(null);await fetchEntries();}catch(cause:any){Alert.alert(t('Approval failed'),cause?.response?.data?.message||cause?.message||'Could not approve the entry');}};
+  const saveEdit=async()=>{if(!selectedEntry)return;try{await api.patch(`/workforce-operations/time-entries/${selectedEntry.id}`,{clockIn:editForm.clockIn,clockOut:editForm.clockOut||null,breakMinutes:Number(editForm.breakMinutes),reason:editForm.reason});Alert.alert(t('Saved'),t('The correction was recorded in the audit trail and returned for approval.'));setEditing(false);setSelectedEntry(null);await fetchEntries();}catch(cause:any){Alert.alert(t('Correction failed'),cause?.response?.data?.message||cause?.message||t("Could not update the time entry"));}};
+  const approveEntry=async()=>{if(!selectedEntry)return;try{await api.post(`/workforce-operations/time-entries/${selectedEntry.id}/approve`,{});Alert.alert(t('Approved'),t('The time entry is approved for payroll.'));setSelectedEntry(null);await fetchEntries();}catch(cause:any){Alert.alert(t('Approval failed'),cause?.response?.data?.message||cause?.message||t("Could not approve the entry"));}};
 
   const renderSectionHeader = ({ section }: { section: DaySection }) => (
     <View style={styles.sectionHeader}>

@@ -1,18 +1,20 @@
+import { useLang } from '../context/LanguageContext';
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
 export default function PrivacyScreen() {
+ const {t,lang}=useLang();
   const navigation = useNavigation();
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Privacy Policy</Text>
+        <Text style={styles.headerTitle}>{t("Privacy Policy")}</Text>
         <View style={{ width: 24 }} />
       </View>
       <ScrollView style={styles.body}>
@@ -27,8 +29,8 @@ export default function PrivacyScreen() {
           { title: '8. Contact', text: 'For privacy questions: support@futurejobsproai.com' },
         ].map((section, idx) => (
           <View key={idx} style={{ marginBottom: 20 }}>
-            <Text style={styles.sectionTitle}>{section.title}</Text>
-            <Text style={styles.paragraph}>{section.text}</Text>
+            <Text style={styles.sectionTitle}>{t(section.title)}</Text>
+            <Text style={styles.paragraph}>{t(section.text)}</Text>
           </View>
         ))}
       </ScrollView>

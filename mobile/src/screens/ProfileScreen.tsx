@@ -38,12 +38,12 @@ export default function ProfileScreen() {
     setVerificationBusy(true);
     try {
       const result = await api.post<{message:string}>('/auth/email-verification', {});
-      Alert.alert('Email verification', result.message);
-    } catch (cause: any) { Alert.alert('Email verification', cause.message || 'Unable to send verification email.'); }
+      Alert.alert(t("Email verification"), result.message);
+    } catch (cause: any) { Alert.alert(t("Email verification"), cause.message || t("Unable to send verification email.")); }
     finally { setVerificationBusy(false); }
   };
 
-  useFocusEffect(useCallback(()=>{let active=true;setCompensation(null);setProfileError('');api.get<{user:any}>('/users/me').then(r=>{if(active){setCompensation(r.user);setProfilePic(r.user.profile_pic);setProfileError('');}}).catch(()=>{if(active)setProfileError('Pay rate could not be loaded. Try reopening your profile.');});return()=>{active=false;};},[user?.id]));
+  useFocusEffect(useCallback(()=>{let active=true;setCompensation(null);setProfileError('');api.get<{user:any}>('/users/me').then(r=>{if(active){setCompensation(r.user);setProfilePic(r.user.profile_pic);setProfileError('');}}).catch(()=>{if(active)setProfileError(t("Pay rate could not be loaded. Try reopening your profile."));});return()=>{active=false;};},[user?.id]));
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -180,9 +180,9 @@ export default function ProfileScreen() {
         </TouchableOpacity>
         <Text style={styles.userName}>{user?.firstName} {user?.lastName}</Text>
         <Text style={styles.userEmail}>{user?.email}</Text>
-        <Text style={styles.userEmail}>{emailVerified === null ? 'Email verification status unavailable' : emailVerified ? 'Email verified' : 'Email not verified'}</Text>
+        <Text style={styles.userEmail}>{emailVerified === null ? t("Email verification status unavailable") : emailVerified ? t("Email verified") : t("Email not verified")}</Text>
         {emailVerified === false && <TouchableOpacity accessibilityRole="button" disabled={verificationBusy} style={styles.editNameBtn} onPress={sendVerification}>
-          <Text style={styles.editNameText}>{verificationBusy ? 'Sending…' : 'Send verification email'}</Text>
+          <Text style={styles.editNameText}>{verificationBusy ? t("Sending\u2026") : t("Send verification email")}</Text>
         </TouchableOpacity>}
         <View style={styles.roleBadge}>
           <Text style={styles.roleText}>{t(`role_${user?.role}`)}</Text>
@@ -193,7 +193,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.actionBtn}><View style={{flex:1}}><Text style={styles.userName}>My pay rate</Text><Text style={{color:'#00D4FF',fontSize:20,marginTop:8}}>{compensation===null ? (profileError?t('Unavailable'):t('Loading...')) : compensation?.current_rate == null ? 'Not set - contact your manager' : `$${Number(compensation.current_rate).toFixed(2)}/hr`}</Text>{compensation?.rate_effective_date && <Text style={styles.userEmail}>Effective {String(compensation.rate_effective_date).slice(0,10)}</Text>}<Text style={styles.userEmail}>Payroll uses the rate effective on each work date.</Text>{compensation?.scheduled_rates?.map((r:any,i:number)=><Text key={i} style={styles.userEmail}>Scheduled: ${Number(r.hourly_rate).toFixed(2)}/hr from {String(r.effective_date).slice(0,10)}</Text>)}{profileError?<Text style={{color:'#FF718B'}}>{profileError}</Text>:null}</View></View>
+      <View style={styles.actionBtn}><View style={{flex:1}}><Text style={styles.userName}>{t("My pay rate")}</Text><Text style={{color:'#00D4FF',fontSize:20,marginTop:8}}>{compensation===null ? (profileError?t('Unavailable'):t('Loading...')) : compensation?.current_rate == null ? t("Not set - contact your manager") : `$${Number(compensation.current_rate).toFixed(2)}/hr`}</Text>{compensation?.rate_effective_date && <Text style={styles.userEmail}>{t("Effective")} {String(compensation.rate_effective_date).slice(0,10)}</Text>}<Text style={styles.userEmail}>{t("Payroll uses the rate effective on each work date.")}</Text>{compensation?.scheduled_rates?.map((r:any,i:number)=><Text key={i} style={styles.userEmail}>{t('Scheduled: {rate}/hr from {date}',{rate:'$'+Number(r.hourly_rate).toFixed(2),date:String(r.effective_date).slice(0,10)})}</Text>)}{profileError?<Text style={{color:'#FF718B'}}>{profileError}</Text>:null}</View></View>
       <Text style={styles.sectionTitle}>{t('language')}</Text>
       <View style={styles.languageRow}>
         {(['en','es','fr'] as Lang[]).map(l => (

@@ -53,7 +53,7 @@ export default function AIAssistantScreen() {
   const navigation = useNavigation();
   const route = useRoute<any>();
   const [messages, setMessages] = useState<Message[]>([
-    { text: "Hi! I'm Lucy. I can schedule, run payroll, and generate reports. Try me!", isUser: false },
+    { text: t("Hi! I'm Lucy. I can schedule, run payroll, and generate reports. Try me!"), isUser: false },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -185,7 +185,7 @@ export default function AIAssistantScreen() {
       const beginWakeConversation = async () => {
         if (cancelled || !current(epoch)) return;
         setConversation(true);
-        const greeting = "I'm here. What would you like me to take care of?";
+        const greeting = t("I'm here. What would you like me to take care of?");
         setMessages(prev => [...prev, { text: greeting, isUser: false }]);
         await speakText(greeting);
         if (!cancelled && current(epoch)) queueFollowUp(350);
@@ -259,19 +259,19 @@ export default function AIAssistantScreen() {
     try {
       const data = await api.post<any>('/lucy-v2', { message: text.trim(), conversationMode: conversationActiveRef.current });
       if (!current(epoch)) return;
-      const botText = data?.text || data?.[0]?.text || "I'm not sure how to respond to that.";
+      const botText = data?.text || data?.[0]?.text || t("I'm not sure how to respond to that.");
       const approvalId = data?.approvalId || null;
       const actions: ActionReceipt[] = Array.isArray(data?.actions) ? data.actions : [];
       if (!data?.ignored) setMessages(prev => [...prev, { text: botText, isUser: false, approvalId, actions }]);
       consecutiveMisses.current = 0;
       if (conversationActiveRef.current) setConversation(true);
-      if (!data?.ignored && botText) await speakText(approvalId ? `${botText} Please approve or reject the protected action on screen.` : botText);
+      if (!data?.ignored && botText) await speakText(approvalId ? `${botText} ${t('Please approve or reject the protected action on screen.')}` : botText);
       if (!current(epoch)) return;
       if (fromVoice && data?.continueListening !== false && !approvalId && conversationActiveRef.current) queueFollowUp();
       else if (approvalId) setVoiceStatus(t("Waiting for your approval"));
     } catch (err: any) {
       if (!current(epoch)) return;
-      const errorMsg = err?.response?.data?.message || err?.message || 'Lucy could not complete this request. Please retry.';
+      const errorMsg = err?.response?.data?.message || err?.message || t("Lucy could not complete this request. Please retry.");
       setMessages(prev => [...prev, { text: errorMsg, isUser: false }]);
       await speakText(errorMsg);
       if (current(epoch) && fromVoice && conversationActiveRef.current) queueFollowUp(900);
@@ -283,11 +283,11 @@ export default function AIAssistantScreen() {
 
   const downloadAction=async(item:NonNullable<ActionReceipt['download']>)=>{
     try{
-      if(!item.url.startsWith('/lucy-v2/timesheet-excel?'))throw new Error('Unsupported report link');
+      if(!item.url.startsWith('/lucy-v2/timesheet-excel?'))throw new Error(t("Unsupported report link"));
       const token=await api.getToken();
       const name=item.filename.replace(/[^a-zA-Z0-9_.-]/g,'_');
       const result=await FileSystem.downloadAsync(`${API_URL}${item.url}`,`${FileSystem.cacheDirectory}${name}`,{headers:{Authorization:`Bearer ${token}`}});
-      if(result.status!==200)throw new Error('Report could not be downloaded');
+      if(result.status!==200)throw new Error(t("Report could not be downloaded"));
       if(await Sharing.isAvailableAsync())await Sharing.shareAsync(result.uri,{mimeType:'application/vnd.ms-excel'});
       else Alert.alert(t("Report downloaded"),result.uri);
     }catch(e:any){Alert.alert(t("Report"),e.message);}
@@ -314,7 +314,7 @@ export default function AIAssistantScreen() {
       const endConversation = /^(thanks|thank you|that's all|that is all|goodbye|stop listening|cancel)$/i.test(transcript.trim());
       if (endConversation) {
         setConversation(false);
-        const closing = 'Of course. I’ll be here when you need me.';
+        const closing = t("Of course. I’ll be here when you need me.");
         setMessages(prev => [...prev, { text: closing, isUser: false }]);
         await speakText(closing);
       } else if (transcript) {
@@ -480,7 +480,7 @@ export default function AIAssistantScreen() {
             )}
             {!item.isUser && item.actions?.map((action: ActionReceipt, actionIndex: number) => (
               <View key={`${action.type}-${actionIndex}`} style={[styles.actionCard, action.status === 'failed' && styles.actionFailed]}>
-                <View style={styles.actionHeader}><MaterialIcons name={action.status === 'completed' ? 'check-circle' : action.status === 'pending' ? 'schedule' : action.status === 'failed' ? 'error' : 'insights'} size={19} color={action.status === 'failed' ? '#FF6B6B' : '#67E8F9'} /><Text style={styles.actionTitle}>{action.title}</Text><Text style={styles.actionStatus}>{action.status}</Text></View>
+                <View style={styles.actionHeader}><MaterialIcons name={action.status === 'completed' ? 'check-circle' : action.status === 'pending' ? 'schedule' : action.status === 'failed' ? 'error' : 'insights'} size={19} color={action.status === 'failed' ? '#FF6B6B' : '#67E8F9'} /><Text style={styles.actionTitle}>{action.title}</Text><Text style={styles.actionStatus}>{t(action.status)}</Text></View>
                 <Text style={styles.actionSummary}>{action.summary}</Text>
                 {action.download&&<TouchableOpacity onPress={()=>void downloadAction(action.download!)}><Text style={{color:"#67E8F9",paddingVertical:12}}>{action.download.label}</Text></TouchableOpacity>}
                 {action.status==='pending'&&<TouchableOpacity disabled={loading} onPress={()=>void sendMessage('yes, run it')}><Text style={{color:"#67E8F9",paddingVertical:12}}>{t("Create draft payroll")}</Text></TouchableOpacity>}

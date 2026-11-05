@@ -41,14 +41,14 @@ export default function ChatScreen() {
     if(!mounted)return;
     const socket = io(WS_URL, { transports: ['websocket'], auth:{token} });
     socketRef.current = socket;
-    socket.on('connect', () => socket.emit('join-room', roomId,(result:any)=>{if(!result?.success)setError(result?.message||'Could not join conversation');else setConnected(true);}));
+    socket.on('connect', () => socket.emit('join-room', roomId,(result:any)=>{if(!result?.success)setError(result?.message||t("Could not join conversation"));else setConnected(true);}));
     socket.on('disconnect',()=>setConnected(false));
-    socket.on('connect_error',(cause:any)=>setError(cause?.message||'Message connection failed'));
+    socket.on('connect_error',(cause:any)=>setError(cause?.message||t("Message connection failed")));
     socket.on('new-message', (msg: any) => {
       setMessages(prev => prev.some(item=>item.id===msg.id)?prev:[...prev, msg]);
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     });
-    try{const data=await api.get<{messages:any[]}>(`/chat/messages/${roomId}`);if(mounted)setMessages(data.messages||[]);}catch(cause:any){if(mounted)setError(cause?.response?.data?.message||cause?.message||'Conversation could not be loaded');}
+    try{const data=await api.get<{messages:any[]}>(`/chat/messages/${roomId}`);if(mounted)setMessages(data.messages||[]);}catch(cause:any){if(mounted)setError(cause?.response?.data?.message||cause?.message||t("Conversation could not be loaded"));}
     };
     void connect();
     api.get<{room:any}>(`/chat/room/${encodeURIComponent(roomId)}/details`).then(r=>{if(mounted)setRoom(r.room);}).catch(()=>{});
@@ -59,27 +59,27 @@ export default function ChatScreen() {
     const message=input.trim();if(!message||sending)return;
     setSending(true);setError('');
     try{const result=await api.post<{message:any}>('/chat/message',{roomId,message});setMessages(prev=>prev.some(item=>item.id===result.message.id)?prev:[...prev,result.message]);setInput('');}
-    catch(cause:any){setError(cause?.response?.data?.message||cause?.message||'Message was not delivered');}
+    catch(cause:any){setError(cause?.response?.data?.message||cause?.message||t("Message was not delivered"));}
     finally{setSending(false);}
   };
 
   const uploadAttachment = async (asset:{uri:string;name:string;mimeType?:string;size?:number}) => {
     if(uploading)return;
-    if(asset.size && asset.size>25*1024*1024){setError('Choose a file smaller than 25 MB');return;}
+    if(asset.size && asset.size>25*1024*1024){setError(t("Choose a file smaller than 25 MB"));return;}
     setUploading(true);setError('');
     try {const result=await api.uploadFileWithData<{message:any}>(`/chat/room/${encodeURIComponent(roomId)}/attachments`,asset.uri,{},'file',false,{name:asset.name,mimeType:asset.mimeType});setMessages(prev=>prev.some(m=>m.id===result.message.id)?prev:[...prev,result.message]);}
-    catch(e:any){setError(e.response?.data?.message||e.message||'Upload failed');}finally{setUploading(false);}
+    catch(e:any){setError(e.response?.data?.message||e.message||t("Upload failed"));}finally{setUploading(false);}
   };
   const chooseFile = async () => {
     try {const r=await DocumentPicker.getDocumentAsync({type:['image/*','video/*','audio/*','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.ms-powerpoint','application/vnd.openxmlformats-officedocument.presentationml.presentation','text/plain','text/csv'],copyToCacheDirectory:true});if(!r.canceled)await uploadAttachment(r.assets[0]);}
-    catch(e:any){setError(e.message||'Could not choose file');}
+    catch(e:any){setError(e.message||t("Could not choose file"));}
   };
   const chooseMedia = async () => {
-    try{const r=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images','videos'],quality:0.8});if(!r.canceled){const a=r.assets[0];if(a.type==='video')await uploadAttachment({uri:a.uri,name:a.fileName||'video.mp4',mimeType:a.mimeType||'video/mp4',size:a.fileSize});else{const photo=await ImageManipulator.manipulateAsync(a.uri,[{resize:{width:Math.min(a.width||1920,1920)}}],{compress:.85,format:ImageManipulator.SaveFormat.JPEG});await uploadAttachment({uri:photo.uri,name:'photo.jpg',mimeType:'image/jpeg'});}}}catch(e:any){setError(e.message||'Could not choose media');}
+    try{const r=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images','videos'],quality:0.8});if(!r.canceled){const a=r.assets[0];if(a.type==='video')await uploadAttachment({uri:a.uri,name:a.fileName||'video.mp4',mimeType:a.mimeType||'video/mp4',size:a.fileSize});else{const photo=await ImageManipulator.manipulateAsync(a.uri,[{resize:{width:Math.min(a.width||1920,1920)}}],{compress:.85,format:ImageManipulator.SaveFormat.JPEG});await uploadAttachment({uri:photo.uri,name:'photo.jpg',mimeType:'image/jpeg'});}}}catch(e:any){setError(e.message||t("Could not choose media"));}
   };
   const changeGroupPhoto = async () => {
     try {const r=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:true,aspect:[1,1],quality:0.8});if(r.canceled)return;setUploading(true);const a=r.assets[0];const photo=await ImageManipulator.manipulateAsync(a.uri,[{resize:{width:512}}],{compress:.85,format:ImageManipulator.SaveFormat.JPEG});const result=await api.uploadFileWithData<{avatar_url:string}>(`/chat/room/${encodeURIComponent(roomId)}/photo`,photo.uri,{},'photo',false,{name:'photo.jpg',mimeType:'image/jpeg'});setRoom((prev:any)=>({...prev,avatar_url:result.avatar_url}));}
-    catch(e:any){setError(e.response?.data?.message||e.message||'Photo upload failed');}finally{setUploading(false);}
+    catch(e:any){setError(e.response?.data?.message||e.message||t("Photo upload failed"));}finally{setUploading(false);}
   };
 
   const renderItem = ({ item }: { item: any }) => {
@@ -87,7 +87,7 @@ export default function ChatScreen() {
     return (
       <View style={[styles.bubble, isMine ? styles.myBubble : styles.otherBubble]}>
         {!isMine && item.sender_avatar && <Image source={{uri:item.sender_avatar}} style={{width:28,height:28,borderRadius:14,marginBottom:5}} />}
-        {!isMine && <Text style={styles.sender}>{item.sender_name || `${item.first_name || ''} ${item.last_name || ''}`.trim() || 'Team member'}</Text>}
+        {!isMine && <Text style={styles.sender}>{item.sender_name || `${item.first_name || ''} ${item.last_name || ''}`.trim() || t("Team member")}</Text>}
         {item.message?<Text style={styles.message}>{item.message}</Text>:null}
         {item.attachment_id && <MediaAttachment path={`/chat/attachments/${item.attachment_id}/content`} name={item.attachment_name || 'attachment'} mime={item.attachment_type || 'application/octet-stream'}/>}
         <Text style={styles.time}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>

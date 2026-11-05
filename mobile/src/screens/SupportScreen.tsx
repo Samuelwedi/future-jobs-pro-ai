@@ -45,7 +45,7 @@ export default function SupportScreen() {
       setTicket((current) => current ? { ...current, status: response.status || current.status } : current);
       setError('');
     } catch (requestError: any) {
-      if (!quiet) setError(requestError?.response?.data?.message || 'Support messages could not be loaded.');
+      if (!quiet) setError(requestError?.response?.data?.message || t("Support messages could not be loaded."));
     }
   }, []);
 
@@ -56,7 +56,7 @@ export default function SupportScreen() {
       setTicket(active);
       if (active?.id) await loadMessages(active.id);
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Support is temporarily unavailable.');
+      setError(requestError?.response?.data?.message || t("Support is temporarily unavailable."));
     } finally {
       setLoading(false);
     }
@@ -82,7 +82,7 @@ export default function SupportScreen() {
       setTicket(nextTicket);
       await loadMessages(nextTicket.id);
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'We could not open a support request.');
+      setError(requestError?.response?.data?.message || t("We could not open a support request."));
     } finally {
       setRequesting(false);
     }
@@ -98,7 +98,7 @@ export default function SupportScreen() {
       setInput('');
       setError('');
     } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Your message was not sent.');
+      setError(requestError?.response?.data?.message || t("Your message was not sent."));
     } finally {
       setSending(false);
     }

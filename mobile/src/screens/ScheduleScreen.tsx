@@ -56,7 +56,7 @@ export default function ScheduleScreen() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(user?.id || '');
-  const [selectedEmployeeName, setSelectedEmployeeName] = useState('My Schedule');
+  const [selectedEmployeeName, setSelectedEmployeeName] = useState(t("My Schedule"));
   const [showEmployeePicker, setShowEmployeePicker] = useState(false);
 
   const fetchEmployees = async () => {

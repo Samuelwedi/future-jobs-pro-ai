@@ -31,7 +31,7 @@ test('existing active, trial and grace subscriptions block duplicate subscriptio
 });
 test('payroll request lock rejects overlapping actions, clears old preview and releases after failure',async()=>{
  const wait=deferred();let calls=0,result='old',notice='';
- const c={actionLock:{current:false},setBusy(){},setNotice:v=>notice=v,setResult:v=>result=v};
+ const c={t,actionLock:{current:false},setBusy(){},setNotice:v=>notice=v,setResult:v=>result=v};
  const run=handler('PayrollRules','run',c);
  const first=run(async()=>{calls++;await wait.promise;throw Error('save failed');});
  await run(async()=>calls++);assert.equal(calls,1);assert.equal(result,null);
@@ -49,4 +49,10 @@ test('Lucy approval and rejection share a lock and allow retry after failure',as
  const approve=handler('AIAssistant','handleApprove',c),reject=handler('AIAssistant','handleReject',c);
  const first=approve('id');await reject('id');assert.equal(posts,1);wait.resolve();await first;
  assert.equal(c.approvalLock.current,false);await reject('id');assert.equal(posts,2);
+});
+test('localized task actions preserve machine status values and navigation identifiers',async()=>{
+ let payload,route;const context={t:()=> 'traduit',api:{patch:async(_path,body)=>{payload=body;}},setTasks(){},Alert:{alert(){}},setSelectedSchedule(){},navigation:{navigate:name=>{route=name;}}};
+ await handler('Tasks','advance',context)({id:'task',status:'in_progress'});assert.equal(payload.status,'completed');
+ await handler('Tasks','advance',context)({id:'task',status:'completed'});assert.equal(payload.status,'pending');
+ handler('Home','handleScheduleSelect',context)({date:'2026-11-05'});assert.equal(route,'Schedule');
 });

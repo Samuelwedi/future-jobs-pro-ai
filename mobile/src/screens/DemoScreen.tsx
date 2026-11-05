@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -55,6 +56,7 @@ const tabs: Array<{ key: StoryKey; label: string; icon: IconName }> = [
 ];
 
 export default function DemoScreen() {
+ const {t,lang}=useLang();
   const navigation = useNavigation<any>();
   const [activeStory, setActiveStory] = useState<StoryKey>('operate');
   const story = useMemo(() => stories[activeStory], [activeStory]);
@@ -63,24 +65,24 @@ export default function DemoScreen() {
     <View style={styles.container}>
       <LinearGradient colors={['#071827', '#050A12', '#03070C']} style={StyleSheet.absoluteFill} />
       <View style={styles.header}>
-        <TouchableOpacity accessibilityLabel="Back to sign in" onPress={() => navigation.goBack()} style={styles.iconButton}>
+        <TouchableOpacity accessibilityLabel={t("Back to sign in")} onPress={() => navigation.goBack()} style={styles.iconButton}>
           <MaterialIcons name="arrow-back" size={22} color="#F8FAFC" />
         </TouchableOpacity>
         <View style={styles.brandLockup}>
           <View style={styles.brandMark}><MaterialIcons name="auto-awesome" size={17} color="#06121D" /></View>
-          <View><Text style={styles.brand}>Future Jobs Pro AI</Text><Text style={styles.brandMeta}>Interactive product story</Text></View>
+          <View><Text style={styles.brand}>Future Jobs Pro AI</Text><Text style={styles.brandMeta}>{t("Interactive product story")}</Text></View>
         </View>
-        <View style={styles.demoPill}><View style={styles.demoDot} /><Text style={styles.demoText}>DEMO</Text></View>
+        <View style={styles.demoPill}><View style={styles.demoDot} /><Text style={styles.demoText}>{t("DEMO")}</Text></View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
-          <Text style={styles.kicker}>THE INTELLIGENT FIELD OPERATING SYSTEM</Text>
-          <Text style={styles.heroTitle}>Field work,{`\n`}finally connected.</Text>
-          <Text style={styles.heroCopy}>Run the day. Prove the work. Pay the team. Lucy keeps the entire workflow moving—with people in control.</Text>
+          <Text style={styles.kicker}>{t("THE INTELLIGENT FIELD OPERATING SYSTEM")}</Text>
+          <Text style={styles.heroTitle}>{t("Field work,")}{`\n`}{t("finally connected.")}</Text>
+          <Text style={styles.heroCopy}>{t("Run the day. Prove the work. Pay the team. Lucy keeps the entire workflow moving—with people in control.")}</Text>
           <View style={styles.valueRow}>
             {[['bolt', 'Real-time', '#67E8F9'], ['verified-user', 'Verifiable', '#A7F3D0'], ['hub', 'One system', '#C4B5FD']].map(([icon, label, color]) => (
-              <View key={label} style={styles.valueItem}><MaterialIcons name={icon as IconName} size={17} color={color} /><Text style={styles.valueText}>{label}</Text></View>
+              <View key={label} style={styles.valueItem}><MaterialIcons name={icon as IconName} size={17} color={color} /><Text style={styles.valueText}>{t(label)}</Text></View>
             ))}
           </View>
         </View>
@@ -91,7 +93,7 @@ export default function DemoScreen() {
             return (
               <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected }} key={tab.key} onPress={() => setActiveStory(tab.key)} style={[styles.storyTab, selected && styles.storyTabActive]}>
                 <MaterialIcons name={tab.icon} size={18} color={selected ? '#06121D' : '#8091A6'} />
-                <Text style={[styles.storyTabText, selected && styles.storyTabTextActive]}>{tab.label}</Text>
+                <Text style={[styles.storyTabText, selected && styles.storyTabTextActive]}>{t(tab.label)}</Text>
               </TouchableOpacity>
             );
           })}
@@ -100,16 +102,16 @@ export default function DemoScreen() {
         <LinearGradient colors={story.gradient} style={styles.productWindow}>
           <View style={styles.windowChrome}>
             <View style={styles.windowDots}><View style={styles.windowDot} /><View style={styles.windowDot} /><View style={styles.windowDot} /></View>
-            <Text style={styles.windowLabel}>FUTURE JOBS · LIVE WORKSPACE</Text>
-            <View style={styles.secureChip}><MaterialIcons name="lock" size={11} color="#A7F3D0" /><Text style={styles.secureText}>SECURE</Text></View>
+            <Text style={styles.windowLabel}>{t("FUTURE JOBS · LIVE WORKSPACE")}</Text>
+            <View style={styles.secureChip}><MaterialIcons name="lock" size={11} color="#A7F3D0" /><Text style={styles.secureText}>{t("SECURE")}</Text></View>
           </View>
           <View style={styles.storyHeader}>
             <View style={[styles.storyIcon, { backgroundColor: `${story.color}20`, borderColor: `${story.color}55` }]}><MaterialIcons name={story.icon} size={24} color={story.color} /></View>
-            <View style={styles.storyMetric}><Text style={[styles.metricValue, { color: story.color }]}>{story.metric}</Text><Text style={styles.metricLabel}>{story.metricLabel}</Text></View>
+            <View style={styles.storyMetric}><Text style={[styles.metricValue, { color: story.color }]}>{story.metric}</Text><Text style={styles.metricLabel}>{t(story.metricLabel)}</Text></View>
           </View>
-          <Text style={[styles.storyEyebrow, { color: story.color }]}>{story.eyebrow}</Text>
-          <Text style={styles.storyHeadline}>{story.headline}</Text>
-          <Text style={styles.storyCopy}>{story.copy}</Text>
+          <Text style={[styles.storyEyebrow, { color: story.color }]}>{t(story.eyebrow)}</Text>
+          <Text style={styles.storyHeadline}>{t(story.headline)}</Text>
+          <Text style={styles.storyCopy}>{t(story.copy)}</Text>
           <View style={styles.timeline}>
             {story.moments.map((moment, index) => (
               <View key={moment.title} style={styles.timelineRow}>
@@ -117,29 +119,29 @@ export default function DemoScreen() {
                   <View style={[styles.timelineNode, { borderColor: story.color }]}><MaterialIcons name={moment.icon} size={16} color={story.color} /></View>
                   {index < story.moments.length - 1 && <View style={[styles.timelineLine, { backgroundColor: `${story.color}44` }]} />}
                 </View>
-                <View style={styles.timelineCopy}><Text style={styles.timelineTitle}>{moment.title}</Text><Text style={styles.timelineMeta}>{moment.meta}</Text></View>
+                <View style={styles.timelineCopy}><Text style={styles.timelineTitle}>{t(moment.title)}</Text><Text style={styles.timelineMeta}>{t(moment.meta)}</Text></View>
                 <MaterialIcons name="check-circle" size={18} color="#34D399" />
               </View>
             ))}
           </View>
-          <View style={styles.outcomeCard}><MaterialIcons name="insights" size={19} color={story.color} /><Text style={styles.outcomeText}>{story.outcome}</Text></View>
+          <View style={styles.outcomeCard}><MaterialIcons name="insights" size={19} color={story.color} /><Text style={styles.outcomeText}>{t(story.outcome)}</Text></View>
         </LinearGradient>
 
         <View style={styles.lucySection}>
           <LinearGradient colors={['#34255E', '#19152C']} style={styles.lucyOrb}><MaterialIcons name="graphic-eq" size={29} color="#EDE9FE" /></LinearGradient>
           <View style={styles.lucyBody}>
-            <View style={styles.lucyTitleRow}><Text style={styles.lucyTitle}>Lucy is the connective intelligence</Text><View style={styles.memoryPill}><View style={styles.memoryDot} /><Text style={styles.memoryText}>MEMORY</Text></View></View>
-            <Text style={styles.lucyCopy}>She understands context across the workspace, prepares actions, and asks for confirmation before sensitive changes.</Text>
-            <View style={styles.promptBubble}><Text style={styles.promptText}>“Brief me on today’s risks and prepare the next actions.”</Text></View>
+            <View style={styles.lucyTitleRow}><Text style={styles.lucyTitle}>{t("Lucy is the connective intelligence")}</Text><View style={styles.memoryPill}><View style={styles.memoryDot} /><Text style={styles.memoryText}>{t("MEMORY")}</Text></View></View>
+            <Text style={styles.lucyCopy}>{t("She understands context across the workspace, prepares actions, and asks for confirmation before sensitive changes.")}</Text>
+            <View style={styles.promptBubble}><Text style={styles.promptText}>{t("“Brief me on today’s risks and prepare the next actions.”")}</Text></View>
           </View>
         </View>
 
         <View style={styles.platformSection}>
-          <Text style={styles.sectionEyebrow}>ONE CONTINUOUS RECORD</Text><Text style={styles.sectionTitle}>From first clock-in to final proof.</Text>
+          <Text style={styles.sectionEyebrow}>{t("ONE CONTINUOUS RECORD")}</Text><Text style={styles.sectionTitle}>{t("From first clock-in to final proof.")}</Text>
           <View style={styles.platformFlow}>
             {[['Capture', 'location-on', '#67E8F9'], ['Understand', 'auto-awesome', '#C4B5FD'], ['Verify', 'verified', '#A7F3D0'], ['Settle', 'payments', '#FDE68A']].map(([label, icon, color], index) => (
               <React.Fragment key={label}>
-                <View style={styles.flowItem}><View style={[styles.flowIcon, { backgroundColor: `${color}18` }]}><MaterialIcons name={icon as IconName} size={20} color={color} /></View><Text style={styles.flowLabel}>{label}</Text></View>
+                <View style={styles.flowItem}><View style={[styles.flowIcon, { backgroundColor: `${color}18` }]}><MaterialIcons name={icon as IconName} size={20} color={color} /></View><Text style={styles.flowLabel}>{t(label)}</Text></View>
                 {index < 3 && <MaterialIcons name="arrow-forward" size={15} color="#385069" />}
               </React.Fragment>
             ))}
@@ -147,9 +149,9 @@ export default function DemoScreen() {
         </View>
 
         <TouchableOpacity accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.goBack()}>
-          <LinearGradient colors={['#67E8F9', '#22D3EE']} style={styles.primaryButtonGradient}><Text style={styles.primaryButtonText}>Explore with your own workspace</Text><MaterialIcons name="arrow-forward" size={20} color="#06121D" /></LinearGradient>
+          <LinearGradient colors={['#67E8F9', '#22D3EE']} style={styles.primaryButtonGradient}><Text style={styles.primaryButtonText}>{t("Explore with your own workspace")}</Text><MaterialIcons name="arrow-forward" size={20} color="#06121D" /></LinearGradient>
         </TouchableOpacity>
-        <Text style={styles.disclaimer}>This tour uses illustrative data and does not display customer information.</Text>
+        <Text style={styles.disclaimer}>{t("This tour uses illustrative data and does not display customer information.")}</Text>
       </ScrollView>
     </View>
   );

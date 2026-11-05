@@ -65,7 +65,7 @@ export default function ProjectsScreen() {
     }
     setSaving(true);
     try {
-      if(!await checkOnlineStatus()) throw new Error('You are offline. Your project draft is kept on this device. Reconnect and tap Save.');
+      if(!await checkOnlineStatus()) throw new Error(t("You are offline. Your project draft is kept on this device. Reconnect and tap Save."));
       const payload = {
         name: projectName.trim(),
         client_name: clientName.trim() || null,
@@ -86,7 +86,7 @@ export default function ProjectsScreen() {
       setEditingProject(null);
       fetchProjects();
     } catch (error: any) {
-      Alert.alert(t('Project not saved'), error.response?.data?.message || error.message || 'Failed to save project');
+      Alert.alert(t('Project not saved'), error.response?.data?.message || error.message || t("Failed to save project"));
     } finally {setSaving(false);}
   };
 

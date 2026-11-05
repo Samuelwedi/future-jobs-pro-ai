@@ -29,7 +29,7 @@ export default function FoldersScreen() {
       console.log(`✅ Found ${res.projects?.length || 0} projects`);
     } catch (e: any) {
       console.error('❌ Error fetching projects:', e);
-      setError(e.message || 'Failed to load projects');
+      setError(e.message || t("Failed to load projects"));
     } finally {
       setLoading(false);
     }

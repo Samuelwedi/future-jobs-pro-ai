@@ -1,18 +1,20 @@
+import { useLang } from '../context/LanguageContext';
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
 export default function SecurityScreen() {
+ const {t,lang}=useLang();
   const navigation = useNavigation();
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Security</Text>
+        <Text style={styles.headerTitle}>{t("Security")}</Text>
         <View style={{ width: 24 }} />
       </View>
       <ScrollView style={styles.body}>
@@ -23,8 +25,8 @@ export default function SecurityScreen() {
           { title: 'Report a concern', desc: 'Use Support to report unexpected account activity. Include what happened and when, without sharing passwords, payment details or other sensitive information.' },
         ].map((item, idx) => (
           <View key={idx} style={{ marginBottom: 24 }}>
-            <Text style={styles.sectionTitle}>{item.title}</Text>
-            <Text style={styles.paragraph}>{item.desc}</Text>
+            <Text style={styles.sectionTitle}>{t(item.title)}</Text>
+            <Text style={styles.paragraph}>{t(item.desc)}</Text>
           </View>
         ))}
       </ScrollView>

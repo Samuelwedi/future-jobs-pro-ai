@@ -131,7 +131,7 @@ export default function CreateShiftScreen() {
           attachmentType = uploadRes.type || selectedFile.type;
         } catch (err) {
           console.error('File upload failed:', err);
-          throw new Error('Attachment upload failed. Your shift has not been saved. Please retry.');
+          throw new Error(t("Attachment upload failed. Your shift has not been saved. Please retry."));
         }
       }
 
@@ -147,11 +147,11 @@ export default function CreateShiftScreen() {
         attachmentUrl,
         attachmentType,
       });
-      if (!response.success) throw new Error('Shift was not saved. Please retry.');
+      if (!response.success) throw new Error(t("Shift was not saved. Please retry."));
       Alert.alert(t('Saved'), t('Shift has been saved.'));
       navigation.goBack();
     } catch (err: any) {
-      Alert.alert(t('Error'), err.message || 'Could not create shift.');
+      Alert.alert(t('Error'), err.message || t("Could not create shift."));
     } finally {
       setUploading(false);
     }

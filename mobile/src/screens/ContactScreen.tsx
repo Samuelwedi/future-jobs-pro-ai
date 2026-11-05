@@ -27,11 +27,11 @@ export default function ContactScreen() {
     try {
       const response = await fetch(`${API_URL}/contact`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,email,message})});
       const result = await response.json();
-      if (!response.ok || result.success !== true) throw new Error(result.message || 'Delivery could not be confirmed.');
+      if (!response.ok || result.success !== true) throw new Error(result.message || t("Delivery could not be confirmed."));
       Alert.alert(t('Message accepted'), t('Your message was accepted for delivery to support.'));
       setName(''); setEmail(''); setMessage('');
     } catch (error: any) {
-      Alert.alert(t('Message not confirmed'), error.message || 'Your text has been kept. Please try again later.');
+      Alert.alert(t('Message not confirmed'), error.message || t("Your text has been kept. Please try again later."));
     } finally { sendLock.current = false; setSending(false); }
   };
 

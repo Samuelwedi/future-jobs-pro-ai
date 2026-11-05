@@ -18,7 +18,7 @@ export default function ForgotPasswordScreen() {
     if (!EMAIL_PATTERN.test(normalized)) return Alert.alert(t('Invalid email'), t('Enter the email address used for your account.'));
     setLoading(true);
     try { const response = await api.post<{ message: string }>('/auth/forgot-password', { email: normalized }); Alert.alert(t('Check your email'), response.message, [{ text: 'OK', onPress: () => navigation.goBack() }]); }
-    catch (error: any) { Alert.alert(t('Could not send link'), error.response?.data?.message || 'Try again later.'); }
+    catch (error: any) { Alert.alert(t('Could not send link'), error.response?.data?.message || t("Try again later.")); }
     finally { setLoading(false); }
   };
   return <SafeAreaView edges={[]} style={styles.safe}><KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
