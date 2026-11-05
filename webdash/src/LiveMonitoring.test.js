@@ -77,3 +77,24 @@ test('Fix with Lucy does not queue a repair when fresh diagnostics fail', async 
  expect(api.post).toHaveBeenCalledTimes(1);
  expect(api.post).toHaveBeenCalledWith('/api/system-reliability/diagnostics',{}, {timeout:15000});
 });
+
+test('explains the duplicate repair lock and links to the current workflow', async () => {
+ const url='https://github.com/Samuelwedi/future-jobs-pro-ai/actions/runs/123';
+ const api={get:jest.fn(path=>Promise.resolve({data:path.includes('incidents')?response.data:{repairEnabled:true,repairs:[{id:'repair',incident_id:incident.id,status:'running',scope:'mobile-audio',workflow_url:url}]}})),post:jest.fn()};
+ render(<LiveMonitoring client={()=>api} isOwner onUnauthorized={jest.fn()}/>);
+ expect(await screen.findByText('Fix with Lucy')).toBeDisabled();
+ expect(screen.getByText(/A repair is already in progress/)).toBeInTheDocument();
+ expect(screen.getByRole('link',{name:'Track current repair'})).toHaveAttribute('href',url);
+ expect(screen.getByText('Repair workflow running — completion pending')).toBeInTheDocument();
+ expect(screen.queryByText('Generating, testing and deploying')).not.toBeInTheDocument();
+ fireEvent.click(screen.getByText('Fix with Lucy'));
+ expect(api.post).not.toHaveBeenCalled();
+});
+
+test('mobile review candidates explain the release requirement without claiming deployment', async () => {
+ const api={get:jest.fn(path=>Promise.resolve({data:path.includes('incidents')?response.data:{repairEnabled:true,repairs:[{id:'repair',incident_id:incident.id,status:'blocked',scope:'mobile-audio',error:'Owner approval required: candidate ready'}]}}))};
+ render(<LiveMonitoring client={()=>api} isOwner onUnauthorized={jest.fn()}/>);
+ await screen.findByText('Tested mobile candidate — review and native release required');
+ expect(screen.getByText(/Mobile source checks do not update installed apps/)).toBeInTheDocument();
+ expect(screen.getByText('Verify resolution')).toBeInTheDocument();
+});

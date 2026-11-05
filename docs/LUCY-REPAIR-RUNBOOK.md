@@ -48,3 +48,19 @@ These exercise the actual deployment script with simulated provider responses: m
 ## File-handoff acceptance, 2026-10-25
 
 Run 40271667086 completed proposal screening, isolated mobile and portal checks, and mobile candidate publication successfully. Candidate: `a0ef307c1466b629a0263ef6e1fa87ed13de4e73`. This is code-level acceptance; it is not physical-device acceptance or a store release. The handoff no longer relies on large GitHub job outputs.
+
+## Live verification, 2026-11-05 UTC
+
+Run 41963582088 completed generation, isolated verification and publication of
+candidate b674d30de06fec2c2e196b1bdb2973d5b52bff8f. The owner portal reconciled
+its terminal review state and re-enabled Fix with Lucy. The reviewed candidate
+clears the old maximum-recording timer after recorder polling fails, preventing
+that timer from interrupting a later recording. It was merged into the release
+source; it is not contained in the already-submitted Android 12 / iOS 58 binaries.
+43 mobile tests and mobile TypeScript passed locally. Device acceptance remains
+open; the observed incident has not been marked resolved.
+
+The portal now explains its active-run duplicate lock, links directly to that
+run, avoids claiming deployment while checks are running, and explains the
+native-release requirement for mobile candidates. Portal regression checks cover
+these states. Review and native release controls remain enabled.
