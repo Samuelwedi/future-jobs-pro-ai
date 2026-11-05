@@ -32,9 +32,7 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
     AsyncStorage.getItem('language').then((saved) => {
       if (mounted && !selected.current && (saved === 'en' || saved === 'es' || saved === 'fr')) setLangState(saved);
     }).catch(() => {});
-    const translate = useCallback((key: string, vars?: Record<string, string>) => t(key, lang, vars), [lang]);
-
-  return () => { mounted = false; };
+    return () => { mounted = false; };
   }, []);
 
   const setLang = async (newLang: Lang) => {

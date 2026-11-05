@@ -6,9 +6,9 @@ test('home and profile copy changes fully for the strings visible in tester scre
  assert.equal(deviceLanguage('es-MX'),'es');assert.equal(deviceLanguage('fr-CA'),'fr');assert.equal(deviceLanguage('de-DE'),'en');
 });
 test('support, timesheet and scheduling static copy has both translations and safe interpolation',()=>{
- const screens=['Support','Timesheet','Schedule','CreateShift','Login','Register','ForgotPassword','ChangeTemporaryPassword','ChatList','Chat','NewChat','SelectEmployees','Tasks','Projects','Contact','Folders','History','ProjectAlbum','ProjectMedia','MonthMedia','MonthMediaType','GPSPlayback','CrewTracking','PTO','Team','Kiosk','CompanySettings','CrewClock','VoiceNote','Subscription'];
+ const screens=['Support','Timesheet','Schedule','CreateShift','Login','Register','ForgotPassword','ChangeTemporaryPassword','ChatList','Chat','NewChat','SelectEmployees','Tasks','Projects','Contact','Folders','History','ProjectAlbum','ProjectMedia','MonthMedia','MonthMediaType','GPSPlayback','CrewTracking','PTO','Team','Kiosk','CompanySettings','CrewClock','VoiceNote','Subscription','CameraView'];
  for(const screen of screens){
-  const source=fs.readFileSync(path.join(__dirname,`../src/screens/${screen}Screen.tsx`),'utf8');
+  const source=fs.readFileSync(path.join(__dirname,`../src/screens/${screen==='CameraView'?screen:screen+'Screen'}.tsx`),'utf8');
   const ast=ts.createSourceFile(screen+'.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   function visit(node){
    if(ts.isCallExpression(node)&&node.expression.getText(ast)==='t'&&node.arguments[0]&&ts.isStringLiteral(node.arguments[0])){
