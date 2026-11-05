@@ -145,6 +145,8 @@ export default function AIAssistantScreen() {
 
   useEffect(() => {
     if (!recorderError || !active.current) return;
+    if (maximumRecordingTimer.current) clearTimeout(maximumRecordingTimer.current);
+    maximumRecordingTimer.current = null;
     conversationActiveRef.current = false;
     setConversationActive(false);
     setIsRecording(false);

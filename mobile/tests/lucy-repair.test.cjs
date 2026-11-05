@@ -61,3 +61,26 @@ test('assistant ignores a new recording while the previous voice request is fini
   assert.deepEqual(calls, []);
   assert.equal(context.startingRecording.current, false);
 });
+
+
+test('recorder polling failure clears the old maximum recording timer before retry', () => {
+  const recovery = source.match(/useEffect\(\(\) => \{\s+if \(!recorderError[\s\S]*?\}, \[recorderError\]\);/);
+  assert.ok(recovery, 'screen has a recorder error recovery effect');
+  const oldTimer = {};
+  const cleared = [];
+  const maximumRecordingTimer = { current: oldTimer };
+  const context = vm.createContext({
+    recorderError: true,
+    active: { current: true },
+    maximumRecordingTimer,
+    clearTimeout: timer => cleared.push(timer),
+    conversationActiveRef: { current: true },
+    setConversationActive: () => {},
+    setIsRecording: () => {},
+    setVoiceStatus: () => {},
+    useEffect: callback => callback(),
+  });
+  vm.runInContext(recovery[0], context);
+  assert.deepEqual(cleared, [oldTimer]);
+  assert.equal(maximumRecordingTimer.current, null);
+});
