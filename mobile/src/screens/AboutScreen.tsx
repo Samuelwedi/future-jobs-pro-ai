@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import React from 'react';
 import { nativeApplicationVersion, nativeBuildVersion } from 'expo-application';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
@@ -5,29 +6,24 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
 export default function AboutScreen() {
+  const {t}=useLang();
   const navigation = useNavigation();
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>About</Text>
+        <Text style={styles.headerTitle}>{t("About")}</Text>
         <View style={{ width: 24 }} />
       </View>
       <ScrollView style={styles.body}>
         <Text style={styles.appName}>🚀 Future Jobs Pro AI</Text>
-        <Text style={styles.version}>Version {nativeApplicationVersion || 'Unknown'} · Build {nativeBuildVersion || 'Unknown'}</Text>
-        <Text style={styles.paragraph}>
-          Future Jobs Pro AI was created by Samuel B. to help field service businesses protect their revenue with AI‑powered photo compliance, GPS tracking, and automatic dispute evidence.
-        </Text>
-        <Text style={styles.paragraph}>
-          Built with React Native, Node.js, PostgreSQL, and OpenAI. All data is encrypted at rest and in transit.
-        </Text>
-        <Text style={styles.paragraph}>
-          For support, contact support@futurejobsproai.com
-        </Text>
+        <Text style={styles.version}>{t('Version {version} · Build {build}',{version:nativeApplicationVersion || t('Unknown'),build:nativeBuildVersion || t('Unknown')})}</Text>
+        <Text style={styles.paragraph}>{t('Future Jobs Pro AI helps teams manage time, projects, payroll preparation and field evidence.')}</Text>
+        <Text style={styles.paragraph}>{t('Review captured information before using it for payroll or a dispute.')}</Text>
+        <Text style={styles.paragraph}>{t('For support, contact support@futurejobsproai.com')}</Text>
       </ScrollView>
     </View>
   );

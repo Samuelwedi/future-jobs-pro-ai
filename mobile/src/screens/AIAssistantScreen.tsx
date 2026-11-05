@@ -1,3 +1,4 @@
+import { useLang } from '../context/LanguageContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -44,6 +45,9 @@ const LUCY_RECORDING_OPTIONS = {
 };
 
 export default function AIAssistantScreen() {
+  const {lang,t}=useLang();
+  const approvalLock=useRef(false);
+  const [approvalBusy,setApprovalBusy]=useState(false);
   const safeInsets = useSafeAreaInsets();
   const { user } = useAuth();
   const navigation = useNavigation();
@@ -105,7 +109,7 @@ export default function AIAssistantScreen() {
     setWakeEnabled(enabled);
     await AsyncStorage.setItem('lucyWakeWordEnabled', String(enabled));
     DeviceEventEmitter.emit('lucyWakeWordPreferenceChanged', enabled);
-    setVoiceStatus(enabled ? 'Starting foreground Hey Lucy…' : 'Hey Lucy disabled');
+    setVoiceStatus(enabled ? t("Starting foreground Hey Lucy…") : t("Hey Lucy disabled"));
   };
   const active = useRef(true);
   const generation = useRef(0);
@@ -150,7 +154,7 @@ export default function AIAssistantScreen() {
     conversationActiveRef.current = false;
     setConversationActive(false);
     setIsRecording(false);
-    setVoiceStatus('Microphone interrupted. Tap the microphone to try again.');
+    setVoiceStatus(t("Microphone interrupted. Tap the microphone to try again."));
   }, [recorderError]);
 
   const setConversation = (active: boolean) => {
@@ -161,7 +165,7 @@ export default function AIAssistantScreen() {
     if (active) conversationTimer.current = setTimeout(() => {
       conversationActiveRef.current = false;
       setConversationActive(false);
-      setVoiceStatus('Conversation ended • Say “Hey Lucy” to begin again');
+      setVoiceStatus(t("Conversation ended • Say “Hey Lucy” to begin again"));
     }, 60000);
   };
 
@@ -226,12 +230,12 @@ export default function AIAssistantScreen() {
     if (!current(epoch)) return;
     const preferred = voices.find(voice =>
       /samantha|zira|ava|victoria|female|serena|karen/i.test(`${voice.name} ${voice.identifier}`)
-      && /^en/i.test(voice.language)
-    ) || voices.find(voice => /^en/i.test(voice.language));
+      && voice.language.toLowerCase().startsWith(lang)
+    ) || voices.find(voice => voice.language.toLowerCase().startsWith(lang));
     isSpeaking.current = true;
     const spokenText = text.replace(/[*_#`>-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1800);
     await new Promise<void>(resolve => Speech.speak(spokenText, {
-      language: 'en-US',
+      language: lang==='es'?'es-ES':lang==='fr'?'fr-CA':'en-US',
       voice: preferred?.identifier,
       pitch: 1.0,
       rate: 0.9,
@@ -264,7 +268,7 @@ export default function AIAssistantScreen() {
       if (!data?.ignored && botText) await speakText(approvalId ? `${botText} Please approve or reject the protected action on screen.` : botText);
       if (!current(epoch)) return;
       if (fromVoice && data?.continueListening !== false && !approvalId && conversationActiveRef.current) queueFollowUp();
-      else if (approvalId) setVoiceStatus('Waiting for your approval');
+      else if (approvalId) setVoiceStatus(t("Waiting for your approval"));
     } catch (err: any) {
       if (!current(epoch)) return;
       const errorMsg = err?.response?.data?.message || err?.message || 'Lucy could not complete this request. Please retry.';
@@ -285,8 +289,8 @@ export default function AIAssistantScreen() {
       const result=await FileSystem.downloadAsync(`${API_URL}${item.url}`,`${FileSystem.cacheDirectory}${name}`,{headers:{Authorization:`Bearer ${token}`}});
       if(result.status!==200)throw new Error('Report could not be downloaded');
       if(await Sharing.isAvailableAsync())await Sharing.shareAsync(result.uri,{mimeType:'application/vnd.ms-excel'});
-      else Alert.alert('Report downloaded',result.uri);
-    }catch(e:any){Alert.alert('Report',e.message);}
+      else Alert.alert(t("Report downloaded"),result.uri);
+    }catch(e:any){Alert.alert(t("Report"),e.message);}
   };
   const handleSend = () => {
     if (!input.trim()) return;
@@ -301,7 +305,7 @@ export default function AIAssistantScreen() {
     finishingRecording.current = true;
     if (maximumRecordingTimer.current) clearTimeout(maximumRecordingTimer.current);
     setIsRecording(false);
-    setVoiceStatus('Processing your request…');
+    setVoiceStatus(t("Processing your request…"));
     try {
       const uri = await activeRecording.stop();
       if (!current(epoch) || !uri) return;
@@ -319,15 +323,15 @@ export default function AIAssistantScreen() {
       } else if (conversationActiveRef.current) {
         consecutiveMisses.current += 1;
         if (consecutiveMisses.current < 2) {
-          setVoiceStatus('Still listening…');
+          setVoiceStatus(t("Still listening…"));
           queueFollowUp(500);
         } else {
           setConversation(false);
-          setVoiceStatus('Conversation paused • Say “Hey Lucy” when ready');
+          setVoiceStatus(t("Conversation paused • Say “Hey Lucy” when ready"));
         }
       }
     } catch (err) {
-      if (current(epoch)) Alert.alert('Error', 'Failed to process recording.');
+      if (current(epoch)) Alert.alert(t('Error'), t("Failed to process recording."));
     } finally {
       finishingRecording.current = false;
       heardSpeech.current = false;
@@ -347,7 +351,7 @@ export default function AIAssistantScreen() {
       const permission = await requestRecordingPermissionsAsync();
       if (!current(epoch)) return;
       if (!permission.granted) {
-        Alert.alert('Permission required', 'Please grant microphone access.');
+        Alert.alert(t('Permission required'), t("Please grant microphone access."));
         return;
       }
       await setAudioModeAsync({
@@ -360,12 +364,12 @@ export default function AIAssistantScreen() {
       if (!current(epoch)) { audioRecorder.cancel(); return; }
       if (!started) return;
       setIsRecording(true);
-      setVoiceStatus('Listening… speak now');
+      setVoiceStatus(t("Listening… speak now"));
       heardSpeech.current = false;
       silenceStartedAt.current = null;
       maximumRecordingTimer.current = setTimeout(() => void finishRecording(audioRecorder), 15000);
     } catch (err) {
-      if (current(epoch)) Alert.alert('Error', 'Could not start recording. Please check microphone permissions.');
+      if (current(epoch)) Alert.alert(t('Error'), t("Could not start recording. Please check microphone permissions."));
     } finally {
       startingRecording.current = false;
     }
@@ -391,42 +395,46 @@ export default function AIAssistantScreen() {
       if (err.response?.status === 422) {
         return '';
       } else if (err.response?.status === 500) {
-        Alert.alert('Server Error', 'Voice processing failed. Please try again later.');
+        Alert.alert(t("Server Error"), t("Voice processing failed. Please try again later."));
       } else {
-        Alert.alert('Error', 'Failed to transcribe audio.');
+        Alert.alert(t('Error'), t("Failed to transcribe audio."));
       }
       return '';
     }
   };
 
   const handleApprove = async (approvalId: string) => {
+    if(approvalLock.current)return;
+    approvalLock.current=true;setApprovalBusy(true);
     const epoch = generation.current;
     try {
       const response = await api.post<any>(`/approvals/${approvalId}/approve`);
       if (!current(epoch)) return;
       const action = response?.action as ActionReceipt | undefined;
-      const confirmation = action?.summary || 'The approved action was completed.';
+      const confirmation = action?.summary || t("The approved action was completed.");
       setMessages(prev => [...prev.map(msg => msg.approvalId === approvalId ? { ...msg, approvalId: undefined } : msg), { text: confirmation, isUser: false, actions: action ? [action] : [] }]);
       await speakText(confirmation);
       if (conversationActiveRef.current) queueFollowUp();
     } catch (err) {
-      if (current(epoch)) Alert.alert('Error', 'Could not approve.');
-    }
+      if (current(epoch)) Alert.alert(t('Error'), t("Could not approve."));
+    } finally {approvalLock.current=false;if(current(epoch))setApprovalBusy(false);}
   };
 
   const handleReject = async (approvalId: string) => {
+    if(approvalLock.current)return;
+    approvalLock.current=true;setApprovalBusy(true);
     const epoch = generation.current;
     try {
       await api.post(`/approvals/${approvalId}/reject`);
       if (!current(epoch)) return;
-      Alert.alert('Rejected', 'Action cancelled.');
-      speakText('Action rejected.');
+      Alert.alert(t('Rejected'), t("Action cancelled."));
+      speakText(t("Action rejected."));
       setMessages(prev => prev.map(msg =>
         msg.approvalId === approvalId ? { ...msg, approvalId: undefined } : msg
       ));
     } catch (err) {
-      if (current(epoch)) Alert.alert('Error', 'Could not reject.');
-    }
+      if (current(epoch)) Alert.alert(t('Error'), t("Could not reject."));
+    } finally {approvalLock.current=false;if(current(epoch))setApprovalBusy(false);}
   };
 
   return (
@@ -435,7 +443,7 @@ export default function AIAssistantScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <View style={styles.headerIdentity}><Text style={styles.headerTitle}>Lucy</Text><Text style={[styles.sessionStatus, (conversationActive||wakeStatus==='listening') && styles.sessionStatusLive]}>{conversationActive ? 'CONVERSATION LIVE' : wakeEnabled&&wakeStatus==='listening' ? 'HEY LUCY LISTENING' : wakeEnabled ? 'HEY LUCY STARTING' : 'READY'}</Text></View>
+        <View style={styles.headerIdentity}><Text style={styles.headerTitle}>Lucy</Text><Text style={[styles.sessionStatus, (conversationActive||wakeStatus==='listening') && styles.sessionStatusLive]}>{conversationActive ? t("CONVERSATION LIVE") : wakeEnabled&&wakeStatus==='listening' ? t("HEY LUCY LISTENING") : wakeEnabled ? t("HEY LUCY STARTING") : t("READY")}</Text></View>
         <TouchableOpacity onPress={toggleWakeWord} accessibilityRole="switch" accessibilityState={{checked:wakeEnabled}} style={[styles.wakeToggle,wakeEnabled&&styles.wakeToggleOn]}><MaterialIcons name={wakeEnabled?'hearing':'hearing-disabled'} size={19} color={wakeEnabled?'#071018':'#94A3B8'}/></TouchableOpacity>
       </View>
       <FlatList
@@ -458,15 +466,15 @@ export default function AIAssistantScreen() {
               <View style={styles.approvalRow}>
                 <TouchableOpacity
                   style={[styles.approvalBtn, styles.approveBtn]}
-                  onPress={() => handleApprove(item.approvalId!)}
+                  disabled={approvalBusy} onPress={() => handleApprove(item.approvalId!)}
                 >
-                  <Text style={styles.approvalBtnText}>✅ Approve</Text>
+                  <Text style={styles.approvalBtnText}>{t("✅ Approve")}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.approvalBtn, styles.rejectBtn]}
-                  onPress={() => handleReject(item.approvalId!)}
+                  disabled={approvalBusy} onPress={() => handleReject(item.approvalId!)}
                 >
-                  <Text style={styles.approvalBtnText}>❌ Reject</Text>
+                  <Text style={styles.approvalBtnText}>{t("❌ Reject")}</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -475,7 +483,7 @@ export default function AIAssistantScreen() {
                 <View style={styles.actionHeader}><MaterialIcons name={action.status === 'completed' ? 'check-circle' : action.status === 'pending' ? 'schedule' : action.status === 'failed' ? 'error' : 'insights'} size={19} color={action.status === 'failed' ? '#FF6B6B' : '#67E8F9'} /><Text style={styles.actionTitle}>{action.title}</Text><Text style={styles.actionStatus}>{action.status}</Text></View>
                 <Text style={styles.actionSummary}>{action.summary}</Text>
                 {action.download&&<TouchableOpacity onPress={()=>void downloadAction(action.download!)}><Text style={{color:"#67E8F9",paddingVertical:12}}>{action.download.label}</Text></TouchableOpacity>}
-                {action.status==='pending'&&<TouchableOpacity disabled={loading} onPress={()=>void sendMessage('yes, run it')}><Text style={{color:"#67E8F9",paddingVertical:12}}>Create draft payroll</Text></TouchableOpacity>}
+                {action.status==='pending'&&<TouchableOpacity disabled={loading} onPress={()=>void sendMessage('yes, run it')}><Text style={{color:"#67E8F9",paddingVertical:12}}>{t("Create draft payroll")}</Text></TouchableOpacity>}
                 {action.details?.map((detail: { label: string; value: string | number }, detailIndex: number) => <View key={detailIndex} style={styles.detailRow}><Text style={styles.detailLabel}>{detail.label}</Text><Text style={styles.detailValue}>{String(detail.value)}</Text></View>)}
               </View>
             ))}
@@ -488,7 +496,7 @@ export default function AIAssistantScreen() {
       <View style={styles.inputBar}>
         <TextInput
           style={styles.input}
-          placeholder="Type a command..."
+          placeholder={t("Type a command...")}
           placeholderTextColor="#888"
           value={input}
           onChangeText={setInput}

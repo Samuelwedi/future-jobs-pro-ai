@@ -29,3 +29,24 @@ test('existing active, trial and grace subscriptions block duplicate subscriptio
  for(const status of c.ACTIVE_STATUSES){c.status={status,provider:'apple',currentPeriodEnd:'2099-01-01'};await action('team_10');}
  assert.equal(purchases,0);c.status={status:'active',provider:'apple',currentPeriodEnd:'2000-01-01'};await action('team_10');assert.equal(purchases,1);
 });
+test('payroll request lock rejects overlapping actions, clears old preview and releases after failure',async()=>{
+ const wait=deferred();let calls=0,result='old',notice='';
+ const c={actionLock:{current:false},setBusy(){},setNotice:v=>notice=v,setResult:v=>result=v};
+ const run=handler('PayrollRules','run',c);
+ const first=run(async()=>{calls++;await wait.promise;throw Error('save failed');});
+ await run(async()=>calls++);assert.equal(calls,1);assert.equal(result,null);
+ wait.resolve();await first;assert.equal(notice,'save failed');assert.equal(c.actionLock.current,false);
+ await run(async()=>calls++);assert.equal(calls,2);
+});
+test('payroll failed reload hides old editable data and preview',async()=>{
+ const values={};const c={setResult:v=>values.result=v,setRules:v=>values.rules=v,setMetadata:v=>values.metadata=v,setHistory:v=>values.history=v,api:{get:async()=>{throw Error('offline');}}};
+ const load=handler('PayrollRules','load',c);await assert.rejects(load(),/offline/);
+ assert.equal(values.rules,null);assert.equal(values.metadata,null);assert.equal(values.result,null);assert.equal(values.history.length,0);
+});
+test('Lucy approval and rejection share a lock and allow retry after failure',async()=>{
+ const wait=deferred();let posts=0;
+ const c={approvalLock:{current:false},generation:{current:1},setApprovalBusy(){},current:()=>true,Alert:{alert(){}},t,api:{post:async()=>{posts++;await wait.promise;throw Error('offline');}}};
+ const approve=handler('AIAssistant','handleApprove',c),reject=handler('AIAssistant','handleReject',c);
+ const first=approve('id');await reject('id');assert.equal(posts,1);wait.resolve();await first;
+ assert.equal(c.approvalLock.current,false);await reject('id');assert.equal(posts,2);
+});

@@ -43,7 +43,7 @@ export default function ProfileScreen() {
     finally { setVerificationBusy(false); }
   };
 
-  useFocusEffect(useCallback(()=>{let active=true;api.get<{user:any}>('/users/me').then(r=>{if(active){setCompensation(r.user);setProfilePic(r.user.profile_pic);setProfileError('');}}).catch(()=>{if(active)setProfileError('Pay rate could not be loaded. Try reopening your profile.');});return()=>{active=false;};},[user?.id]));
+  useFocusEffect(useCallback(()=>{let active=true;setCompensation(null);setProfileError('');api.get<{user:any}>('/users/me').then(r=>{if(active){setCompensation(r.user);setProfilePic(r.user.profile_pic);setProfileError('');}}).catch(()=>{if(active)setProfileError('Pay rate could not be loaded. Try reopening your profile.');});return()=>{active=false;};},[user?.id]));
   const [uploading, setUploading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -193,7 +193,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.actionBtn}><View style={{flex:1}}><Text style={styles.userName}>My pay rate</Text><Text style={{color:'#00D4FF',fontSize:20,marginTop:8}}>{compensation?.current_rate == null ? 'Not set - contact your manager' : `$${Number(compensation.current_rate).toFixed(2)}/hr`}</Text>{compensation?.rate_effective_date && <Text style={styles.userEmail}>Effective {String(compensation.rate_effective_date).slice(0,10)}</Text>}<Text style={styles.userEmail}>Payroll uses the rate effective on each work date.</Text>{compensation?.scheduled_rates?.map((r:any,i:number)=><Text key={i} style={styles.userEmail}>Scheduled: ${Number(r.hourly_rate).toFixed(2)}/hr from {String(r.effective_date).slice(0,10)}</Text>)}{profileError?<Text style={{color:'#FF718B'}}>{profileError}</Text>:null}</View></View>
+      <View style={styles.actionBtn}><View style={{flex:1}}><Text style={styles.userName}>My pay rate</Text><Text style={{color:'#00D4FF',fontSize:20,marginTop:8}}>{compensation===null ? (profileError?t('Unavailable'):t('Loading...')) : compensation?.current_rate == null ? 'Not set - contact your manager' : `$${Number(compensation.current_rate).toFixed(2)}/hr`}</Text>{compensation?.rate_effective_date && <Text style={styles.userEmail}>Effective {String(compensation.rate_effective_date).slice(0,10)}</Text>}<Text style={styles.userEmail}>Payroll uses the rate effective on each work date.</Text>{compensation?.scheduled_rates?.map((r:any,i:number)=><Text key={i} style={styles.userEmail}>Scheduled: ${Number(r.hourly_rate).toFixed(2)}/hr from {String(r.effective_date).slice(0,10)}</Text>)}{profileError?<Text style={{color:'#FF718B'}}>{profileError}</Text>:null}</View></View>
       <Text style={styles.sectionTitle}>{t('language')}</Text>
       <View style={styles.languageRow}>
         {(['en','es','fr'] as Lang[]).map(l => (
@@ -293,7 +293,7 @@ export default function ProfileScreen() {
             />
             <TextInput
               style={styles.input}
-              placeholder={t("New Password (min 6 chars)")}
+              placeholder={t("Use 8 to 72 characters with letters and a number or symbol")}
               placeholderTextColor="#888"
               secureTextEntry
               value={newPassword}

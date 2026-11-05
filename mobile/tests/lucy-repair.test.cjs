@@ -71,6 +71,7 @@ test('recorder polling failure clears the old maximum recording timer before ret
   const maximumRecordingTimer = { current: oldTimer };
   const context = vm.createContext({
     recorderError: true,
+    t: value => value,
     active: { current: true },
     maximumRecordingTimer,
     clearTimeout: timer => cleared.push(timer),
