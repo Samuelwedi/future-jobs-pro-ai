@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { sanitizeIncidentContext } from './incidentContext';
 import { collectDiagnosticSnapshot } from './lucyReliabilityService';
 import { pool } from '../config/database';
+import { createPeriodicWorker } from '../utils/periodicWorker';
 export const departments = ['lucy', 'sales', 'support', 'it'] as const;
 export type Department = typeof departments[number];
 const roles: Record<Department,string> = {
@@ -94,8 +95,7 @@ export async function runOwnerOperationsTick() {
 }
 export function startOwnerOperationsWorker() {
  if(process.env.OWNER_OPERATIONS_WORKER !== 'true') return;
- let busy=false;
- const tick=async()=>{if(busy)return;busy=true;try{await runOwnerOperationsTick();}finally{busy=false;}};
- setInterval(()=>void tick().catch(()=>console.error('Owner operations worker unavailable')),60000).unref();
- void tick().catch(()=>console.error('Owner operations worker unavailable'));
+ operationsWorker.start(60000);
 }
+const operationsWorker = createPeriodicWorker(runOwnerOperationsTick, () => console.error('Owner operations worker unavailable'));
+export const stopOwnerOperationsWorker = () => operationsWorker.stop();

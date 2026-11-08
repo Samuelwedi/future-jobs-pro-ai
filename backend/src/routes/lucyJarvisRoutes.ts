@@ -7,7 +7,7 @@ import { searchLucyWork } from '../services/lucyWorkSearch';
 import { manages, CompanyActor } from '../middleware/companyActor';
 import { listLucyPreferences } from '../services/lucyMemoryService';
 import { loadSubscriptionActor,hasCompanyEntitlement } from '../middleware/trialMiddleware';
-import { lucyWorkEnabled, lucyRecordSearchEnabled, lucyWorkModes } from '../services/lucyWorkService';
+import { lucyWorkEnabled, lucyRecordSearchEnabled, lucyWorkBriefingEnabled, lucyWorkModes } from '../services/lucyWorkService';
 import lucyWorkRoutes from './lucyWorkRoutes';
 import lucyMemoryRoutes from './lucyMemoryRoutes';
 import { searchDocuments, profitability } from '../services/operationsCore';
@@ -84,6 +84,7 @@ const availableTools = (current: Actor) => tools.filter(tool => canManage(curren
 function workPanelDescription() {
   const modes=lucyWorkModes();
   return 'In Tasks and preferences, '+(modes.record_search ? 'you can save company-record searches without AI. ' : 'saved company-record search is currently disabled. ')
+    +(modes.work_briefing ? 'You can also request a model-free work briefing with task status and explicit schedule dates. ' : 'Saved work briefings are currently disabled. ')
     +(modes.ai_research ? 'Read-only AI background research is also enabled there. ' : 'AI background research is currently disabled. ')
     +'This chat does not start background jobs.';
 }
@@ -91,8 +92,8 @@ function capabilities(current: Actor) {
   return {
     tools: availableTools(current).filter(tool => tool.name !== 'ignore_ambient_speech').map(tool => ({name:tool.name,description:tool.description,changesRecords:mutationTools.has(tool.name)})),
     scope: canManage(current) ? 'company' : 'personal_and_assigned_work',
-    limitations: ['No autonomous browser or external-app actions',...(lucyWorkEnabled()?[]:['AI background research is disabled for this deployment']),...(lucyRecordSearchEnabled()?[]:['Saved company-record search is disabled for this deployment']),'Background tasks are read-only; saved preferences never grant permissions','No payment execution or tax filing','AI provider is required for open-ended requests'],
-    backgroundResearch:lucyWorkEnabled(),backgroundRecordSearch:lucyRecordSearchEnabled(),workModes:lucyWorkModes(),savedPreferences:true,requestReplay:true,
+    limitations: ['No autonomous browser or external-app actions',...(lucyWorkEnabled()?[]:['AI background research is disabled for this deployment']),...(lucyRecordSearchEnabled()?[]:['Saved company-record search is disabled for this deployment']),...(lucyWorkBriefingEnabled()?[]:['Saved work briefings are disabled for this deployment']),'Background tasks are read-only; saved preferences never grant permissions','No payment execution or tax filing','AI provider is required for open-ended requests'],
+    backgroundResearch:lucyWorkEnabled(),backgroundRecordSearch:lucyRecordSearchEnabled(),backgroundWorkBriefing:lucyWorkBriefingEnabled(),workModes:lucyWorkModes(),savedPreferences:true,requestReplay:true,
     examples: ['Find work: North site','Search company documents: safety policy',...(canManage(current)?['Brief me','Show this pay period']:[])],
   };
 }

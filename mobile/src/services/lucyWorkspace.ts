@@ -1,5 +1,5 @@
 import type {LucyEvidence} from '../utils/lucyEvidence';
-import {buildLucyWorkReport, readLucyWorkModes, type LucyWorkMode, type LucyWorkModes} from '../utils/lucyWorkReport';
+import {buildLucyWorkReport, knownLucyWorkMode, readLucyBriefingOptions, readLucyWorkModes, type LucyBriefingOptions, type LucyWorkMode, type LucyWorkModes} from '../utils/lucyWorkReport';
 import type {LucyReportSharing, TemporaryLucyReport} from './lucyReportSharing';
 
 /** User-operated controls only. Preferences never grant authorization. */
@@ -10,12 +10,12 @@ export const preferenceOptions = {
 } as const;
 export type PreferenceKey = keyof typeof preferenceOptions;
 export type Preference = {key: PreferenceKey; value: string; expiresAt: string};
-export type Work = {id: string; prompt: string; status: 'queued'|'running'|'completed'|'partial'|'failed'|'cancelled'; createdAt: string; updatedAt?: string; completedAt?: string|null; mode?: LucyWorkMode; result?: {text: string; run?: unknown; evidence?: LucyEvidence}|null; error?: string|null};
+export type Work = {id: string; prompt: string; status: 'queued'|'running'|'completed'|'partial'|'failed'|'cancelled'; createdAt: string; updatedAt?: string; completedAt?: string|null; mode?: LucyWorkMode; options?: LucyBriefingOptions; result?: {text: string; run?: unknown; evidence?: LucyEvidence}|null; error?: string|null};
 type Client = {get: (url: string) => Promise<any>; put: (url: string, data: any) => Promise<any>; post: (url: string, data?: any) => Promise<any>; delete: (url: string) => Promise<unknown>};
-export type WorkspaceState = {preferences: Preference[]; jobs: Work[]; enabled: boolean|null; modes: LucyWorkModes|null; mode: LucyWorkMode; ready: boolean; loading: boolean; busy: boolean; error: string; prompt: string; choices: Partial<Record<PreferenceKey,string>>};
+export type WorkspaceState = {preferences: Preference[]; jobs: Work[]; enabled: boolean|null; modes: LucyWorkModes|null; mode: LucyWorkMode; ready: boolean; loading: boolean; busy: boolean; error: string; prompt: string; briefing: LucyBriefingOptions; choices: Partial<Record<PreferenceKey,string>>};
 const root = '/lucy-v2';
 export class LucyWorkspaceController {
-  private state: WorkspaceState = {preferences: [], jobs: [], enabled: null, modes: null, mode: 'ai_research', ready: false, loading: false, busy: false, error: '', prompt: '', choices: {}};
+  private state: WorkspaceState = {preferences: [], jobs: [], enabled: null, modes: null, mode: 'ai_research', ready: false, loading: false, busy: false, error: '', prompt: '', briefing: {from: '', to: '', taskStatus: 'open'}, choices: {}};
   private listeners = new Set<() => void>();
   private active = false;
   private epoch = 0;
@@ -48,7 +48,15 @@ export class LucyWorkspaceController {
     if (this.locked || !this.current() || this.state.modes?.[mode] !== true) return;
     this.selectedMode = mode;
     // Do not truncate a longer draft when switching to a short keyword search.
-    this.patch({mode, enabled: true});
+    this.patch({mode, enabled: true, error: ''});
+  }
+  setBriefing(update: Partial<LucyBriefingOptions>) {
+    if (this.locked || !this.current()) return;
+    const briefing = {...this.state.briefing};
+    if (typeof update.from === 'string') briefing.from = update.from.slice(0,10);
+    if (typeof update.to === 'string') briefing.to = update.to.slice(0,10);
+    if (update.taskStatus && ['open','pending','in_progress','completed','all'].includes(update.taskStatus)) briefing.taskStatus = update.taskStatus;
+    this.patch({briefing, error: ''});
   }
   choose(key: PreferenceKey, value: string) {if (!this.locked) this.patch({choices: {...this.state.choices,[key]: value}});}
   async refresh() {
@@ -98,10 +106,15 @@ export class LucyWorkspaceController {
     });
   }
   create() {
+    if (!this.current() || this.locked || this.state.loading || this.state.enabled !== true || !this.state.modes) return Promise.resolve();
     const prompt = this.state.prompt.trim(), mode = this.state.mode;
-    if (!prompt || this.state.prompt.length > (mode === 'record_search' ? 200 : 4000) || this.state.enabled !== true || !this.state.modes) return Promise.resolve();
+    const options = mode === 'work_briefing' ? readLucyBriefingOptions(this.state.briefing) : null;
+    if (mode === 'work_briefing' && !options) {this.patch({error: 'briefingInvalid'}); return Promise.resolve();}
+    if (mode !== 'work_briefing' && (!prompt || this.state.prompt.length > (mode === 'record_search' ? 200 : 4000))) return Promise.resolve();
     const explicit = this.state.modes.explicit;
-    const identity = JSON.stringify([mode, prompt]);
+    const identity = JSON.stringify([mode, options ?? prompt]);
+    // Never evict an unacknowledged key: an uncertain create may already exist remotely.
+    if (!this.requests.has(identity) && this.requests.size >= 20) {this.patch({error: 'requestLimit'}); return Promise.resolve();}
     return this.mutate(async () => {
       const epoch = this.epoch;
       this.selectedMode = mode;
@@ -110,12 +123,15 @@ export class LucyWorkspaceController {
         requestKey = `mobile-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
         this.requests.set(identity,requestKey);
       }
-      const data = await this.client.post(root + '/work', {prompt,requestKey,...(explicit ? {mode} : {})});
+      const data = await this.client.post(root + '/work', options ? {mode,options,requestKey} : {prompt,requestKey,...(explicit ? {mode} : {})});
+      if (!data?.job || typeof data.job.id !== 'string' || !data.job.id.trim() || data.job.id.length > 200) throw new Error('Invalid work acknowledgement');
       // Retain the key until this session can show the acknowledgement. Hidden/late
       // responses remain retry-safe; a deliberately repeated acknowledged task is new work.
       if (this.current(epoch)) {
         this.requests.delete(identity);
-        this.patch({jobs: [data.job,...this.state.jobs.filter(job => job.id !== data.job.id)],prompt: ''});
+        // Clear acknowledged inputs before releasing the lock so a delayed second tap
+        // cannot start new work. Uncertain or hidden responses never clear the draft.
+        this.patch({jobs: [data.job,...this.state.jobs.filter(job => job.id !== data.job.id)],...(options ? {briefing: {from: '', to: '', taskStatus: 'open'} as LucyBriefingOptions} : {prompt: ''})});
       }
     });
   }
@@ -143,7 +159,7 @@ export class LucyWorkspaceController {
     }, 'shareError');
   }
   cancel(id: string) {
-    if (!this.state.jobs.some(job => job.id === id && ['queued','running'].includes(job.status))) return Promise.resolve();
+    if (!this.state.jobs.some(job => job.id === id && knownLucyWorkMode(job.mode) && ['queued','running'].includes(job.status))) return Promise.resolve();
     return this.mutate(async () => {
       const epoch = this.epoch;
       const data = await this.client.post(root + '/work/' + encodeURIComponent(id) + '/cancel');

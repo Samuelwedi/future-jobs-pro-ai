@@ -7,7 +7,7 @@ import {useLang} from '../context/LanguageContext';
 import {api} from '../services/api';
 import {LucyWorkspaceController, PreferenceKey, preferenceOptions} from '../services/lucyWorkspace';
 import {nativeLucyReportSharing} from '../services/lucyReportSharing';
-import type {LucyWorkMode} from '../utils/lucyWorkReport';
+import {knownLucyWorkMode, lucyBriefingPreview, lucyWorkModeLabel, readLucyBriefingOptions, type LucyBriefingOptions, type LucyWorkMode} from '../utils/lucyWorkReport';
 import LucySourceEvidence from './LucySourceEvidence';
 
 // Uses the existing selected app language; machine preference keys never change.
@@ -27,6 +27,18 @@ const copy: Record<string,[string,string,string]> = {
  saveError:['Could not confirm the change. Your draft is retained; retrying the same research will not create a duplicate.','No se pudo confirmar el cambio. Se conserva el borrador; reintentar la misma investigación no crea duplicados.','Modification non confirmée. Votre brouillon est conservé ; réessayer la même recherche ne crée pas de doublon.'],
  mode:['Research mode','Modo de investigación','Mode de recherche'],
  record_search:['Company-record search (no AI model)','Búsqueda de registros de la empresa (sin modelo de IA)','Recherche de données de l’entreprise (sans modèle d’IA)'],
+ work_briefing:['Work briefing (no AI model)','Resumen de trabajo (sin modelo de IA)','Bilan de travail (sans modèle d’IA)'],
+ briefingHint:['Counts plus up to six oldest tasks and six earliest stored shifts. Dates filter stored shifts only; tasks include all dates. Open means pending or in progress. Due dates are not evaluated. Recurrence rules are not expanded. No AI model is called.','Recuentos y hasta seis tareas más antiguas y seis primeros turnos guardados. Las fechas solo filtran los turnos guardados; las tareas incluyen todas las fechas. Abiertas significa pendientes o en curso. No se evalúan las fechas de vencimiento. No se amplían las reglas de recurrencia. No se utiliza ningún modelo de IA.','Décomptes et au plus six tâches les plus anciennes et six premiers quarts enregistrés. Les dates filtrent uniquement les quarts enregistrés ; les tâches incluent toutes les dates. Ouvertes signifie en attente ou en cours. Les dates d’échéance ne sont pas évaluées. Les règles de récurrence ne sont pas développées. Aucun modèle d’IA n’est utilisé.'],
+ briefingFrom:['Stored shifts from (YYYY-MM-DD)','Turnos guardados desde (AAAA-MM-DD)','Quarts enregistrés à partir du (AAAA-MM-JJ)'],
+ briefingTo:['Stored shifts through (YYYY-MM-DD)','Turnos guardados hasta (AAAA-MM-DD)','Quarts enregistrés jusqu’au (AAAA-MM-JJ)'],
+ briefingStatus:['Task status (all dates)','Estado de las tareas (todas las fechas)','Statut des tâches (toutes dates)'],
+ briefingOpen:['Open (pending or in progress)','Abiertas (pendientes o en curso)','Ouvertes (en attente ou en cours)'],
+ pending:['Pending','Pendientes','En attente'], in_progress:['In progress','En curso','En cours'], all:['All statuses','Todos los estados','Tous les statuts'],
+ briefingInvalid:['Enter valid YYYY-MM-DD dates in order, covering at most 31 days including both dates.','Introduce fechas válidas en formato AAAA-MM-DD, en orden y con un máximo de 31 días, ambos incluidos.','Saisissez des dates valides au format AAAA-MM-JJ, dans l’ordre et sur 31 jours maximum, les deux dates incluses.'],
+ briefingSubmit:['Create work briefing','Crear resumen de trabajo','Créer le bilan de travail'],
+ partialBriefing:['Partial briefing: some records or source details are missing. Counts cover available sections only. The report is labeled incomplete.','Resumen parcial: faltan registros o detalles de las fuentes. Los recuentos solo cubren las secciones disponibles. El informe está marcado como incompleto.','Bilan partiel : des données ou détails des sources manquent. Les décomptes couvrent seulement les sections disponibles. Le rapport est indiqué comme incomplet.'],
+ unavailableJob:['This work mode is unavailable in this app version. Actions are disabled.','Este modo de trabajo no está disponible en esta versión de la app. Las acciones están deshabilitadas.','Ce mode de travail est indisponible dans cette version de l’application. Les actions sont désactivées.'],
+ requestLimit:['Too many unconfirmed requests. Retry a previous request before starting different work.','Hay demasiadas solicitudes sin confirmar. Reintenta una solicitud anterior antes de iniciar un trabajo diferente.','Trop de demandes non confirmées. Réessayez une demande précédente avant de commencer un autre travail.'],
  ai_research:['AI research','Investigación con IA','Recherche avec IA'],
  recordHint:['Search accessible work records and documents with a short keyword query. No AI model is called.','Busca registros y documentos accesibles con una consulta breve de palabras clave. No se utiliza ningún modelo de IA.','Recherchez des données et documents accessibles avec une courte requête par mots-clés. Aucun modèle d’IA n’est utilisé.'],
  aiHint:['Investigate accessible work records with the enabled AI research service.','Investiga registros de trabajo accesibles con el servicio de investigación con IA habilitado.','Analysez les données de travail accessibles avec le service de recherche avec IA activé.'],
@@ -36,6 +48,7 @@ const copy: Record<string,[string,string,string]> = {
  share:['Share report (.txt)','Compartir informe (.txt)','Partager le rapport (.txt)'],
  sharePartial:['Share partial report (.txt)','Compartir informe parcial (.txt)','Partager le rapport partiel (.txt)'],
  sharePolicy:['The report includes your query, result and source excerpts. Choose where to save or share it in your device’s share sheet.','El informe incluye tu consulta, el resultado y extractos de las fuentes. Elige dónde guardarlo o compartirlo en el menú de tu dispositivo.','Le rapport inclut votre requête, le résultat et des extraits des sources. Choisissez où l’enregistrer ou le partager dans le menu de votre appareil.'],
+ briefingSharePolicy:['The report includes your selected dates and task status, the saved briefing and source excerpts. Choose where to save or share it in your device’s share sheet.','El informe incluye las fechas y el estado de las tareas seleccionados, el resumen guardado y extractos de las fuentes. Elige dónde guardarlo o compartirlo en el menú de tu dispositivo.','Le rapport inclut les dates et le statut des tâches sélectionnés, le bilan enregistré et des extraits des sources. Choisissez où l’enregistrer ou le partager dans le menu de votre appareil.'],
  shareError:['Could not prepare or share this report safely. Refresh the task and try again.','No se pudo preparar o compartir este informe de forma segura. Actualiza la tarea y vuelve a intentarlo.','Impossible de préparer ou partager ce rapport en toute sécurité. Actualisez la tâche et réessayez.'],
  shareUnavailable:['File sharing is unavailable on this device.','No se pueden compartir archivos en este dispositivo.','Le partage de fichiers n’est pas disponible sur cet appareil.'],
  partialRecord:['Partial search: some matching records may be missing. The report is labeled incomplete. Narrow the query for more detail.','Búsqueda parcial: pueden faltar registros coincidentes. El informe está marcado como incompleto. Limita la consulta para obtener más detalles.','Recherche partielle : des données correspondantes peuvent manquer. Le rapport est indiqué comme incomplet. Précisez la requête pour plus de détails.'],
@@ -55,6 +68,8 @@ export default function LucyWorkspacePanel({visible,onClose}: {visible:boolean;o
  liveScope.current={scope,available:visible&&focused&&foreground&&Boolean(user?.id)};
  const controller=useMemo(()=>new LucyWorkspaceController(api,nativeLucyReportSharing,()=>liveScope.current.scope===scope&&liveScope.current.available),[user?.id,user?.companyId,user?.role]);
  const state=useSyncExternalStore(controller.subscribe,controller.snapshot,controller.snapshot);
+ const isBriefing=state.mode==='work_briefing';
+ const briefingOptions=readLucyBriefingOptions(state.briefing);
  const promptLimit=state.mode==='record_search'?200:4000;
  const placeholder=label(state.mode==='record_search'?'recordPlaceholder':'placeholder');
  useEffect(()=>{
@@ -88,32 +103,43 @@ export default function LucyWorkspacePanel({visible,onClose}: {visible:boolean;o
     <Text accessibilityRole="header" style={styles.heading}>{label('work')}</Text><Text style={styles.copy}>{label('workPolicy')}</Text>
     {state.enabled!==true?<Text style={styles.copy}>{label(state.enabled===false?'disabled':'unknown')}</Text>:null}
     <Text accessibilityRole="header" style={styles.heading}>{label('mode')}</Text>
-    <View style={styles.choices}>{(['record_search','ai_research'] as LucyWorkMode[]).filter(mode=>mode==='ai_research'||state.modes?.explicit).map(mode=>{
+    <View style={styles.choices}>{(['record_search','work_briefing','ai_research'] as LucyWorkMode[]).filter(mode=>mode==='ai_research'||state.modes?.explicit).map(mode=>{
      const disabled=state.busy||state.loading||state.modes?.[mode]!==true;
      return <TouchableOpacity key={mode} accessibilityRole="radio" accessibilityLabel={label(mode)} accessibilityState={{checked:state.mode===mode,disabled}} disabled={disabled} onPress={()=>controller.setMode(mode)} style={[styles.option,state.mode===mode&&styles.selected,disabled&&styles.disabled]}><Text style={styles.copy}>{label(mode)}</Text></TouchableOpacity>;
     })}</View>
-    <Text style={styles.copy}>{label(state.mode==='record_search'?'recordHint':'aiHint')}</Text>
-    <TextInput accessibilityLabel={placeholder} placeholder={placeholder} placeholderTextColor="#94A3B8" multiline maxLength={promptLimit} value={state.prompt} onChangeText={value=>controller.setPrompt(value)} editable={!state.busy} style={styles.input}/>
-    <Text style={styles.copy}>{state.prompt.length}/{promptLimit}</Text>
-    {state.prompt.length>promptLimit?<Text accessibilityRole="alert" style={styles.error}>{label('tooLong')}</Text>:null}
-    {button(label(state.mode==='record_search'?'recordSubmit':'submit'),()=>void controller.create(),state.busy||state.loading||state.enabled!==true||!state.prompt.trim()||state.prompt.length>promptLimit)}
+    <Text style={styles.copy}>{label(isBriefing?'briefingHint':state.mode==='record_search'?'recordHint':'aiHint')}</Text>
+    {isBriefing?<View>
+     <Text style={styles.copy}>{label('briefingFrom')}</Text>
+     <TextInput accessibilityLabel={label('briefingFrom')} placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" autoCapitalize="none" autoCorrect={false} maxLength={10} value={state.briefing.from} onChangeText={from=>controller.setBriefing({from})} editable={!state.busy} style={[styles.input,styles.dateInput]}/>
+     <Text style={styles.copy}>{label('briefingTo')}</Text>
+     <TextInput accessibilityLabel={label('briefingTo')} placeholder="YYYY-MM-DD" placeholderTextColor="#94A3B8" autoCapitalize="none" autoCorrect={false} maxLength={10} value={state.briefing.to} onChangeText={to=>controller.setBriefing({to})} editable={!state.busy} style={[styles.input,styles.dateInput]}/>
+     <Text style={styles.heading}>{label('briefingStatus')}</Text>
+     <View style={styles.choices}>{(['open','pending','in_progress','completed','all'] as LucyBriefingOptions['taskStatus'][]).map(taskStatus=><TouchableOpacity key={taskStatus} accessibilityRole="radio" accessibilityLabel={`${label('briefingStatus')}: ${label(taskStatus==='open'?'briefingOpen':taskStatus)}`} accessibilityState={{checked:state.briefing.taskStatus===taskStatus,disabled:state.busy}} disabled={state.busy} onPress={()=>controller.setBriefing({taskStatus})} style={[styles.option,state.briefing.taskStatus===taskStatus&&styles.selected,state.busy&&styles.disabled]}><Text style={styles.copy}>{label(taskStatus==='open'?'briefingOpen':taskStatus)}</Text></TouchableOpacity>)}</View>
+     {briefingOptions?<Text style={styles.copy}>{lucyBriefingPreview(briefingOptions,lang)}</Text>:(state.briefing.from||state.briefing.to)?<Text accessibilityRole="alert" style={styles.error}>{label('briefingInvalid')}</Text>:null}
+    </View>:<View>
+     <TextInput accessibilityLabel={placeholder} placeholder={placeholder} placeholderTextColor="#94A3B8" multiline maxLength={promptLimit} value={state.prompt} onChangeText={value=>controller.setPrompt(value)} editable={!state.busy} style={styles.input}/>
+     <Text style={styles.copy}>{state.prompt.length}/{promptLimit}</Text>
+     {state.prompt.length>promptLimit?<Text accessibilityRole="alert" style={styles.error}>{label('tooLong')}</Text>:null}
+    </View>}
+    {button(label(isBriefing?'briefingSubmit':state.mode==='record_search'?'recordSubmit':'submit'),()=>void controller.create(),state.busy||state.loading||state.enabled!==true||(isBriefing?!briefingOptions:!state.prompt.trim()||state.prompt.length>promptLimit))}
     {state.enabled!==null&&!state.jobs.length?<Text style={styles.copy}>{label('empty')}</Text>:null}
     {state.jobs.map(job=><View key={job.id} style={styles.card}>
      <Text selectable style={styles.heading}>{job.prompt}</Text><Text style={styles.copy}>{label(job.status)} · {new Date(job.createdAt).toLocaleString(lang)}</Text>
-     <Text style={styles.copy}>{label(job.mode==='record_search'?'record_search':'ai_research')}</Text>
+     <Text style={styles.copy}>{lucyWorkModeLabel(job.mode,lang)}</Text>
      {job.result?.text?<Text selectable style={styles.copy}>{job.result.text}</Text>:null}
      <LucySourceEvidence evidence={job.result?.evidence} language={lang}/>
-     {job.status==='partial'?<Text accessibilityRole="alert" style={styles.error}>{label(job.mode==='record_search'?'partialRecord':'partialAI')}</Text>:null}
-     {job.status==='completed'||(job.status==='partial'&&job.mode==='record_search')?<View>
-      <Text style={styles.copy}>{label('sharePolicy')}</Text>
+     {!knownLucyWorkMode(job.mode)?<Text style={styles.copy}>{label('unavailableJob')}</Text>:null}
+     {knownLucyWorkMode(job.mode)&&job.status==='partial'?<Text accessibilityRole="alert" style={styles.error}>{label(job.mode==='work_briefing'?'partialBriefing':job.mode==='record_search'?'partialRecord':'partialAI')}</Text>:null}
+     {knownLucyWorkMode(job.mode)&&(job.status==='completed'||(job.status==='partial'&&(job.mode==='record_search'||job.mode==='work_briefing')))?<View>
+      <Text style={styles.copy}>{label(job.mode==='work_briefing'?'briefingSharePolicy':'sharePolicy')}</Text>
       {button(label(job.status==='partial'?'sharePartial':'share'),()=>void controller.shareReport(job,lang,label(job.status==='partial'?'sharePartial':'share')),state.busy||state.loading)}
      </View>:null}
      {job.error?<Text selectable style={styles.error}>{job.error}</Text>:null}
-     {job.status==='queued'||job.status==='running'?button(t('Cancel'),()=>void controller.cancel(job.id),state.busy):null}
+     {knownLucyWorkMode(job.mode)&&(job.status==='queued'||job.status==='running')?button(t('Cancel'),()=>void controller.cancel(job.id),state.busy):null}
     </View>)}
     {button(t('Refresh'),()=>void controller.refresh(),state.busy||state.loading)}
    </ScrollView>
   </View>
  </AdaptiveModal>;
 }
-const styles=StyleSheet.create({panel:{flex:1,backgroundColor:'#0A1520',paddingHorizontal:18},header:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},title:{color:'#FFF',fontSize:23,fontWeight:'700',flexShrink:1},heading:{color:'#FFF',fontSize:17,fontWeight:'600',marginVertical:8},content:{paddingBottom:30},copy:{color:'#CBD5E1',fontSize:15,lineHeight:22,marginVertical:4},card:{backgroundColor:'#172432',borderRadius:12,padding:14,marginVertical:8},choices:{flexDirection:'row',flexWrap:'wrap',gap:8},option:{minHeight:44,paddingHorizontal:12,paddingVertical:6,borderWidth:1,borderColor:'#64748B',borderRadius:8,justifyContent:'center'},selected:{borderColor:'#67E8F9',backgroundColor:'#164E63'},button:{minHeight:48,padding:12,justifyContent:'center'},buttonText:{color:'#67E8F9',fontSize:16,fontWeight:'600'},disabled:{opacity:.45},error:{color:'#FDA4AF',lineHeight:21,marginVertical:8},input:{minHeight:100,backgroundColor:'#172432',color:'#FFF',padding:14,borderRadius:10,fontSize:16,textAlignVertical:'top',marginVertical:10}});
+const styles=StyleSheet.create({panel:{flex:1,backgroundColor:'#0A1520',paddingHorizontal:18},header:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},title:{color:'#FFF',fontSize:23,fontWeight:'700',flexShrink:1},heading:{color:'#FFF',fontSize:17,fontWeight:'600',marginVertical:8},content:{paddingBottom:30},copy:{color:'#CBD5E1',fontSize:15,lineHeight:22,marginVertical:4},card:{backgroundColor:'#172432',borderRadius:12,padding:14,marginVertical:8},choices:{flexDirection:'row',flexWrap:'wrap',gap:8},option:{minHeight:44,paddingHorizontal:12,paddingVertical:6,borderWidth:1,borderColor:'#64748B',borderRadius:8,justifyContent:'center'},selected:{borderColor:'#67E8F9',backgroundColor:'#164E63'},button:{minHeight:48,padding:12,justifyContent:'center'},buttonText:{color:'#67E8F9',fontSize:16,fontWeight:'600'},disabled:{opacity:.45},error:{color:'#FDA4AF',lineHeight:21,marginVertical:8},dateInput:{minHeight:48},input:{minHeight:100,backgroundColor:'#172432',color:'#FFF',padding:14,borderRadius:10,fontSize:16,textAlignVertical:'top',marginVertical:10}});

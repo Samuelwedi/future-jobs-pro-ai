@@ -97,3 +97,30 @@ test('native adapter rejects unsafe filenames before creating files and globally
  const active=first.share('First');await assert.rejects(second.share('Second'),/shareError/);assert.equal(h.calls.filter(call=>call[0]==='share').length,1);
  wait.resolve();await active;await second.share('Second');assert.equal(h.calls.filter(call=>call[0]==='share').length,2);first.cleanup();second.cleanup();
 });
+
+const briefingJob=()=>{
+ const value=job();value.mode='work_briefing';value.options={from:'2026-11-01',to:'2026-11-30',taskStatus:'open'};value.prompt=reportUtils.lucyBriefingPrompt(value.options);
+ value.result.run.steps=[{tool:'briefing_tasks',status:'completed'},{tool:'briefing_schedules',status:'completed'}];return value;
+};
+test('briefing shares only after explicit request, use existing temporary .txt path, and lock date/status controls',async()=>{
+ for(const partial of [false,true]){
+  const value=briefingJob();if(partial){value.status='partial';value.result.run.status='partial';value.result.run.stopReason='retrieval_limits';value.result.evidence.incomplete=true;}
+  const wait=deferred(),h=await setup({job:value,file:{share:()=>wait.promise}});h.client.get=async url=>url.endsWith('/work')?{enabled:false,modes:{ai_research:false,record_search:true,work_briefing:true},jobs:[value]}:{preferences:[]};await h.c.refresh();h.c.setMode('work_briefing');h.c.setBriefing(value.options);
+  assert.equal(h.calls.length,0);const pending=h.c.shareReport(value,'es','Compartir informe (.txt)');await flush();h.c.setBriefing({taskStatus:'all',from:'2026-11-20'});h.c.setMode('record_search');await h.c.create();await h.c.cancel(value.id);
+  assert.equal(h.c.snapshot().briefing.from,'2026-11-01');assert.equal(h.c.snapshot().briefing.taskStatus,'open');assert.equal(h.c.snapshot().mode,'work_briefing');
+  assert.deepEqual(h.calls.map(call=>call[0]),['available','create']);const report=h.calls[1][1];assert.match(report.filename,partial?/-work-briefing-partial-/:/-work-briefing-/);assert.match(report.text,/RESUMEN DE TRABAJO DE LUCY/);assert.equal(report.bytes,Buffer.byteLength(report.text));
+  h.c.close();assert.equal(h.calls.filter(call=>call[0]==='cleanup').length,0);wait.resolve();await pending;assert.equal(h.calls.filter(call=>call[0]==='cleanup').length,1);assert.equal(h.c.snapshot().busy,false);
+ }
+});
+test('invalid briefing reports fail before native storage or sharing and still release the controller lock',async()=>{
+ for(const change of [v=>{v.options.taskStatus='overdue';},v=>{v.prompt='different prompt';},v=>{v.result.run.steps[1].status='failed';},v=>{v.result.evidence.sources=Array(7).fill(v.result.evidence.sources[0]);},v=>{v.result.text='😀'.repeat(40000);}]){
+  const value=briefingJob();change(value);const h=await setup({job:value});await h.c.shareReport(value);assert.equal(h.calls.length,0);assert.equal(h.c.snapshot().error,'shareError');assert.equal(h.c.snapshot().busy,false);h.c.close();
+ }
+});
+test('briefing share cannot revive across close/reopen or render-time scope loss, even after file creation',async()=>{
+ for(const stage of ['available','create'])for(const close of [false,true]){
+  const wait=deferred(),value=briefingJob(),h=await setup({job:value,sharing:stage==='available'?{isAvailable:()=>wait.promise}:{createTemporary:()=>wait.promise}});
+  const pending=h.c.shareReport(value);await flush();if(close){h.c.close();h.c.open();}else h.scope.current=false;
+  wait.resolve(stage==='available'?true:h.file);await pending;await flush();assert.equal(h.calls.filter(call=>call[0]==='share').length,0);assert.equal(h.calls.filter(call=>call[0]==='cleanup').length,stage==='create'?1:0);h.c.close();
+ }
+});

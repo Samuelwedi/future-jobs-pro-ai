@@ -1,4 +1,5 @@
 import { pool } from '../config/database';
+import { createPeriodicWorker } from '../utils/periodicWorker';
 const repository = 'Samuelwedi/future-jobs-pro-ai';
 const branch = 'fix/tester-release-20261022';
 const workflow = 'lucy-repair.yml';
@@ -89,7 +90,7 @@ export async function runOwnerRepairTick() {
 }
 export function startOwnerRepairWorker() {
  if(!repairEnabled())return;
- let busy=false;
- const tick=async()=>{if(busy)return;busy=true;try{await runOwnerRepairTick();}catch{console.error('Lucy repair worker unavailable');}finally{busy=false;}};
- setInterval(()=>void tick(),30000).unref();void tick();
+ repairWorker.start(30000);
 }
+const repairWorker = createPeriodicWorker(runOwnerRepairTick, () => console.error('Lucy repair worker unavailable'));
+export const stopOwnerRepairWorker = () => repairWorker.stop();

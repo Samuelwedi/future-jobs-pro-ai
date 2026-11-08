@@ -1,11 +1,11 @@
 import crypto from 'node:crypto';
 import { pool, checkDatabaseHealth, databasePoolStats } from '../config/database';
 import { runtimeMetrics } from '../observability/runtimeMetrics';
+import { createPeriodicWorker } from '../utils/periodicWorker';
 
 type Severity = 'info' | 'warning' | 'critical';
 type IncidentInput = { component: string; severity: Severity; summary: string; details?: Record<string, unknown> };
 
-let monitorTimer: NodeJS.Timeout | undefined;
 let consecutiveUnhealthy = 0;
 
 function fingerprint(input: IncidentInput): string {
@@ -73,10 +73,10 @@ async function monitorTick() {
   }
 }
 
+const monitor = createPeriodicWorker(monitorTick, () => console.error('Lucy reliability monitor unavailable'));
+export const stopLucyReliabilityMonitor = () => monitor.stop();
 export function startLucyReliabilityMonitor() {
-  if (process.env.LUCY_RELIABILITY_MONITOR !== 'true' || monitorTimer) return;
+  if (process.env.LUCY_RELIABILITY_MONITOR !== 'true') return;
   const intervalMs = Math.max(15000, Number.parseInt(process.env.LUCY_DIAGNOSTIC_INTERVAL_MS || '60000', 10));
-  monitorTimer = setInterval(() => void monitorTick(), intervalMs);
-  monitorTimer.unref();
-  void monitorTick();
+  monitor.start(intervalMs);
 }

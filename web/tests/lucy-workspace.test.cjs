@@ -9,22 +9,22 @@ function handler(name,context){
 }
 test('workspace mutation lock blocks duplicate taps and releases after a failed request',async()=>{
  let calls=0,reject;const errors=[];const lock={current:false};
- const run=handler('mutate',{lock,epoch:{current:1},reads:{current:0},current:()=>true,setBusy:()=>{},setLoading:()=>{},setError:e=>errors.push(e),setNotice:()=>{}});
+ const run=handler('mutate',{lock,renderedEpoch:1,epoch:{current:1},reads:{current:0},current:()=>true,setBusy:()=>{},setLoading:()=>{},setError:e=>errors.push(e),setNotice:()=>{}});
  const work=()=>{calls++;return new Promise((_,r)=>reject=r);};const first=run(work);await run(work);assert.equal(calls,1);reject(new Error('Not confirmed'));await first;assert.equal(lock.current,false);assert.ok(errors.includes('Not confirmed'));
 });
 test('late mutation from old view cannot release a newer view lock',async()=>{
  let resolve;const lock={current:false},epoch={current:1};
- const run=handler('mutate',{lock,epoch,reads:{current:0},current:g=>g===epoch.current,setBusy:()=>{},setLoading:()=>{},setError:()=>{},setNotice:()=>{}});
+ const run=handler('mutate',{lock,renderedEpoch:1,epoch,reads:{current:0},current:g=>g===epoch.current,setBusy:()=>{},setLoading:()=>{},setError:()=>{},setNotice:()=>{}});
  const first=run(()=>new Promise(r=>resolve=r));epoch.current=2;lock.current=true;resolve();await first;assert.equal(lock.current,true);
 });
 test('unchanged background prompt reuses request key after uncertain failure',async()=>{
- const pending={current:null};let ids=0,calls=0;const keys=[];
- const run=handler('start',{mutate:fn=>fn(),prompt:' Investigate North ',promptLimit:200,enabled:true,mode:'record_search',modes:{explicit:true},view:{current:{mode:'record_search'}},isSample:false,epoch:{current:1},current:()=>true,pending,crypto:{randomUUID:()=>`key-${++ids}`},client:{post:async(_path,body)=>{keys.push(body.requestKey);if(calls++===0)throw new Error('Lost response');return {job:{id:'job'}};}},setJobs:()=>{},setPrompt:()=>{},setNotice:()=>{}});
- await assert.rejects(run(),/Lost response/);await run();assert.deepEqual(keys,['key-1','key-1']);assert.equal(pending.current,null);
+ const pending={current:new Map()};let ids=0,calls=0;const keys=[];
+ const run=handler('start',{mutate:fn=>fn(),prompt:' Investigate North ',promptLimit:200,enabled:true,mode:'record_search',modes:{explicit:true},view:{current:{mode:'record_search',inputIdentity:'input',enabled:true}},renderedEpoch:1,inputIdentity:'input',briefingOptions:null,isSample:false,epoch:{current:1},current:()=>true,pending,crypto:{randomUUID:()=>`key-${++ids}`},client:{post:async(_path,body)=>{keys.push(body.requestKey);if(calls++===0)throw new Error('Lost response');return {job:{id:'job'}};}},setJobs:()=>{},setPrompt:()=>{},setNotice:()=>{}});
+ await assert.rejects(run(),/Lost response/);await run();assert.deepEqual(keys,['key-1','key-1']);assert.equal(pending.current.size,0);
 });
-test('editing a pending prompt invalidates its idempotency key but locked edits do not',()=>{
- const pending={current:{prompt:'North',requestKey:'same'}},lock={current:false};let value='North';
- const run=handler('changePrompt',{lock,pending,setPrompt:next=>value=next});run('South');assert.equal(pending.current,null);assert.equal(value,'South');lock.current=true;run('West');assert.equal(value,'South');
+test('editing a prompt updates the displayed identity without discarding uncertain keys, while locked edits do nothing',()=>{
+ const pending={current:new Map([['North','same']])},lock={current:false};let value='North';
+ const run=handler('changePrompt',{lock,pending,view:{current:{mode:'record_search'}},setPrompt:next=>value=next});run('South');assert.equal(pending.current.get('North'),'same');assert.equal(value,'South');lock.current=true;run('West');assert.equal(value,'South');
 });
 test('late refresh cannot replace state after a mutation invalidated the read',async()=>{
  let release;const reads={current:0};let updates=0;
