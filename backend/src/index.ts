@@ -1,5 +1,7 @@
 import { startOwnerRepairWorker } from './services/ownerRepairService';
-import lucyJarvisRoutes from './routes/lucyJarvisRoutes';
+import lucyJarvisRoutes, { runLucyBackgroundResearch } from './routes/lucyJarvisRoutes';
+import { configureLucyWorkProcessor,startLucyWorkWorker } from './services/lucyWorkService';
+configureLucyWorkProcessor(runLucyBackgroundResearch);
 // ============================================
 // FUTURE JOBS PRO AI â€“ MAIN SERVER
 // Created by: Samuel B.
@@ -861,6 +863,7 @@ app.set('io', io);
 
 server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   startLucyReliabilityMonitor();
+  startLucyWorkWorker();
   startOwnerOperationsWorker();
 startOwnerRepairWorker();
   if(process.env.OPERATIONS_REPORT_WORKER==='true'){

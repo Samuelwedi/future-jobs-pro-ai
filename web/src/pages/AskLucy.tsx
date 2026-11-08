@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Avatar, Box, Button, Chip, CircularProgress, IconButton, List, ListItem, ListItemAvatar, ListItemText, Paper, Stack, TextField, Typography } from '@mui/material';
 import { CheckCircle, Mic, Send, SmartToy, StopCircle } from '@mui/icons-material';
 import { api, API_BASE } from '../services/api';
+import LucyWorkspacePanel from '../components/LucyWorkspacePanel';
 import { LucyWakeControl } from '../components/LucyWakeControl';
 import { speakAsLucy } from '../utils/lucySpeech';
 type Detail = { label: string; value: string | number };
@@ -28,6 +29,7 @@ export default function AskLucy({initialPrompt = ''}: {initialPrompt?:string}) {
   const [input, setInput] = useState(initialPrompt);
   useEffect(()=>setInput(initialPrompt),[initialPrompt]);
   const [loading, setLoading] = useState(false);
+  const [workspaceOpen,setWorkspaceOpen]=useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [error, setError] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
@@ -52,7 +54,7 @@ export default function AskLucy({initialPrompt = ''}: {initialPrompt?:string}) {
     if (fromVoice) setVoiceState('thinking');
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/api/lucy-v2`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ message, channel: fromVoice ? 'voice' : 'text' }) });
+      const response = await fetch(`${API_BASE}/api/lucy-v2`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ message, channel: fromVoice ? 'voice' : 'text', language:'en' }) });
       const data = await response.json(); if (!response.ok) throw new Error(data.message || `Lucy returned ${response.status}`);
       const text = data.text || "I completed the request but didn't receive a summary.";
       const action: LucyAction | undefined = data.action || data.actions?.[0] || (data.approvalId ? { type: 'approval', title: 'Approval required', status: 'pending_approval', approvalId: data.approvalId } : undefined);
@@ -100,6 +102,8 @@ export default function AskLucy({initialPrompt = ''}: {initialPrompt?:string}) {
   return <Box sx={{ bgcolor: '#070B10', minHeight: '100vh', py: 4, display: 'flex', justifyContent: 'center' }}><Box sx={{ width: '100%', maxWidth: 960, px: 2, display: 'flex', flexDirection: 'column', height: '82vh' }}>
     <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 850, mb: 1, textAlign: 'center' }}><SmartToy sx={{ mr: 1, verticalAlign: 'middle' }} />Ask Lucy</Typography>
     <Typography variant="body2" sx={{ color: '#8FA5B8', mb: 2, textAlign: 'center' }}>Your voice-first workforce command centre. Lucy explains every action and asks before protected operations.</Typography>
+    <Box sx={{textAlign:'center',mb:1}}><Button onClick={()=>setWorkspaceOpen(true)}>Tasks and preferences</Button></Box>
+    <LucyWorkspacePanel open={workspaceOpen} onClose={()=>setWorkspaceOpen(false)}/>
     <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}><LucyWakeControl suspended={voiceBusy} onWake={() => void startVoice(true)} /></Box>
     {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
     {voiceBusy && <Chip label={{ greeting: 'Lucy is responding', listening: 'Listening for your command', thinking: 'Lucy is working', speaking: 'Lucy is reporting back' }[voiceState]} color="info" sx={{ alignSelf: 'center', mb: 1 }} />}

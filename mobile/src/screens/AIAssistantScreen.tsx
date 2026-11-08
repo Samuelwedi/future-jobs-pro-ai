@@ -1,3 +1,4 @@
+import LucyWorkspacePanel from '../components/LucyWorkspacePanel';
 import { useLang } from '../context/LanguageContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useRef, useEffect } from 'react';
@@ -46,6 +47,7 @@ const LUCY_RECORDING_OPTIONS = {
 
 export default function AIAssistantScreen() {
   const {lang,t}=useLang();
+  const [workspaceVisible,setWorkspaceVisible]=useState(false);
   const approvalLock=useRef(false);
   const [approvalBusy,setApprovalBusy]=useState(false);
   const safeInsets = useSafeAreaInsets();
@@ -257,7 +259,7 @@ export default function AIAssistantScreen() {
     setMessages(prev => [...prev, { text: text.trim(), isUser: true }]);
     setLoading(true);
     try {
-      const data = await api.post<any>('/lucy-v2', { message: text.trim(), conversationMode: conversationActiveRef.current });
+      const data = await api.post<any>('/lucy-v2', { message: text.trim(), conversationMode: conversationActiveRef.current, language: lang });
       if (!current(epoch)) return;
       const botText = data?.text || data?.[0]?.text || t("I'm not sure how to respond to that.");
       const approvalId = data?.approvalId || null;
@@ -446,6 +448,8 @@ export default function AIAssistantScreen() {
         <View style={styles.headerIdentity}><Text style={styles.headerTitle}>Lucy</Text><Text style={[styles.sessionStatus, (conversationActive||wakeStatus==='listening') && styles.sessionStatusLive]}>{conversationActive ? t("CONVERSATION LIVE") : wakeEnabled&&wakeStatus==='listening' ? t("HEY LUCY LISTENING") : wakeEnabled ? t("HEY LUCY STARTING") : t("READY")}</Text></View>
         <TouchableOpacity onPress={toggleWakeWord} accessibilityRole="switch" accessibilityState={{checked:wakeEnabled}} style={[styles.wakeToggle,wakeEnabled&&styles.wakeToggleOn]}><MaterialIcons name={wakeEnabled?'hearing':'hearing-disabled'} size={19} color={wakeEnabled?'#071018':'#94A3B8'}/></TouchableOpacity>
       </View>
+      <TouchableOpacity accessibilityRole="button" onPress={()=>setWorkspaceVisible(true)} style={{paddingHorizontal:20,paddingVertical:12}}><Text style={{color:'#67E8F9',fontSize:16}}>{lang==='es'?'Preferencias e investigación':lang==='fr'?'Préférences et recherche':'Preferences & research'}</Text></TouchableOpacity>
+      <LucyWorkspacePanel visible={workspaceVisible} onClose={()=>setWorkspaceVisible(false)}/>
       <FlatList
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
