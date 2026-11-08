@@ -19,7 +19,7 @@ test('late mutation from old view cannot release a newer view lock',async()=>{
 });
 test('unchanged background prompt reuses request key after uncertain failure',async()=>{
  const pending={current:null};let ids=0,calls=0;const keys=[];
- const run=handler('start',{mutate:fn=>fn(),prompt:' Investigate North ',enabled:true,epoch:{current:1},current:()=>true,pending,crypto:{randomUUID:()=>`key-${++ids}`},api:{post:async(_path,body)=>{keys.push(body.requestKey);if(calls++===0)throw new Error('Lost response');return {job:{id:'job'}};}},setJobs:()=>{},setPrompt:()=>{},setNotice:()=>{}});
+ const run=handler('start',{mutate:fn=>fn(),prompt:' Investigate North ',enabled:true,isSample:false,epoch:{current:1},current:()=>true,pending,crypto:{randomUUID:()=>`key-${++ids}`},client:{post:async(_path,body)=>{keys.push(body.requestKey);if(calls++===0)throw new Error('Lost response');return {job:{id:'job'}};}},setJobs:()=>{},setPrompt:()=>{},setNotice:()=>{}});
  await assert.rejects(run(),/Lost response/);await run();assert.deepEqual(keys,['key-1','key-1']);assert.equal(pending.current,null);
 });
 test('editing a pending prompt invalidates its idempotency key but locked edits do not',()=>{
@@ -29,11 +29,11 @@ test('editing a pending prompt invalidates its idempotency key but locked edits 
 test('late refresh cannot replace state after a mutation invalidated the read',async()=>{
  let release;const reads={current:0};let updates=0;
  const promise=new Promise(r=>release=r);
- const run=handler('refresh',{lock:{current:false},current:()=>true,refreshing:{current:null},reads,setLoading:()=>{},api:{get:()=>promise},setJobs:()=>updates++,setEnabled:()=>updates++,setPreferences:()=>updates++,setError:()=>updates++});
+ const run=handler('refresh',{lock:{current:false},current:()=>true,refreshing:{current:null},reads,setLoading:()=>{},client:{get:()=>promise},setJobs:()=>updates++,setEnabled:()=>updates++,setPreferences:()=>updates++,setError:()=>updates++});
  const refresh=run(1);reads.current++;release({jobs:[],enabled:true,preferences:[],options:{}});await refresh;assert.equal(updates,0);
 });
 test('slow workspace reads are single-flight and settle initial loading',async()=>{
  let release,calls=0,updates=0;const loading=[],refreshing={current:null};const promise=new Promise(r=>release=r);
- const run=handler('refresh',{lock:{current:false},current:()=>true,refreshing,reads:{current:0},setLoading:value=>loading.push(value),api:{get:()=>{calls++;return promise;}},setJobs:()=>updates++,setEnabled:()=>updates++,setPreferences:()=>updates++,setError:()=>{}});
+ const run=handler('refresh',{lock:{current:false},current:()=>true,refreshing,reads:{current:0},setLoading:value=>loading.push(value),client:{get:()=>{calls++;return promise;}},setJobs:()=>updates++,setEnabled:()=>updates++,setPreferences:()=>updates++,setError:()=>{}});
  const first=run(1,true);await run(1);await run(1);assert.equal(calls,2);release({jobs:[],enabled:true,preferences:[],options:{}});await first;assert.equal(updates,3);assert.equal(refreshing.current,null);assert.equal(loading.at(-1),false);
 });

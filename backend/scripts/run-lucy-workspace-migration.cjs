@@ -6,6 +6,8 @@ async function migrate(client){
  try{
   await client.query("SET LOCAL lock_timeout='10s'");
   await client.query("SET LOCAL statement_timeout='60s'");
+  // Fail before schema changes if the database cannot support Unicode retrieval.
+  await client.query("SELECT normalize('é', NFKD)");
   for(const file of files){
    // These additive schema files have top-level transaction wrappers only.
    const sql=fs.readFileSync(path.join(__dirname,'../migrations',file),'utf8').replace(/^\s*(BEGIN|COMMIT);\s*$/gm,'');

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { Box, Button, Chip, Container, Grid, LinearProgress, Paper, Stack, Typography } from '@mui/material';
 import { ArrowBack, ArrowForward, AutoAwesome, CameraAlt, CheckCircle, LocationOn, Mic, Schedule, Shield } from '@mui/icons-material';
+import LucyWorkspacePanel from '../components/LucyWorkspacePanel';
+import {createLucySampleWorkspace} from '../demo/lucySampleWorkspace';
 
 type ViewKey = 'operations' | 'evidence' | 'lucy';
 const views: Array<{ key: ViewKey; label: string; icon: React.ReactNode }> = [
@@ -50,9 +52,13 @@ function EvidenceView() {
 }
 
 function LucyView() {
+  const [workspaceOpen,setWorkspaceOpen] = useState(false);
+  const [sampleWorkspace] = useState(()=>createLucySampleWorkspace());
   return <><Stack direction="row" spacing={1.5} alignItems="center"><Box sx={{ width: 50, height: 50, display: 'grid', placeItems: 'center', borderRadius: 3, bgcolor: 'rgba(196,155,255,.17)', color: '#E9D8FF' }}><AutoAwesome /></Box><Box><Eyebrow>LUCY AI OPERATIONS ASSISTANT</Eyebrow><Typography variant="h5" fontWeight={900}>A useful next step, not another dashboard</Typography></Box></Stack>
     <Paper sx={{ mt: 2.5, p: 2.4, bgcolor: 'rgba(196,155,255,.09)', border: '1px solid rgba(196,155,255,.25)', borderRadius: 3 }}><Typography sx={{ color: '#E9D8FF', fontWeight: 900 }}>Lucy’s field briefing</Typography><Typography sx={{ color: '#B7A9C9', lineHeight: 1.75, mt: 1 }}>The west entrance photo is missing, two crew members approach overtime at 3:30 PM, and tomorrow’s delivery has no confirmation document.</Typography></Paper>
     <Grid container spacing={1.5} sx={{ mt: .5 }}>{[['Evidence gap','Capture west entrance before clock-out',72],['Overtime risk','Review Crew 3 before 3:30 PM',86],['Schedule check','Attach delivery confirmation',58]].map(([title,copy,value]) => <Grid item xs={12} md={4} key={String(title)}><Paper sx={{ p: 2, bgcolor: '#10253D', border: '1px solid #294762', borderRadius: 3 }}><Typography fontWeight={900}>{title}</Typography><Typography sx={{ color: '#8398AE', minHeight: 38, fontSize: 11, mt: .5 }}>{copy}</Typography><LinearProgress variant="determinate" value={Number(value)} sx={{ mt: 1.5, height: 5, borderRadius: 5, bgcolor: '#1A334C', '& .MuiLinearProgress-bar': { bgcolor: '#C49BFF' } }} /></Paper></Grid>)}</Grid>
+    <Box sx={{mt:2.5}}><Button variant="contained" onClick={()=>setWorkspaceOpen(true)} sx={{bgcolor:'#6FE7FF',color:'#06101D'}}>Try sample Lucy workspace</Button><Typography sx={{color:'#9EB0C4',fontSize:12,mt:1}}>Try tasks, sources, and saved preferences. In-memory simulation only: no AI model, API calls, or real changes.</Typography></Box>
+    <LucyWorkspacePanel open={workspaceOpen} onClose={()=>setWorkspaceOpen(false)} sampleWorkspace={sampleWorkspace}/>
   </>;
 }
 
