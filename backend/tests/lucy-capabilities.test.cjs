@@ -18,7 +18,8 @@ const request=async(path,user=owner,message)=>{
 };
 before(async()=>{
   await db.exec(`
-    CREATE TABLE users(id uuid primary key,company_id uuid,role text,is_active boolean default true,full_name text,first_name text,last_name text,email text);
+    CREATE TABLE companies(id uuid primary key,is_active boolean default true,subscription_status text default 'active',subscription_tier text default 'professional',subscription_provider text,subscription_current_period_end timestamptz,subscription_expires_at timestamptz);
+    CREATE TABLE users(id uuid primary key,company_id uuid,role text,is_active boolean default true,must_change_password boolean default false,full_name text,first_name text,last_name text,email text);
     CREATE TABLE projects(id uuid primary key,company_id uuid,name text,client_name text,status text);
     CREATE TABLE tasks(id uuid primary key default gen_random_uuid(),company_id uuid,assigned_to uuid,description text,status text,created_at timestamptz default now());
     CREATE TABLE shifts(id uuid primary key,project_id uuid,name text,date date,start_time time,end_time time);
@@ -27,12 +28,14 @@ before(async()=>{
     CREATE TABLE lucy_conversations(id uuid default gen_random_uuid(),user_id uuid,company_id uuid,role text,content text,created_at timestamptz default now());
     CREATE TABLE command_events(company_id uuid,actor_id uuid,kind text,title text,details jsonb);
   `);
+  await query('INSERT INTO companies(id) VALUES($1),($2)',[company,other]);
+  await db.exec(require('node:fs').readFileSync(require('node:path').join(__dirname,'../migrations/20261108_lucy_request_ledger.sql'),'utf8'));
   for(const [user,tenant,role,name] of [[owner,company,'owner','Owner'],[employee,company,'employee','Alex'],[coworker,company,'employee','Blair'],[outsider,other,'owner','Other']])await query('INSERT INTO users(id,company_id,role,full_name) VALUES($1,$2,$3,$4)',[user,tenant,role,name]);
   for(const [project,tenant,name] of [[id(21),company,'North site'],[id(22),company,'North secret'],[id(23),other,'North foreign']])await query("INSERT INTO projects VALUES($1,$2,$3,'Customer','active')",[project,tenant,name]);
   for(const [task,tenant,user,description] of [[id(31),company,employee,'North assigned'],[id(32),company,coworker,'North coworker'],[id(33),other,outsider,'North foreign'],[id(34),company,employee,'100% complete']])await query("INSERT INTO tasks(id,company_id,assigned_to,description,status) VALUES($1,$2,$3,$4,'pending')",[task,tenant,user,description]);
   for(const [shift,project,name] of [[id(41),id(21),'North morning'],[id(42),id(22),'North restricted'],[id(43),id(23),'North foreign']])await query("INSERT INTO shifts VALUES($1,$2,$3,'2026-11-09','09:00','17:00')",[shift,project,name]);
   await query('INSERT INTO shift_assignments VALUES($1,$2)',[id(41),employee]);
-  pool.query=query;
+  pool.query=query;pool.connect=async()=>({query,release(){}});
   inference.lucyInferenceReady=()=>false;
   const app=express();app.use(express.json());app.use('/lucy',require('../dist/routes/lucyJarvisRoutes').default);
   server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));base=`http://127.0.0.1:${server.address().port}`;
@@ -61,7 +64,7 @@ test('capability discovery is authenticated, role-filtered, and honest about mis
   const worker=await request('/lucy/capabilities',employee);assert.equal(worker.status,200);assert.ok(!worker.data.tools.some(x=>x.name==='create_task'));assert.match(worker.data.limitations.join(' '),/No autonomous browser/);
 });
 test('work search and capability help run without any model provider',async()=>{
-  const result=await request('/lucy',employee,'Find work: North');assert.equal(result.status,200);assert.equal(result.data.search.records.length,3);assert.doesNotMatch(result.data.text,/foreign|coworker/);
+  const result=await request('/lucy',employee,'Find work: North');assert.equal(result.status,200);assert.equal(result.data.search.records.length,3);assert.doesNotMatch(result.data.text,/foreign|coworker/);assert.equal(result.data.evidence.sources.length,3);assert.ok(result.data.evidence.sources.every(source=>!source.title.includes('foreign')));
   const help=await request('/lucy',owner,'What can you do?');assert.equal(help.status,200);assert.match(help.data.text,/Background research is disabled/);
   assert.equal((await request('/lucy',owner,'Find work:')).status,400);
 });
@@ -126,7 +129,7 @@ test('background processor uses actual scoped work search and revalidates each s
   const output=JSON.parse(request.input.at(-1).output);assert.equal(output.result.data.records.length,3);assert.ok(output.result.data.records.every(record=>!record.title.includes('foreign')));
   return {output:[],output_text:'Found your three assigned North work records.'};
  };
- try{const result=await require('../dist/routes/lucyJarvisRoutes').runLucyBackgroundResearch({actor:actor(employee,company,'employee'),prompt:'Find North work',shouldContinue:async()=>true});assert.equal(result.run.status,'completed');assert.ok(checks>=4);}
+ try{const result=await require('../dist/routes/lucyJarvisRoutes').runLucyBackgroundResearch({actor:actor(employee,company,'employee'),prompt:'Find North work',shouldContinue:async()=>true});assert.equal(result.run.status,'completed');assert.equal(result.evidence.sources.length,3);assert.equal(result.evidence.incomplete,false);assert.ok(checks>=4);}
  finally{subscriptions.loadSubscriptionActor=original;inference.lucyInferenceReady=()=>false;}
 });
 test('background research cannot publish after entitlement is revoked during final inference',async()=>{
@@ -135,4 +138,78 @@ test('background research cannot publish after entitlement is revoked during fin
  inference.lucyInferenceReady=()=>true;inference.lucyResponse=async()=>{active=false;return {output:[],output_text:'Private result'};};
  try{await assert.rejects(()=>require('../dist/routes/lucyJarvisRoutes').runLucyBackgroundResearch({actor:actor(),prompt:'Research work',shouldContinue:async()=>true}),/access/);}
  finally{subscriptions.loadSubscriptionActor=original;inference.lucyInferenceReady=()=>false;}
+});
+
+test('chat evidence records actual successful retrieval even when final model text invents citations',async()=>{
+ let calls=0;inference.lucyInferenceReady=()=>true;
+ inference.lucyResponse=async()=>calls++===0?{output:[{type:'function_call',name:'search_work_records',call_id:'evidence-read',arguments:'{"query":"North"}'}]}:{output:[],output_text:'See invented reference https://wrong.example/ref.'};
+ try{const result=await request('/lucy',employee,'Look up North work');assert.equal(result.status,200);assert.equal(result.data.evidence.sources.length,3);assert.ok(result.data.evidence.sources.every(source=>!source.title.includes('foreign')));assert.doesNotMatch(JSON.stringify(result.data.evidence),/wrong.example|invented/);}
+ finally{inference.lucyInferenceReady=()=>false;}
+});
+
+const tracked=async(message,requestId,extra={})=>{const response=await fetch(base+'/lucy',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt.sign({id:owner},process.env.JWT_SECRET)},body:JSON.stringify({message,requestId,language:'en',channel:'text',...extra})});return {status:response.status,data:await response.json()};};
+test('tracked chat retries replay a completed task receipt without another inference or write',async()=>{
+ let calls=0;inference.lucyInferenceReady=()=>true;inference.lucyResponse=async()=>calls++===0?{output:[{type:'function_call',name:'create_task',call_id:'replay-task',arguments:'{"description":"Request replay task"}'}]}:{output:[],output_text:'Task created.'};
+ try{const first=await tracked('Create Request replay task','chat-replay-1');assert.equal(first.status,200);assert.equal(first.data.request.state,'completed');assert.equal(first.data.actions[0].status,'completed');
+ const retry=await tracked('Create Request replay task','chat-replay-1');assert.equal(retry.status,200);assert.equal(retry.data.request.replayed,true);assert.equal(calls,2);assert.equal((await query("SELECT * FROM tasks WHERE description='Request replay task'")).rows.length,1);
+ assert.equal((await tracked('A different request','chat-replay-1')).status,409);
+ const saved=await request('/lucy/requests/chat-replay-1');assert.equal(saved.data.response.body.actions[0].status,'completed');
+ assert.equal((await request('/lucy/requests/chat-replay-1',employee)).status,404);
+ }finally{inference.lucyInferenceReady=()=>false;}
+});
+test('unconfirmed final receipt persistence keeps actual action receipts but prevents reexecution',async()=>{
+ let calls=0;inference.lucyInferenceReady=()=>true;inference.lucyResponse=async()=>calls++===0?{output:[{type:'function_call',name:'create_task',call_id:'uncertain-task',arguments:'{"description":"Uncertain receipt task"}'}]}:{output:[],output_text:'Task created.'};
+ const originalConnect=pool.connect;pool.connect=async()=>({query:async(sql,params)=>{if(sql.includes("SET status='completed',response_body="))throw new Error('Simulated final save failure');return query(sql,params);},release(){}});
+ try{const first=await tracked('Create Uncertain receipt task','chat-uncertain-1');assert.equal(first.status,200);assert.equal(first.data.request.state,'uncertain');assert.equal(first.data.actions[0].status,'completed');
+ const retry=await tracked('Create Uncertain receipt task','chat-uncertain-1');assert.equal(retry.status,409);assert.equal(retry.data.request.state,'uncertain');assert.equal(calls,2);assert.equal((await query("SELECT * FROM tasks WHERE description='Uncertain receipt task'")).rows.length,1);
+ }finally{pool.connect=originalConnect;inference.lucyInferenceReady=()=>false;}
+});
+test('permission revocation during inference prevents mutation and suppresses protected result',async()=>{
+ let calls=0;inference.lucyInferenceReady=()=>true;inference.lucyResponse=async()=>{calls++;await query("UPDATE users SET role='employee' WHERE id=$1",[owner]);return {output:[{type:'function_call',name:'create_task',call_id:'revoked-task',arguments:'{"description":"Revoked actor task"}'}]};};
+ try{const result=await tracked('Create Revoked actor task','chat-revoked-1');assert.equal(result.status,401);assert.equal(result.data.actions,undefined);assert.equal((await query("SELECT * FROM tasks WHERE description='Revoked actor task'")).rows.length,0);assert.equal(calls,1);}
+ finally{await query("UPDATE users SET role='owner' WHERE id=$1",[owner]);inference.lucyInferenceReady=()=>false;}
+});
+test('provider unavailable after a tracked claim is explicitly uncertain and cannot silently restart',async()=>{
+ inference.lucyInferenceReady=()=>false;const first=await tracked('An open ended question','chat-offline-1');assert.equal(first.status,503);assert.equal(first.data.request.state,'uncertain');
+ const retry=await tracked('An open ended question','chat-offline-1');assert.equal(retry.status,409);assert.equal(retry.data.request.state,'uncertain');
+});
+test('concurrent tracked duplicate returns processing without a second inference or action',async()=>{
+ let release,started;const ready=new Promise(resolve=>{started=resolve;});const wait=new Promise(resolve=>{release=resolve;});let calls=0;
+ inference.lucyInferenceReady=()=>true;inference.lucyResponse=async()=>{if(calls++===0){started();await wait;return {output:[{type:'function_call',name:'create_task',call_id:'pending-task',arguments:'{"description":"Concurrent replay task"}'}]};}return {output:[],output_text:'Created.'};};
+ try{const first=tracked('Create Concurrent replay task','chat-pending-1');await ready;
+  const second=await tracked('Create Concurrent replay task','chat-pending-1');assert.equal(second.status,202);assert.equal(second.data.request.state,'processing');assert.equal(calls,1);
+  release();const done=await first;assert.equal(done.data.request.state,'completed');assert.equal((await query("SELECT * FROM tasks WHERE description='Concurrent replay task'")).rows.length,1);
+ }finally{release();inference.lucyInferenceReady=()=>false;}
+});
+test('authorization verification outage at final save suppresses receipts without rerunning committed action',async()=>{
+ let calls=0;inference.lucyInferenceReady=()=>true;inference.lucyResponse=async()=>calls++===0?{output:[{type:'function_call',name:'create_task',call_id:'verify-task',arguments:'{"description":"Verification outage task"}'}]}:{output:[],output_text:'Created.'};
+ const originalConnect=pool.connect;pool.connect=async()=>{if(calls>=2)throw new Error('Simulated unavailable actor check');return originalConnect();};
+ try{const result=await tracked('Create Verification outage task','chat-verify-1');assert.equal(result.status,503);assert.equal(result.data.actions,undefined);assert.equal(result.data.evidence,undefined);assert.equal(result.data.request.state,'uncertain');assert.equal((await query("SELECT * FROM tasks WHERE description='Verification outage task'")).rows.length,1);
+  pool.connect=originalConnect;const retry=await tracked('Create Verification outage task','chat-verify-1');assert.equal(retry.status,202);assert.equal(calls,2);
+ }finally{pool.connect=originalConnect;inference.lucyInferenceReady=()=>false;}
+});
+
+test('company, entitlement and password-policy revocation during inference block the next mutation',async()=>{
+ const cases=[['company',"UPDATE companies SET is_active=false WHERE id=$1",company,401],['entitlement',"UPDATE companies SET subscription_status='inactive' WHERE id=$1",company,402],['password',"UPDATE users SET must_change_password=true WHERE id=$1",owner,403]];
+ for(const [name,sql,target,status] of cases){
+  let calls=0;inference.lucyInferenceReady=()=>true;inference.lucyResponse=async()=>{calls++;await query(sql,[target]);return {output:[{type:'function_call',name:'create_task',call_id:'company-revocation',arguments:JSON.stringify({description:'Forbidden '+name})}]};};
+  try{const result=await tracked('Create Forbidden '+name,'revocation-'+name);assert.equal(result.status,status,JSON.stringify(result));assert.equal(result.data.actions,undefined);assert.equal((await query('SELECT * FROM tasks WHERE description=$1',['Forbidden '+name])).rows.length,0);assert.equal(calls,1);}
+  finally{await query("UPDATE companies SET is_active=true,subscription_status='active' WHERE id=$1",[company]);await query('UPDATE users SET must_change_password=false WHERE id=$1',[owner]);inference.lucyInferenceReady=()=>false;}
+ }
+});
+test('completed stored receipts are withheld when company entitlement is later revoked',async()=>{
+ const first=await tracked('What can you do?','entitled-replay');assert.equal(first.data.request.state,'completed');await query("UPDATE companies SET subscription_status='inactive' WHERE id=$1",[company]);
+ try{assert.equal((await tracked('What can you do?','entitled-replay')).status,402);const saved=await request('/lucy/requests/entitled-replay');assert.equal(saved.status,402);assert.equal(saved.data.response,undefined);}
+ finally{await query("UPDATE companies SET subscription_status='active' WHERE id=$1",[company]);}
+});
+
+test('simultaneous final-save failure and entitlement revocation cannot expose fallback receipts',async()=>{
+ let calls=0,failed=false;inference.lucyInferenceReady=()=>true;inference.lucyResponse=async()=>calls++===0?{output:[{type:'function_call',name:'create_task',call_id:'fallback-revoked',arguments:'{"description":"Fallback revoked task"}'}]}:{output:[],output_text:'Created.'};
+ const originalConnect=pool.connect;pool.connect=async()=>({query:async(sql,params)=>{
+  if(sql.includes("SET status='completed',response_body=")){failed=true;throw new Error('Simulated save failure');}
+  const result=await query(sql,params);if(sql==='ROLLBACK'&&failed){failed=false;await query("UPDATE companies SET subscription_status='inactive' WHERE id=$1",[company]);}return result;
+ },release(){}});
+ try{const result=await tracked('Create Fallback revoked task','chat-fallback-revoked');assert.equal(result.status,402);assert.equal(result.data.actions,undefined);assert.equal(result.data.evidence,undefined);assert.equal((await query("SELECT * FROM tasks WHERE description='Fallback revoked task'")).rows.length,1);}
+ finally{pool.connect=originalConnect;await query("UPDATE companies SET subscription_status='active' WHERE id=$1",[company]);inference.lucyInferenceReady=()=>false;}
+ const retry=await tracked('Create Fallback revoked task','chat-fallback-revoked');assert.equal(retry.status,409);assert.equal(calls,2);
 });

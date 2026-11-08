@@ -1,6 +1,8 @@
 import express, { Request } from 'express';
 import {lucyInferenceReady,lucyResponse} from '../services/lucyInference';
 import { runLucyAgent } from '../services/lucyAgentRuntime';
+import { collectLucyEvidence } from '../services/lucyEvidence';
+import { beginLucyRequest,completeLucyRequest,getLucyRequest,markLucyRequestUncertain,LucyRequestError,LucyRequestClaim } from '../services/lucyRequestService';
 import { searchLucyWork } from '../services/lucyWorkSearch';
 import { manages, CompanyActor } from '../middleware/companyActor';
 import { listLucyPreferences } from '../services/lucyMemoryService';
@@ -35,6 +37,19 @@ async function actor(req: Request): Promise<Actor> {
   if (!row?.company_id) throw new Error('Authenticated company account was not found');
   return { id: String(row.id), companyId: String(row.company_id), role: String(row.role), name: String(row.name) };
 }
+
+async function ensureLucyAccess(current:Actor):Promise<void>{
+  let access;
+  try{access=await loadSubscriptionActor(current.id,current.companyId);}
+  catch(error:any){
+    if(/account or company was not found|does not match the current company/.test(error?.message||''))throw new LucyRequestError(401,'actor_unavailable','Your account or company access has changed. Sign in again.');
+    throw new LucyRequestError(503,'actor_verification_unavailable','Current access could not be verified. Check this request again when the connection is restored.');
+  }
+  if(access.role!==current.role)throw new LucyRequestError(401,'actor_unavailable','Your role has changed. Sign in again.');
+  if(access.mustChangePassword)throw new LucyRequestError(403,'password_change_required','Change your temporary password before continuing.');
+  if(!hasCompanyEntitlement(access))throw new LucyRequestError(402,'subscription_required','An active subscription or trial is required to use Lucy.');
+}
+const accessFailure=(error:unknown)=>error instanceof LucyRequestError&&([401,402,403].includes(error.status)||error.code==='actor_verification_unavailable');
 
 const canManage = (value: Actor) => manages({id: value.id, company_id: value.companyId, role: value.role});
 const days = (value: unknown, fallback = 30) => Math.min(365, Math.max(1, Number(value) || fallback));
@@ -71,7 +86,7 @@ function capabilities(current: Actor) {
     tools: availableTools(current).filter(tool => tool.name !== 'ignore_ambient_speech').map(tool => ({name:tool.name,description:tool.description,changesRecords:mutationTools.has(tool.name)})),
     scope: canManage(current) ? 'company' : 'personal_and_assigned_work',
     limitations: ['No autonomous browser or external-app actions',...(lucyWorkEnabled()?[]:['Background research is disabled for this deployment']),'Background tasks are read-only; saved preferences never grant permissions','No payment execution or tax filing','AI provider is required for open-ended requests'],
-    backgroundResearch:lucyWorkEnabled(),savedPreferences:true,
+    backgroundResearch:lucyWorkEnabled(),savedPreferences:true,requestReplay:true,
     examples: ['Find work: North site','Search company documents: safety policy',...(canManage(current)?['Brief me','Show this pay period']:[])],
   };
 }
@@ -261,40 +276,84 @@ router.get('/timesheet-excel', async (req, res) => {
   } catch (error: any) { res.status(500).json({ success: false, message: error.message || 'Unable to export timesheet' }); }
 });
 
+router.get('/requests/:requestId',async(req,res)=>{
+  try{
+    const active=await actor(req);await ensureLucyAccess(active);
+    const saved=await getLucyRequest({id:active.id,company_id:active.companyId,role:active.role},String(req.params.requestId));
+    await ensureLucyAccess(active);
+    return res.json({request:{id:saved.requestId,state:saved.status,message:saved.message},response:saved.response});
+  }catch(error){return res.status(error instanceof LucyRequestError?error.status:503).json({message:error instanceof LucyRequestError?error.message:'Request status is temporarily unavailable.'});}
+});
+
 router.post('/', async (req, res) => {
   let authenticated=false;
+  let requestActor:CompanyActor|undefined,claim:LucyRequestClaim|undefined,sourceActor:Actor|undefined;
+  const reply=async(body:Record<string,any>,statusCode=200)=>{
+    try{if(sourceActor)await ensureLucyAccess(sourceActor);}
+    catch(error:any){return res.status(error instanceof LucyRequestError?error.status:503).json({success:false,message:error instanceof LucyRequestError?error.message:'Current access could not be verified.',...(claim?{request:{id:claim.requestId,state:'uncertain'}}:{})});}
+    if(!claim||!requestActor)return res.status(statusCode).json(body);
+    const id=claim.requestId;
+    const uncertain='The request outcome could not be saved reliably. Completed actions shown here have not been undone. Check this request before starting it again.';
+    try{
+      if(statusCode<200||statusCode>=300){
+        const state=await markLucyRequestUncertain(requestActor,claim);
+        if(state.response){if(sourceActor)await ensureLucyAccess(sourceActor);return res.status(state.response.statusCode).json({...state.response.body,request:{id,state:'completed',replayed:true}});}
+        if(sourceActor)await ensureLucyAccess(sourceActor);
+        return res.status(statusCode).json({...body,request:{id,state:'uncertain',message:state.message}});
+      }
+      const saved={...body,request:{id,state:'completed',replayed:false}};
+      await completeLucyRequest(requestActor,claim,{statusCode,body:saved});
+      if(sourceActor)await ensureLucyAccess(sourceActor);
+      return res.status(statusCode).json(saved);
+    }catch(error){
+      if(error instanceof LucyRequestError&&accessFailure(error))return res.status(error.status).json({success:false,message:error.message,...(error.status===503?{request:{id,state:'uncertain',message:error.message}}:{})});
+      try{
+        const state=await markLucyRequestUncertain(requestActor,claim);
+        if(state.response){if(sourceActor)await ensureLucyAccess(sourceActor);return res.status(state.response.statusCode).json({...state.response.body,request:{id,state:'completed',replayed:true}});}
+      }catch(recovery){if(recovery instanceof LucyRequestError&&accessFailure(recovery))return res.status(recovery.status).json({success:false,message:recovery.message,...(recovery.status===503?{request:{id,state:'uncertain',message:recovery.message}}:{})});}
+      try{if(sourceActor)await ensureLucyAccess(sourceActor);}
+      catch(access:any){return res.status(access instanceof LucyRequestError?access.status:503).json({success:false,message:access instanceof LucyRequestError?access.message:'Current access could not be verified.',request:{id,state:'uncertain'}});}
+      return res.status(statusCode).json({...body,request:{id,state:'uncertain',message:uncertain}});
+    }
+  };
   try {
-    const current = await actor(req);authenticated=true;
+    const current = await actor(req);authenticated=true;sourceActor=current;await ensureLucyAccess(current);
     const message = String(req.body?.message || '').trim();
     if (!message) return res.status(400).json({ success: false, message: 'Message is required' });
     if(message.length>8000)return res.status(400).json({message:'Keep your request under 8,000 characters'});
+    requestActor={id:current.id,company_id:current.companyId,role:current.role};
+    const request=await beginLucyRequest(requestActor,{requestId:req.body?.requestId,message,language:req.body?.language,channel:req.body?.channel});
+    if(request.kind==='replay'){await ensureLucyAccess(current);return res.status(request.response.statusCode).json({...request.response.body,request:{id:request.request.requestId,state:'completed',replayed:true}});}
+    if(request.kind==='blocked')return res.status(request.request.status==='processing'?202:409).json({text:request.request.message,message:request.request.message,request:{id:request.request.requestId,state:request.request.status,message:request.request.message},actions:[],continueListening:false});
+    if(request.kind==='claimed')claim=request.claim;
+    const fresh=async()=>{const active=await actor(req);if(active.id!==current.id||active.companyId!==current.companyId||active.role!==current.role)throw new LucyRequestError(401,'actor_unavailable','Your account or access has changed. Sign in again before continuing.');await ensureLucyAccess(active);return active;};
     if (/^(what can you do|show (your )?capabilities|help)[?.!]?$/i.test(message)) {
       const data=capabilities(current);
-      return res.json({text:'I can search your accessible work records, answer questions from company documents, and help with '+(canManage(current)?'crew operations, schedules, tasks, PTO, project forecasts, timesheets and draft payroll.':'your schedules, tasks, time entries and PTO.')+' I can combine multiple lookups in one request and use choices you explicitly save in Tasks and preferences. '+data.limitations.join('. ')+'.',capabilities:data,actions:[],continueListening:true});
+      return reply({text:'I can search your accessible work records, answer questions from company documents, and help with '+(canManage(current)?'crew operations, schedules, tasks, PTO, project forecasts, timesheets and draft payroll.':'your schedules, tasks, time entries and PTO.')+' I can combine multiple lookups in one request and use choices you explicitly save in Tasks and preferences. '+data.limitations.join('. ')+'.',capabilities:data,actions:[],continueListening:true});
     }
     if (/^find work:\s*/i.test(message)) {
       const query=message.replace(/^find work:\s*/i,'').trim();
-      if(!query || query.length>200)return res.status(400).json({success:false,message:'Search needs 1–200 characters'});
+      if(!query || query.length>200)return reply({success:false,message:'Search needs 1–200 characters'},400);
       const data=await searchLucyWork({id:current.id,company_id:current.companyId,role:current.role},{query});
       const text=data.records.length?data.records.map(row=>`${row.kind}: ${row.title} (${row.status || 'status unavailable'})`).join('\n')+(data.hasMore?'\nMore records match. Narrow the search.':''):'No accessible work records match that phrase.';
-      return res.json({text,search:data,actions:[],continueListening:true});
+      return reply({text,search:data,evidence:collectLucyEvidence([{tool:'search_work_records',success:true,result:{data}}]),actions:[],continueListening:true});
     }
-    if(/^search company documents: /i.test(message)){const data=await searchDocuments({id:current.id,company_id:current.companyId,role:current.role},message.replace(/^search company documents: /i,''));return res.json({text:data.answer+'\n'+data.sources.map(s=>s.title+': '+s.excerpt).join('\n\n'),actions:[],continueListening:true});}
-    if(/^show project profitability[.!]?$/i.test(message)){const data=await profitability({id:current.id,company_id:current.companyId,role:current.role});return res.json({text:data.length?data.map(x=>`${x.name}: forecast cost ${x.currency} ${x.forecastCost}; forecast profit ${x.forecastProfit}. ${x.method}`).join('\n'):'No project budgets configured. Open Operations → Project costs.',actions:[],continueListening:true});}
+    if(/^search company documents: /i.test(message)){const data=await searchDocuments({id:current.id,company_id:current.companyId,role:current.role},message.replace(/^search company documents: /i,''));return reply({text:data.answer+'\n'+data.sources.map(s=>s.title+': '+s.excerpt).join('\n\n'),evidence:collectLucyEvidence([{tool:'company_knowledge',success:true,result:{data}}]),actions:[],continueListening:true});}
+    if(/^show project profitability[.!]?$/i.test(message)){const data=await profitability({id:current.id,company_id:current.companyId,role:current.role});return reply({text:data.length?data.map(x=>`${x.name}: forecast cost ${x.currency} ${x.forecastCost}; forecast profit ${x.forecastProfit}. ${x.method}`).join('\n'):'No project budgets configured. Open Operations → Project costs.',actions:[],continueListening:true});}
     // Deterministic core commands keep period/report/confirmation behavior independent of model wording.
     const direct = /^\s*(yes|yes please|yes,? run it|confirm|confirmed|do it|run it|go ahead|proceed)[.!\s]*$/i.test(message) ? 'confirm_payroll_preparation'
       : /^(prepare|run|create)( draft)? payroll( for (this|current|last|previous) pay period)?[.!]?$/i.test(message) ? 'prepare_payroll'
       : /^(show|export|summarize|summary of)( me)? (this|current|last|previous) pay period( and export it to excel)?[.!]?$/i.test(message) ? 'pay_period_timesheet'
       : /^(brief me|what needs attention|brief me on what needs attention today)[?.!]?$/i.test(message) ? 'executive_briefing' : null;
     if(direct){
-      const result=await execute(direct,{period:/last|previous/i.test(message)?'previous pay period':'this pay period'},current,message);
+      const result=await execute(direct,{period:/last|previous/i.test(message)?'previous pay period':'this pay period'},await fresh(),message);
       const text=result.action?.summary||'Request completed';
       try { await pool.query('INSERT INTO lucy_conversations(user_id,role,content,company_id) VALUES($1,$2,$3,$6),($1,$4,$5,$6)',[current.id,'user',message,'assistant',text,current.companyId]); }
       catch(error) { console.error('Lucy command history could not be recorded',error); }
       if(result.action)await recordAction(current,result.action);
-      return res.json({text,actions:result.action?[result.action]:[],continueListening:true});
+      return reply({text,actions:result.action?[result.action]:[],continueListening:true});
     }
-    if (!lucyInferenceReady()) return res.status(503).json({ success: false, message: 'Open-ended Lucy requests need an AI provider. Core commands such as “show this pay period” and “prepare payroll” remain available.' });
+    if (!lucyInferenceReady()) return reply({ success: false, message: 'Open-ended Lucy requests need an AI provider. Core commands such as “show this pay period” and “prepare payroll” remain available.' },503);
     const history = await pool.query(`SELECT role,content FROM (SELECT role,content,created_at FROM lucy_conversations WHERE user_id=$1 AND company_id=$2 ORDER BY created_at DESC LIMIT 20) h ORDER BY created_at`, [current.id,current.companyId]);
     const input: any[] = history.rows.map(row => ({ role: row.role === 'assistant' ? 'assistant' : 'user', content: row.content }));
     input.push({ role: 'user', content: message });
@@ -312,9 +371,9 @@ Mutations must be reported as completed only when a tool receipt says completed.
 This may be an active voice conversation. Resolve follow-ups such as “those two”, “last month”, “do it”, and “what about Sarah?” using recent turns. If speech is clearly unrelated and directed to someone else, call ignore_ambient_speech. If uncertain, ask one short clarifying question.
 Keep spoken answers under about 180 words unless the user explicitly asks for full detail; structured action details are shown separately on screen.`;
     const actions: Receipt[] = []; let approvalId: string | undefined;
-    const run = await runLucyAgent({instructions,input,tools:availableTools(current),respond:lucyResponse,
+    const run = await runLucyAgent({instructions,input,tools:availableTools(current),respond:async request=>{await fresh();return lucyResponse(request);},
       mutationTools,untrustedReadTools:new Set(['company_knowledge','search_work_records']),
-      execute:(name,args)=>execute(name,args,current,message),
+      execute:async(name,args)=>execute(name,args,await fresh(),message),
       onOutcome:async outcome=>{
         if(outcome.success){
           const result=outcome.result;
@@ -323,17 +382,20 @@ Keep spoken answers under about 180 words unless the user explicitly asks for fu
         }else actions.push(receipt(outcome.tool,'Action unavailable',outcome.error || 'Tool failed',[],'failed'));
       },
     });
-    if(run.status==='ignored')return res.json({text:'',ignored:true,continueListening:true,sessionExpiresInSeconds:60,actions:[]});
-    let reply=run.text || actions.map(item=>item.summary).join(' ') || 'I could not finish this request.';
-    if(run.stopReason)reply+=' This request is incomplete. Review the results before retrying any action; completed actions have not been undone.';
+    await fresh();
+    if(run.status==='ignored')return reply({text:'',ignored:true,continueListening:true,sessionExpiresInSeconds:60,actions:[]});
+    let replyText=run.text || actions.map(item=>item.summary).join(' ') || 'I could not finish this request.';
+    if(run.stopReason)replyText+=' This request is incomplete. Review the results before retrying any action; completed actions have not been undone.';
     // History persistence must not hide already-completed actions or encourage duplicate retries.
-    try { await pool.query('INSERT INTO lucy_conversations(user_id,role,content,company_id) VALUES($1,$2,$3,$4)', [current.id, 'assistant', reply,current.companyId]); }
+    try { await pool.query('INSERT INTO lucy_conversations(user_id,role,content,company_id) VALUES($1,$2,$3,$4)', [current.id, 'assistant', replyText,current.companyId]); }
     catch (error) { console.error('Lucy response history could not be recorded',error); }
-    res.json({ text: reply, approvalId, actions, continueListening: !approvalId, sessionExpiresInSeconds: 60, model: run.model, run: {status:run.status,stopReason:run.stopReason,modelCalls:run.modelCalls,steps:run.outcomes.map(item=>({tool:item.tool,status:item.success?'completed':'failed',reused:Boolean(item.reused)}))} });
+    return reply({ text: replyText, evidence:collectLucyEvidence(run.outcomes), approvalId, actions, continueListening: !approvalId, sessionExpiresInSeconds: 60, model: run.model, run: {status:run.status,stopReason:run.stopReason,modelCalls:run.modelCalls,steps:run.outcomes.map(item=>({tool:item.tool,status:item.success?'completed':'failed',reused:Boolean(item.reused)}))} });
   } catch (error: any) {
     console.error('Lucy operations error:', error);
-    const status=!authenticated?401:error.status===429?429:error.status===503||error.status>=500?503:500;
-    res.status(status).json({success:false,message:!authenticated?'Sign in to use Lucy.':status===429?'Lucy has reached the AI provider capacity. Please retry later. Your account remains signed in.':status===503?'Lucy inference is temporarily unavailable. Core commands and human support remain available.':'Lucy could not complete this request. Please retry.'});
+    const status=!authenticated?401:error instanceof LucyRequestError?error.status:error.status===429?429:error.status===503||error.status>=500?503:500;
+    const message=error instanceof LucyRequestError?error.message:!authenticated?'Sign in to use Lucy.':status===429?'Lucy has reached the AI provider capacity. Please retry later. Your account remains signed in.':status===503?'Lucy inference is temporarily unavailable. Core commands and human support remain available.':'Lucy could not complete this request. Check existing records before retrying an action.';
+    const requestId=req.body?.requestId;
+    return reply({success:false,message,...(!claim&&requestActor&&typeof requestId==='string'&&/^[a-zA-Z0-9_.:-]{1,100}$/.test(requestId)?{request:{id:requestId,state:'uncertain',message}}:{})},status);
   }
 });
 
@@ -360,6 +422,6 @@ export async function runLucyBackgroundResearch({actor:requested,prompt,shouldCo
   await fresh();
   let text=run.text||actions.map(action=>action.summary).join(' ')||'The research could not be completed.';
   if(run.status!=='completed')text+=' This research is incomplete; no business records were changed.';
-  return {text,run:{status:run.status,stopReason:run.stopReason,modelCalls:run.modelCalls,steps:run.outcomes.map(item=>({tool:item.tool,status:item.success?'completed':'failed'}))}};
+  return {text,evidence:collectLucyEvidence(run.outcomes),run:{status:run.status,stopReason:run.stopReason,modelCalls:run.modelCalls,steps:run.outcomes.map(item=>({tool:item.tool,status:item.success?'completed':'failed'}))}};
 }
 export default router;

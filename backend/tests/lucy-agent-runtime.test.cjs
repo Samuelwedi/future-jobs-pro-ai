@@ -106,3 +106,8 @@ test('cancelled background work cannot start another model call',async()=>{
  const result=await runLucyAgent(options({shouldContinue:async()=>allowed,respond:async()=>{rounds++;return {output:[call('read','r')]};},execute:async()=>{allowed=false;return {data:'read complete'};}}));
  assert.equal(rounds,1);assert.equal(result.stopReason,'cancelled');assert.equal(result.outcomes.length,1);
 });
+
+test('incomplete provider tool batches never execute and cannot erase prior receipts',async()=>{
+ let executed=0;const first=await runLucyAgent(options({respond:async()=>({status:'incomplete',output:[call('write','truncated')]}),execute:async()=>{executed++;}}));assert.equal(first.status,'partial');assert.equal(executed,0);
+ let round=0;const later=await runLucyAgent(options({respond:async()=>round++===0?{output:[call('write','first')]}:{status:'incomplete',output:[call('write','truncated')]},execute:async()=>{executed++;return {action:{status:'completed'}};}}));assert.equal(executed,1);assert.equal(later.outcomes[0].result.action.status,'completed');assert.equal(later.status,'partial');
+});

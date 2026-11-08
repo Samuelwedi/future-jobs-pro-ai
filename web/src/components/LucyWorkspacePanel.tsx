@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { api } from '../services/api';
+import LucySourceEvidence from './LucySourceEvidence';
+import type {LucyEvidence} from '../utils/lucyEvidence';
 
-type Job = {id:string;prompt:string;status:string;result?:{text?:string};error?:string;createdAt:string};
+type Job = {id:string;prompt:string;status:string;result?:{text?:string;evidence?:LucyEvidence};error?:string;createdAt:string};
 type Preference = {key:string;value:string;expiresAt:string};
 type Preferences = {preferences:Preference[];options:Record<string,string[]>;limit:number};
 const label = (value:string) => value.replace(/_/g,' ');
@@ -101,6 +103,7 @@ export default function LucyWorkspacePanel({open,onClose}:{open:boolean;onClose:
         <Stack direction="row" justifyContent="space-between" spacing={1}><Typography sx={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{job.prompt}</Typography><Chip size="small" label={job.status}/></Stack>
         <Typography variant="caption">Created {new Date(job.createdAt).toLocaleString()}</Typography>
         {job.result?.text&&<Typography sx={{whiteSpace:'pre-wrap'}}>{job.result.text}</Typography>}
+        <LucySourceEvidence evidence={job.result?.evidence}/>
         {job.error&&<Alert severity="warning">{job.error}</Alert>}
         {activeJob(job)&&<Box><Button color="warning" disabled={busy} onClick={()=>void cancel(job)}>Cancel task</Button></Box>}
       </Stack></Paper>)}

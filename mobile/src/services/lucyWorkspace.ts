@@ -1,3 +1,5 @@
+import type {LucyEvidence} from '../utils/lucyEvidence';
+
 /** User-operated controls only. Preferences never grant authorization. */
 export const preferenceOptions = {
   response_style: ['concise', 'conversational', 'formal'], detail_level: ['summary', 'balanced', 'detailed'],
@@ -6,7 +8,7 @@ export const preferenceOptions = {
 } as const;
 export type PreferenceKey = keyof typeof preferenceOptions;
 export type Preference = {key: PreferenceKey; value: string; expiresAt: string};
-export type Work = {id: string; prompt: string; status: 'queued'|'running'|'completed'|'partial'|'failed'|'cancelled'; createdAt: string; result?: {text: string; run?: unknown}|null; error?: string|null};
+export type Work = {id: string; prompt: string; status: 'queued'|'running'|'completed'|'partial'|'failed'|'cancelled'; createdAt: string; result?: {text: string; run?: unknown; evidence?: LucyEvidence}|null; error?: string|null};
 type Client = {get: (url: string) => Promise<any>; put: (url: string, data: any) => Promise<any>; post: (url: string, data?: any) => Promise<any>; delete: (url: string) => Promise<unknown>};
 export type WorkspaceState = {preferences: Preference[]; jobs: Work[]; enabled: boolean|null; ready: boolean; loading: boolean; busy: boolean; error: string; prompt: string; choices: Partial<Record<PreferenceKey,string>>};
 const root = '/lucy-v2';

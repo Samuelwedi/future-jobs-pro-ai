@@ -15,3 +15,10 @@ test('configured compatible endpoint works without paid credentials, and rate li
   status=429;await assert.rejects(()=>lucyResponse({instructions:'Test',input:[]}),e=>e.status===429);
  }finally{process.env=env;await new Promise(r=>server.close(r));}
 });
+
+test('compatible completion adapter retains truncation/filter state and refuses malformed tool envelopes',()=>{
+ const {compatibleResponse}=require('../dist/services/lucyInference');
+ for(const finish_reason of ['length','content_filter',null,'unexpected']){const result=compatibleResponse({choices:[{finish_reason,message:{content:'Partial text',tool_calls:[]}}]},'test');assert.equal(result.status,'incomplete');}
+ assert.equal(compatibleResponse({choices:[{finish_reason:'stop',message:{content:null,refusal:'Cannot help with that.'}}]},'test').output_text,'Cannot help with that.');
+ for(const calls of [{},[null],[{type:'custom',function:{}}]])assert.throws(()=>compatibleResponse({choices:[{finish_reason:'tool_calls',message:{tool_calls:calls}}]},'test'));
+});

@@ -6,6 +6,7 @@ import {useAuth} from '../context/AuthContext';
 import {useLang} from '../context/LanguageContext';
 import {api} from '../services/api';
 import {LucyWorkspaceController, PreferenceKey, preferenceOptions} from '../services/lucyWorkspace';
+import LucySourceEvidence from './LucySourceEvidence';
 
 // Uses the existing selected app language; machine preference keys never change.
 const copy: Record<string,[string,string,string]> = {
@@ -69,6 +70,7 @@ export default function LucyWorkspacePanel({visible,onClose}: {visible:boolean;o
     {state.jobs.map(job=><View key={job.id} style={styles.card}>
      <Text selectable style={styles.heading}>{job.prompt}</Text><Text style={styles.copy}>{label(job.status)} · {new Date(job.createdAt).toLocaleString(lang)}</Text>
      {job.result?.text?<Text selectable style={styles.copy}>{job.result.text}</Text>:null}
+     <LucySourceEvidence evidence={job.result?.evidence} language={lang}/>
      {job.error?<Text selectable style={styles.error}>{job.error}</Text>:null}
      {job.status==='queued'||job.status==='running'?button(t('Cancel'),()=>void controller.cancel(job.id),state.busy):null}
     </View>)}

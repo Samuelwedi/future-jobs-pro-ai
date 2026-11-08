@@ -66,6 +66,7 @@ export async function runLucyAgent(options: {
     if (!response || typeof response !== 'object' || !Array.isArray(response.output)
       || response.output.some((item: any) => !item || typeof item !== 'object' || Array.isArray(item))) return partial('invalid_response');
     model = typeof response.model === 'string' ? response.model : model;
+    if(['incomplete','failed','cancelled'].includes(response.status))return {...partial('invalid_response'),text:!response.output.some((item:any)=>item.type==='function_call')&&typeof response.output_text==='string'?response.output_text.trim():''};
     const calls = response.output.filter((item: any) => item.type === 'function_call');
     if (!calls.length) {
       const text = String(response.output_text || '').trim();
