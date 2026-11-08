@@ -8,11 +8,11 @@ test('durable read-only work SQL and authenticated API',async t=>{
  const query=async(sql,args)=>{const r=await db.query(sql,args);return{rows:r.rows,rowCount:r.affectedRows||r.rows.length};};
  let server;
  try {
- await db.exec('CREATE TABLE companies(id uuid PRIMARY KEY); CREATE TABLE users(id uuid PRIMARY KEY,company_id uuid,role text,is_active boolean DEFAULT true);');
- const migration=fs.readFileSync(require('node:path').join(__dirname,'../migrations/20261108_lucy_background_work.sql'),'utf8');await db.exec(migration);await db.exec(migration);
+ await db.exec('CREATE TABLE companies(id uuid PRIMARY KEY,is_active boolean DEFAULT true,subscription_status text DEFAULT \'active\',subscription_tier text DEFAULT \'professional\',subscription_provider text,subscription_current_period_end timestamptz,subscription_expires_at timestamptz); CREATE TABLE users(id uuid PRIMARY KEY,company_id uuid,role text,is_active boolean DEFAULT true,must_change_password boolean DEFAULT false,first_name text,last_name text);');
+ const migration=fs.readFileSync(require('node:path').join(__dirname,'../migrations/20261108_lucy_background_work.sql'),'utf8');await db.exec(migration);await db.exec(migration);await db.exec(fs.readFileSync(require('node:path').join(__dirname,'../migrations/20261108_lucy_work_modes.sql'),'utf8'));
  const c='aaaaaaaa-0000-4000-a000-000000000001',d='aaaaaaaa-0000-4000-a000-000000000002';
  const a='bbbbbbbb-0000-4000-a000-000000000001',b='bbbbbbbb-0000-4000-a000-000000000002',x='bbbbbbbb-0000-4000-a000-000000000003';
- await query('INSERT INTO companies VALUES($1),($2)',[c,d]);
+ await query('INSERT INTO companies(id) VALUES($1),($2)',[c,d]);
  for(const [id,company] of [[a,c],[b,c],[x,d]])await query("INSERT INTO users(id,company_id,role) VALUES($1,$2,'boss')",[id,company]);
  pool.query=query;pool.connect=async()=>({query,release(){}});
  const express=require('express'),jwt=require('jsonwebtoken');const app=express();app.use(express.json());app.use('/work',require('../dist/routes/lucyWorkRoutes').default);

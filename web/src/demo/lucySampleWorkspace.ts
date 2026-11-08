@@ -29,6 +29,7 @@ function sampleResult(time:number):NonNullable<Job['result']> {
   const retrievedAt = new Date(time).toISOString();
   return {
     text: 'SAMPLE RESULT · Prepared demonstration, not AI research. No model was called and no real changes were made.\n\nIn the fictional Riverside handover, the west entrance photo is missing, the delivery confirmation is pending, and a crew-hours review is suggested. This fixed result is the same for every prompt. The sources below are synthetic examples, not customer records.',
+    run: {modelCalls:0,status:'completed'},
     evidence: {incomplete:false, sources:[
       {kind:'task',id:'sample-task-west-entrance',title:'SAMPLE · West entrance photo',excerpt:'Fictional task: capture the west entrance photo before clock-out. Status: open. This record was created for the demo.',retrievedAt},
       {kind:'schedule',id:'sample-schedule-delivery',title:'SAMPLE · Riverside delivery',excerpt:'Fictional schedule: the next delivery confirmation is pending. This is an example only, not a real upcoming appointment.',retrievedAt},
@@ -54,10 +55,11 @@ export function createLucySampleWorkspace(now:()=>number = Date.now):LucySampleW
           if (job.status === 'queued' && time >= (readyAt.get(job.id) ?? Infinity)) {
             job.status = 'completed';
             job.result = sampleResult(time);
+            job.completedAt = new Date(time).toISOString();
             readyAt.delete(job.id);
           }
         }
-        return copy({enabled:true,jobs}) as T;
+        return copy({enabled:false,modes:{record_search:true,ai_research:false},jobs}) as T;
       }
       if (path === preferencesPath) {
         for (const [key,preference] of preferences) {
@@ -70,20 +72,20 @@ export function createLucySampleWorkspace(now:()=>number = Date.now):LucySampleW
     async post<T>(path:string,body?:unknown):Promise<T> {
       if (path === workPath) {
         const input = bodyObject(body);
-        if (Object.keys(input).sort().join(',') !== 'prompt,requestKey'
-          || typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 4000
-          || typeof input.requestKey !== 'string' || !input.requestKey.trim() || input.requestKey.length > 128) {
-          throw new Error('Enter a sample task of 1–4000 characters with a request key.');
+        if (Object.keys(input).sort().join(',') !== 'mode,prompt,requestKey' || input.mode !== 'record_search'
+          || typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 200
+          || typeof input.requestKey !== 'string' || !/^[a-zA-Z0-9_.:-]{1,100}$/.test(input.requestKey)) {
+          throw new Error('Enter a sample task of 1–200 characters with record-search mode and a request key.');
         }
         const prompt = input.prompt.trim();
         const existing = requests.get(input.requestKey);
         if (existing) {
-          if (existing.prompt !== prompt) throw new Error('This sample request key already belongs to another task.');
+          if (existing.prompt !== prompt || existing.mode !== input.mode) throw new Error('This sample request key already belongs to another task.');
           return copy({job:existing}) as T;
         }
         if (jobs.length >= sampleJobLimit) throw new Error('Sample limit reached. Leave Lucy AI and return to reset this demo.');
         const time = now();
-        const job:Job = {id:`${scopeKey}-job-${++nextJob}`,prompt,status:'queued',createdAt:new Date(time).toISOString()};
+        const job:Job = {id:`${scopeKey}-job-${++nextJob}`,prompt,mode:'record_search',status:'queued',createdAt:new Date(time).toISOString()};
         jobs.unshift(job);
         requests.set(input.requestKey,job);
         readyAt.set(job.id,time+4000);

@@ -16,7 +16,7 @@ function setup() {
   const {createLucySampleWorkspace}=load('demo/lucySampleWorkspace.ts',{fetch:noAccess,XMLHttpRequest:noAccess,WebSocket:noAccess,localStorage:storage,sessionStorage:storage,indexedDB:storage});
   return {create:()=>createLucySampleWorkspace(()=>time),advance:ms=>{time+=ms;},forbidden:()=>forbidden};
 }
-const request=(requestKey='one',prompt='Summarize the sample handover')=>({requestKey,prompt});
+const request=(requestKey='one',prompt='Summarize the sample handover')=>({requestKey,prompt,mode:'record_search'});
 const preference=value=>({value,expiresAt:new Date(startTime+90*86400000).toISOString()});
 
 test('sample adapter is local-only, fails closed on unsupported routes and isolates every workspace',async()=>{
@@ -101,7 +101,7 @@ test('sample completion uses fixed disclosed content and bounded synthetic evide
 
 test('sample task and memory bounds remain enforced without evicting idempotency receipts',async()=>{
   const {client}=setup().create();
-  for(const prompt of ['', ' '.repeat(4), 'x'.repeat(4001)]) await assert.rejects(client.post(work,request('invalid',prompt)));
+  for(const prompt of ['', ' '.repeat(4), 'x'.repeat(201)]) await assert.rejects(client.post(work,request('invalid',prompt)));
   for(let index=0;index<20;index++) await client.post(work,request(`key-${index}`));
   await assert.rejects(client.post(work,request('twenty-first')),/Sample limit/);
   assert.equal((await client.get(work)).jobs.length,20);
@@ -114,8 +114,8 @@ const text=tree=>tree==null||typeof tree==='boolean'?'':typeof tree!=='object'?S
 
 // Execute the actual component, its effects, polling and handlers with minimal hook primitives.
 // The real API and all token/storage access throw unless the test explicitly exercises live defaults.
-function panelHarness(sampleWorkspace,liveClient) {
-  const hooks=[],timers=new Map();let cursor=0,nextTimer=0,pendingEffects=[],tree,accesses=0,closed=0,token='live-token';
+function panelHarness(sampleWorkspace,liveClient,behavior={}) {
+  const hooks=[],timers=new Map(),timeouts=new Map(),downloads=[],revoked=[],created=[];let cursor=0,nextTimer=0,pendingEffects=[],tree,accesses=0,closed=0,token='live-token',user={id:'live-user',companyId:'live-company',role:'employee'};
   let props={open:true,onClose:()=>{closed++;props={...props,open:false};},...(sampleWorkspace!==undefined?{sampleWorkspace}:{})};
   const denied=()=>{accesses++;throw new Error('Sample used live API or auth storage');};
   const react={
@@ -124,22 +124,26 @@ function panelHarness(sampleWorkspace,liveClient) {
     useRef:initial=>{const index=cursor++;hooks[index]??={current:initial};return hooks[index];},
     useEffect:(effect,deps)=>{const index=cursor++,previous=hooks[index];if(!previous||deps.some((value,i)=>value!==previous.deps[i]))pendingEffects.push(()=>{previous?.cleanup?.();hooks[index]={deps,cleanup:effect()};});},
   };
+  const report=load('utils/lucyWorkReport.ts',{TextEncoder});
   const component=load('components/LucyWorkspacePanel.tsx',{
-    require:name=>name==='react'?react:name==='../services/api'?{api:liveClient||new Proxy({}, {get:denied})}:name==='./LucySourceEvidence'?{__esModule:true,default:'LucySourceEvidence'}:new Proxy({}, {get:(_,key)=>key}),
-    localStorage:{getItem:liveClient?()=>token:denied},fetch:denied,
+    require:name=>name==='react'?react:name==='../services/api'?{api:liveClient||new Proxy({}, {get:denied})}:name==='../utils/lucyWorkReport'?report:name==='./LucySourceEvidence'?{__esModule:true,default:'LucySourceEvidence'}:new Proxy({}, {get:(_,key)=>key}),
+    localStorage:{getItem:liveClient?key=>key==='token'?token:JSON.stringify(user):denied},fetch:denied,
     Date:class extends Date {static now(){return startTime;}},
-    crypto:{randomUUID:()=>`request-${++nextTimer}`},document:{visibilityState:'visible'},
+    crypto:{randomUUID:()=>`request-${++nextTimer}`},Blob,
+    URL:{createObjectURL:blob=>{const url=`blob:report-${created.length+1}`;created.push({url,blob});behavior.onCreate?.();return url;},revokeObjectURL:url=>revoked.push(url)},
+    document:{visibilityState:'visible',body:{appendChild:()=>{behavior.onAppend?.();}},createElement:()=>{if(behavior.createThrows)throw new Error('Unable to create download link');return {click(){if(behavior.clickThrows)throw new Error('Unable to start download');downloads.push({href:this.href,filename:this.download});},remove(){}};}},
+    setTimeout:callback=>{const id=++nextTimer;timeouts.set(id,callback);return id;},clearTimeout:id=>timeouts.delete(id),
     setInterval:callback=>{const id=++nextTimer;timers.set(id,callback);return id;},clearInterval:id=>timers.delete(id),
   }).default;
   const render=()=>{cursor=0;tree=component(props);const effects=pendingEffects;pendingEffects=[];effects.forEach(effect=>effect());return tree;};
   const settle=async()=>{for(let i=0;i<5;i++){await Promise.resolve();render();}return tree;};
   const button=label=>{const found=nodes(tree).find(node=>node.type==='Button'&&text(node)===label);assert.ok(found,`Missing button ${label}`);return found;};
   return {
-    render,settle,text:()=>text(tree),nodes:()=>nodes(tree),accesses:()=>accesses,closed:()=>closed,timerCount:()=>timers.size,
+    render,settle,downloads:()=>downloads,created:()=>created,revoked:()=>revoked,timeouts:()=>timeouts.size,flushTimeouts:()=>{for(const [id,callback] of timeouts){timeouts.delete(id);callback();}},button, text:()=>text(tree),nodes:()=>nodes(tree),accesses:()=>accesses,closed:()=>closed,timerCount:()=>timers.size,
     click:label=>{const found=button(label);assert.ok(!found.props.disabled,`${label} is disabled`);found.props.onClick();},
     field:(label,value)=>{const found=nodes(tree).find(node=>node.type==='TextField'&&node.props.label===label);assert.ok(found);found.props.onChange({target:{value}});render();},
     poll:()=>{[...timers.values()].forEach(callback=>callback());},
-    setProps:next=>{props={...props,...next};render();},setToken:next=>{token=next;},
+    setProps:next=>{props={...props,...next};render();},setToken:next=>{token=next;},setUser:next=>{user=next;},
     dispose:()=>hooks.forEach(hook=>hook.cleanup?.()),
   };
 }
@@ -252,4 +256,172 @@ test('public Lucy demo mounts the real panel with a per-view sample workspace, n
   assert.match(source,/<LucyWorkspacePanel[^\n]+sampleWorkspace=\{sampleWorkspace\}/);
   assert.match(source,/Try sample Lucy workspace/);
   assert.match(source,/In-memory simulation only: no AI model, API calls, or real changes/);
+});
+
+const fieldProps=(ui,label)=>ui.nodes().find(node=>node.type==='TextField'&&node.props.label===label).props;
+function liveWorkspace(capabilities,jobs=[]) {
+  let state={...capabilities,jobs},posts=[],reads=[];
+  return {posts,reads,setState:next=>{state={...state,...next};},client:{
+    get:async path=>{reads.push(path);return path===work?state:{preferences:[],options:{response_style:['concise']},limit:6};},
+    post:async(path,body)=>{posts.push({path,body});return {job:{id:`live-${posts.length}`,prompt:body.prompt,status:'queued',mode:body.mode,createdAt:new Date(startTime).toISOString()}};},
+  }};
+}
+
+test('new server defaults to company-record search with AI flag off and enforces the short query limit',async()=>{
+  const env=liveWorkspace({enabled:false,modes:{record_search:true,ai_research:false}}),ui=panelHarness(undefined,env.client);
+  ui.render();await ui.settle();
+  assert.equal(fieldProps(ui,'Research mode').value,'record_search');assert.equal(fieldProps(ui,'Research task').inputProps.maxLength,200);
+  assert.match(ui.text(),/Company-record search \(no AI model\)/);assert.ok(!ui.text().includes('not enabled for this deployment'));
+  assert.equal(ui.nodes().find(node=>node.type==='MenuItem'&&node.props.value==='ai_research').props.disabled,true);
+  ui.field('Research task','x'.repeat(201));assert.equal(ui.button('Start read-only task').props.disabled,true);
+  ui.button('Start read-only task').props.onClick();await ui.settle();assert.equal(env.posts.length,0);
+  ui.field('Research task','  Riverside  ');ui.click('Start read-only task');await ui.settle();
+  assert.equal(env.posts.length,1);assert.equal(env.posts[0].body.mode,'record_search');assert.equal(env.posts[0].body.prompt,'Riverside');ui.dispose();
+});
+
+test('legacy server keeps AI-only behavior and request shape, including its disabled state',async()=>{
+  for(const enabled of [true,false]) {
+    const env=liveWorkspace({enabled}),ui=panelHarness(undefined,env.client);ui.render();await ui.settle();
+    assert.equal(fieldProps(ui,'Research mode').value,'ai_research');assert.equal(fieldProps(ui,'Research task').inputProps.maxLength,4000);
+    assert.ok(!ui.nodes().some(node=>node.type==='MenuItem'&&node.props.value==='record_search'));
+    ui.field('Research task','legacy task');assert.equal(ui.button('Start read-only task').props.disabled,!enabled);
+    if(enabled){ui.click('Start read-only task');await ui.settle();assert.deepEqual(Object.keys(env.posts[0].body).sort(),['prompt','requestKey']);}
+    else {ui.button('Start read-only task').props.onClick();await ui.settle();assert.equal(env.posts.length,0);assert.match(ui.text(),/AI background research is not enabled/);}
+    ui.dispose();
+  }
+});
+
+test('local kill switch and malformed capabilities fail closed while permitting separately enabled AI',async()=>{
+  for(const caps of [
+    {enabled:true,modes:{record_search:false,ai_research:true}},
+    {enabled:false,modes:{record_search:false,ai_research:false}},
+    {enabled:true,modes:{record_search:true}},
+  ]) {
+    const env=liveWorkspace(caps),ui=panelHarness(undefined,env.client);ui.render();await ui.settle();ui.field('Research task','Riverside');
+    assert.equal(ui.button('Start read-only task').props.disabled,caps.modes.ai_research!==true);
+    ui.field('Research mode','record_search');assert.equal(fieldProps(ui,'Research mode').value,'ai_research');
+    ui.dispose();
+  }
+});
+
+test('mode-aware retry keys survive uncertain responses but changing modes invalidates a pending key',async()=>{
+  const env=liveWorkspace({enabled:true,modes:{record_search:true,ai_research:true}});let calls=0;
+  env.client.post=async(path,body)=>{env.posts.push({path,body});calls++;throw new Error('Response was lost');};
+  const ui=panelHarness(undefined,env.client);ui.render();await ui.settle();ui.field('Research task','Riverside');
+  ui.click('Start read-only task');await ui.settle();ui.click('Start read-only task');await ui.settle();
+  assert.equal(env.posts[0].body.mode,'record_search');assert.equal(env.posts[0].body.requestKey,env.posts[1].body.requestKey);
+  ui.field('Research mode','ai_research');assert.equal(fieldProps(ui,'Research task').inputProps.maxLength,4000);
+  ui.click('Start read-only task');await ui.settle();assert.equal(env.posts[2].body.mode,'ai_research');assert.notEqual(env.posts[2].body.requestKey,env.posts[0].body.requestKey);
+  ui.field('Research mode','record_search');ui.click('Start read-only task');await ui.settle();assert.notEqual(env.posts[3].body.requestKey,env.posts[0].body.requestKey);
+  assert.equal(calls,4);ui.dispose();
+});
+
+test('mode changes and duplicate submit are locked synchronously during a pending mutation',async()=>{
+  const env=liveWorkspace({enabled:true,modes:{record_search:true,ai_research:true}});let release;
+  env.client.post=async(path,body)=>{env.posts.push({path,body});return new Promise(resolve=>{release=()=>resolve({job:{id:'queued-1',prompt:body.prompt,status:'queued',mode:body.mode,createdAt:new Date(startTime).toISOString()}});});};
+  const ui=panelHarness(undefined,env.client);ui.render();await ui.settle();ui.field('Research task','Riverside');
+  const submit=ui.button('Start read-only task').props.onClick;submit();submit();ui.field('Research mode','ai_research');
+  assert.equal(env.posts.length,1);assert.equal(fieldProps(ui,'Research mode').value,'record_search');
+  release();await ui.settle();assert.equal(env.posts[0].body.mode,'record_search');ui.dispose();
+});
+
+test('sample adapter advertises only simulation mode and refuses AI, omitted modes and mode reuse',async()=>{
+  const env=setup(),{client}=env.create();const result=await client.get(work);
+  assert.equal(result.enabled,false);assert.equal(result.modes.ai_research,false);assert.equal(result.modes.record_search,true);
+  await client.post(work,request());
+  for(const mode of ['ai_research','invalid',undefined]) await assert.rejects(client.post(work,{...request(),mode}));
+  for(const key of ['', 'bad key', 'x'.repeat(101)]) await assert.rejects(client.post(work,request(key)));
+  const ui=panelHarness(env.create());ui.render();await ui.settle();
+  assert.ok(!ui.nodes().some(node=>node.type==='MenuItem'&&node.props.value==='ai_research'));
+  assert.equal(fieldProps(ui,'Research mode').value,'record_search');assert.equal(env.forbidden(),0);ui.dispose();
+});
+
+async function completedSample(behavior={}) {
+  const env=setup(),sample=env.create();await sample.client.post(work,request());env.advance(5000);
+  const ui=panelHarness(sample,undefined,behavior);ui.render();await ui.settle();return {env,sample,ui};
+}
+
+test('actual sample download uses only current synthetic content, no API or storage, and revokes its URL',async()=>{
+  const {env,ui}=await completedSample();const handler=ui.button('Download report (.txt)').props.onClick;
+  handler();handler();await ui.settle();assert.equal(ui.downloads().length,1);assert.equal(ui.created().length,1);
+  assert.equal(ui.created()[0].blob.type,'text/plain;charset=utf-8');assert.match(ui.downloads()[0].filename,/^lucy-sample-record-search-.*\.txt$/);
+  const text=await ui.created()[0].blob.text();assert.match(text,/SYNTHETIC DATA ONLY/);assert.match(text,/No AI model was called/);assert.match(text,/sample-document-handover/);
+  assert.equal(ui.timeouts(),1);ui.flushTimeouts();assert.deepEqual(ui.revoked(),[ui.created()[0].url]);assert.equal(ui.timeouts(),0);
+  assert.equal(ui.accesses(),0);assert.equal(env.forbidden(),0);ui.dispose();assert.equal(ui.revoked().length,1);
+});
+
+test('report URLs are revoked on close, source replacement and unmount',async()=>{
+  for(const action of ['close','source','unmount']) {
+    const {env,ui}=await completedSample();ui.click('Download report (.txt)');await ui.settle();assert.equal(ui.timeouts(),1);
+    if(action==='close'){ui.click('Close');await ui.settle();}
+    if(action==='source'){ui.setProps({sampleWorkspace:env.create()});await ui.settle();}
+    if(action==='unmount')ui.dispose();
+    assert.equal(ui.timeouts(),0);assert.deepEqual(ui.revoked(),[ui.created()[0].url]);ui.dispose();
+  }
+});
+
+test('stale report callbacks cannot export after close, source replacement, latest-result replacement or unmount',async()=>{
+  for(const action of ['close','source','refresh','unmount']) {
+    const {env,ui}=await completedSample();const stale=ui.button('Download report (.txt)').props.onClick;
+    if(action==='close'){ui.click('Close');await ui.settle();}
+    if(action==='source'){ui.setProps({sampleWorkspace:env.create()});await ui.settle();}
+    if(action==='refresh'){ui.click('Refresh');await ui.settle();}
+    if(action==='unmount')ui.dispose();
+    stale();await Promise.resolve();assert.equal(ui.created().length,0);assert.equal(ui.downloads().length,0);ui.dispose();
+  }
+});
+
+test('live download revalidates the current token and performs no additional network read',async()=>{
+  const env=setup(),sample=env.create();await sample.client.post(work,request());env.advance(5000);const job=(await sample.client.get(work)).jobs[0];
+  for(const changeToken of [false,true]) {
+    const live=liveWorkspace({enabled:false,modes:{record_search:true,ai_research:false}},[job]),ui=panelHarness(undefined,live.client);
+    ui.render();await ui.settle();const reads=live.reads.length;
+    if(changeToken)ui.setToken('other-account');
+    ui.button('Download report (.txt)').props.onClick();await ui.settle();
+    assert.equal(ui.downloads().length,changeToken?0:1);assert.equal(live.reads.length,reads);assert.equal(live.posts.length,0);ui.dispose();
+  }
+});
+
+test('exports stop if scope changes during setup and always release failed download URLs',async()=>{
+  for(const action of ['scope','createThrows','clickThrows']) {
+    const behavior={};const {env,ui}=await completedSample(behavior);
+    if(action==='scope')behavior.onCreate=()=>ui.setProps({sampleWorkspace:env.create()});
+    else behavior[action]=true;
+    ui.click('Download report (.txt)');await ui.settle();
+    assert.equal(ui.downloads().length,0);assert.equal(ui.created().length,1);assert.deepEqual(ui.revoked(),[ui.created()[0].url]);assert.equal(ui.timeouts(),0);ui.dispose();
+  }
+});
+
+test('partial AI jobs do not offer downloads, and malformed completed reports surface an error without a Blob',async()=>{
+  const env=setup(),sample=env.create();await sample.client.post(work,request());env.advance(5000);const original=(await sample.client.get(work)).jobs[0];
+  for(const patch of [{status:'partial',mode:'ai_research'},{result:{text:'Missing run/evidence'}},{result:{...original.result,text:'😀'.repeat(40000)}}]) {
+    const live=liveWorkspace({enabled:false,modes:{record_search:true,ai_research:false}},[{...original,...patch}]),ui=panelHarness(undefined,live.client);ui.render();await ui.settle();
+    if(patch.status==='partial')assert.ok(!ui.nodes().some(node=>node.type==='Button'&&text(node)==='Download report (.txt)'));
+    else {ui.click('Download report (.txt)');await ui.settle();assert.match(ui.text(),/incomplete, malformed, or too large/);}
+    assert.equal(ui.created().length,0);assert.equal(ui.downloads().length,0);ui.dispose();
+  }
+});
+
+
+test('partial record-search button downloads explicitly incomplete reports while invalid partial data is refused',async()=>{
+  const env=setup(),sample=env.create();await sample.client.post(work,request());env.advance(5000);const original=(await sample.client.get(work)).jobs[0];
+  for(const valid of [true,false]) {
+    const job={...original,status:'partial',result:{...original.result,run:{status:'partial',modelCalls:0},evidence:{...original.result.evidence,incomplete:valid}}};
+    const live=liveWorkspace({enabled:false,modes:{record_search:true,ai_research:false}},[job]),ui=panelHarness(undefined,live.client);ui.render();await ui.settle();
+    assert.ok(!ui.nodes().some(node=>node.type==='Button'&&text(node)==='Download report (.txt)'));ui.click('Download partial report (.txt)');await ui.settle();
+    assert.equal(ui.downloads().length,valid?1:0);
+    if(valid){const report=await ui.created()[0].blob.text();assert.match(report,/PARTIAL RECORD SEARCH REPORT/);assert.match(report,/Status: partial/);assert.ok(!report.includes('Status: completed'));}
+    else assert.match(ui.text(),/incomplete, malformed, or too large/);
+    ui.dispose();
+  }
+});
+
+
+test('company, user and role changes block live exports even when the token has not changed',async()=>{
+  const env=setup(),sample=env.create();await sample.client.post(work,request());env.advance(5000);const job=(await sample.client.get(work)).jobs[0];
+  for(const patch of [{companyId:'other-company'},{id:'other-user'},{role:'admin'}]) {
+    const live=liveWorkspace({enabled:false,modes:{record_search:true,ai_research:false}},[job]),ui=panelHarness(undefined,live.client);ui.render();await ui.settle();
+    ui.setUser({id:'live-user',companyId:'live-company',role:'employee',...patch});ui.button('Download report (.txt)').props.onClick();await ui.settle();
+    assert.equal(ui.downloads().length,0);assert.equal(ui.created().length,0);ui.poll();await ui.settle();assert.equal(ui.closed(),1);ui.dispose();
+  }
 });

@@ -7,7 +7,9 @@ const flush=async()=>{for(let n=0;n<10;n++)await Promise.resolve();};
 function setup(overrides={}){
  const timers=new Set();const calls=[];
  const client={get:async url=>{calls.push(['get',url]);return url.endsWith('/work')?{enabled:true,jobs:[]}:{preferences:[]};},put:async(url,data)=>({preference:{key:url.split('/').pop(),...data}}),post:async(url,data)=>({job:{id:'job',prompt:data?.prompt,status:'queued',createdAt:new Date().toISOString()}}),delete:async()=>{},...overrides};
- const context={exports:{},setInterval:fn=>{timers.add(fn);return fn;},clearInterval:fn=>timers.delete(fn)};
+ const reportContext={exports:{}};
+ vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/utils/lucyWorkReport.ts'),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,reportContext);
+ const context={exports:{},require:name=>{assert.equal(name,'../utils/lucyWorkReport');return reportContext.exports;},setInterval:fn=>{timers.add(fn);return fn;},clearInterval:fn=>timers.delete(fn)};
  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,context);
  const controller=new context.exports.LucyWorkspaceController(client);return {controller,client,timers,calls,Controller:context.exports.LucyWorkspaceController};
 }
@@ -70,4 +72,43 @@ test('hidden acknowledgement keeps the original request key until the user sees 
  c.open();await flush();c.setPrompt('Review schedules');const pending=c.create();c.close();wait.resolve({job:{id:'confirmed',status:'completed'}});await pending;
  c.open();await flush();await c.create();assert.equal(posts[0].requestKey,posts[1].requestKey);assert.equal(c.snapshot().prompt,'');
  c.setPrompt('Review schedules');await c.create();assert.notEqual(posts[1].requestKey,posts[2].requestKey);c.close();
+});
+
+const modern={enabled:false,modes:{ai_research:false,record_search:true},jobs:[]};
+test('new servers default to record search even when AI is disabled and send the explicit mode',async()=>{
+ const posts=[];const {controller:c}=setup({get:async url=>url.endsWith('/work')?modern:{preferences:[]},post:async(url,data)=>{posts.push(data);return {job:{id:'records',status:'queued'}};}});
+ c.open();await flush();assert.equal(c.snapshot().mode,'record_search');assert.equal(c.snapshot().enabled,true);
+ c.setMode('ai_research');assert.equal(c.snapshot().mode,'record_search');c.setPrompt('Riverside');await c.create();assert.equal(posts[0].mode,'record_search');c.close();
+});
+test('legacy servers remain AI-only without sending an unsupported mode field',async()=>{
+ const posts=[];const {controller:c}=setup({post:async(url,data)=>{posts.push(data);return {job:{id:'legacy',status:'queued'}};}});
+ c.open();await flush();assert.equal(c.snapshot().mode,'ai_research');assert.equal(c.snapshot().modes.explicit,false);
+ c.setMode('record_search');assert.equal(c.snapshot().mode,'ai_research');c.setPrompt('Legacy task');await c.create();assert.equal(Object.hasOwn(posts[0],'mode'),false);c.close();
+});
+test('malformed explicit capability metadata never falls back to legacy enabled or enables submission',async()=>{
+ for(const modes of [null,{},[],{ai_research:true},{ai_research:'true',record_search:true},{ai_research:true,record_search:1}]){
+  let posts=0;const {controller:c}=setup({get:async url=>url.endsWith('/work')?{enabled:true,modes,jobs:[]}:{preferences:[]},post:async()=>{posts++;}});
+  c.open();await flush();assert.equal(c.snapshot().enabled,false);c.setPrompt('No unsafe fallback');await c.create();assert.equal(posts,0);c.close();
+ }
+});
+test('request keys stay scoped to mode and prompt across uncertainty, switching and reopening',async()=>{
+ const posts=[];let fail=true;const {controller:c}=setup({get:async url=>url.endsWith('/work')?{...modern,modes:{ai_research:true,record_search:true}}:{preferences:[]},post:async(url,data)=>{posts.push(data);if(fail)throw Error('offline');return {job:{id:'done',status:'completed'}};}});
+ c.open();await flush();c.setPrompt('Handover');await c.create();c.setMode('ai_research');await c.create();
+ assert.notEqual(posts[0].requestKey,posts[1].requestKey);assert.equal(posts[0].mode,'record_search');assert.equal(posts[1].mode,'ai_research');
+ c.setMode('record_search');c.close();c.open();await flush();await c.create();assert.equal(posts[0].requestKey,posts[2].requestKey);
+ c.setPrompt('Another');await c.create();assert.notEqual(posts[0].requestKey,posts[3].requestKey);
+ c.setPrompt('Handover');fail=false;await c.create();assert.equal(posts[0].requestKey,posts[4].requestKey);
+ c.setPrompt('Handover');await c.create();assert.notEqual(posts[4].requestKey,posts[5].requestKey);c.close();
+});
+test('mode changes preserve long drafts, enforce limits and cannot alter in-flight work',async()=>{
+ const posts=[],wait=deferred();const {controller:c}=setup({get:async url=>url.endsWith('/work')?{...modern,modes:{ai_research:true,record_search:true}}:{preferences:[]},post:async(url,data)=>{posts.push(data);return wait.promise;}});
+ c.open();await flush();c.setPrompt('x'.repeat(201));assert.equal(c.snapshot().prompt.length,200);
+ c.setMode('ai_research');c.setPrompt('x'.repeat(4001));assert.equal(c.snapshot().prompt.length,4000);c.setMode('record_search');assert.equal(c.snapshot().prompt.length,4000);await c.create();assert.equal(posts.length,0);
+ c.setPrompt('short');const pending=c.create();c.setMode('ai_research');c.setPrompt('changed');assert.equal(c.snapshot().mode,'record_search');assert.equal(c.snapshot().prompt,'short');
+ wait.resolve({job:{id:'ack',status:'queued'}});await pending;c.close();
+});
+test('selected AI does not silently become record search when capability changes, and failed loads clear capabilities',async()=>{
+ const {controller:c,client}=setup({get:async url=>url.endsWith('/work')?{...modern,modes:{ai_research:true,record_search:true}}:{preferences:[]}});
+ c.open();await flush();c.setMode('ai_research');client.get=async url=>url.endsWith('/work')?modern:{preferences:[]};await c.refresh();assert.equal(c.snapshot().mode,'ai_research');assert.equal(c.snapshot().enabled,false);
+ c.setMode('record_search');assert.equal(c.snapshot().enabled,true);client.get=async()=>{throw Error('offline');};await c.refresh();assert.equal(c.snapshot().modes,null);assert.equal(c.snapshot().enabled,null);c.close();
 });
