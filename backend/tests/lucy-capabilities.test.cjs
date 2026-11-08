@@ -65,7 +65,7 @@ test('capability discovery is authenticated, role-filtered, and honest about mis
 });
 test('work search and capability help run without any model provider',async()=>{
   const result=await request('/lucy',employee,'Find work: North');assert.equal(result.status,200);assert.equal(result.data.search.records.length,3);assert.doesNotMatch(result.data.text,/foreign|coworker/);assert.equal(result.data.evidence.sources.length,3);assert.ok(result.data.evidence.sources.every(source=>!source.title.includes('foreign')));
-  const help=await request('/lucy',owner,'What can you do?');assert.equal(help.status,200);assert.match(help.data.text,/Background research is disabled/);
+  const help=await request('/lucy',owner,'What can you do?');assert.equal(help.status,200);assert.match(help.data.text,/AI background research is disabled/);
   assert.equal((await request('/lucy',owner,'Find work:')).status,400);
 });
 
@@ -212,4 +212,45 @@ test('simultaneous final-save failure and entitlement revocation cannot expose f
  try{const result=await tracked('Create Fallback revoked task','chat-fallback-revoked');assert.equal(result.status,402);assert.equal(result.data.actions,undefined);assert.equal(result.data.evidence,undefined);assert.equal((await query("SELECT * FROM tasks WHERE description='Fallback revoked task'")).rows.length,1);}
  finally{pool.connect=originalConnect;await query("UPDATE companies SET subscription_status='active' WHERE id=$1",[company]);inference.lucyInferenceReady=()=>false;}
  const retry=await tracked('Create Fallback revoked task','chat-fallback-revoked');assert.equal(retry.status,409);assert.equal(calls,2);
+});
+
+
+test('capabilities and help distinguish independently enabled local records from AI background research',async()=>{
+ const savedAI=process.env.LUCY_BACKGROUND_WORK_ENABLED,savedRecords=process.env.LUCY_RECORD_SEARCH_ENABLED;
+ const response=inference.lucyResponse;let calls=0;inference.lucyResponse=async()=>{calls++;throw new Error('Help must not call a provider');};
+ try{
+  for(const [ai,records] of [[false,true],[true,true],[true,false],[false,false]]){
+   process.env.LUCY_BACKGROUND_WORK_ENABLED=String(ai);process.env.LUCY_RECORD_SEARCH_ENABLED=String(records);
+   const capabilities=(await request('/lucy/capabilities')).data;
+   assert.equal(capabilities.backgroundResearch,ai);assert.equal(capabilities.backgroundRecordSearch,records);assert.deepEqual(capabilities.workModes,{ai_research:ai,record_search:records});
+   assert.equal(capabilities.limitations.some(value=>value==='AI background research is disabled for this deployment'),!ai);
+   assert.equal(capabilities.limitations.some(value=>value==='Saved company-record search is disabled for this deployment'),!records);
+   const help=(await request('/lucy',owner,'What can you do?')).data;assert.deepEqual(help.capabilities.workModes,capabilities.workModes);assert.match(help.text,/This chat does not start background jobs/);
+   assert.match(help.text,records?/you can save company-record searches without AI/:/saved company-record search is currently disabled/);
+   assert.match(help.text,ai?/AI background research is also enabled there/:/AI background research is currently disabled/);
+  }
+  assert.equal(calls,0);
+ }finally{
+  inference.lucyResponse=response;
+  if(savedAI===undefined)delete process.env.LUCY_BACKGROUND_WORK_ENABLED;else process.env.LUCY_BACKGROUND_WORK_ENABLED=savedAI;
+  if(savedRecords===undefined)delete process.env.LUCY_RECORD_SEARCH_ENABLED;else process.env.LUCY_RECORD_SEARCH_ENABLED=savedRecords;
+ }
+});
+
+test('chat instructions describe panel modes honestly without a background-job tool',async()=>{
+ const response=inference.lucyResponse,ready=inference.lucyInferenceReady;
+ const savedAI=process.env.LUCY_BACKGROUND_WORK_ENABLED,savedRecords=process.env.LUCY_RECORD_SEARCH_ENABLED;
+ try{
+  delete process.env.LUCY_BACKGROUND_WORK_ENABLED;delete process.env.LUCY_RECORD_SEARCH_ENABLED;inference.lucyInferenceReady=()=>true;
+  inference.lucyResponse=async input=>{
+   assert.match(input.instructions,/you can save company-record searches without AI/);assert.match(input.instructions,/AI background research is currently disabled/);assert.match(input.instructions,/This chat does not start background jobs/);
+   assert.ok(input.tools.every(tool=>!/(background|create_work|record_search)/.test(tool.name)));
+   return {output:[],output_text:'Use Tasks and preferences for a saved record search.'};
+  };
+  assert.equal((await request('/lucy',owner,'How can I save a record search?')).status,200);
+ }finally{
+  inference.lucyResponse=response;inference.lucyInferenceReady=ready;
+  if(savedAI===undefined)delete process.env.LUCY_BACKGROUND_WORK_ENABLED;else process.env.LUCY_BACKGROUND_WORK_ENABLED=savedAI;
+  if(savedRecords===undefined)delete process.env.LUCY_RECORD_SEARCH_ENABLED;else process.env.LUCY_RECORD_SEARCH_ENABLED=savedRecords;
+ }
 });

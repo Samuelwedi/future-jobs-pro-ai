@@ -1,4 +1,4 @@
-import { LucyToolOutcome } from './lucyAgentRuntime';
+import type { LucyToolOutcome } from './lucyAgentRuntime';
 
 export type LucySource = {kind:'document'|'task'|'project'|'schedule';id:string;title:string;excerpt:string;retrievedAt:string;date?:string};
 export type LucyEvidence = {sources:LucySource[];incomplete:boolean};
