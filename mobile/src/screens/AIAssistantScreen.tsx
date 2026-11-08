@@ -1,3 +1,7 @@
+import LucyWorkspacePanel from '../components/LucyWorkspacePanel';
+import LucySourceEvidence from '../components/LucySourceEvidence';
+import type {LucyEvidence} from '../utils/lucyEvidence';
+import {LucyChatRequestController, lucyRequestNotice, type LucyChatAttempt} from '../utils/lucyChatRequest';
 import { useLang } from '../context/LanguageContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useRef, useEffect } from 'react';
@@ -28,6 +32,8 @@ interface Message {
   approvalId?: string;
   actionType?: string;
   actions?: ActionReceipt[];
+  evidence?: LucyEvidence;
+  requestId?: string;
 }
 
 interface ActionReceipt {
@@ -46,12 +52,23 @@ const LUCY_RECORDING_OPTIONS = {
 
 export default function AIAssistantScreen() {
   const {lang,t}=useLang();
+  const [workspaceVisible,setWorkspaceVisible]=useState(false);
   const approvalLock=useRef(false);
   const [approvalBusy,setApprovalBusy]=useState(false);
   const safeInsets = useSafeAreaInsets();
   const { user } = useAuth();
   const navigation = useNavigation();
   const route = useRoute<any>();
+  const controllerRef = useRef(new LucyChatRequestController());
+  const controller = controllerRef.current;
+  const interacted = useRef(false);
+  const scope = user ? JSON.stringify([user.id, user.companyId, user.role]) : '';
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const deniedScope = useRef<string|null>(null);
+  controller.setScope(scope === deniedScope.current ? '' : scope);
+  const [requestState, setRequestState] = useState(controller.snapshot());
+  const syncRequest = () => setRequestState(controller.snapshot());
   const [messages, setMessages] = useState<Message[]>([
     { text: t("Hi! I'm Lucy. I can schedule, run payroll, and generate reports. Try me!"), isUser: false },
   ]);
@@ -114,11 +131,12 @@ export default function AIAssistantScreen() {
   const active = useRef(true);
   const generation = useRef(0);
   const startingRecording = useRef(false);
-  const current = (epoch: number) => active.current && generation.current === epoch;
+  const current = (epoch: number) => active.current && generation.current === epoch && scopeRef.current === scope;
 
   useEffect(() => {
     const leave = () => {
       active.current = false;
+      controller.suspend();
       generation.current += 1;
       conversationActiveRef.current = false;
       for (const timer of [followUpTimer, conversationTimer, maximumRecordingTimer]) {
@@ -133,11 +151,14 @@ export default function AIAssistantScreen() {
     };
     const enter = () => {
       active.current = true;
+      controller.resume(); syncRequest();
       setIsRecording(false);
       setLoading(false);
       setConversationActive(false);
       setVoiceStatus('');
     };
+    if (AppState.currentState !== 'active' || !navigation.isFocused()) leave();
+    else enter();
     const blur = navigation.addListener('blur', leave);
     const focus = navigation.addListener('focus', enter);
     const appState = AppState.addEventListener('change', state => {
@@ -170,12 +191,25 @@ export default function AIAssistantScreen() {
   };
 
   const queueFollowUp = (delay = 550) => {
-    if (!conversationActiveRef.current) return;
+    if (!conversationActiveRef.current || controller.snapshot().pending) return;
     if (followUpTimer.current) clearTimeout(followUpTimer.current);
     followUpTimer.current = setTimeout(() => {
-      if (conversationActiveRef.current && !isSpeaking.current && !finishingRecording.current) void startRecording();
+      if (conversationActiveRef.current && !controller.snapshot().pending && !isSpeaking.current && !finishingRecording.current) void startRecording();
     }, delay);
   };
+
+  // Authentication scope changes drop all private chat and unresolved payloads.
+  useEffect(() => {
+    generation.current++; interacted.current = false;
+    conversationActiveRef.current = false;
+    for (const timer of [followUpTimer, conversationTimer, maximumRecordingTimer]) {
+      if (timer.current) clearTimeout(timer.current); timer.current = null;
+    }
+    try { void Speech.stop().catch(() => {}); } catch {}
+    recorderRef.current?.cancel();
+    setMessages([{text: t("Hi! I'm Lucy. I can schedule, run payroll, and generate reports. Try me!"), isUser: false}]);
+    setInput(''); setLoading(false); setConversationActive(false); setIsRecording(false); setVoiceStatus(''); setWorkspaceVisible(false); syncRequest();
+  }, [user?.id, user?.companyId, user?.role]);
 
   // Auto-record from Home screen
   useEffect(() => {
@@ -183,7 +217,7 @@ export default function AIAssistantScreen() {
       let cancelled = false;
       const epoch = generation.current;
       const beginWakeConversation = async () => {
-        if (cancelled || !current(epoch)) return;
+        if (cancelled || !current(epoch) || controller.snapshot().pending) return;
         setConversation(true);
         const greeting = t("I'm here. What would you like me to take care of?");
         setMessages(prev => [...prev, { text: greeting, isUser: false }]);
@@ -195,15 +229,14 @@ export default function AIAssistantScreen() {
     }
   }, [route.params?.autoRecord, route.params?.wakeEvent]);
 
-  const sending = useRef(false);
-  const interacted = useRef(false);
 
-  // Load conversation history
+  // History must not overwrite a new send, another account, or a hidden screen.
   useEffect(() => {
     if (!user) return;
+    const epoch = generation.current;
     api.get('/lucy/history')
       .then((data: any) => {
-        if (active.current && !interacted.current && data.messages) {
+        if (current(epoch) && !interacted.current && data.messages) {
           const history = [...data.messages].reverse().map((m: any) => ({
             text: m.content,
             isUser: m.role === 'user',
@@ -212,7 +245,7 @@ export default function AIAssistantScreen() {
         }
       })
       .catch(() => {});
-  }, [user?.id]);
+  }, [user?.id, user?.companyId, user?.role]);
 
   // Speak Lucy's response
   const speakText = async (text: string): Promise<void> => {
@@ -249,36 +282,79 @@ export default function AIAssistantScreen() {
     }
   };
 
+  const runRequest = async (attempt: LucyChatAttempt, fromVoice: boolean) => {
+    const epoch = generation.current;
+    setLoading(true); syncRequest();
+    try {
+      let outcome;
+      try {
+        const response = attempt.checking
+          ? {data: await api.get<any>(`/lucy-v2/requests/${encodeURIComponent(attempt.payload.requestId)}`), status: 200}
+          : await api.postLucyChat<any>(attempt.payload);
+        if (!current(epoch)) return;
+        const receipt = response.data;
+        outcome = controller.receive(attempt, attempt.checking && receipt?.response ? receipt.response.body : receipt, attempt.checking && receipt?.response ? receipt.response.statusCode : response.status);
+      } catch (error: any) {
+        if (!current(epoch) || !controller.isCurrent(attempt)) return;
+        if ([401, 403].includes(error?.response?.status)) {
+          deniedScope.current = scope; controller.setScope(''); generation.current++; setMessages([]); setInput(''); setLoading(false); syncRequest();
+          setConversation(false);
+          setVoiceStatus(t('Your access changed. Sign in again or reopen Lucy before continuing.'));
+          return;
+        }
+        outcome = error?.response
+          ? controller.receive(attempt, error.response.data, error.response.status)
+          : controller.fail(attempt);
+      }
+      if (outcome.kind === 'stale') return;
+      const data = outcome.data;
+      const completed = outcome.kind === 'completed';
+      if (!completed) {
+        setConversation(false);
+        if (followUpTimer.current) clearTimeout(followUpTimer.current);
+        followUpTimer.current = null;
+        setVoiceStatus('');
+      }
+      if (data) {
+        const botText = data?.text || (completed ? t('Lucy returned the request receipt.') : t('Lucy returned action receipts. The overall request outcome is not confirmed.'));
+        const approvalId = data?.approvalId || null;
+        const actions: ActionReceipt[] = Array.isArray(data?.actions) ? data.actions : [];
+        const requestId = attempt.payload.requestId;
+        if (!data?.ignored) setMessages(prev => [...prev.filter(item => item.isUser || item.requestId !== requestId), { text: botText, isUser: false, approvalId, actions, evidence: data.evidence, requestId }]);
+        if (completed) {
+          consecutiveMisses.current = 0;
+          if (conversationActiveRef.current) setConversation(true);
+          // Receipt checks are explicit and silent; never restart a voice turn.
+          if (!attempt.checking && !data?.ignored && botText) await speakText(approvalId ? `${botText} ${t('Please approve or reject the protected action on screen.')}` : botText);
+          if (!current(epoch)) return;
+          if (!attempt.checking && fromVoice && data?.continueListening !== false && !approvalId && conversationActiveRef.current) queueFollowUp();
+          else if (approvalId) setVoiceStatus(t("Waiting for your approval"));
+        }
+      }
+    } finally {
+      if (current(epoch)) {setLoading(controller.snapshot().busy); syncRequest();}
+    }
+  };
   const sendMessage = async (text: string, fromVoice = false) => {
     const epoch = generation.current;
-    if (!text.trim() || sending.current || !current(epoch)) return;
-    sending.current = true;
+    if (!text.trim() || !current(epoch)) return;
+    const attempt = controller.begin({message: text.trim(), conversationMode: conversationActiveRef.current, channel: fromVoice ? 'voice' : 'text', language: lang});
+    if (!attempt) return;
     interacted.current = true;
-    setMessages(prev => [...prev, { text: text.trim(), isUser: true }]);
-    setLoading(true);
-    try {
-      const data = await api.post<any>('/lucy-v2', { message: text.trim(), conversationMode: conversationActiveRef.current });
-      if (!current(epoch)) return;
-      const botText = data?.text || data?.[0]?.text || t("I'm not sure how to respond to that.");
-      const approvalId = data?.approvalId || null;
-      const actions: ActionReceipt[] = Array.isArray(data?.actions) ? data.actions : [];
-      if (!data?.ignored) setMessages(prev => [...prev, { text: botText, isUser: false, approvalId, actions }]);
-      consecutiveMisses.current = 0;
-      if (conversationActiveRef.current) setConversation(true);
-      if (!data?.ignored && botText) await speakText(approvalId ? `${botText} ${t('Please approve or reject the protected action on screen.')}` : botText);
-      if (!current(epoch)) return;
-      if (fromVoice && data?.continueListening !== false && !approvalId && conversationActiveRef.current) queueFollowUp();
-      else if (approvalId) setVoiceStatus(t("Waiting for your approval"));
-    } catch (err: any) {
-      if (!current(epoch)) return;
-      const errorMsg = err?.response?.data?.message || err?.message || t("Lucy could not complete this request. Please retry.");
-      setMessages(prev => [...prev, { text: errorMsg, isUser: false }]);
-      await speakText(errorMsg);
-      if (current(epoch) && fromVoice && conversationActiveRef.current) queueFollowUp(900);
-    } finally {
-      sending.current = false;
-      if (current(epoch)) setLoading(false);
-    }
+    setMessages(prev => [...prev, {text: text.trim(), isUser: true}]);
+    await runRequest(attempt, fromVoice);
+  };
+  const checkPrevious = () => {
+    if (!current(generation.current)) return;
+    const attempt = controller.check(); if (attempt) void runRequest(attempt, false);
+  };
+  const startNew = () => {
+    const requestId = controller.snapshot().requestId;
+    if (!requestId || controller.snapshot().busy) return;
+    Alert.alert(t('Start a new request?'), t('The previous request may already have changed records. Starting a new request does not cancel it and could duplicate its actions. Review your records first.'), [
+      {text: t('Keep previous request'), style: 'cancel'},
+      {text: t('Start a new request'), style: 'destructive', onPress: () => {if (controller.startNewAfterWarning(requestId)) syncRequest();}},
+    ]);
   };
 
   const downloadAction=async(item:NonNullable<ActionReceipt['download']>)=>{
@@ -293,8 +369,8 @@ export default function AIAssistantScreen() {
     }catch(e:any){Alert.alert(t("Report"),e.message);}
   };
   const handleSend = () => {
-    if (!input.trim()) return;
-    sendMessage(input);
+    if (!input.trim() || controller.snapshot().pending || !current(generation.current)) return;
+    void sendMessage(input);
     setInput('');
   };
 
@@ -346,6 +422,7 @@ export default function AIAssistantScreen() {
   const startRecording = async () => {
     const epoch = generation.current;
     if (!current(epoch) || startingRecording.current || finishingRecording.current || recorderRef.current?.isRecording) return;
+    if (controller.snapshot().pending) return;
     startingRecording.current = true;
     try {
       const permission = await requestRecordingPermissionsAsync();
@@ -446,6 +523,8 @@ export default function AIAssistantScreen() {
         <View style={styles.headerIdentity}><Text style={styles.headerTitle}>Lucy</Text><Text style={[styles.sessionStatus, (conversationActive||wakeStatus==='listening') && styles.sessionStatusLive]}>{conversationActive ? t("CONVERSATION LIVE") : wakeEnabled&&wakeStatus==='listening' ? t("HEY LUCY LISTENING") : wakeEnabled ? t("HEY LUCY STARTING") : t("READY")}</Text></View>
         <TouchableOpacity onPress={toggleWakeWord} accessibilityRole="switch" accessibilityState={{checked:wakeEnabled}} style={[styles.wakeToggle,wakeEnabled&&styles.wakeToggleOn]}><MaterialIcons name={wakeEnabled?'hearing':'hearing-disabled'} size={19} color={wakeEnabled?'#071018':'#94A3B8'}/></TouchableOpacity>
       </View>
+      <TouchableOpacity accessibilityRole="button" onPress={()=>setWorkspaceVisible(true)} style={{paddingHorizontal:20,paddingVertical:12}}><Text style={{color:'#67E8F9',fontSize:16}}>{lang==='es'?'Preferencias e investigación':lang==='fr'?'Préférences et recherche':'Preferences & research'}</Text></TouchableOpacity>
+      <LucyWorkspacePanel visible={workspaceVisible} onClose={()=>setWorkspaceVisible(false)}/>
       <FlatList
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
@@ -483,14 +562,22 @@ export default function AIAssistantScreen() {
                 <View style={styles.actionHeader}><MaterialIcons name={action.status === 'completed' ? 'check-circle' : action.status === 'pending' ? 'schedule' : action.status === 'failed' ? 'error' : 'insights'} size={19} color={action.status === 'failed' ? '#FF6B6B' : '#67E8F9'} /><Text style={styles.actionTitle}>{action.title}</Text><Text style={styles.actionStatus}>{t(action.status)}</Text></View>
                 <Text style={styles.actionSummary}>{action.summary}</Text>
                 {action.download&&<TouchableOpacity onPress={()=>void downloadAction(action.download!)}><Text style={{color:"#67E8F9",paddingVertical:12}}>{action.download.label}</Text></TouchableOpacity>}
-                {action.status==='pending'&&<TouchableOpacity disabled={loading} onPress={()=>void sendMessage('yes, run it')}><Text style={{color:"#67E8F9",paddingVertical:12}}>{t("Create draft payroll")}</Text></TouchableOpacity>}
+                {action.status==='pending'&&<TouchableOpacity disabled={loading || requestState.pending} onPress={()=>void sendMessage('yes, run it')}><Text style={{color:"#67E8F9",paddingVertical:12}}>{t("Create draft payroll")}</Text></TouchableOpacity>}
                 {action.details?.map((detail: { label: string; value: string | number }, detailIndex: number) => <View key={detailIndex} style={styles.detailRow}><Text style={styles.detailLabel}>{detail.label}</Text><Text style={styles.detailValue}>{String(detail.value)}</Text></View>)}
               </View>
             ))}
+            {!item.isUser && <View style={{marginHorizontal: 12}}><LucySourceEvidence evidence={item.evidence} language={lang}/></View>}
           </View>
         )}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
       />
+      {requestState.pending && <View style={styles.requestNotice}>
+        <Text accessibilityLiveRegion="polite" style={styles.requestNoticeText}>{t(lucyRequestNotice(requestState))}</Text>
+        <View style={styles.requestButtons}>
+          <TouchableOpacity accessibilityRole="button" accessibilityState={{disabled: !requestState.canCheck}} disabled={!requestState.canCheck} style={[styles.requestButton, !requestState.canCheck && styles.requestButtonDisabled]} onPress={checkPrevious}><Text style={styles.requestButtonText}>{t('Check previous request')}</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityState={{disabled: requestState.busy}} disabled={requestState.busy} style={[styles.requestButton, requestState.busy && styles.requestButtonDisabled]} onPress={startNew}><Text style={styles.requestButtonText}>{t('Start a new request…')}</Text></TouchableOpacity>
+        </View>
+      </View>}
       {loading && <ActivityIndicator color="#00D4FF" style={{ padding: 8 }} />}
       {!!voiceStatus && <Text style={styles.voiceStatus}>{voiceStatus}</Text>}
       <View style={styles.inputBar}>
@@ -503,10 +590,10 @@ export default function AIAssistantScreen() {
           onSubmitEditing={handleSend}
           returnKeyType="send"
         />
-        <TouchableOpacity onPress={isRecording ? stopRecording : startRecording} style={styles.micBtn}>
+        <TouchableOpacity accessibilityLabel={t(isRecording ? 'Stop recording' : 'Talk to Lucy')} disabled={!isRecording && requestState.pending} onPress={isRecording ? stopRecording : startRecording} style={styles.micBtn}>
           <MaterialIcons name={isRecording ? 'stop' : 'mic'} size={28} color={isRecording ? '#F44336' : '#00D4FF'} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleSend} disabled={loading || !input.trim()}>
+        <TouchableOpacity onPress={handleSend} disabled={loading || requestState.pending || !input.trim()}>
           <MaterialIcons name="send" size={28} color="#00D4FF" />
         </TouchableOpacity>
       </View>
@@ -515,6 +602,12 @@ export default function AIAssistantScreen() {
 }
 
 const styles = StyleSheet.create({
+  requestNotice: {marginHorizontal: 12, padding: 12, borderRadius: 12, backgroundColor: '#302619', borderWidth: 1, borderColor: '#8A6839'},
+  requestNoticeText: {color: '#FFE0A3', fontSize: 14},
+  requestButtons: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8},
+  requestButton: {minHeight: 44, justifyContent: 'center', paddingHorizontal: 10},
+  requestButtonDisabled: {opacity: 0.45},
+  requestButtonText: {color: '#67E8F9', fontWeight: '600'},
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {
     flexDirection: 'row',

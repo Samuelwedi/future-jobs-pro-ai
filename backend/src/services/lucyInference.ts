@@ -23,6 +23,21 @@ export function compatibleConfig(){
  return {baseURL,model,apiKey:process.env.LUCY_LLM_API_KEY?.trim()||'local-no-key'};
 }
 export function lucyInferenceReady(){return Boolean(compatibleConfig()||process.env.OPENAI_API_KEY?.trim());}
+/** Preserve provider completion limits instead of reporting truncated output as finished. */
+export function compatibleResponse(response:any,fallbackModel:string){
+ const choice=response?.choices?.[0],message=choice?.message;
+ if(!message || typeof message!=='object')throw new Error('Lucy inference returned no response');
+ const content=typeof message.content==='string'?message.content:typeof message.refusal==='string'?message.refusal:'';
+ const calls=message.tool_calls ?? [];
+ if(!Array.isArray(calls))throw new Error('Lucy inference returned invalid tools');
+ const output=calls.map((call:any)=>{
+  if(!call||call.type!=='function'||!call.function||typeof call.function!=='object')throw new Error('Lucy inference returned an unsupported tool');
+  return {type:'function_call',call_id:call.id,name:call.function.name,arguments:call.function.arguments};
+ });
+ if(content)output.push({type:'message',role:'assistant',content:[{type:'output_text',text:content}]} as any);
+ const complete=['stop','tool_calls'].includes(choice.finish_reason);
+ return {model:response.model||fallbackModel,status:complete?'completed':'incomplete',output_text:content,output};
+}
 export async function lucyResponse({instructions,input,tools=[],maxOutputTokens=1200}:{instructions:string;input:any[];tools?:any[];maxOutputTokens?:number}){
  const alternate=compatibleConfig();
  if(alternate){
@@ -30,9 +45,7 @@ export async function lucyResponse({instructions,input,tools=[],maxOutputTokens=
    const client=new OpenAI({...alternate,timeout:45000,maxRetries:0});
    const response=await client.chat.completions.create({model:alternate.model,messages:compatibleMessages(instructions,input),max_tokens:maxOutputTokens,
     ...(tools.length?{tools:tools.map(({type,name,description,parameters,strict})=>({type:'function' as const,function:{name,description,parameters,strict}}))}:{}),stream:false});
-   const message=response.choices[0]?.message;
-   if(!message)throw new Error('Lucy inference returned no response');
-   return {model:response.model||alternate.model,output_text:message.content||'',output:[...(message.tool_calls||[]).map((c:any)=>({type:'function_call',call_id:c.id,name:c.function.name,arguments:c.function.arguments})),...(message.content?[{type:'message',role:'assistant',content:[{type:'output_text',text:message.content}]}]:[])]};
+   return compatibleResponse(response,alternate.model);
   }catch(error:any){
    if(process.env.LUCY_ALLOW_PAID_FALLBACK!=='true'||!process.env.OPENAI_API_KEY||![429,500,502,503,504].includes(error.status))throw error;
   }

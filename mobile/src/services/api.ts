@@ -121,6 +121,14 @@ class ApiService {
     return response.data;
   }
 
+  // Lucy chat is an explicit online operation. Never store its prompt or replay
+  // it through the offline queue; its caller owns the request receipt lifecycle.
+  async postLucyChat<T>(data: Readonly<{requestId: string; message: string; language: string; channel: 'text'|'voice'; conversationMode?: boolean}>): Promise<{data: T; status: number}> {
+    if (!getOnlineStatus()) throw new Error('Lucy requires an online connection. Nothing was queued.');
+    const response = await this.client.post<T>('/lucy-v2', data);
+    return {data: response.data, status: response.status};
+  }
+
   async put<T>(url: string, data?: any): Promise<T> {
     const online = getOnlineStatus();
     if (!online) {
