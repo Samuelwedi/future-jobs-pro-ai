@@ -5,7 +5,7 @@ const work='/api/lucy-v2/work',prefs='/api/lucy-v2/preferences';
 const startTime=Date.parse('2026-11-08T12:00:00Z');
 function load(file,globals={}) {
   const source=fs.readFileSync(path.join(__dirname,'../src',file),'utf8');
-  const context={exports:{},require:name=>{throw new Error(`Unexpected runtime dependency: ${name}`);},...globals};
+  const context={exports:{},require:name=>{if(name==='../utils/lucyWorkReport')return load('utils/lucyWorkReport.ts',{TextEncoder});throw new Error(`Unexpected runtime dependency: ${name}`);},...globals};
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText,context);
   return context.exports;
 }
@@ -263,7 +263,7 @@ function liveWorkspace(capabilities,jobs=[]) {
   let state={...capabilities,jobs},posts=[],reads=[];
   return {posts,reads,setState:next=>{state={...state,...next};},client:{
     get:async path=>{reads.push(path);return path===work?state:{preferences:[],options:{response_style:['concise']},limit:6};},
-    post:async(path,body)=>{posts.push({path,body});return {job:{id:`live-${posts.length}`,prompt:body.prompt,status:'queued',mode:body.mode,createdAt:new Date(startTime).toISOString()}};},
+    post:async(path,body)=>{posts.push({path,body});return {job:{id:`live-${posts.length}`,prompt:body.mode==='work_briefing'?load('utils/lucyWorkReport.ts').lucyBriefingPrompt(body.options):body.prompt,...(body.options?{options:body.options}:{}),status:'queued',mode:body.mode,createdAt:new Date(startTime).toISOString()}};},
   }};
 }
 
@@ -304,7 +304,7 @@ test('local kill switch and malformed capabilities fail closed while permitting 
   }
 });
 
-test('mode-aware retry keys survive uncertain responses but changing modes invalidates a pending key',async()=>{
+test('mode-aware uncertain retry keys are retained independently across mode changes',async()=>{
   const env=liveWorkspace({enabled:true,modes:{record_search:true,ai_research:true}});let calls=0;
   env.client.post=async(path,body)=>{env.posts.push({path,body});calls++;throw new Error('Response was lost');};
   const ui=panelHarness(undefined,env.client);ui.render();await ui.settle();ui.field('Research task','Riverside');
@@ -312,13 +312,13 @@ test('mode-aware retry keys survive uncertain responses but changing modes inval
   assert.equal(env.posts[0].body.mode,'record_search');assert.equal(env.posts[0].body.requestKey,env.posts[1].body.requestKey);
   ui.field('Research mode','ai_research');assert.equal(fieldProps(ui,'Research task').inputProps.maxLength,4000);
   ui.click('Start read-only task');await ui.settle();assert.equal(env.posts[2].body.mode,'ai_research');assert.notEqual(env.posts[2].body.requestKey,env.posts[0].body.requestKey);
-  ui.field('Research mode','record_search');ui.click('Start read-only task');await ui.settle();assert.notEqual(env.posts[3].body.requestKey,env.posts[0].body.requestKey);
+  ui.field('Research mode','record_search');ui.click('Start read-only task');await ui.settle();assert.equal(env.posts[3].body.requestKey,env.posts[0].body.requestKey);
   assert.equal(calls,4);ui.dispose();
 });
 
 test('mode changes and duplicate submit are locked synchronously during a pending mutation',async()=>{
   const env=liveWorkspace({enabled:true,modes:{record_search:true,ai_research:true}});let release;
-  env.client.post=async(path,body)=>{env.posts.push({path,body});return new Promise(resolve=>{release=()=>resolve({job:{id:'queued-1',prompt:body.prompt,status:'queued',mode:body.mode,createdAt:new Date(startTime).toISOString()}});});};
+  env.client.post=async(path,body)=>{env.posts.push({path,body});return new Promise(resolve=>{release=()=>resolve({job:{id:'queued-1',prompt:body.mode==='work_briefing'?load('utils/lucyWorkReport.ts').lucyBriefingPrompt(body.options):body.prompt,...(body.options?{options:body.options}:{}),status:'queued',mode:body.mode,createdAt:new Date(startTime).toISOString()}});});};
   const ui=panelHarness(undefined,env.client);ui.render();await ui.settle();ui.field('Research task','Riverside');
   const submit=ui.button('Start read-only task').props.onClick;submit();submit();ui.field('Research mode','ai_research');
   assert.equal(env.posts.length,1);assert.equal(fieldProps(ui,'Research mode').value,'record_search');
@@ -423,5 +423,181 @@ test('company, user and role changes block live exports even when the token has 
     const live=liveWorkspace({enabled:false,modes:{record_search:true,ai_research:false}},[job]),ui=panelHarness(undefined,live.client);ui.render();await ui.settle();
     ui.setUser({id:'live-user',companyId:'live-company',role:'employee',...patch});ui.button('Download report (.txt)').props.onClick();await ui.settle();
     assert.equal(ui.downloads().length,0);assert.equal(ui.created().length,0);ui.poll();await ui.settle();assert.equal(ui.closed(),1);ui.dispose();
+  }
+});
+
+const briefingRequest=(requestKey='briefing',options={from:'2028-02-01',to:'2028-03-02',taskStatus:'open'})=>({mode:'work_briefing',requestKey,options});
+const briefingCaps={enabled:false,modes:{record_search:true,work_briefing:true,ai_research:false}};
+function enterBriefing(ui,options=briefingRequest().options){
+  ui.field('Research mode','work_briefing');ui.field('Shift start date',options.from);ui.field('Shift end date',options.to);ui.field('Task status',options.taskStatus);
+}
+
+test('briefing sample has a separate fixed no-AI example and validates the strict option-only protocol',async()=>{
+  const env=setup(),{client}=env.create();assert.equal((await client.get(work)).modes.work_briefing,true);
+  const first=await client.post(work,briefingRequest());assert.deepEqual(Object.keys(first.job.options).sort(),['from','taskStatus','to']);
+  assert.equal((await client.post(work,briefingRequest())).job.id,first.job.id);
+  await assert.rejects(client.post(work,briefingRequest('briefing',{...briefingRequest().options,taskStatus:'all'})),/already belongs/);
+  await assert.rejects(client.post(work,request('briefing')),/already belongs/);
+  for(const input of [
+    {...briefingRequest('bad'),prompt:'must not be accepted'}, {...briefingRequest('bad'),extra:true},briefingRequest('bad',{}),briefingRequest('bad',{...briefingRequest().options,to:'2028-03-03'}),
+    briefingRequest('bad',{...briefingRequest().options,from:'2026-02-29'}),briefingRequest('bad',{...briefingRequest().options,taskStatus:'overdue'}),briefingRequest('bad',{...briefingRequest().options,scope:'all_companies'}),
+  ])await assert.rejects(client.post(work,input));
+  await client.post(work,briefingRequest('second',{from:'2026-11-08',to:'2026-11-08',taskStatus:'completed'}));
+  env.advance(5000);const jobs=(await client.get(work)).jobs;assert.equal(jobs.length,2);
+  assert.equal(jobs[0].result.text,jobs[1].result.text);assert.match(jobs[0].result.text,/SAMPLE WORK BRIEFING/);assert.match(jobs[0].result.text,/displayed only and do not filter/);
+  assert.equal(jobs[0].result.run.modelCalls,0);assert.equal(jobs[0].result.evidence.sources.length,3);
+  assert.ok(jobs[0].result.evidence.sources.every(source=>['task','schedule'].includes(source.kind)));
+  const report=load('utils/lucyWorkReport.ts',{TextEncoder}).buildLucyWorkReport(jobs[0],{sample:true});assert.match(report.filename,/sample-work-briefing/);assert.match(report.text,/SYNTHETIC DATA ONLY/);
+  assert.equal(env.forbidden(),0);
+});
+
+test('briefing controls require explicit valid dates, preview all-time task scope, and never send a prompt',async()=>{
+  const env=liveWorkspace(briefingCaps),ui=panelHarness(undefined,env.client);ui.render();await ui.settle();
+  assert.equal(fieldProps(ui,'Research mode').value,'record_search');ui.field('Research mode','work_briefing');
+  assert.equal(fieldProps(ui,'Shift start date').value,'');assert.equal(ui.button('Start read-only task').props.disabled,true);
+  assert.ok(!ui.nodes().some(node=>node.type==='TextField'&&node.props.label==='Research task'));
+  for(const options of [
+    {from:'2026-02-29',to:'2026-03-01',taskStatus:'open'}, {from:'2028-02-01',to:'2028-03-03',taskStatus:'open'}, {from:'2026-11-08',to:'2026-11-07',taskStatus:'open'}, {from:'2026-11-08',to:'2026-11-08',taskStatus:'overdue'},
+  ]){enterBriefing(ui,options);assert.equal(ui.button('Start read-only task').props.disabled,true);ui.button('Start read-only task').props.onClick();await ui.settle();assert.equal(env.posts.length,0);}
+  enterBriefing(ui);assert.equal(ui.button('Start read-only task').props.disabled,false);assert.match(ui.text(),/open \(pending or in progress\) tasks across all dates/);assert.match(ui.text(),/stored shifts from 2028-02-01 through 2028-03-02 \(inclusive\)/);
+  ui.click('Start read-only task');await ui.settle();assert.equal(env.posts.length,1);assert.deepEqual(Object.keys(env.posts[0].body).sort(),['mode','options','requestKey']);assert.deepEqual(JSON.parse(JSON.stringify(env.posts[0].body.options)),briefingRequest().options);ui.dispose();
+});
+
+test('briefing retries retain a key per canonical options and mode across edits and close/reopen',async()=>{
+  const env=liveWorkspace(briefingCaps);env.client.post=async(path,body)=>{env.posts.push({path,body});throw new Error('Response was lost');};
+  const ui=panelHarness(undefined,env.client);ui.render();await ui.settle();enterBriefing(ui);
+  ui.click('Start read-only task');await ui.settle();ui.click('Start read-only task');await ui.settle();assert.equal(env.posts[0].body.requestKey,env.posts[1].body.requestKey);
+  ui.field('Task status','open');ui.click('Start read-only task');await ui.settle();assert.equal(env.posts[2].body.requestKey,env.posts[0].body.requestKey);
+  ui.field('Shift end date','2028-03-01');ui.click('Start read-only task');await ui.settle();assert.notEqual(env.posts[3].body.requestKey,env.posts[2].body.requestKey);
+  ui.field('Task status','pending');ui.click('Start read-only task');await ui.settle();assert.notEqual(env.posts[4].body.requestKey,env.posts[3].body.requestKey);
+  ui.field('Research mode','record_search');ui.field('Research task','Riverside');ui.click('Start read-only task');await ui.settle();assert.notEqual(env.posts[5].body.requestKey,env.posts[4].body.requestKey);
+  ui.field('Research mode','work_briefing');ui.click('Start read-only task');await ui.settle();assert.equal(env.posts[6].body.requestKey,env.posts[4].body.requestKey);
+  ui.click('Close');await ui.settle();ui.setProps({open:true});await ui.settle();ui.click('Start read-only task');await ui.settle();assert.equal(env.posts[7].body.requestKey,env.posts[6].body.requestKey);ui.dispose();
+});
+
+test('old servers do not enable briefing and malformed capability values never become AI implicitly',async()=>{
+  for(const caps of [{enabled:true},{enabled:false,modes:{record_search:true,ai_research:false}},{enabled:true,modes:{record_search:true,ai_research:true,work_briefing:'true'}}]) {
+    const env=liveWorkspace(caps),ui=panelHarness(undefined,env.client);ui.render();await ui.settle();const original=fieldProps(ui,'Research mode').value;
+    ui.field('Research mode','work_briefing');assert.equal(fieldProps(ui,'Research mode').value,original);
+    ui.field('Research mode','explicit');assert.equal(fieldProps(ui,'Research mode').value,original);
+    assert.ok(!ui.nodes().some(node=>node.type==='TextField'&&node.props.label==='Shift start date'));
+    if(caps.modes?.work_briefing==='true'){ui.field('Research task','test');ui.button('Start read-only task').props.onClick();await ui.settle();assert.equal(env.posts.length,0);}
+    ui.dispose();
+  }
+  const env=liveWorkspace({enabled:false,modes:{record_search:false,ai_research:false,work_briefing:true}}),ui=panelHarness(undefined,env.client);ui.render();await ui.settle();assert.equal(fieldProps(ui,'Research mode').value,'work_briefing');ui.dispose();
+});
+
+test('briefing duplicate taps and locked edits cannot create another job or change its submitted options',async()=>{
+  const env=liveWorkspace(briefingCaps);let release;env.client.post=async(path,body)=>{env.posts.push({path,body});return new Promise(resolve=>release=()=>resolve({job:{id:'pending',mode:'work_briefing',options:body.options,prompt:'Pending briefing',createdAt:new Date(startTime).toISOString(),status:'queued'}}));};
+  const ui=panelHarness(undefined,env.client);ui.render();await ui.settle();enterBriefing(ui);const submit=ui.button('Start read-only task').props.onClick;
+  submit();submit();ui.field('Shift end date','2028-02-10');ui.field('Task status','completed');ui.field('Research mode','record_search');
+  assert.equal(env.posts.length,1);assert.equal(fieldProps(ui,'Research mode').value,'work_briefing');assert.equal(fieldProps(ui,'Shift end date').value,'2028-03-02');assert.equal(fieldProps(ui,'Task status').value,'open');
+  release();await ui.settle();ui.dispose();
+});
+
+test('stale briefing submit callbacks stop after an edit, capability disable, close, reopen, unmount or account-scope change',async()=>{
+  for(const action of ['edit','disable','close','reopen','unmount','token','company','user','role']) {
+    const env=liveWorkspace(briefingCaps),ui=panelHarness(undefined,env.client);ui.render();await ui.settle();enterBriefing(ui);const submit=ui.button('Start read-only task').props.onClick;
+    if(action==='edit')ui.field('Task status','completed');
+    if(action==='disable'){env.setState({modes:{record_search:true,work_briefing:false,ai_research:false}});ui.click('Refresh');await ui.settle();}
+    if(action==='close'||action==='reopen'){ui.click('Close');if(action==='reopen'){await ui.settle();ui.setProps({open:true});await ui.settle();}}
+    if(action==='unmount')ui.dispose();
+    if(action==='token')ui.setToken('other-account');
+    if(['company','user','role'].includes(action))ui.setUser({id:action==='user'?'other-user':'live-user',companyId:action==='company'?'other-company':'live-company',role:action==='role'?'admin':'employee'});
+    submit();await ui.settle();assert.equal(env.posts.length,0,action);ui.dispose();
+  }
+});
+
+test('late briefing completions from closed or replaced views cannot restore state and new sources reset inputs',async()=>{
+  for(const action of ['close','source']) {
+    const env=setup(),first=env.create(),second=env.create();let release;
+    const delayed={scopeKey:first.scopeKey,client:{...first.client,post:(path,body)=>new Promise(resolve=>release=async()=>resolve(await first.client.post(path,body)))}};
+    const ui=panelHarness(delayed);ui.render();await ui.settle();enterBriefing(ui);ui.click('Start read-only task');await ui.settle();assert.ok(release);
+    if(action==='close')ui.setProps({open:false});else ui.setProps({sampleWorkspace:second});await ui.settle();
+    await release();await ui.settle();assert.ok(!ui.text().includes('Work briefing (no AI):'));assert.ok(!ui.text().includes('Sample task queued'));
+    if(action==='source'){assert.equal(fieldProps(ui,'Research mode').value,'record_search');ui.field('Research mode','work_briefing');assert.equal(fieldProps(ui,'Shift start date').value,'');assert.equal(fieldProps(ui,'Task status').value,'open');}
+    assert.equal(ui.accesses(),0);ui.dispose();
+  }
+});
+
+test('sample briefing panel downloads its own clearly labeled no-AI example without auth or API access',async()=>{
+  const env=setup(),sample=env.create(),ui=panelHarness(sample);ui.render();await ui.settle();enterBriefing(ui);
+  assert.match(ui.text(),/Sample inputs \(display only\)/);ui.click('Start read-only task');await ui.settle();env.advance(5000);ui.poll();await ui.settle();assert.match(ui.text(),/SAMPLE WORK BRIEFING/);
+  ui.click('Download report (.txt)');await ui.settle();assert.equal(ui.downloads().length,1);assert.match(ui.downloads()[0].filename,/sample-work-briefing/);
+  const report=await ui.created()[0].blob.text();assert.match(report,/SYNTHETIC DATA ONLY/);assert.match(report,/No AI model was called/);assert.match(report,/dates and task status are not searched or applied/);assert.match(report,/sample-briefing-shift/);
+  assert.equal(ui.accesses(),0);assert.equal(env.forbidden(),0);ui.dispose();assert.equal(ui.timeouts(),0);
+});
+
+test('partial briefings export explicit partial reports, while unknown job modes hide results and never claim AI',async()=>{
+  const env=setup(),sample=env.create();await sample.client.post(work,briefingRequest());env.advance(5000);const original=(await sample.client.get(work)).jobs[0];
+  const partial={...original,status:'partial',result:{...original.result,run:{...original.result.run,status:'partial',stopReason:'retrieval_limits'},evidence:{...original.result.evidence,incomplete:true}}};
+  const live=liveWorkspace(briefingCaps,[partial]),ui=panelHarness(undefined,live.client);ui.render();await ui.settle();assert.match(ui.text(),/This work briefing is partial/);ui.click('Download partial report (.txt)');await ui.settle();assert.equal(ui.downloads().length,1);assert.match(await ui.created()[0].blob.text(),/LUCY PARTIAL WORK BRIEFING REPORT/);ui.dispose();
+  for(const mode of ['future_mode',null,123,{}]) {
+    const unknown={...original,mode,result:{text:'Unknown mode result must stay hidden'}},env=liveWorkspace(briefingCaps,[unknown]),ui=panelHarness(undefined,env.client);ui.render();await ui.settle();
+    assert.match(ui.text(),/Unavailable work mode/);assert.ok(!ui.text().includes('Unknown mode result must stay hidden'));
+    assert.ok(!ui.nodes().some(node=>node.type==='Button'&&text(node).startsWith('Download')));assert.ok(!ui.nodes().some(node=>node.type==='LucySourceEvidence'));
+    assert.equal(env.posts.length,0);ui.dispose();
+  }
+});
+
+test('successful briefing submission clears its draft and a later stale double-click cannot queue another task',async()=>{
+  const env=liveWorkspace(briefingCaps),ui=panelHarness(undefined,env.client);ui.render();await ui.settle();enterBriefing(ui);
+  const submit=ui.button('Start read-only task').props.onClick;submit();await ui.settle();assert.equal(env.posts.length,1);
+  assert.equal(fieldProps(ui,'Shift start date').value,'');assert.equal(fieldProps(ui,'Shift end date').value,'');assert.equal(ui.button('Start read-only task').props.disabled,true);
+  submit();ui.button('Start read-only task').props.onClick();await ui.settle();assert.equal(env.posts.length,1);ui.dispose();
+});
+
+test('uncertain briefing A to B to A reuses A, while an acknowledged identical briefing is a new request',async()=>{
+  const env=liveWorkspace(briefingCaps);let acknowledge=false;
+  env.client.post=async(path,body)=>{env.posts.push({path,body});if(!acknowledge)throw new Error('Response was lost');return {job:{id:'confirmed',mode:body.mode,options:body.options,prompt:load('utils/lucyWorkReport.ts').lucyBriefingPrompt(body.options),status:'queued',createdAt:new Date(startTime).toISOString()}};};
+  const ui=panelHarness(undefined,env.client);ui.render();await ui.settle();enterBriefing(ui);ui.click('Start read-only task');await ui.settle();
+  ui.field('Task status','completed');ui.click('Start read-only task');await ui.settle();ui.field('Task status','open');ui.click('Start read-only task');await ui.settle();
+  assert.notEqual(env.posts[1].body.requestKey,env.posts[0].body.requestKey);assert.equal(env.posts[2].body.requestKey,env.posts[0].body.requestKey);
+  acknowledge=true;ui.click('Start read-only task');await ui.settle();assert.equal(env.posts[3].body.requestKey,env.posts[0].body.requestKey);
+  enterBriefing(ui);ui.click('Start read-only task');await ui.settle();assert.notEqual(env.posts[4].body.requestKey,env.posts[0].body.requestKey);ui.dispose();
+});
+
+test('uncertain request receipts are bounded without eviction and reset only with authorization scope',async()=>{
+  const env=liveWorkspace(briefingCaps);let acknowledge=false;
+  env.client.post=async(path,body)=>{env.posts.push({path,body});if(!acknowledge)throw new Error('Response was lost');return {job:{id:'confirmed',mode:body.mode,options:body.options,prompt:load('utils/lucyWorkReport.ts').lucyBriefingPrompt(body.options),status:'queued',createdAt:new Date(startTime).toISOString()}};};
+  const ui=panelHarness(undefined,env.client);ui.render();await ui.settle();ui.field('Research mode','work_briefing');
+  for(let day=1;day<=20;day++){const date=`2026-11-${String(day).padStart(2,'0')}`;ui.field('Shift start date',date);ui.field('Shift end date',date);ui.click('Start read-only task');await ui.settle();}
+  assert.equal(env.posts.length,20);const firstKey=env.posts[0].body.requestKey;
+  enterBriefing(ui,{from:'2026-11-21',to:'2026-11-21',taskStatus:'open'});ui.click('Start read-only task');await ui.settle();assert.equal(env.posts.length,20);assert.match(ui.text(),/Too many tasks have unconfirmed responses/);
+  enterBriefing(ui,{from:'2026-11-01',to:'2026-11-01',taskStatus:'open'});acknowledge=true;ui.click('Start read-only task');await ui.settle();assert.equal(env.posts[20].body.requestKey,firstKey);
+  enterBriefing(ui,{from:'2026-11-21',to:'2026-11-21',taskStatus:'open'});ui.click('Start read-only task');await ui.settle();assert.equal(env.posts.length,22);
+  ui.setUser({id:'live-user',companyId:'new-company',role:'employee'});ui.poll();await ui.settle();ui.setProps({open:true});await ui.settle();
+  enterBriefing(ui,{from:'2026-11-02',to:'2026-11-02',taskStatus:'open'});ui.click('Start read-only task');await ui.settle();assert.notEqual(env.posts[22].body.requestKey,env.posts[1].body.requestKey);ui.dispose();
+});
+
+
+test('old export and preference callbacks cannot act after reopening even when a client reuses job objects',async()=>{
+  const env=setup(),sample=env.create();await sample.client.post(work,briefingRequest());env.advance(5000);const job=(await sample.client.get(work)).jobs[0];
+  const live=liveWorkspace(briefingCaps,[job]);let writes=0;live.client.put=async()=>{writes++;return {preference:{}};};
+  const ui=panelHarness(undefined,live.client);ui.render();await ui.settle();const download=ui.button('Download report (.txt)').props.onClick,save=ui.button('Save preference').props.onClick;
+  ui.click('Close');await ui.settle();ui.setProps({open:true});await ui.settle();download();save();await ui.settle();
+  assert.equal(ui.downloads().length,0);assert.equal(writes,0);ui.click('Download report (.txt)');await ui.settle();assert.equal(ui.downloads().length,1);ui.dispose();
+});
+
+test('malformed task acknowledgements retain the draft and request key until a valid retry is acknowledged',async()=>{
+  for(const mode of ['record_search','work_briefing','ai_research']) {
+    for(const malformed of [undefined,null,[],{}, {job:null}, {job:[]}, {job:{id:''}}, {job:{id:'   '}}, {job:{id:123}}, {job:{id:'x'.repeat(201)}}]) {
+      const env=liveWorkspace({...briefingCaps,modes:{...briefingCaps.modes,ai_research:true}});let calls=0;
+      env.client.post=async(path,body)=>{
+        env.posts.push({path,body});if(calls++===0)return malformed;
+        return {job:{id:'confirmed-retry',mode:body.mode,...(body.options?{options:body.options}:{}),prompt:body.mode==='work_briefing'?load('utils/lucyWorkReport.ts').lucyBriefingPrompt(body.options):body.prompt,status:'queued',createdAt:new Date(startTime).toISOString()}};
+      };
+      const ui=panelHarness(undefined,env.client);ui.render();await ui.settle();
+      if(mode==='work_briefing')enterBriefing(ui);else{ui.field('Research mode',mode);ui.field('Research task','Unconfirmed task');}
+      ui.click('Start read-only task');await ui.settle();assert.equal(env.posts.length,1);
+      assert.match(ui.text(),/Task submission was not confirmed/);assert.ok(!ui.text().includes('Read-only task saved'));
+      assert.ok(!ui.nodes().some(node=>node.type==='Chip'&&node.props.label==='queued'));
+      if(mode==='work_briefing'){assert.equal(fieldProps(ui,'Shift start date').value,'2028-02-01');assert.equal(fieldProps(ui,'Shift end date').value,'2028-03-02');assert.equal(fieldProps(ui,'Task status').value,'open');}
+      else assert.equal(fieldProps(ui,'Research task').value,'Unconfirmed task');
+      ui.click('Start read-only task');await ui.settle();assert.equal(env.posts.length,2);
+      assert.equal(env.posts[1].body.requestKey,env.posts[0].body.requestKey);assert.deepEqual(env.posts[1].body,env.posts[0].body);
+      assert.match(ui.text(),/Read-only task saved/);assert.ok(ui.nodes().some(node=>node.type==='Chip'&&node.props.label==='queued'));
+      assert.equal(fieldProps(ui,mode==='work_briefing'?'Shift start date':'Research task').value,'');ui.dispose();
+    }
   }
 });

@@ -112,3 +112,75 @@ test('selected AI does not silently become record search when capability changes
  c.open();await flush();c.setMode('ai_research');client.get=async url=>url.endsWith('/work')?modern:{preferences:[]};await c.refresh();assert.equal(c.snapshot().mode,'ai_research');assert.equal(c.snapshot().enabled,false);
  c.setMode('record_search');assert.equal(c.snapshot().enabled,true);client.get=async()=>{throw Error('offline');};await c.refresh();assert.equal(c.snapshot().modes,null);assert.equal(c.snapshot().enabled,null);c.close();
 });
+
+const options={from:'2026-11-01',to:'2026-11-30',taskStatus:'open'};
+const briefingServer={enabled:false,modes:{ai_research:true,record_search:true,work_briefing:true},jobs:[]};
+const briefingSetup=(overrides={})=>setup({get:async url=>url.endsWith('/work')?briefingServer:{preferences:[]},...overrides});
+test('briefing controls require valid explicit dates, send options without a prompt, and keep record search as the default',async()=>{
+ const posts=[];const {controller:c}=briefingSetup({post:async(url,data)=>{posts.push(data);return {job:{id:`briefing-${posts.length}`,mode:data.mode,status:'queued'}};}});
+ c.open();await flush();assert.equal(c.snapshot().mode,'record_search');assert.equal(c.snapshot().briefing.from,'');assert.equal(c.snapshot().briefing.to,'');
+ c.setPrompt('Retain my keyword draft');c.setMode('work_briefing');await c.create();assert.equal(c.snapshot().error,'briefingInvalid');assert.equal(posts.length,0);
+ for(const values of [{...options,from:'2026-02-30'}, {...options,to:'2026-12-02'}, {...options,to:'2026-10-31'}]){c.setBriefing(values);await c.create();assert.equal(posts.length,0);}
+ c.setBriefing(options);assert.equal(c.snapshot().error,'');await c.create();assert.equal(posts.length,1);assert.deepEqual(JSON.parse(JSON.stringify(posts[0].options)),options);assert.equal(posts[0].mode,'work_briefing');assert.equal(Object.hasOwn(posts[0],'prompt'),false);assert.deepEqual(Object.keys(posts[0]).sort(),['mode','options','requestKey']);
+ assert.equal(c.snapshot().prompt,'Retain my keyword draft');assert.deepEqual(JSON.parse(JSON.stringify(c.snapshot().briefing)),{from:'',to:'',taskStatus:'open'});
+ await c.create();assert.equal(posts.length,1);c.setBriefing(options);await c.create();assert.equal(posts.length,2);assert.notEqual(posts[0].requestKey,posts[1].requestKey);c.close();
+});
+test('uncertain briefing A→B→A retries preserve exact request identity through mode edits and close/reopen',async()=>{
+ const posts=[];let fail=true;const {controller:c}=briefingSetup({post:async(url,data)=>{posts.push(data);if(fail)throw Error('lost response');return {job:{id:'confirmed',status:'completed'}};}});
+ c.open();await flush();c.setMode('work_briefing');c.setBriefing(options);await c.create();
+ c.setBriefing({taskStatus:'completed'});await c.create();c.setBriefing({taskStatus:'open',to:'2026-11-29'});await c.create();c.setBriefing({to:'2026-11-30',from:'2026-11-02'});await c.create();
+ assert.equal(new Set(posts.map(post=>post.requestKey)).size,4);
+ c.setMode('record_search');c.setPrompt('Changed keywords');await c.create();c.setMode('work_briefing');c.setBriefing(options);c.close();c.open();await flush();await c.create();assert.equal(posts[0].requestKey,posts[5].requestKey);
+ fail=false;await c.create();assert.equal(posts[0].requestKey,posts[6].requestKey);await c.create();assert.equal(posts.length,7);c.setBriefing(options);await c.create();assert.notEqual(posts[6].requestKey,posts[7].requestKey);c.close();
+});
+test('old servers reject briefing selection and capability loss never silently switches an explicitly selected mode',async()=>{
+ for(const reply of [{enabled:true,jobs:[]},modern]){
+  const posts=[];const {controller:c}=briefingSetup({get:async url=>url.endsWith('/work')?reply:{preferences:[]},post:async(...args)=>{posts.push(args);}});
+  c.open();await flush();assert.equal(c.snapshot().modes.work_briefing,false);c.setMode('work_briefing');assert.notEqual(c.snapshot().mode,'work_briefing');c.setBriefing(options);await c.create();assert.equal(posts.length,0);c.close();
+ }
+ const {controller:c,client}=briefingSetup();c.open();await flush();c.setMode('work_briefing');c.setBriefing(options);
+ client.get=async url=>url.endsWith('/work')?modern:{preferences:[]};await c.refresh();assert.equal(c.snapshot().mode,'work_briefing');assert.equal(c.snapshot().enabled,false);
+ client.get=async()=>{throw Error('offline');};await c.refresh();assert.equal(c.snapshot().modes,null);assert.equal(c.snapshot().enabled,null);c.close();
+});
+test('briefing create locks inputs and stale scope/close handlers cannot submit, acknowledge or revive hidden work',async()=>{
+ for(const useScope of [false,true]){
+  const wait=deferred(),posts=[],scope={active:true};const {Controller,client}=briefingSetup({post:async(url,data)=>{posts.push(data);return wait.promise;}});
+  const c=new Controller(client,undefined,()=>scope.active);c.open();await flush();c.setMode('work_briefing');c.setBriefing(options);const pending=c.create();
+  c.setBriefing({taskStatus:'all',from:'2026-11-10'});c.setMode('ai_research');await c.create();assert.equal(posts.length,1);assert.deepEqual(JSON.parse(JSON.stringify(c.snapshot().briefing)),options);assert.equal(c.snapshot().mode,'work_briefing');
+  if(useScope)scope.active=false;else c.close();await c.create();c.setBriefing({from:'2026-11-11'});wait.resolve({job:{id:'hidden-ack',status:'queued'}});await pending;assert.equal(c.snapshot().jobs.length,0);assert.equal(c.snapshot().busy,false);
+  scope.active=true;c.close();c.open();await flush();await c.create();assert.equal(posts.length,2);assert.equal(posts[0].requestKey,posts[1].requestKey);c.close();
+ }
+});
+test('malformed create acknowledgements retain the briefing key instead of silently allowing duplicates',async()=>{
+ const posts=[];let bad=true;const {controller:c}=briefingSetup({post:async(url,data)=>{posts.push(data);return bad?{job:{status:'queued'}}:{job:{id:'valid',status:'queued'}};}});
+ c.open();await flush();c.setMode('work_briefing');c.setBriefing(options);await c.create();assert.equal(c.snapshot().error,'saveError');bad=false;await c.create();assert.equal(posts[0].requestKey,posts[1].requestKey);assert.equal(c.snapshot().jobs[0].id,'valid');c.close();
+});
+test('uncertain request retention is bounded without evicting earlier briefing keys; new sessions start clean',async()=>{
+ const posts=[];const {controller:c,Controller,client}=briefingSetup({post:async(url,data)=>{posts.push(data);throw Error('offline');}});
+ c.open();await flush();c.setMode('work_briefing');c.setBriefing(options);
+ for(let day=1;day<=21;day++){c.setBriefing({from:`2026-11-${String(day).padStart(2,'0')}`});await c.create();}
+ assert.equal(posts.length,20);assert.equal(c.snapshot().error,'requestLimit');c.setBriefing(options);await c.create();assert.equal(posts.length,21);assert.equal(posts[0].requestKey,posts[20].requestKey);
+ c.close();const next=new Controller(client);next.open();await flush();next.setMode('work_briefing');next.setBriefing(options);await next.create();assert.notEqual(posts[0].requestKey,posts[21].requestKey);next.close();
+});
+test('unknown future work modes never enable cancellation even with queued jobs',async()=>{
+ const posts=[];const {controller:c}=briefingSetup({get:async url=>url.endsWith('/work')?{...briefingServer,jobs:[{id:'future',mode:'future_write',status:'queued'}]}:{preferences:[]},post:async(...args)=>{posts.push(args);}});
+ c.open();await flush();await c.cancel('future');assert.equal(posts.length,0);c.close();
+});
+
+
+test('fast acknowledged briefing resets dates and status before a delayed second tap; explicit re-entry starts new work',async()=>{
+ const posts=[];const {controller:c}=briefingSetup({post:async(url,data)=>{posts.push(data);return {job:{id:`ack-${posts.length}`,mode:'work_briefing',status:'queued'}};}});
+ c.open();await flush();c.setMode('work_briefing');c.setBriefing({...options,taskStatus:'completed'});
+ await c.create();await flush();assert.equal(c.snapshot().busy,false);assert.deepEqual(JSON.parse(JSON.stringify(c.snapshot().briefing)),{from:'',to:'',taskStatus:'open'});
+ await c.create();await flush();assert.equal(posts.length,1);assert.equal(c.snapshot().jobs.length,1);
+ c.setBriefing({...options,taskStatus:'completed'});await c.create();assert.equal(posts.length,2);assert.notEqual(posts[0].requestKey,posts[1].requestKey);assert.deepEqual(JSON.parse(JSON.stringify(posts[0].options)),JSON.parse(JSON.stringify(posts[1].options)));c.close();
+});
+test('uncertain and hidden briefing responses retain nondefault status and dates until visible acknowledgement',async()=>{
+ for(const hidden of [false,true]){
+  const wait=deferred(),posts=[];let first=true;const {controller:c}=briefingSetup({post:async(url,data)=>{posts.push(data);if(first){first=false;return wait.promise;}return {job:{id:'same-briefing',status:'queued'}};}});
+  const draft={...options,taskStatus:'all'};c.open();await flush();c.setMode('work_briefing');c.setBriefing(draft);const pending=c.create();
+  if(hidden){c.close();wait.resolve({job:{id:'same-briefing',status:'queued'}});}else wait.reject(Error('lost acknowledgement'));
+  await pending;assert.deepEqual(JSON.parse(JSON.stringify(c.snapshot().briefing)),draft);
+  if(hidden){c.open();await flush();}await c.create();assert.equal(posts[0].requestKey,posts[1].requestKey);assert.deepEqual(JSON.parse(JSON.stringify(c.snapshot().briefing)),{from:'',to:'',taskStatus:'open'});c.close();
+ }
+});

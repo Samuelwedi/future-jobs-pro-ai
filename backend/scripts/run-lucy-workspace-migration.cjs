@@ -1,6 +1,6 @@
 const fs=require('node:fs');
 const path=require('node:path');
-const files=['20261108_lucy_background_work.sql','20261108_lucy_user_preferences.sql','20261108_lucy_request_ledger.sql','20261108_lucy_work_modes.sql'];
+const files=['20261108_lucy_background_work.sql','20261108_lucy_user_preferences.sql','20261108_lucy_request_ledger.sql','20261108_lucy_work_modes.sql','20261108_lucy_work_briefing.sql'];
 async function migrate(client){
  await client.query('BEGIN');
  try{
@@ -13,7 +13,7 @@ async function migrate(client){
    const sql=fs.readFileSync(path.join(__dirname,'../migrations',file),'utf8').replace(/^\s*(BEGIN|COMMIT);\s*$/gm,'');
    await client.query(sql);
   }
-  await client.query('SELECT id,company_id,user_id,actor_role,mode,status,lease_token,lease_until FROM lucy_background_work LIMIT 0');
+  await client.query('SELECT id,company_id,user_id,actor_role,mode,options,status,lease_token,lease_until FROM lucy_background_work LIMIT 0');
   await client.query('SELECT company_id,user_id,preference_key,value,provenance,expires_at FROM lucy_user_preferences LIMIT 0');
   await client.query('SELECT company_id,user_id,actor_role,request_id,payload_hash,status,response_body FROM lucy_request_ledger LIMIT 0');
   await client.query('COMMIT');

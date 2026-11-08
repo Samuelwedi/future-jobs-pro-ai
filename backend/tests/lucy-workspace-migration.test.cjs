@@ -39,7 +39,7 @@ test('mode migration upgrades deployed three-table workspace without altering le
   await db.query("INSERT INTO lucy_background_work(id,company_id,user_id,actor_role,prompt,request_key,status,result) VALUES($1,$2,$3,'owner',$4,'legacy','completed',$5)",[job,company,user,'x'.repeat(4000),JSON.stringify({text:'Retained AI report'})]);
   const before=(await db.query('SELECT * FROM lucy_background_work WHERE id=$1',[job])).rows[0];
   await migrate({query:sql=>db.exec(sql)});await migrate({query:sql=>db.exec(sql)});
-  const after=(await db.query('SELECT * FROM lucy_background_work WHERE id=$1',[job])).rows[0];assert.deepEqual(after,{...before,mode:'ai_research'});
+  const after=(await db.query('SELECT * FROM lucy_background_work WHERE id=$1',[job])).rows[0];assert.deepEqual(after,{...before,mode:'ai_research',options:{}});
   const legacyWriter=await db.query("INSERT INTO lucy_background_work(id,company_id,user_id,actor_role,prompt,request_key) VALUES(gen_random_uuid(),$1,$2,'owner','Old producer','old-writer') RETURNING mode",[company,user]);assert.equal(legacyWriter.rows[0].mode,'ai_research');
   await db.query("INSERT INTO lucy_background_work(id,company_id,user_id,actor_role,prompt,request_key,mode) VALUES(gen_random_uuid(),$1,$2,'owner',$3,'local','record_search')",[company,user,'x'.repeat(200)]);
   for(const [mode,prompt] of [['unknown','x'],[null,'x'],['record_search','x'.repeat(201)]])await assert.rejects(()=>db.query("INSERT INTO lucy_background_work(id,company_id,user_id,actor_role,prompt,request_key,mode) VALUES(gen_random_uuid(),$1,$2,'owner',$3,'bad',$4)",[company,user,prompt,mode]),/constraint/);
@@ -55,5 +55,43 @@ test('failed upgrade rolls back the new mode column and preserves deployed jobs'
   await assert.rejects(()=>migrate({query:sql=>{if(sql.startsWith('SELECT id,'))throw new Error('Simulated mode verification failure');return db.exec(sql);}}),/verification/);
   const columns=await db.query("SELECT column_name FROM information_schema.columns WHERE table_name='lucy_background_work' AND column_name='mode'");assert.equal(columns.rows.length,0);
   const tables=await db.query("SELECT table_name FROM information_schema.tables WHERE table_name IN ('lucy_background_work','lucy_user_preferences','lucy_request_ledger')");assert.equal(tables.rows.length,3);
+ }finally{await db.close();}
+});
+
+test('briefing migration upgrades deployed record/AI modes without changing jobs, and rejects malformed options',async()=>{
+ const db=new PGlite();const fs=require('node:fs'),path=require('node:path');
+ const company='00000000-0000-4000-a000-000000000001',user='00000000-0000-4000-a000-000000000002';
+ const oldFiles=['20261108_lucy_background_work.sql','20261108_lucy_user_preferences.sql','20261108_lucy_request_ledger.sql','20261108_lucy_work_modes.sql'];
+ const options={from:'2026-11-09',to:'2026-11-11',taskStatus:'open'};
+ try{
+  await db.exec('CREATE TABLE companies(id uuid primary key); CREATE TABLE users(id uuid primary key);');
+  for(const file of oldFiles)await db.exec(fs.readFileSync(path.join(__dirname,'../migrations',file),'utf8'));
+  await db.query('INSERT INTO companies VALUES($1)',[company]);await db.query('INSERT INTO users VALUES($1)',[user]);
+  for(const mode of ['ai_research','record_search'])await db.query("INSERT INTO lucy_background_work(id,company_id,user_id,actor_role,prompt,request_key,mode,status,result) VALUES(gen_random_uuid(),$1,$2,'owner','Retained report',$3,$3,'completed','{\"text\":\"Retained evidence\"}')",[company,user,mode]);
+  const before=(await db.query('SELECT * FROM lucy_background_work ORDER BY id')).rows;
+  await migrate({query:sql=>db.exec(sql)});await migrate({query:sql=>db.exec(sql)});
+  assert.deepEqual((await db.query('SELECT * FROM lucy_background_work ORDER BY id')).rows,before.map(row=>({...row,options:{}})));
+  const insert=(mode,value)=>db.query("INSERT INTO lucy_background_work(id,company_id,user_id,actor_role,prompt,request_key,mode,options) VALUES(gen_random_uuid(),$1,$2,'owner','Work briefing',gen_random_uuid()::text,$3,$4::jsonb)",[company,user,mode,JSON.stringify(value)]);
+  await insert('work_briefing',options);
+  // The old mode migration is allowed to rerun after new jobs exist.
+  await db.exec(fs.readFileSync(path.join(__dirname,'../migrations/20261108_lucy_work_modes.sql'),'utf8'));await migrate({query:sql=>db.exec(sql)});
+  for(const value of [null,[],{}, {...options,taskStatus:null},{...options,taskStatus:42},{...options,from:null},{...options,to:42},{...options,extra:true}])await assert.rejects(()=>insert('work_briefing',value),/constraint/,JSON.stringify(value));
+  await assert.rejects(()=>insert('record_search',options),/constraint/);await assert.rejects(()=>insert('ai_research',options),/constraint/);await assert.rejects(()=>insert('unknown',{}),/constraint/);
+  const queued=(await db.query("SELECT * FROM lucy_background_work WHERE mode='work_briefing'")).rows;
+  // This is the deployed record/AI-only worker's explicit mode eligibility predicate.
+  assert.equal((await db.query("SELECT id FROM lucy_background_work w WHERE ((w.mode='record_search' AND true) OR (w.mode='ai_research' AND true)) AND status='queued'")).rows.length,0);
+  assert.equal(queued.length,1);assert.equal(queued[0].status,'queued');
+ }finally{await db.close();}
+});
+
+test('failed briefing upgrade rolls back options and mode expansion while preserving deployed rows',async()=>{
+ const db=new PGlite();const fs=require('node:fs'),path=require('node:path');
+ try{
+  await db.exec('CREATE TABLE companies(id uuid primary key); CREATE TABLE users(id uuid primary key);');
+  for(const file of ['20261108_lucy_background_work.sql','20261108_lucy_user_preferences.sql','20261108_lucy_request_ledger.sql','20261108_lucy_work_modes.sql'])await db.exec(fs.readFileSync(path.join(__dirname,'../migrations',file),'utf8'));
+  const before=(await db.query("SELECT pg_get_constraintdef(oid) definition FROM pg_constraint WHERE conrelid='lucy_background_work'::regclass AND conname='lucy_background_work_mode_check'")).rows;
+  await assert.rejects(()=>migrate({query:sql=>{if(sql.startsWith('SELECT id,'))throw new Error('Simulated briefing verification failure');return db.exec(sql);}}),/verification/);
+  assert.equal((await db.query("SELECT column_name FROM information_schema.columns WHERE table_name='lucy_background_work' AND column_name='options'")).rows.length,0);
+  assert.deepEqual((await db.query("SELECT pg_get_constraintdef(oid) definition FROM pg_constraint WHERE conrelid='lucy_background_work'::regclass AND conname='lucy_background_work_mode_check'")).rows,before);
  }finally{await db.close();}
 });

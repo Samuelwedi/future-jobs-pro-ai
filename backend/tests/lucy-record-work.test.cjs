@@ -54,7 +54,7 @@ test('durable record search is scoped, bounded and strictly model-free',async t=
   const countBusiness=async()=>JSON.stringify((await query("SELECT (SELECT count(*) FROM tasks) tasks,(SELECT count(*) FROM projects) projects,(SELECT count(*) FROM shifts) shifts,(SELECT count(*) FROM ops_documents) docs")).rows);
   const beforeBusiness=await countBusiness();
   await t.test('local mode works by default without a registered AI processor; old clients remain disabled',async()=>{
-   const listing=await request();assert.equal(listing.status,200);assert.equal(listing.enabled,false);assert.deepEqual(listing.modes,{ai_research:false,record_search:true});
+   const listing=await request();assert.equal(listing.status,200);assert.equal(listing.enabled,false);assert.deepEqual(listing.modes,{ai_research:false,record_search:true,work_briefing:true});
    assert.equal((await request('',null,'POST',{prompt:'North',requestKey:'unauthorized',mode:'record_search'})).status,401);
    assert.equal((await request('',owner,'POST',{prompt:'North',requestKey:'legacy'})).status,503);
    const job=await run();assert.equal(job.mode,'record_search');assert.equal(job.status,'completed');assert.equal(job.result.run.modelCalls,0);assert.equal(job.result.evidence.sources.length,8);
@@ -161,8 +161,8 @@ test('durable record search is scoped, bounded and strictly model-free',async t=
    const created=await create();await query("UPDATE lucy_background_work SET status='running',attempts=1,lease_token=gen_random_uuid(),lease_until=now()-interval '1 minute' WHERE id=$1",[created.job.id]);
    const before=(await query('SELECT * FROM lucy_background_work WHERE id=$1',[created.job.id])).rows;
    process.env.LUCY_RECORD_SEARCH_ENABLED='false';
-   const listing=await request();assert.equal(listing.enabled,false);assert.deepEqual(listing.modes,{ai_research:false,record_search:false});assert.equal((await create()).status,503);assert.equal(await work.runLucyWorkOnce(),false);
-   process.env.LUCY_BACKGROUND_WORK_ENABLED='true';assert.deepEqual((await request()).modes,{ai_research:true,record_search:false});
+   const listing=await request();assert.equal(listing.enabled,false);assert.deepEqual(listing.modes,{ai_research:false,record_search:false,work_briefing:true});assert.equal((await create()).status,503);assert.equal(await work.runLucyWorkOnce(),false);
+   process.env.LUCY_BACKGROUND_WORK_ENABLED='true';assert.deepEqual((await request()).modes,{ai_research:true,record_search:false,work_briefing:true});
    const ai=await create('North',owner,'ai_research');assert.equal(ai.status,202);await request('/'+ai.job.id+'/cancel',owner,'POST');assert.equal(await work.runLucyWorkOnce(),false);
    assert.deepEqual((await query('SELECT * FROM lucy_background_work WHERE id=$1',[created.job.id])).rows,before);
    delete process.env.LUCY_BACKGROUND_WORK_ENABLED;delete process.env.LUCY_RECORD_SEARCH_ENABLED;

@@ -1,6 +1,7 @@
+import {readLucyBriefingOptions,lucyBriefingPrompt} from '../utils/lucyWorkReport';
 import type {Job, LucySampleWorkspace, LucyWorkspaceClient, Preference} from '../components/LucyWorkspacePanel';
 
-// This module deliberately has no runtime imports, network client, credentials or storage.
+// The only runtime import is pure validation/formatting. No network client, credentials or storage.
 // Each factory call owns its entire state. Prompts are display text, never instructions.
 const preferenceOptions: Record<string,string[]> = {
   response_style: ['concise', 'conversational', 'formal'],
@@ -38,6 +39,19 @@ function sampleResult(time:number):NonNullable<Job['result']> {
   };
 }
 
+function sampleBriefingResult(time:number):NonNullable<Job['result']> {
+  const retrievedAt=new Date(time).toISOString();
+  return {
+    text:'SAMPLE WORK BRIEFING · Fixed synthetic example, no AI model. Your dates and task status are displayed only and do not filter this example. No real records are read or changed.\n\nExample counts: 2 open tasks (1 pending, 1 in progress); 1 stored shift.\nOldest tasks: West entrance photo, then Delivery confirmation.\nEarliest stored shift: Riverside afternoon shift. These prepared records do not represent any actual date range or live work.',
+    run:{modelCalls:0,status:'completed',steps:[{tool:'briefing_tasks',status:'completed'},{tool:'briefing_schedules',status:'completed'}]},
+    evidence:{incomplete:false,sources:[
+      {kind:'task',id:'sample-briefing-photo',title:'SAMPLE · West entrance photo',excerpt:'Fictional oldest task: West entrance photo. Status: pending. Display-only example, not filtered by the selected status.',retrievedAt},
+      {kind:'task',id:'sample-briefing-delivery',title:'SAMPLE · Delivery confirmation',excerpt:'Fictional second-oldest task: Delivery confirmation. Status: in_progress. Display-only example, not filtered by the selected status.',retrievedAt},
+      {kind:'schedule',id:'sample-briefing-shift',title:'SAMPLE · Riverside afternoon shift',excerpt:'Fictional stored shift: Riverside afternoon shift. Display-only example, not filtered by the selected dates.',retrievedAt},
+    ]},
+  };
+}
+
 /** Local-only rehearsal of the real workspace protocol. Unsupported paths fail closed. */
 export function createLucySampleWorkspace(now:()=>number = Date.now):LucySampleWorkspace {
   const scopeKey = `lucy-sample-${++scopeSequence}`;
@@ -54,12 +68,12 @@ export function createLucySampleWorkspace(now:()=>number = Date.now):LucySampleW
         for (const job of jobs) {
           if (job.status === 'queued' && time >= (readyAt.get(job.id) ?? Infinity)) {
             job.status = 'completed';
-            job.result = sampleResult(time);
+            job.result = job.mode==='work_briefing'?sampleBriefingResult(time):sampleResult(time);
             job.completedAt = new Date(time).toISOString();
             readyAt.delete(job.id);
           }
         }
-        return copy({enabled:false,modes:{record_search:true,ai_research:false},jobs}) as T;
+        return copy({enabled:false,modes:{record_search:true,work_briefing:true,ai_research:false},jobs}) as T;
       }
       if (path === preferencesPath) {
         for (const [key,preference] of preferences) {
@@ -72,12 +86,15 @@ export function createLucySampleWorkspace(now:()=>number = Date.now):LucySampleW
     async post<T>(path:string,body?:unknown):Promise<T> {
       if (path === workPath) {
         const input = bodyObject(body);
-        if (Object.keys(input).sort().join(',') !== 'mode,prompt,requestKey' || input.mode !== 'record_search'
-          || typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 200
-          || typeof input.requestKey !== 'string' || !/^[a-zA-Z0-9_.:-]{1,100}$/.test(input.requestKey)) {
-          throw new Error('Enter a sample task of 1–200 characters with record-search mode and a request key.');
+        const briefing=input.mode==='work_briefing';
+        const options=briefing?readLucyBriefingOptions(input.options):null;
+        if (typeof input.requestKey !== 'string' || !/^[a-zA-Z0-9_.:-]{1,100}$/.test(input.requestKey)
+          || (briefing?(Object.keys(input).sort().join(',')!=='mode,options,requestKey'||!options)
+            :(Object.keys(input).sort().join(',')!=='mode,prompt,requestKey'||input.mode!=='record_search'
+              || typeof input.prompt!=='string'||!input.prompt.trim()||input.prompt.length>200))) {
+          throw new Error('Choose a supported sample mode with valid inputs and a request key. Briefings require explicit dates spanning at most 31 days inclusive.');
         }
-        const prompt = input.prompt.trim();
+        const prompt = options?lucyBriefingPrompt(options):(input.prompt as string).trim();
         const existing = requests.get(input.requestKey);
         if (existing) {
           if (existing.prompt !== prompt || existing.mode !== input.mode) throw new Error('This sample request key already belongs to another task.');
@@ -85,7 +102,7 @@ export function createLucySampleWorkspace(now:()=>number = Date.now):LucySampleW
         }
         if (jobs.length >= sampleJobLimit) throw new Error('Sample limit reached. Leave Lucy AI and return to reset this demo.');
         const time = now();
-        const job:Job = {id:`${scopeKey}-job-${++nextJob}`,prompt,mode:'record_search',status:'queued',createdAt:new Date(time).toISOString()};
+        const job:Job = {id:`${scopeKey}-job-${++nextJob}`,prompt,mode:briefing?'work_briefing':'record_search',...(options?{options}:{}),status:'queued',createdAt:new Date(time).toISOString()};
         jobs.unshift(job);
         requests.set(input.requestKey,job);
         readyAt.set(job.id,time+4000);

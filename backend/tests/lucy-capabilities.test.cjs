@@ -215,25 +215,28 @@ test('simultaneous final-save failure and entitlement revocation cannot expose f
 });
 
 
-test('capabilities and help distinguish independently enabled local records from AI background research',async()=>{
- const savedAI=process.env.LUCY_BACKGROUND_WORK_ENABLED,savedRecords=process.env.LUCY_RECORD_SEARCH_ENABLED;
+test('capabilities and help distinguish independently enabled records, briefings and AI research',async()=>{
+ const savedAI=process.env.LUCY_BACKGROUND_WORK_ENABLED,savedRecords=process.env.LUCY_RECORD_SEARCH_ENABLED,savedBriefing=process.env.LUCY_WORK_BRIEFING_ENABLED;
  const response=inference.lucyResponse;let calls=0;inference.lucyResponse=async()=>{calls++;throw new Error('Help must not call a provider');};
  try{
-  for(const [ai,records] of [[false,true],[true,true],[true,false],[false,false]]){
-   process.env.LUCY_BACKGROUND_WORK_ENABLED=String(ai);process.env.LUCY_RECORD_SEARCH_ENABLED=String(records);
+  for(const [ai,records] of [[false,true],[true,true],[true,false],[false,false]])for(const briefing of [false,true]){
+   process.env.LUCY_BACKGROUND_WORK_ENABLED=String(ai);process.env.LUCY_RECORD_SEARCH_ENABLED=String(records);process.env.LUCY_WORK_BRIEFING_ENABLED=String(briefing);
    const capabilities=(await request('/lucy/capabilities')).data;
-   assert.equal(capabilities.backgroundResearch,ai);assert.equal(capabilities.backgroundRecordSearch,records);assert.deepEqual(capabilities.workModes,{ai_research:ai,record_search:records});
+   assert.equal(capabilities.backgroundResearch,ai);assert.equal(capabilities.backgroundRecordSearch,records);assert.equal(capabilities.backgroundWorkBriefing,briefing);assert.deepEqual(capabilities.workModes,{ai_research:ai,record_search:records,work_briefing:briefing});
    assert.equal(capabilities.limitations.some(value=>value==='AI background research is disabled for this deployment'),!ai);
    assert.equal(capabilities.limitations.some(value=>value==='Saved company-record search is disabled for this deployment'),!records);
+   assert.equal(capabilities.limitations.some(value=>value==='Saved work briefings are disabled for this deployment'),!briefing);
    const help=(await request('/lucy',owner,'What can you do?')).data;assert.deepEqual(help.capabilities.workModes,capabilities.workModes);assert.match(help.text,/This chat does not start background jobs/);
    assert.match(help.text,records?/you can save company-record searches without AI/:/saved company-record search is currently disabled/);
    assert.match(help.text,ai?/AI background research is also enabled there/:/AI background research is currently disabled/);
+   assert.match(help.text,briefing?/request a model-free work briefing/:/Saved work briefings are currently disabled/);
   }
   assert.equal(calls,0);
  }finally{
   inference.lucyResponse=response;
   if(savedAI===undefined)delete process.env.LUCY_BACKGROUND_WORK_ENABLED;else process.env.LUCY_BACKGROUND_WORK_ENABLED=savedAI;
   if(savedRecords===undefined)delete process.env.LUCY_RECORD_SEARCH_ENABLED;else process.env.LUCY_RECORD_SEARCH_ENABLED=savedRecords;
+  if(savedBriefing===undefined)delete process.env.LUCY_WORK_BRIEFING_ENABLED;else process.env.LUCY_WORK_BRIEFING_ENABLED=savedBriefing;
  }
 });
 

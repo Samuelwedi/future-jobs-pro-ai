@@ -1,6 +1,6 @@
-import { startOwnerRepairWorker } from './services/ownerRepairService';
+import { startOwnerRepairWorker, stopOwnerRepairWorker } from './services/ownerRepairService';
 import lucyJarvisRoutes, { runLucyBackgroundResearch } from './routes/lucyJarvisRoutes';
-import { configureLucyWorkProcessor,startLucyWorkWorker } from './services/lucyWorkService';
+import { configureLucyWorkProcessor, startLucyWorkWorker, stopLucyWorkWorker } from './services/lucyWorkService';
 configureLucyWorkProcessor(runLucyBackgroundResearch);
 // ============================================
 // FUTURE JOBS PRO AI â€“ MAIN SERVER
@@ -20,9 +20,9 @@ import { Server as SocketIOServer } from 'socket.io';
 import OpenAI from 'openai';
 import { pool, checkDatabaseHealth, databasePoolStats } from './config/database';
 import { recordLucyRequest, runtimeMetrics } from './observability/runtimeMetrics';
-import { startLucyReliabilityMonitor } from './services/lucyReliabilityService';
+import { startLucyReliabilityMonitor, stopLucyReliabilityMonitor } from './services/lucyReliabilityService';
 import { apiTrafficLimit, lucyTrafficLimit } from './middleware/trafficControl';
-import { createSharedRedisClient } from './config/redis';
+import { createSharedRedisClient, trackSharedRedisClient, closeSharedRedisClients } from './config/redis';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { saveMessage } from './services/chatService';
 import {
@@ -33,11 +33,42 @@ import {
 import { verifyToken } from './utils/auth';
 import statsRoutes from './routes/statsRoutes';
 import path from 'path';
+import { Socket } from 'net';
+import { createGracefulShutdown, installShutdownSignals } from './utils/gracefulShutdown';
+import { createPeriodicWorker } from './utils/periodicWorker';
 import connectedStripeWebhook from './routes/connectedStripeWebhook';
 
 dotenv.config();
 
 const app: Express = express();
+const activeHttpResponses = new Set<Response>();
+let httpDrained: (() => void) | undefined;
+let unconfirmedAbortedHttpWork = false;
+// Refuse new work on an existing keep-alive connection as soon as draining starts.
+app.use((_req, res, next) => {
+  if (!shutdown.isStopping()) {
+    activeHttpResponses.add(res);
+    res.once('close', () => {
+      // Express does not expose when an async handler settles after its response
+      // is aborted. Remember that uncertainty even when it predates SIGTERM,
+      // but release the response object rather than retaining disconnected data.
+      if (!res.writableFinished) unconfirmedAbortedHttpWork = true;
+      activeHttpResponses.delete(res);
+      if (activeHttpResponses.size === 0) httpDrained?.();
+    });
+    res.once('finish', () => {
+      activeHttpResponses.delete(res);
+      if (activeHttpResponses.size === 0) httpDrained?.();
+      // An active keep-alive response can become idle after server.close().
+      // Reap it after Node has finished updating the connection's state.
+      if (shutdown.isStopping()) setImmediate(() => server.closeIdleConnections());
+    });
+    return next();
+  }
+  res.setHeader('Connection', 'close');
+  res.setHeader('Retry-After', '5');
+  res.status(503).json({ success: false, message: 'Backend is shutting down. Please retry shortly.' });
+});
 const configuredProxyHops = Number.parseInt(process.env.TRUST_PROXY_HOPS || '1', 10);
 app.set('trust proxy', Number.isFinite(configuredProxyHops) && configuredProxyHops >= 0 ? configuredProxyHops : 1);
 console.log(`ðŸ” PORT environment variable: "${process.env.PORT}"`);
@@ -154,7 +185,7 @@ import payoutRoutes from './routes/payoutRoutes'; app.use('/api/payouts', payout
 import yearEndRouter from './routes/yearEndRouter'; app.use('/api/year-end', yearEndRouter);
 import supportRoutes from './routes/supportRoutes'; app.use('/api/support', supportRoutes);
 import ownerOperationsRoutes from './routes/ownerOperationsRoutes';
-import { startOwnerOperationsWorker } from './services/ownerOperationsService';
+import { startOwnerOperationsWorker, stopOwnerOperationsWorker } from './services/ownerOperationsService';
 app.use('/api/owner-operations', ownerOperationsRoutes);
 import supportAgentRoutes from './routes/supportAgentRoutes'; app.use('/api/support-agent', supportAgentRoutes);
 import systemReliabilityRoutes from './routes/systemReliabilityRoutes'; app.use('/api/system-reliability', systemReliabilityRoutes);
@@ -711,13 +742,63 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 
 // ----- WebSocket Server -----
 const server = http.createServer(app);
+const networkSockets = new Set<Socket>();
+server.on('connection', socket => {
+  networkSockets.add(socket);
+  socket.once('close', () => networkSockets.delete(socket));
+});
 const io = new SocketIOServer(server, {
+  allowRequest: (_req, callback) => callback(null, !shutdown.isStopping()),
   cors: {
     origin: configuredOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
 });
+
+const activeSocketWork = new Set<Promise<void>>();
+function trackSocketHandler<T extends any[]>(handler: (...args: T) => Promise<void>) {
+  return (...args: T) => {
+    const pending = handler(...args);
+    activeSocketWork.add(pending);
+    void pending.then(() => activeSocketWork.delete(pending), () => activeSocketWork.delete(pending));
+  };
+}
+const reportWorker = createPeriodicWorker(runDueReports, error => console.error('Scheduled report generation failed', error));
+const shutdown = createGracefulShutdown({
+  drains: [
+    { name: 'Lucy work', run: stopLucyWorkWorker },
+    { name: 'Lucy reliability monitor', run: stopLucyReliabilityMonitor },
+    { name: 'Owner operations worker', run: stopOwnerOperationsWorker },
+    { name: 'Owner repair worker', run: stopOwnerRepairWorker },
+    { name: 'Scheduled reports', run: () => reportWorker.stop() },
+    { name: 'HTTP and Socket.IO', run: async () => {
+      // Close the listener immediately, then disconnect upgraded sockets. Keep
+      // the database and Redis available until all current work has settled.
+      const httpClosed = new Promise<void>((resolve, reject) => server.close(error => {
+        if (error && (error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') reject(error);
+        else resolve();
+      }));
+      const socketsClosed = io.close();
+      await Promise.all([httpClosed, socketsClosed]);
+      // A disconnected HTTP client does not cancel its asynchronous handler.
+      // If it never finishes, force exit at the deadline rather than closing
+      // the database underneath code that might still use it.
+      if (activeHttpResponses.size) await new Promise<void>(resolve => { httpDrained = resolve; });
+      if (unconfirmedAbortedHttpWork) {
+        console.log('An aborted HTTP handler could not be confirmed complete; holding resources until the shutdown deadline.');
+        await new Promise<void>(() => {});
+      }
+      await Promise.allSettled([...activeSocketWork]);
+    } },
+  ],
+  resources: [
+    { name: 'Redis clients', run: closeSharedRedisClients },
+    { name: 'PostgreSQL pool', run: () => pool.end() },
+  ],
+  forceClose: () => { for (const socket of networkSockets) socket.destroy(); },
+});
+installShutdownSignals(shutdown.shutdown);
 
 void (async () => {
   try {
@@ -726,9 +807,11 @@ void (async () => {
       console.warn('REDIS_URL not configured; Socket.IO is limited to one backend replica.');
       return;
     }
-    const subClient = pubClient.duplicate();
+    if (shutdown.isStopping()) return;
+    const subClient = trackSharedRedisClient(pubClient.duplicate());
     subClient.on('error', (error) => console.error('Redis subscriber error:', error.message));
     await subClient.connect();
+    if (shutdown.isStopping()) return;
     io.adapter(createAdapter(pubClient, subClient));
     console.log('Socket.IO Redis adapter enabled.');
   } catch (error: any) {
@@ -740,13 +823,15 @@ void (async () => {
 const socketAgentRoles = new Set<string>();
 const socketGlobalAgentRoles = new Set<string>();
 
-io.use(async (socket, next) => {
+io.use(trackSocketHandler(async (socket, next) => {
   try {
+    if (shutdown.isStopping()) throw new Error('Backend is shutting down');
     const token = String(socket.handshake.auth?.token || '');
     if (!token) throw new Error('Authentication token is required');
     const decoded = jwt.verify(token, JWT_SECRET) as any;
     if (!decoded.id || decoded.purpose) throw new Error('Invalid access token');
     const actor = await loadSubscriptionActor(decoded.id, decoded.companyId);
+    if (shutdown.isStopping()) throw new Error('Backend is shutting down');
     socket.data.actor = {
       id: actor.id,
       companyId: actor.companyId,
@@ -758,7 +843,7 @@ io.use(async (socket, next) => {
   } catch (error: any) {
     next(new Error(error.message || 'Unauthorized'));
   }
-});
+}));
 
 async function socketRoomAccess(socket: any, roomId: string): Promise<{ allowed: boolean; companyId: string }> {
   const actor = socket.data.actor;
@@ -811,8 +896,9 @@ function resolveWorkforceRange(value: string, explicitStart?: string, explicitEn
 io.on('connection', (socket) => {
   console.log('ðŸ”Œ New WebSocket connection:', socket.id);
 
-  socket.on('join-room', async (roomId, acknowledge) => {
+  socket.on('join-room', trackSocketHandler(async (roomId, acknowledge) => {
     try {
+      if (shutdown.isStopping()) throw new Error('Backend is shutting down');
       const normalizedRoomId = String(roomId || '');
       const access = await socketRoomAccess(socket, normalizedRoomId);
       if (!access.allowed) throw new Error('Room access denied');
@@ -826,7 +912,7 @@ io.on('connection', (socket) => {
     } catch (error: any) {
       acknowledge?.({ success: false, message: error.message });
     }
-  });
+  }));
   socket.on('leave-room', (roomId) => socket.leave(`room-${String(roomId || '')}`));
   socket.on('join-agent-dashboard', (acknowledge) => {
     if (!socketAgentRoles.has(socket.data.actor.role)) {
@@ -840,8 +926,9 @@ io.on('connection', (socket) => {
     }
     acknowledge?.({ success: true });
   });
-  socket.on('chat-message', async (data) => {
+  socket.on('chat-message', trackSocketHandler(async (data) => {
     try {
+      if (shutdown.isStopping()) return;
       const roomId = String(data?.roomId || '');
       const message = String(data?.message || '').trim();
       if (!roomId || !message || message.length > 5000) throw new Error('Invalid message');
@@ -855,22 +942,19 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.error('Chat message error:', error);
     }
-  });
+  }));
 });
 
 // After creating io:
 app.set('io', io);
 
 server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
+  if (shutdown.isStopping()) return;
   startLucyReliabilityMonitor();
   startLucyWorkWorker();
   startOwnerOperationsWorker();
-startOwnerRepairWorker();
-  if(process.env.OPERATIONS_REPORT_WORKER==='true'){
-    let reporting=false;
-    const tick=async()=>{if(reporting)return;reporting=true;try{await runDueReports();}catch(e){console.error('Scheduled report generation failed',e);}finally{reporting=false;}};
-    setInterval(()=>void tick(),60000).unref();void tick();
-  }
+  startOwnerRepairWorker();
+  if (process.env.OPERATIONS_REPORT_WORKER === 'true') reportWorker.start(60000);
   console.log('');
   console.log('â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—');
   console.log('â•‘   ðŸš€ Future Jobs Pro AI Server Running                  â•‘');
