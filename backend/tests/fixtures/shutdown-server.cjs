@@ -1,3 +1,4 @@
+require('./lucy-funded-processor.cjs');
 // Exercise the real compiled production entry point, HTTP/Socket.IO and Lucy
 // worker. Every persistence/provider boundary is an in-memory fake.
 const Module = require('node:module');

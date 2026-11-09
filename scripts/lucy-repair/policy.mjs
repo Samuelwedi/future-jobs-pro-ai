@@ -39,6 +39,9 @@ export function requiresReview(patch, scope) {
   // The automatic publisher targets the support portal project only. Customer
   // website changes need their own release target and must stay review candidates.
   if (scope === 'application' || scope === 'backend' || scope === 'customer-web') return true;
+  // The only unattended portal code surface is the existing stylesheet.
+  // A file-name/content heuristic cannot prove that arbitrary JS is harmless.
+  if (['support-portal', 'portal-app'].includes(scope) && patch.files.some(f=>f.path !== 'webdash/src/App.css' && f.path !== regressionPaths['portal-app'])) return true;
   return patch.files.some(f=>/(?:auth|login|sign.?in|permission|tenant|company|payroll|paystub|payment|payout|billing|stripe|quickbook|subscription|tax|bank|token|secure|\/modules\/|(?:^|\/)App\.[jt]sx?$)/i.test(f.path)
     || /(?:Authorization|Bearer |localStorage|sessionStorage|jwt|access_token|refresh_token|company_id|tenant_id)/i.test(f.content));
 }

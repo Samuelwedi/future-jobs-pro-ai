@@ -1,3 +1,4 @@
+require('./fixtures/lucy-funded-processor.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -68,6 +69,20 @@ test('durable read-only work SQL and authenticated API',async t=>{
  await t.test('inactive actors and company or role changes fail closed',async()=>{
  for(const change of ["is_active=false","company_id='"+d+"'","role='employee'"]){await create();await query('UPDATE users SET '+change+' WHERE id=$1',[a]);let calls=0;work.configureLucyWorkProcessor(async()=>{calls++;return{text:'no'};});assert.equal(await work.runLucyWorkOnce(),false);assert.equal(calls,0);assert.equal((await query('SELECT status FROM lucy_background_work')).rows[0].status,'failed');await query("UPDATE users SET is_active=true,company_id=$2,role='boss' WHERE id=$1",[a,c]);await clear();}
  const one=await create();work.configureLucyWorkProcessor(async({shouldContinue})=>{await query('UPDATE users SET is_active=false WHERE id=$1',[a]);assert.equal(await shouldContinue(),false);return{text:'no'};});await work.runLucyWorkOnce();assert.equal((await request()).status,401);await query('UPDATE users SET is_active=true WHERE id=$1',[a]);assert.equal((await request('/'+one.job.id)).job.status,'failed');await clear();
+ });
+ await t.test('provider snapshots survive claim awaits and changed configuration suppresses publication',async()=>{
+ const originalModel=process.env.LUCY_BACKGROUND_LLM_MODEL;
+ for(const changeDuringClaim of [true,false]){
+  const one=await create();let calls=0;
+  work.configureLucyWorkProcessor(async({backgroundSelection,shouldContinue})=>{
+   calls++;assert.equal(backgroundSelection.provider,'self_hosted');assert.equal(backgroundSelection.model,originalModel);
+   process.env.LUCY_BACKGROUND_LLM_MODEL='replacement';assert.equal(await shouldContinue(),false);return{text:'Must not publish under a changed provider'};
+  });
+  if(changeDuringClaim)pool.query=async(sql,args)=>{const result=await query(sql,args);if(sql.includes('WITH candidate AS'))process.env.LUCY_BACKGROUND_LLM_MODEL='replacement';return result;};
+  try{await work.runLucyWorkOnce();assert.equal(calls,changeDuringClaim?0:1);const saved=await request('/'+one.job.id);assert.equal(saved.job.status,'failed');assert.equal(saved.job.result,null);}
+  finally{pool.query=query;process.env.LUCY_BACKGROUND_LLM_MODEL=originalModel;await clear();}
+ }
+ const listing=await request();assert.deepEqual(listing.backgroundInference,{configured:true,provider:'self_hosted',automaticPaidFallback:false});assert.doesNotMatch(JSON.stringify(listing.backgroundInference),/127|offline-fixture|fingerprint|apiKey/);
  });
  await t.test('active and rolling daily limits',async()=>{
  for(let i=0;i<10;i++)assert.equal((await create()).status,202);assert.equal((await create()).status,429);

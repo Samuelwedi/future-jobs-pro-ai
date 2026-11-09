@@ -46,13 +46,13 @@ export function validatePTORequest(start: unknown, end: unknown, type: unknown, 
   return { start, end, type: normalizedType, reason: typeof reason === 'string' ? reason.trim() || null : null, days };
 }
 
-export async function createPTORequest(userId: string, companyId: string, startDate: string, endDate: string, type: string, reason?: string): Promise<PTORequest & {calendar_days: number}> {
+export async function createPTORequest(userId: string, companyId: string, startDate: string, endDate: string, type: string, reason?: string, expectedRole?: string): Promise<PTORequest & {calendar_days: number}> {
   const input = validatePTORequest(startDate, endDate, type, reason);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     // Serialize submissions for this employee before the overlap check.
-    const actor = await client.query('SELECT id FROM users WHERE id=$1 AND company_id=$2 AND COALESCE(is_active,TRUE)=TRUE FOR UPDATE', [userId, companyId]);
+    const actor = await client.query('SELECT id FROM users WHERE id=$1 AND company_id=$2 AND COALESCE(is_active,TRUE)=TRUE AND ($3::text IS NULL OR LOWER(COALESCE(role,\'employee\'))=$3) FOR UPDATE', [userId, companyId, expectedRole ?? null]);
     if (!actor.rowCount) throw new PTOInputError(403, 'Active company membership is required');
     const overlap = await client.query(`SELECT id FROM pto_requests WHERE user_id=$1 AND status IN ('pending','approved')
       AND start_date::date <= $3::date AND end_date::date >= $2::date LIMIT 1`, [userId, input.start, input.end]);
@@ -100,7 +100,7 @@ export async function updatePTOStatus(
 export async function getCompanyPTORequests(companyId: string): Promise<PTORequest[]> {
   const result = await pool.query(
     `SELECT pr.*, u.first_name || ' ' || u.last_name as user_name
-     FROM pto_requests pr JOIN users u ON pr.user_id = u.id
+     FROM pto_requests pr JOIN users u ON pr.user_id = u.id AND u.company_id=pr.company_id
      WHERE pr.company_id = $1 ORDER BY pr.created_at DESC`,
     [companyId]
   );
@@ -113,9 +113,9 @@ export async function getUserPTORequests(userId: string): Promise<PTORequest[]> 
     `SELECT pr.*,
             GREATEST(1, (pr.end_date::date - pr.start_date::date) + 1) AS calendar_days,
             TRIM(COALESCE(approver.first_name, '') || ' ' || COALESCE(approver.last_name, '')) AS approved_by_name
-     FROM pto_requests pr
-     LEFT JOIN users approver ON approver.id = pr.approved_by
-     WHERE pr.user_id = $1 ORDER BY pr.created_at DESC`,
+     FROM pto_requests pr JOIN users member ON member.id=pr.user_id AND member.company_id=pr.company_id
+     LEFT JOIN users approver ON approver.id = pr.approved_by AND approver.company_id=pr.company_id
+     WHERE pr.user_id = $1 AND COALESCE(member.is_active,TRUE)=TRUE ORDER BY pr.created_at DESC`,
     [userId]
   );
   return result.rows;

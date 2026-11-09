@@ -46,4 +46,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS owner_repair_active_incident ON owner_repair_j
 ALTER TABLE owner_repair_jobs ADD COLUMN IF NOT EXISTS feature TEXT NOT NULL DEFAULT 'general';
 ALTER TABLE owner_repair_jobs DROP CONSTRAINT IF EXISTS owner_repair_jobs_scope_check;
 ALTER TABLE owner_repair_jobs ADD CONSTRAINT owner_repair_jobs_scope_check CHECK(scope IN ('mobile-audio','support-portal','backend','customer-web','mobile','portal-app','application'));
+-- Safe to rerun for existing installations before starting the updated worker.
+ALTER TABLE owner_repair_jobs ADD COLUMN IF NOT EXISTS dispatch_started_at TIMESTAMPTZ;
+ALTER TABLE owner_repair_jobs DROP CONSTRAINT IF EXISTS owner_repair_jobs_status_check;
+ALTER TABLE owner_repair_jobs ADD CONSTRAINT owner_repair_jobs_status_check CHECK(status IN ('queued','dispatching','running','deployed','awaiting_store','failed','blocked','cancelled'));
 COMMIT;
