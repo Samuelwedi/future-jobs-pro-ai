@@ -1,21 +1,21 @@
 import { verifyToken } from '../utils/auth';
 import express, { Request } from 'express';
+import { isManagerRole } from '../middleware/companyActor';
 import { pool } from '../config/database';
 import { resolveCompanyPayPeriod } from '../services/lucyPayrollService';
 import { generatePayroll } from '../services/payrollGenerator';
 
 const router = express.Router();
-const managerRoles = new Set(['boss', 'manager', 'admin']);
 
 router.get('/pending', async (req, res) => {
-  try { const actor = verifyToken(req); const result = await pool.query('SELECT * FROM approvals WHERE user_id=$1 AND status=$2 ORDER BY created_at ASC', [actor.id, 'pending']); res.json({ success: true, approvals: result.rows }); }
+  try { const actor = await actorFor(req); const result = await pool.query("SELECT * FROM approvals WHERE user_id=$1 AND status=$2 AND action_payload::jsonb->>'companyId'=$3 ORDER BY created_at ASC", [actor.id, 'pending', actor.companyId]); res.json({ success: true, approvals: result.rows }); }
   catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 });
 
 async function actorFor(req: Request) {
   const token = verifyToken(req);
   const result = await pool.query('SELECT id,company_id,role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE', [token.id]);
-  if (!result.rowCount) throw new Error('Authenticated user was not found');
+  if (!result.rowCount || !result.rows[0].company_id) throw new Error('Authenticated company user was not found');
   return { id: String(result.rows[0].id), companyId: String(result.rows[0].company_id || ''), role: String(result.rows[0].role || '').toLowerCase() };
 }
 
@@ -34,8 +34,8 @@ function payrollRange(value: string) {
 
 async function executeApprovedAction(approval: any, actor: { id: string; companyId: string; role: string }) {
   const payload = typeof approval.action_payload === 'string' ? JSON.parse(approval.action_payload) : approval.action_payload || {};
-  if (!managerRoles.has(actor.role)) throw new Error('Manager access is required');
-  if (payload.companyId && String(payload.companyId) !== actor.companyId) throw new Error('Approval belongs to another company');
+  if (!isManagerRole(actor.role)) throw new Error('Manager access is required');
+  if (!payload.companyId || String(payload.companyId) !== actor.companyId) throw new Error('Company access is unavailable for this approval');
   if (approval.action_type !== 'run_payroll') throw new Error(`Approved action ${approval.action_type} does not yet have a safe executor`);
   const range = await resolveCompanyPayPeriod(actor.companyId, typeof payload.period === 'object' ? `${payload.period.start} through ${payload.period.end}` : String(payload.period || 'this pay period'));
   if(Date.now()-new Date(approval.created_at).getTime()>15*60*1000) throw new Error('Proposal expired; ask Lucy to prepare it again');
@@ -60,7 +60,7 @@ router.post('/:id/approve', async (req, res) => {
 });
 
 router.post('/:id/reject', async (req, res) => {
-  try { const actor = await actorFor(req); const result = await pool.query("UPDATE approvals SET status='rejected',resolved_at=NOW() WHERE id=$1 AND user_id=$2 AND status='pending' RETURNING id", [req.params.id, actor.id]); if (!result.rowCount) return res.status(404).json({ success: false, message: 'Approval was not found or is already resolved' }); res.json({ success: true, message: 'Rejected', action: { type: 'approval', title: 'Action rejected', status: 'information', summary: 'No protected action was performed.', details: [] } }); }
+  try { const actor = await actorFor(req); const result = await pool.query("UPDATE approvals SET status='rejected',resolved_at=NOW() WHERE id=$1 AND user_id=$2 AND status='pending' AND action_payload::jsonb->>'companyId'=$3 RETURNING id", [req.params.id, actor.id, actor.companyId]); if (!result.rowCount) return res.status(404).json({ success: false, message: 'Approval was not found or is already resolved' }); res.json({ success: true, message: 'Rejected', action: { type: 'approval', title: 'Action rejected', status: 'information', summary: 'No protected action was performed.', details: [] } }); }
   catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 });
 

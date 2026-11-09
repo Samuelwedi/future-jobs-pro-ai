@@ -1,5 +1,6 @@
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
+import { isManagerRole } from '../middleware/companyActor';
 import { pool } from '../config/database';
 import { getUserPTOBalance, getUserPTORequests, createPTORequest, PTOInputError } from '../services/ptoService';
 
@@ -53,10 +54,10 @@ router.get('/', async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT pr.*, u.first_name || ' ' || u.last_name AS user_name
        FROM pto_requests pr
-       JOIN users u ON pr.user_id = u.id
+       JOIN users u ON pr.user_id = u.id AND u.company_id=pr.company_id
        WHERE pr.company_id = $1 AND ($2::boolean = true OR pr.user_id = $3)
        ORDER BY pr.start_date DESC`,
-      [companyId, ['boss', 'manager', 'admin'].includes(String(userRes.rows[0].role || '').toLowerCase()), decoded.id]
+      [companyId, isManagerRole(userRes.rows[0].role), decoded.id]
     );
     res.json({ success: true, requests: result.rows });
   } catch (error: any) {
@@ -79,7 +80,7 @@ router.post('/', async (req: Request, res: Response) => {
     if (!companyId) return res.status(400).json({ success: false, message: 'Company not assigned' });
 
     const { start_date, end_date, type, reason } = req.body;
-    const request = await createPTORequest(decoded.id, companyId, start_date, end_date, type, reason);
+    const request = await createPTORequest(decoded.id, companyId, start_date, end_date, type, reason, String(userRes.rows[0].role || 'employee').toLowerCase());
     res.status(201).json({ success: true, request });
   } catch (error: any) {
     if (error instanceof PTOInputError) return res.status(error.status).json({ success: false, message: error.message });

@@ -30,3 +30,11 @@ test('portal styles keep the bounded publisher while application entry points ne
   assert.equal(requiresReview({files:[{path:`webdash/src/App.${extension}`,content:'export default App;'}]},'portal-app'),true);
  }
 });
+test('portal executable code cannot bypass candidate review via an innocuous filename',async()=>{
+ const {requiresReview}=await import('./policy.mjs');
+ for(const scope of ['support-portal','portal-app']){
+  for(const file of ['webdash/src/LiveMonitoring.js','webdash/src/Widgets.js','webdash/src/Schedule.tsx','webdash/src/other.css'])
+   assert.equal(requiresReview({files:[{path:file,content:'export const a = 1;'}]},scope),true);
+  assert.equal(requiresReview({files:[{path:'webdash/src/App.css',content:'body {}'},{path:'webdash/src/LiveMonitoring.repair.test.js',content:'// append regression'}]},scope),false);
+ }
+});
