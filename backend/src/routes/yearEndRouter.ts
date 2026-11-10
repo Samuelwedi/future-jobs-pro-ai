@@ -34,9 +34,9 @@ const getCompanyId = async (req: Request): Promise<string | null> => {
 
 const requirePayrollManager = async (req: Request): Promise<{ companyId: string; userId: string }> => {
   const decoded = verifyToken(req);
-  const result = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
+  const result = await pool.query('SELECT company_id, role FROM users WHERE id = $1 AND COALESCE(is_active,TRUE)=TRUE', [decoded.id]);
   if (!result.rowCount || !result.rows[0].company_id) throw new Error('Not authenticated');
-  if (!['boss', 'manager', 'admin'].includes(String(result.rows[0].role || ''))) {
+  if (!['boss', 'manager'].includes(String(result.rows[0].role || ''))) {
     const error: any = new Error('Payroll manager access is required');
     error.status = 403;
     throw error;

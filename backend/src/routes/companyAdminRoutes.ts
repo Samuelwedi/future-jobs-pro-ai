@@ -6,12 +6,12 @@ import { verifyToken } from '../utils/auth';
 const router = express.Router();
 type Actor = { id: string; companyId: string };
 
-async function actor(req: Request): Promise<Actor> {
+async function actor(req: Request, sensitiveRead = false): Promise<Actor> {
   const token = verifyToken(req);
   if (!token.companyId) throw new Error('Your account is not assigned to a company');
   const found = await pool.query('SELECT id,company_id,role FROM users WHERE id=$1 AND company_id=$2 AND COALESCE(is_active,TRUE)=TRUE', [token.id, token.companyId]);
   const row = found.rows[0];
-  if (!row || !['boss','manager','admin'].includes(String(row.role).toLowerCase())) throw new Error('Company administrator access is required');
+  if (!row || !(sensitiveRead ? ['boss','manager'] : ['boss','manager','admin']).includes(String(row.role).toLowerCase())) throw new Error('Company administrator access is required');
   return { id: row.id, companyId: row.company_id };
 }
 
@@ -37,11 +37,11 @@ async function metric(sql: string, companyId: string) {
 
 router.get('/overview', async (req, res) => {
   try {
-    const a = await actor(req);
+    const a = await actor(req, true);
     const employeesResult = await pool.query(`SELECT u.id,u.first_name,u.last_name,u.full_name,u.email,u.role,COALESCE(u.is_active,TRUE) is_active,u.date_of_birth,u.sin,
       (SELECT hourly_rate FROM compensation_history c WHERE c.user_id=u.id AND c.effective_date<=CURRENT_DATE ORDER BY effective_date DESC,created_at DESC LIMIT 1) hourly_rate,
       (SELECT effective_date FROM compensation_history c WHERE c.user_id=u.id AND c.effective_date<=CURRENT_DATE ORDER BY effective_date DESC,created_at DESC LIMIT 1) rate_effective_date
-      FROM users u WHERE u.company_id=$1 AND LOWER(COALESCE(u.role,'employee'))<>'boss' ORDER BY COALESCE(u.first_name,u.full_name),u.last_name`, [a.companyId]);
+      FROM users u WHERE u.company_id=$1 AND EXISTS (SELECT 1 FROM users actor WHERE actor.id=$2 AND actor.company_id=$1 AND COALESCE(actor.is_active,TRUE)=TRUE AND LOWER(actor.role) IN ('boss','manager')) AND LOWER(COALESCE(u.role,'employee'))<>'boss' ORDER BY COALESCE(u.first_name,u.full_name),u.last_name`, [a.companyId,a.id]);
     const [totalEmployees,activeJobs,totalProjects,payrollMonth,revenueMonth,labourToday,revenueToday] = await Promise.all([
       metric("SELECT COUNT(*) value FROM users WHERE company_id=$1 AND LOWER(COALESCE(role,'employee'))<>'boss' AND COALESCE(is_active,TRUE)=TRUE",a.companyId),
       metric("SELECT COUNT(*) value FROM projects WHERE company_id=$1 AND LOWER(COALESCE(status,'active')) IN ('active','in_progress','in progress')",a.companyId),

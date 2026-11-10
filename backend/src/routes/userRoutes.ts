@@ -7,6 +7,14 @@ import { employeeCompensation } from '../services/employeeCompensation';
 import { chatFileType } from '../services/chatFiles';
 import { pool } from '../config/database';
 
+// Visibility is based on the current database role, never a stale token claim.
+function visibleProfile(row: any) {
+  if (!row) return row;
+  const { sin, date_of_birth, ...profile } = row;
+  return ['boss', 'manager'].includes(String(row.role).toLowerCase())
+    ? { ...profile, sin, date_of_birth } : profile;
+}
+
 const router = express.Router();
 router.use(async(req,res,next)=>{try{const id=verifyToken(req).id;const active=await pool.query('SELECT id FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE',[id]);if(!active.rowCount)return res.status(401).json({success:false,message:'This account is inactive'});next();}catch{res.status(401).json({success:false,message:'Sign in to view your profile'});}});
 
@@ -63,12 +71,11 @@ router.get('/company/:companyId', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
     const result = await pool.query(
-      `SELECT id, email, role, full_name, first_name, last_name, profile_pic,
-              sin, date_of_birth
+      `SELECT id, email, role, full_name, first_name, last_name, profile_pic
        FROM users WHERE company_id = $1`,
       [req.params.companyId]
     );
-    res.json({ success: true, users: result.rows });
+    res.set('Cache-Control', 'no-store').json({ success: true, users: result.rows });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -101,11 +108,11 @@ router.put('/profile', async (req: Request, res: Response) => {
       updates.push(`full_name = $${paramCounter++}`);
       values.push(`${firstName} ${lastName}`);
     }
-    if (sin !== undefined) {
+    if (sin != null && String(sin).trim() !== '') {
       updates.push(`sin = $${paramCounter++}`);
       values.push(sin);
     }
-    if (dateOfBirth !== undefined) {
+    if (dateOfBirth != null && String(dateOfBirth).trim() !== '') {
       updates.push(`date_of_birth = $${paramCounter++}`);
       values.push(dateOfBirth);
     }
@@ -118,14 +125,14 @@ router.put('/profile', async (req: Request, res: Response) => {
     const query = `
       UPDATE users
       SET ${updates.join(', ')}
-      WHERE id = $${paramCounter}
-      RETURNING first_name, last_name, full_name, sin, date_of_birth
+      WHERE id = $${paramCounter} AND COALESCE(is_active,TRUE)=TRUE
+      RETURNING first_name, last_name, full_name, role, sin, date_of_birth
     `;
 
     const result = await pool.query(query, values);
-    res.json({ success: true, user: result.rows[0] });
+    res.set('Cache-Control', 'no-store').json({ success: true, user: visibleProfile(result.rows[0]) });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: 'Unable to update profile' });
   }
 });
 
@@ -139,27 +146,21 @@ router.put('/:id/tax-info', async (req: Request, res: Response) => {
     const decoded = verifyToken(req);
     const { id } = req.params;
 
-    const userRes = await pool.query(
-      'SELECT company_id FROM users WHERE id = $1',
-      [decoded.id]
-    );
-    const targetRes = await pool.query(
-      'SELECT company_id FROM users WHERE id = $1',
-      [id]
-    );
-    if (targetRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
-    if (userRes.rows[0].company_id !== targetRes.rows[0].company_id)
+    // Company membership alone does not authorize changing another person's tax data.
+    // Managers use the existing, role-checked company-admin tax endpoint.
+    if (String(id) !== String(decoded.id))
       return res.status(403).json({ success: false, message: 'Forbidden' });
 
     const { sin, dateOfBirth } = req.body;
-    await pool.query(
+    const result = await pool.query(
       `UPDATE users SET sin = COALESCE($1, sin), date_of_birth = COALESCE($2, date_of_birth)
-       WHERE id = $3`,
+       WHERE id = $3 AND COALESCE(is_active,TRUE)=TRUE`,
       [sin, dateOfBirth, id]
     );
-    res.json({ success: true, message: 'Tax info updated' });
+    if (!result.rowCount) return res.status(403).json({ success: false, message: 'Forbidden' });
+    res.set('Cache-Control', 'no-store').json({ success: true, message: 'Tax info updated' });
   } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ success: false, message: 'Unable to update tax information' });
   }
 });
 
@@ -210,14 +211,14 @@ router.get('/me', async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT id, email, first_name, last_name, full_name, role, company_id, profile_pic,
               sin, date_of_birth
-       FROM users WHERE id = $1`,
+       FROM users WHERE id = $1 AND COALESCE(is_active,TRUE)=TRUE`,
       [decoded.id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
     const compensation=await employeeCompensation(decoded.id);
-    res.set('Cache-Control','no-store').json({ success: true, user: {...result.rows[0],...compensation} });
+    res.set('Cache-Control','no-store').json({ success: true, user: {...visibleProfile(result.rows[0]),...compensation} });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
