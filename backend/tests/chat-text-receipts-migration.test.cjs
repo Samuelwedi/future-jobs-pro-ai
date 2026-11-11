@@ -3,11 +3,46 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const {types}=require('pg');
 const {PGlite}=require('@electric-sql/pglite');
 const {migrate}=require('../scripts/migrate-chat-text-requests.cjs');
 const {run,steps}=require('../scripts/run-release-predeploy.cjs');
 const sql=fs.readFileSync(path.join(__dirname,'../migrations/20261111_chat_text_requests.sql'),'utf8');
 const exists=async(db,table)=>Boolean((await db.query('SELECT to_regclass($1) AS name',[table])).rows[0].name);
+// Use installed node-postgres decoders on the actual PGlite text results. PGlite's
+// default name[] decoder otherwise hides the production driver's raw-string result.
+const pgArrayParsers={1003:types.getTypeParser(1003,'text'),1009:types.getTypeParser(1009,'text')};
+const pgClient=db=>({query:(statement,args)=>db.query(statement,args,{parsers:pgArrayParsers})});
+
+test('installed pg parsers distinguish catalog name[] from text[] on SQL result OIDs',async t=>{
+  const db=new PGlite();t.after(()=>db.close());
+  const result=await pgClient(db).query(`SELECT
+    ARRAY['company_id'::name,'actor_id'::name,'request_key'::name] AS catalog_names,
+    ARRAY['company_id'::text,'actor_id'::text,'request_key'::text] AS text_names`);
+  assert.deepEqual(result.fields.map(f=>f.dataTypeID),[1003,1009]);
+  assert.equal(result.rows[0].catalog_names,'{company_id,actor_id,request_key}');
+  assert.deepEqual(result.rows[0].text_names,['company_id','actor_id','request_key']);
+});
+test('receipt verification uses text[] with installed pg parsers and rejects the original name[] query',async t=>{
+  const db=new PGlite();t.after(()=>db.close());const client=pgClient(db);
+  const uncast={query:(statement,args)=>client.query(statement.replace('a.attname::text','a.attname'),args)};
+  await assert.rejects(migrate(uncast),/nondeferrable company\/actor\/key uniqueness/);
+  assert.equal(await exists(db,'chat_text_requests'),false);
+  assert.equal(await exists(db,'app_release_migrations'),false);
+  let catalogQueries=0;
+  const checked={query:async(statement,args)=>{
+    const result=await client.query(statement,args);
+    if(statement.includes('unnest(c.conkey)')) {
+      catalogQueries++;
+      assert.equal(result.fields.find(f=>f.name==='columns').dataTypeID,1009);
+      assert.deepEqual(result.rows.find(c=>c.contype==='p').columns,['company_id','actor_id','request_key']);
+    }
+    return result;
+  }};
+  await migrate(checked);await migrate(checked);
+  assert.equal(catalogQueries,2);
+  assert.equal((await db.query('SELECT count(*)::int n FROM app_release_migrations')).rows[0].n,1);
+});
 
 test('additive receipt migration applies repeatedly and preserves tombstones and scoped uniqueness',async t=>{
   const db=new PGlite();t.after(()=>db.close());await migrate(db);await migrate(db);
@@ -36,6 +71,7 @@ for(const [name,change,reason] of [
   ['missing validation',"ALTER TABLE chat_text_requests DROP CONSTRAINT chat_text_requests_hash_valid",/constraints/],
 ])test('repeat migration fails closed for '+name,async t=>{
   const db=new PGlite();t.after(()=>db.close());await migrate(db);await db.exec(change);await assert.rejects(migrate(db),reason);
+  await assert.rejects(migrate(pgClient(db)),reason);
 });
 test('incompatible preexisting table is not blessed by IF NOT EXISTS or a partial index',async t=>{
   const db=new PGlite();t.after(()=>db.close());await db.exec(sql);await db.exec('ALTER TABLE chat_text_requests DROP CONSTRAINT chat_text_requests_pkey;CREATE UNIQUE INDEX partial_receipt_key ON chat_text_requests(company_id,actor_id,request_key) WHERE room_id IS NOT NULL');

@@ -12,9 +12,10 @@ async function verify(client) {
   if (Object.entries(required).some(([key,type]) => !columns.some(c => c.column_name===key && c.udt_name===type && c.is_nullable==='NO'))) {
     throw Error('Chat text receipt columns are missing or incompatible');
   }
+  // pg decodes text[] as an array but leaves catalog name[] as a raw string.
   const constraints = (await client.query(`SELECT c.contype,c.condeferrable,c.convalidated,
       pg_get_constraintdef(c.oid) AS definition,
-      ARRAY(SELECT a.attname FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum,position)
+      ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum,position)
         JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum ORDER BY k.position) AS columns
     FROM pg_constraint c WHERE c.conrelid='chat_text_requests'::regclass`)).rows;
   if (!constraints.some(c => ['p','u'].includes(c.contype) && !c.condeferrable && c.convalidated
