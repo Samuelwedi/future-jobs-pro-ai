@@ -160,3 +160,41 @@ test('invalid pagination cursor response reaches the reader unchanged and never 
     && error.response.data.refreshRequired === true);
   assert.equal(f.sent.length, 1); assert.equal(f.queued.length, 0);
 });
+
+
+test('group transport accepts 99 and 100 raw IDs but rejects 101 before network preflight or POST', async () => {
+  for (const count of [99, 100, 101]) {
+    const f = setup(), session = await f.api.openChatCreationSession(owner, () => true);
+    const members = Array.from({ length: count }, (_, i) => `coworker-${i}`);
+    let checks = 0; f.online = async () => { checks++; return true; };
+    if (count <= 100) {
+      await session.createGroup('Crew', members);
+      assert.equal(checks, 1); assert.equal(f.sent.length, 1);
+      assert.deepEqual(Array.from(f.sent[0].data.memberIds), members);
+    } else {
+      await assert.rejects(session.createGroup('Crew', members), { code: 'CHAT_NOT_SENT' });
+      assert.equal(checks, 0); assert.equal(f.sent.length, 0);
+    }
+    assert.equal(f.queued.length, 0);
+  }
+});
+
+test('group transport caps the raw submitted array before deduplication and preserves the admitted snapshot', async () => {
+  const f = setup(), session = await f.api.openChatCreationSession(owner, () => true);
+  const members = Array(100).fill('other'), wait = deferred();
+  f.online = () => wait.promise;
+  const pending = session.createGroup('Crew', members); members.push('other'); wait.resolve(true); await pending;
+  assert.equal(f.sent.length, 1); assert.equal(f.sent[0].data.memberIds.length, 100);
+  await assert.rejects(session.createGroup('Crew', members), { code: 'CHAT_NOT_SENT' });
+  assert.equal(f.sent.length, 1); assert.equal(f.queued.length, 0);
+});
+
+test('group transport rejects invalid raw arrays without a POST or queued action', async () => {
+  for (const members of [undefined, null, 'other', { length: 1, 0: 'other' }, new Set(['other']), [],
+    [null], [undefined], [42], [{}], [''], ['   '], ['other\0'], new Array(1), ['other', , 'third']]) {
+    const f = setup(), session = await f.api.openChatCreationSession(owner, () => true);
+    let checks = 0; f.online = async () => { checks++; return true; };
+    await assert.rejects(session.createGroup('Crew', members), { code: 'CHAT_NOT_SENT' });
+    assert.equal(checks, 0); assert.equal(f.sent.length, 0); assert.equal(f.queued.length, 0);
+  }
+});

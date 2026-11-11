@@ -12,6 +12,9 @@ import { checkOnlineStatus, getOnlineStatus, queueAction, isEvidenceUpload, vali
 
 export type AttachmentSession = { token: string; revision: number; ownerId: string; companyId: string };
 export type VoiceSession = Readonly<{ token: string; revision: number; ownerId: string; companyId: string }>;
+// The create-group request limit counts submitted IDs before server deduplication.
+// The server adds the creator separately; this is not a company/team size limit.
+export const MAX_CHAT_GROUP_MEMBER_IDS = 100;
 type EvidenceConfig = AxiosRequestConfig & { expectedAuthToken: string; expectedAuthRevision?: number; expectedCurrent?: () => boolean; expectedBeforeDispatch?: () => Promise<void>; fenceUnauthorizedToCurrent?: boolean };
 export const createEvidenceRequestKey = () => `evidence-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 function evidenceError(code:string,message:string){return Object.assign(new Error(message),{code});}
@@ -268,7 +271,18 @@ class ApiService {
       // returns active coworkers only. Do not send a caller-selected company.
       readUsers: () => read('/users/company'),
       createDirect: (userId2: string) => write('/chat/create-direct', { userId2 }),
-      createGroup: (name: string, memberIds: string[]) => write('/chat/create-group', { name, memberIds: [...memberIds] }),
+      createGroup: async (name: string, memberIds: string[]) => {
+        if (!Array.isArray(memberIds) || !memberIds.length || memberIds.length > MAX_CHAT_GROUP_MEMBER_IDS) {
+          throw evidenceError('CHAT_NOT_SENT', 'Select 1 to 100 coworkers. Nothing was sent or queued.');
+        }
+        // Copy before any await and validate the copy, including sparse entries.
+        // Do not deduplicate to bypass the backend's raw-array admission bound.
+        const members = [...memberIds];
+        if (members.some(id => typeof id !== 'string' || !id.trim() || id.includes('\0'))) {
+          throw evidenceError('CHAT_NOT_SENT', 'Invalid group members. Nothing was sent or queued.');
+        }
+        return write('/chat/create-group', { name, memberIds: members });
+      },
     };
   }
 

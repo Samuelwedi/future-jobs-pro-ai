@@ -1,3 +1,4 @@
+import { hasTextRequestKey, parseTextRequest, parseTextStatus, saveKeyedText, readTextRequest, textRequestFailure } from '../services/chatTextReceipts';
 import { emitAuthorizedRoom } from '../services/socketAuthorization';
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
@@ -102,6 +103,10 @@ router.post('/message', async (req: Request, res: Response) => {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
 
     const decoded = verifyToken(req);
+    if (hasTextRequestKey(req.body)) {
+      return res.status(400).json({ success: false, code: 'CHAT_REQUEST_ENDPOINT_REQUIRED',
+        message: 'Use /api/chat/message-requests for saved text requests. Never fall back to legacy sending.' });
+    }
     const roomId = String(req.body?.roomId || '');
     const message = String(req.body?.message || '').trim();
     if (!roomId || !message || message.length > 5000) {
@@ -116,6 +121,34 @@ router.post('/message', async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
+});
+
+// A distinct route is essential: old replicas ignore unknown requestKey fields
+// on /message. This path instead fails closed with 404 on an older server.
+router.post('/message-requests', async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const decoded = verifyToken(req);
+    const input = parseTextRequest(req.body);
+    const result = await saveKeyedText({ userId: decoded.id,
+      requestCompanyId: res.locals.subscriptionActor?.companyId || decoded.companyId || null,
+      claimedCompanyId: decoded.companyId || null, expiresAt: decoded.exp, notBefore: decoded.nbf }, input);
+    if (!result.request.replayed) await emitAuthorizedRoom(req.app.get('io'), input.roomId, 'new-message', result.message);
+    return res.json(result);
+  } catch (error) { const failure = textRequestFailure(error); return res.status(failure.status).json(failure.body); }
+});
+
+// Sender-owned receipt lookup. This is save status, never delivery/read status.
+router.get('/room/:roomId/requests/:requestKey', async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const decoded = verifyToken(req);
+    const input = parseTextStatus(req.params.roomId, req.params.requestKey, req.query);
+    const result = await readTextRequest({ userId: decoded.id,
+      requestCompanyId: res.locals.subscriptionActor?.companyId || decoded.companyId || null,
+      claimedCompanyId: decoded.companyId || null, expiresAt: decoded.exp, notBefore: decoded.nbf }, input);
+    return res.json(result);
+  } catch (error) { const failure = textRequestFailure(error); return res.status(failure.status).json(failure.body); }
 });
 
 // Both history aliases share validation, authorization, ordering and cursors.

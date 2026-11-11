@@ -42,6 +42,8 @@ export const screenCopy: Record<string, [string, string]> = {
   "Chat": ["Chat", "Discussion"],
   "Your session changed. Go back and reopen New Chat.": ["Tu sesión cambió. Vuelve y abre Nuevo chat de nuevo.", "Votre session a changé. Revenez en arrière et rouvrez Nouvelle discussion."],
   "Group name must be 100 characters or fewer": ["El nombre del grupo debe tener 100 caracteres o menos", "Le nom du groupe doit contenir 100 caractères maximum"],
+  "Coworkers selected: {count}/{max}. You are added automatically.": ["Compañeros seleccionados: {count}/{max}. Se te añade automáticamente.", "Collègues sélectionnés : {count}/{max}. Vous êtes ajouté automatiquement."],
+  "You can select up to {max} coworkers. Deselect someone to choose another person.": ["Puedes seleccionar hasta {max} compañeros. Deselecciona a alguien para elegir a otra persona.", "Vous pouvez sélectionner jusqu’à {max} collègues. Désélectionnez quelqu’un pour choisir une autre personne."],
   "Chat was not created. Nothing was queued. Check your connection and access, then try again.": ["No se creó el chat. No se puso nada en cola. Revisa tu conexión y acceso e inténtalo de nuevo.", "La conversation n’a pas été créée. Rien n’a été mis en attente. Vérifiez votre connexion et votre accès, puis réessayez."],
   "Creation not confirmed. It may already exist. Go back and check your conversations before trying again.": ["La creación no está confirmada. Puede que ya exista. Vuelve y revisa tus conversaciones antes de intentarlo de nuevo.", "La création n’est pas confirmée. La conversation existe peut-être déjà. Revenez en arrière et vérifiez vos conversations avant de réessayer."],
   "Unnamed person": ["Persona sin nombre", "Personne sans nom"],

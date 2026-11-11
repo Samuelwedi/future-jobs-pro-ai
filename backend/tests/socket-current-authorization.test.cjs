@@ -72,17 +72,18 @@ async function fixture() {
   const trial = load(source('middleware/trialMiddleware.ts'), { '../services/complimentaryAccess': { hasComplimentaryCompanyAccess: async () => state.complimentary }, '../config/database': { pool }, '../utils/auth': auth });
   const socketAuth = load(source('services/socketAuthorization.ts'), { '../config/database': { pool }, '../middleware/trialMiddleware': trial });
   const chat = load(source('services/chatService.ts'), { '../config/database': { pool } });
+  const receipts = load(source('services/chatTextReceipts.ts'), { '../config/database': { pool }, 'node:crypto': require('node:crypto'), './complimentaryAccess': { hasComplimentaryAccess: () => false } }, { Buffer });
   const app = express(); app.use(express.json()); app.use('/api', trial.subscriptionGate);
   const server = http.createServer(app), io = new Server(server); app.set('io', io);
   const index = source('index.ts');
   load(index.slice(index.indexOf('const activeSocketWork'), index.indexOf('const reportWorker')) + '\n'
     + index.slice(index.indexOf('// Customer JWTs'), index.indexOf('// After creating io:')),
-  {}, { io, jwt, JWT_SECRET: secret, pool, ...trial, ...socketAuth, saveMessage: chat.saveMessage, shutdown: { isStopping: () => state.stop } });
+  {}, { io, jwt, JWT_SECRET: secret, pool, ...trial, ...socketAuth, ...receipts, saveMessage: chat.saveMessage, shutdown: { isStopping: () => state.stop } });
   const cr = source('routes/chatRoutes.ts'), router = express.Router();
   router.use((req, _res, next) => { req.chatUser = auth.verifyToken(req).id; next(); });
   const storage = { uploadPrivateChatFile: async () => 'synthetic-file', removePrivateChatFile: async () => { state.deletedFiles++; } };
   load(statement(cr, 'function', 'roomAccess') + '\n' + statement(cr, 'post', '/message') + '\n' + statement(cr, 'post', '/room/:roomId/attachments'), {}, {
-    router, pool, ...auth, ...socketAuth, ...storage, saveMessage: chat.saveMessage,
+    router, pool, ...auth, ...socketAuth, ...storage, ...receipts, saveMessage: chat.saveMessage,
     fileUpload: multer({ storage: multer.memoryStorage() }), parseFile: p => p,
     safeFilename: x => x, chatFileType: () => 'text/plain',
   }); app.use('/api/chat', router);

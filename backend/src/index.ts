@@ -1,3 +1,4 @@
+import { hasTextRequestKey, parseTextRequest, saveKeyedText, textRequestFailure, ChatTextError } from './services/chatTextReceipts';
 import { startOwnerRepairWorker, stopOwnerRepairWorker } from './services/ownerRepairService';
 import lucyJarvisRoutes, { runLucyBackgroundResearch } from './routes/lucyJarvisRoutes';
 import { configureLucyWorkProcessor, startLucyWorkWorker, stopLucyWorkWorker } from './services/lucyWorkService';
@@ -897,8 +898,30 @@ io.on('connection', (socket) => {
       if (typeof acknowledge === 'function') acknowledge({ success: false, message: error.message });
     }
   }));
-  socket.on('chat-message', trackSocketHandler(async (data) => {
+  // New event has no handler on old replicas, so an acknowledgement timeout
+  // cannot silently become an untracked legacy insertion during a rolling deploy.
+  socket.on('chat-text-request', trackSocketHandler(async (data, acknowledge) => {
     try {
+      if (shutdown.isStopping()) throw new ChatTextError(503, 'CHAT_REQUEST_RETRY', 'Backend is shutting down. Retry with the same key.');
+      const input = parseTextRequest(data);
+      let auth: ReturnType<typeof assertSocketTokenCurrent>;
+      try { auth = assertSocketTokenCurrent(socket); }
+      catch { throw new ChatTextError(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required.'); }
+      const result = await saveKeyedText({ userId: auth.userId, requestCompanyId: auth.companyId,
+        claimedCompanyId: auth.companyId, expiresAt: auth.expiresAt, notBefore: auth.notBefore }, input);
+      if (!result.request.replayed) await emitAuthorizedRoom(io, input.roomId, 'new-message', result.message);
+      if (typeof acknowledge === 'function') acknowledge(result);
+    } catch (error) {
+      if (typeof acknowledge === 'function') acknowledge(textRequestFailure(error).body);
+    }
+  }));
+  socket.on('chat-message', trackSocketHandler(async (data, acknowledge) => {
+    try {
+      if (hasTextRequestKey(data)) {
+        if (typeof acknowledge === 'function') acknowledge({ success: false, code: 'CHAT_REQUEST_ENDPOINT_REQUIRED',
+          message: 'Use chat-text-request for saved text requests. Never fall back to legacy sending.' });
+        return;
+      }
       if (shutdown.isStopping()) return;
       const roomId = String(data?.roomId || '');
       const message = String(data?.message || '').trim();

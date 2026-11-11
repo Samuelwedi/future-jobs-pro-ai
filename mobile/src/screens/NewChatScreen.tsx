@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../services/api';
+import { api, MAX_CHAT_GROUP_MEMBER_IDS } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 
 type ChatOwner = { id: string; companyId: string; role: string };
@@ -106,6 +106,11 @@ function OwnedNewChat({ user, scopeCurrent }: { user: ChatOwner; scopeCurrent: (
   const toggleUser = (id: string) => {
     if (!canEdit() || !peopleRef.current.some(person => person.id === id)) return;
     const previous = draft.current.selectedIds;
+    // Read the ref, not render state: retained callbacks can run back-to-back.
+    // Selected people remain removable even when the group is at the limit.
+    if (draft.current.isGroup && !previous.includes(id) && previous.length >= MAX_CHAT_GROUP_MEMBER_IDS) {
+      return Alert.alert(t('You can select up to {max} coworkers. Deselect someone to choose another person.', { max: String(MAX_CHAT_GROUP_MEMBER_IDS) }));
+    }
     const selected = draft.current.isGroup
       ? previous.includes(id) ? previous.filter(value => value !== id) : [...previous, id]
       : previous.includes(id) ? [] : [id];
@@ -140,6 +145,9 @@ function OwnedNewChat({ user, scopeCurrent }: { user: ChatOwner; scopeCurrent: (
     const memberIds = [...draft.current.selectedIds];
     if (!memberIds.length || memberIds.some(id => !peopleRef.current.some(person => person.id === id))) {
       return Alert.alert(t('Select at least one person'));
+    }
+    if (isGroup && memberIds.length > MAX_CHAT_GROUP_MEMBER_IDS) {
+      return Alert.alert(t('You can select up to {max} coworkers. Deselect someone to choose another person.', { max: String(MAX_CHAT_GROUP_MEMBER_IDS) }));
     }
     const name = groupName.trim();
     if (isGroup && !name) return Alert.alert(t('Enter a group name'));
@@ -178,10 +186,11 @@ function OwnedNewChat({ user, scopeCurrent }: { user: ChatOwner; scopeCurrent: (
   const disabled = loading || loadError || creating || uncertain || !isCurrent();
   const renderUser = ({ item }: { item: ChatPerson }) => {
     const isSelected = selectedIds.includes(item.id);
+    const rowDisabled = disabled || (isGroup && !isSelected && selectedIds.length >= MAX_CHAT_GROUP_MEMBER_IDS);
     const name = `${item.first_name} ${item.last_name}`.trim() || t('Unnamed person');
     return (
-      <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: isSelected, disabled }} disabled={disabled}
-        style={[styles.userRow, isSelected && styles.userRowSelected]} onPress={() => toggleUser(item.id)}>
+      <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: isSelected, disabled: rowDisabled }} disabled={rowDisabled}
+        style={[styles.userRow, isSelected && styles.userRowSelected, rowDisabled && styles.disabled]} onPress={() => toggleUser(item.id)}>
         <View style={styles.avatar}><Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text></View>
         <View style={styles.userInfo}>
           <Text style={styles.userName}>{name}</Text>
@@ -216,6 +225,8 @@ function OwnedNewChat({ user, scopeCurrent }: { user: ChatOwner; scopeCurrent: (
             </TouchableOpacity>
           </View>
           {isGroup && <TextInput editable={!disabled} maxLength={100} accessibilityLabel={t('Group name')} style={styles.groupNameInput} placeholder={t('Group name')} placeholderTextColor="#888" value={groupName} onChangeText={changeName} />}
+          {isGroup && <Text accessibilityLiveRegion="polite" style={styles.notice}>{t('Coworkers selected: {count}/{max}. You are added automatically.', { count: String(selectedIds.length), max: String(MAX_CHAT_GROUP_MEMBER_IDS) })}</Text>}
+          {isGroup && selectedIds.length >= MAX_CHAT_GROUP_MEMBER_IDS && <Text style={styles.notice}>{t('You can select up to {max} coworkers. Deselect someone to choose another person.', { max: String(MAX_CHAT_GROUP_MEMBER_IDS) })}</Text>}
           {!!status && <Text accessibilityRole="alert" style={styles.notice}>{status}</Text>}
           <FlatList data={users} renderItem={renderUser} keyExtractor={item => item.id} contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled"
             ListEmptyComponent={<Text style={styles.notice}>{t('No other people available')}</Text>} />

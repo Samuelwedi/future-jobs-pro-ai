@@ -31,8 +31,8 @@ function fixture() {
     if (name === 'react-native') return new Proxy({ StyleSheet: { create: x => x }, Alert: { alert: (...args) => f.alerts.push(args) } }, { get: (obj, key) => obj[key] || key });
     if (name === '@react-navigation/native') return { useNavigation: () => navigation, useIsFocused: () => f.focused };
     if (name === '../context/AuthContext') return { useAuth: () => ({ user: f.user }) };
-    if (name === '../context/LanguageContext') return { useLang: () => ({ t: key => key }) };
-    if (name === '../services/api') return { api };
+    if (name === '../context/LanguageContext') return { useLang: () => ({ t: (key, vars = {}) => key.replace(/\{(\w+)\}/g, (_, token) => vars[token] ?? `{${token}}`) }) };
+    if (name === '../services/api') return { api, MAX_CHAT_GROUP_MEMBER_IDS: 100 };
     if (name === '@expo/vector-icons') return { MaterialIcons: 'MaterialIcons' };
     throw Error(name);
   } };
@@ -55,6 +55,12 @@ function fixture() {
   f.create = () => (f.button('Start Chat') || f.button('Create Group')).onPress();
   f.emit = event => { for (const fn of listeners.get(event) || []) fn(); };
   f.unmount = () => { for (const instance of instances.values()) stop(instance); removed = true; };
+  // Seed an impossible picker state only to exercise the submit handler's own
+  // defense in depth. Normal interaction always goes through real row handlers.
+  f.seedSelectedDraft = ids => {
+    const owned = [...instances.values()].find(instance => instance.slots.some(slot => Array.isArray(slot?.current?.selectedIds)));
+    const draft = owned.slots.find(slot => Array.isArray(slot?.current?.selectedIds)); draft.current.selectedIds = ids;
+  };
   f.flush = async () => { await new Promise(setImmediate); f.render(); };
   f.ready = async (users = [person()]) => { await f.flush(); f.reads.at(-1).resolve({ success: true, users }); await f.flush(); };
   f.render(); return f;
@@ -143,4 +149,96 @@ test('retained row and mode callbacks operate on the current draft rather than e
   f.posts[0].reject(Object.assign(Error('offline'), { code: 'CHAT_NOT_SENT' })); await f.flush();
   oldDirect(); f.create(); assert.equal(f.posts.length, 1); // mode change synchronously cleared the group selection
   oldRow(); f.create(); assert.equal(f.posts.length, 2); assert.equal(f.posts[1].body.userId2, 'other');
+});
+
+
+const coworkers = count => Array.from({ length: count }, (_, i) => person(`coworker-${i}`));
+const row = (f, index) => f.list().renderItem({ item: f.list().data[index] }).props;
+
+test('group limit permits 99 and 100 coworkers, excludes creator, and shows the submitted coworker count', async () => {
+  for (const count of [99, 100]) {
+    const f = fixture(); await f.ready([person('owner'), ...coworkers(101)]); f.group('Crew');
+    assert.equal(f.list().data.length, 101);
+    const callbacks = f.list().data.slice(0, count).map((_, i) => row(f, i).onPress);
+    callbacks.forEach(select => select()); f.render();
+    assert.match(f.text(), new RegExp(`Coworkers selected: ${count}/100`));
+    assert.match(f.text(), /You are added automatically/);
+    assert.equal(row(f, 100).disabled, count === 100);
+    f.create(); assert.equal(f.posts.length, 1);
+    assert.equal(f.posts[0].body.memberIds.length, count);
+    assert.equal(f.posts[0].body.memberIds.includes('owner'), false);
+  }
+});
+
+test('group limit blocks the 101st retained row callback before a render and allows deselection at the cap', async () => {
+  const f = fixture(); await f.ready(coworkers(101)); f.group('Crew');
+  const rows = f.list().data.map((_, i) => row(f, i));
+  rows.forEach(item => item.onPress()); f.render();
+  assert.equal(f.list().data.filter((_, i) => row(f, i).accessibilityState.selected).length, 100);
+  assert.equal(row(f, 100).disabled, true);
+  assert.equal(row(f, 100).accessibilityState.disabled, true);
+  assert.equal(row(f, 0).disabled, false);
+  assert.match(f.text(), /Deselect someone to choose another person/);
+  assert.match(f.alerts.at(-1)[0], /up to 100 coworkers/);
+  rows[0].onPress(); f.render();
+  assert.equal(row(f, 100).disabled, false);
+  assert.equal(row(f, 100).accessibilityState.disabled, false);
+  assert.match(f.text(), /Coworkers selected: 99\/100/);
+  assert.doesNotMatch(f.text(), /Deselect someone to choose another person/);
+  rows[100].onPress(); f.create();
+  assert.equal(f.posts.length, 1);
+  assert.equal(f.posts[0].body.memberIds.length, 100);
+  assert.equal(f.posts[0].body.memberIds.includes('coworker-0'), false);
+  assert.equal(f.posts[0].body.memberIds.includes('coworker-100'), true);
+});
+
+test('group limit uses the current draft after stale mode callbacks and leaves direct selection unaffected', async () => {
+  const f = fixture(); await f.ready(coworkers(101));
+  const direct = f.button('Direct').onPress, retainedRows = f.list().data.map((_, i) => row(f, i).onPress);
+  f.group('Crew'); retainedRows.forEach(select => select()); f.render();
+  direct(); retainedRows[100](); retainedRows[0](); f.render();
+  assert.doesNotMatch(f.text(), /Coworkers selected|Deselect someone/);
+  assert.equal(row(f, 100).disabled, false);
+  f.create(); assert.equal(f.posts.length, 1);
+  assert.equal(f.posts[0].url, '/chat/create-direct');
+  assert.equal(f.posts[0].body.userId2, 'coworker-0');
+});
+
+test('group limit does not let retained callbacks change the draft or dispatch after leaving or auth replacement', async () => {
+  for (const change of ['blur', 'beforeRemove', 'token']) {
+    const f = fixture(); await f.ready(coworkers(101)); f.group('Crew');
+    const rows = f.list().data.map((_, i) => row(f, i).onPress);
+    rows.slice(0, 100).forEach(select => select()); f.render();
+    const submit = f.button('Create Group').onPress;
+    if (change === 'token') f.revision++; else f.emit(change);
+    rows[0](); rows[100](); submit();
+    assert.equal(f.posts.length, 0); assert.equal(f.alerts.length, 0);
+  }
+});
+
+test('group count and cap notices retain Spanish and French copy and interpolation', () => {
+  const translations = { exports: {} };
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root, 'src/services/screenTranslations.ts'), 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText, translations);
+  for (const key of [
+    'Coworkers selected: {count}/{max}. You are added automatically.',
+    'You can select up to {max} coworkers. Deselect someone to choose another person.',
+  ]) {
+    const values = translations.exports.screenCopy[key]; assert.equal(values?.length, 2, key);
+    for (const value of values) {
+      assert.notEqual(value, key); assert.ok(value.length > 0);
+      assert.deepEqual(value.match(/\{\w+\}/g).sort(), key.match(/\{\w+\}/g).sort());
+    }
+  }
+});
+
+
+test('group submit independently rejects an over-cap draft before the scoped API is called', async () => {
+  const f = fixture(); await f.ready(coworkers(101)); f.group('Crew');
+  const submit = f.button('Create Group').onPress;
+  f.seedSelectedDraft(f.list().data.map(person => person.id)); submit();
+  assert.equal(f.posts.length, 0); assert.match(f.alerts.at(-1)[0], /up to 100 coworkers/);
+  f.seedSelectedDraft(f.list().data.slice(0, 100).map(person => person.id)); submit();
+  assert.equal(f.posts.length, 1); assert.equal(f.posts[0].body.memberIds.length, 100);
 });
