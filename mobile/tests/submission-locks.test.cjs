@@ -51,8 +51,18 @@ test('Lucy approval and rejection share a lock and allow retry after failure',as
  assert.equal(c.approvalLock.current,false);await reject('id');assert.equal(posts,2);
 });
 test('localized task actions preserve machine status values and navigation identifiers',async()=>{
- let payload,route;const context={t:()=> 'traduit',api:{patch:async(_path,body)=>{payload=body;}},setTasks(){},Alert:{alert(){}},setSelectedSchedule(){},navigation:{navigate:name=>{route=name;}}};
+ let payload,route;const context={mounted:{current:true},t:()=> 'traduit',api:{patch:async(_path,body)=>{payload=body;}},setTasks(){},Alert:{alert(){}},setSelectedSchedule(){},navigation:{navigate:name=>{route=name;}}};
  await handler('Tasks','advance',context)({id:'task',status:'in_progress'});assert.equal(payload.status,'completed');
  await handler('Tasks','advance',context)({id:'task',status:'completed'});assert.equal(payload.status,'pending');
  handler('Home','handleScheduleSelect',context)({date:'2026-11-05'});assert.equal(route,'Schedule');
+});
+
+test('task status success or failure after unmount cannot update state or alert',async()=>{
+ for(const fails of [false,true]){
+  const wait=deferred();let calls=0,updates=0,alerts=0;
+  const context={mounted:{current:true},t,api:{patch:async()=>{calls++;await wait.promise;if(fails)throw Error('offline');}},setTasks(){updates++;},Alert:{alert(){alerts++;}}};
+  const pending=handler('Tasks','advance',context)({id:'task',status:'in_progress'});
+  assert.equal(calls,1);context.mounted.current=false;wait.resolve();await pending;
+  assert.equal(updates,0);assert.equal(alerts,0);
+ }
 });

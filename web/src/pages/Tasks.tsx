@@ -1,14 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box, Container, Typography, Paper, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, Checkbox,
   CircularProgress, Alert, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, IconButton,
 } from '@mui/material';
-import { Assignment, Add, AttachFile } from '@mui/icons-material';
+import { Assignment, Add, AttachFile, ReceiptLong } from '@mui/icons-material';
+import TaskEvidence from '../components/TaskEvidence';
+import {getAuthRevision} from '../services/authSession';
 import ResourceAttachments from '../components/ResourceAttachments';
 import { API_BASE } from '../services/api';
 
 export default function Tasks() {
+  const [revision,setRevision]=useState(getAuthRevision);
+  useEffect(()=>{const changed=()=>setRevision(getAuthRevision());window.addEventListener('auth-session-changed',changed);window.addEventListener('storage',changed);return()=>{window.removeEventListener('auth-session-changed',changed);window.removeEventListener('storage',changed);};},[]);
+  return <TaskBoard key={revision}/>;
+}
+function TaskBoard() {
+  const [receiptTask,setReceiptTask]=useState<any>(null);
+  const selected=useRef<string|null>(null);
+  const closeReceipts=()=>{selected.current=null;setReceiptTask(null);};
+  useEffect(()=>()=>{selected.current=null;},[]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -87,7 +98,7 @@ export default function Tasks() {
                           />
                         </TableCell>
                         <TableCell>
-                          <Checkbox checked={task.status === 'completed'} onChange={()=>toggleTask(task)} sx={{ color: '#00D4FF' }} /><IconButton onClick={()=>setFilesTask(task)}><AttachFile/></IconButton>
+                          <Checkbox checked={task.status === 'completed'} onChange={()=>toggleTask(task)} sx={{ color: '#00D4FF' }} /><IconButton aria-label="Task files" onClick={()=>setFilesTask(task)}><AttachFile/></IconButton><Button startIcon={<ReceiptLong/>} onClick={()=>{selected.current=task.id;setReceiptTask(task);}}>Receipts & notes</Button>
                         </TableCell>
                       </TableRow>
                     ))
@@ -98,6 +109,7 @@ export default function Tasks() {
           </Paper>
         )}
         <Dialog open={createOpen} onClose={()=>setCreateOpen(false)} fullWidth><DialogTitle>Create task</DialogTitle><DialogContent><TextField autoFocus fullWidth multiline minRows={3} label="Task or checklist item" value={description} onChange={e=>setDescription(e.target.value)} sx={{mt:1}}/><TextField select fullWidth label="Assign to" value={assignedTo} onChange={e=>setAssignedTo(e.target.value)} sx={{mt:2}}><MenuItem value="">Unassigned</MenuItem>{members.map(m=><MenuItem key={m.id} value={m.id}>{m.first_name} {m.last_name}</MenuItem>)}</TextField></DialogContent><DialogActions><Button onClick={()=>setCreateOpen(false)}>Cancel</Button><Button variant="contained" disabled={!description.trim()} onClick={createTask}>Create</Button></DialogActions></Dialog>
+        <Dialog open={Boolean(receiptTask)} onClose={closeReceipts} fullWidth maxWidth="md"><DialogTitle>Receipts & notes — {receiptTask?.description}</DialogTitle><DialogContent>{receiptTask&&<TaskEvidence key={receiptTask.id} taskId={receiptTask.id} active={()=>selected.current===receiptTask.id}/>}</DialogContent><DialogActions><Button onClick={closeReceipts}>Close</Button></DialogActions></Dialog>
         <Dialog open={Boolean(filesTask)} onClose={()=>setFilesTask(null)} fullWidth maxWidth="md"><DialogTitle>Task files — {filesTask?.description}</DialogTitle><DialogContent>{filesTask&&<ResourceAttachments target="taskId" targetId={filesTask.id}/>}</DialogContent><DialogActions><Button onClick={()=>setFilesTask(null)}>Close</Button></DialogActions></Dialog>
       </Container>
     </Box>

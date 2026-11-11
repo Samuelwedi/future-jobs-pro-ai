@@ -1,3 +1,4 @@
+import taskEvidenceRoutes from './taskEvidenceRoutes';
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
@@ -5,6 +6,7 @@ import { isManagerRole } from '../middleware/companyActor';
 import { createCompanyTask, TaskInputError } from '../services/companyTaskService';
 
 const router = express.Router();
+router.use('/:id/evidence', taskEvidenceRoutes);
 
 // GET /api/tasks – return tasks for the logged‑in user's company
 router.get('/', async (req: Request, res: Response) => {

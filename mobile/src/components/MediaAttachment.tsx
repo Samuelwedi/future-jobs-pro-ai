@@ -22,7 +22,7 @@ export default function MediaAttachment({path,name,mime,sessionCurrent}:{path:st
   downloading.current=true;setBusy(true);setError('');
   const file=`${FileSystem.cacheDirectory}chat-${Date.now()}-${Math.random().toString(36).slice(2)}-${name.replace(/[^a-zA-Z0-9_.-]/g,'_')}`;
   try{
-   if(!/^\/(chat|support)\/attachments\/[a-zA-Z0-9-]+\/content$/.test(path))throw new Error(t("Unsupported attachment"));
+   if(!/^\/(chat|support)\/attachments\/[a-zA-Z0-9-]+\/content$/.test(path)&&!/^\/tasks\/[a-fA-F0-9-]{36}\/evidence\/[a-fA-F0-9-]{36}\/content$/.test(path))throw new Error(t("Unsupported attachment"));
    const token=await api.getToken();if(!current())return;if(!token)throw new Error(t("Sign in to view this file"));
    const response=await FileSystem.downloadAsync(API_URL+path,file,{headers:{Authorization:`Bearer ${token}`}});
    if(response.status!==200)throw new Error(t("This attachment could not be downloaded. Please retry."));

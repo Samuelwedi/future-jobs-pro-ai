@@ -1,0 +1,7 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {PGlite}=require('@electric-sql/pglite');
+const {migrate}=require('../scripts/run-task-evidence-migration.cjs');
+const {steps,run}=require('../scripts/run-release-predeploy.cjs');
+test('task evidence migration is idempotent and verifies the private schema locally',async()=>{const db=new PGlite();try{await db.exec('CREATE TABLE companies(id UUID PRIMARY KEY);CREATE TABLE users(id UUID PRIMARY KEY);CREATE TABLE tasks(id UUID PRIMARY KEY);');const client={query:sql=>db.exec(sql)};await migrate(client);await migrate(client);const r=await db.query("SELECT column_name FROM information_schema.columns WHERE table_name='task_evidence'");assert.ok(r.rows.some(x=>x.column_name==='private_id'));}finally{await db.close();}});
+test('predeploy includes task evidence and stops on failure',()=>{assert.ok(steps.includes('run-task-evidence-migration.cjs'));let last;assert.throws(()=>run((exe,args)=>{last=args[0];return {status:last.endsWith('run-task-evidence-migration.cjs')?1:0};}),/task-evidence/);assert.match(last,/run-task-evidence-migration.cjs$/);});
+test('incompatible existing task evidence schema aborts migration',async()=>{const db=new PGlite();try{await db.exec('CREATE TABLE companies(id UUID PRIMARY KEY);CREATE TABLE users(id UUID PRIMARY KEY);CREATE TABLE tasks(id UUID PRIMARY KEY);CREATE TABLE task_evidence(id UUID);');await assert.rejects(migrate({query:sql=>db.exec(sql)}));}finally{await db.close();}});

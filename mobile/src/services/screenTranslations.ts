@@ -1,5 +1,19 @@
 // English source copy is the key; route names and user content are never translated.
 export const screenCopy: Record<string, [string, string]> = {
+  "Receipts & notes": ["Recibos y notas", "Reçus et notes"],
+  "Expense or task note": ["Nota del gasto o de la tarea", "Note de frais ou de tâche"],
+  "Choose receipt (PDF or photo)": ["Elegir recibo (PDF o foto)", "Choisir un reçu (PDF ou photo)"],
+  "Remove selected receipt": ["Quitar el recibo seleccionado", "Retirer le reçu sélectionné"],
+  "Save receipt or note": ["Guardar recibo o nota", "Enregistrer le reçu ou la note"],
+  "Check save status": ["Comprobar el estado del guardado", "Vérifier l’enregistrement"],
+  "Refresh receipts and notes": ["Actualizar recibos y notas", "Actualiser les reçus et notes"],
+  "No receipts or notes yet.": ["Todavía no hay recibos ni notas.", "Aucun reçu ni note pour le moment."],
+  "Choose a PDF, JPEG, PNG or WebP receipt up to 10 MB.": ["Elige un recibo PDF, JPEG, PNG o WebP de hasta 10 MB.", "Choisissez un reçu PDF, JPEG, PNG ou WebP de 10 Mo maximum."],
+  "Check the pending save before submitting another receipt.": ["Comprueba el guardado pendiente antes de enviar otro recibo.", "Vérifiez l’enregistrement en attente avant d’envoyer un autre reçu."],
+  "Save not confirmed. Check status before submitting again.": ["Guardado sin confirmar. Comprueba el estado antes de volver a enviar.", "Enregistrement non confirmé. Vérifiez son état avant de renvoyer."],
+  "Receipts and notes are visible to the assigned employee and company managers. This does not submit a reimbursement claim.": ["Los recibos y las notas son visibles para el empleado asignado y los responsables de la empresa. Esto no envía una solicitud de reembolso.", "Les reçus et notes sont visibles par l’employé affecté et les responsables de l’entreprise. Cela ne soumet pas de demande de remboursement."],
+  "A save is awaiting confirmation. Check status; do not upload the same receipt again. If it remains pending, ask your manager to investigate.": ["Un guardado espera confirmación. Comprueba el estado; no vuelvas a subir el mismo recibo. Si sigue pendiente, pide a tu responsable que lo investigue.", "Un enregistrement attend confirmation. Vérifiez son état ; ne renvoyez pas le même reçu. S’il reste en attente, demandez à votre responsable de vérifier."],
+
   'Tap to record in app': ['Toca para grabar en la app', 'Appuyez pour enregistrer dans l’application'],
   'Tap to capture in app': ['Toca para capturar en la app', 'Appuyez pour prendre une photo dans l’application'],
   'Camera unavailable. Tap to retry.': ['Cámara no disponible. Toca para reintentar.', 'Caméra indisponible. Appuyez pour réessayer.'],

@@ -538,6 +538,33 @@ class ApiService {
     return session;
   }
 
+  async taskEvidence(session: AttachmentSession, taskId: string, current: () => boolean, submission?: {requestKey:string;note:string;file?:{uri:string;name:string;mimeType?:string}}, beforeDispatch?: () => Promise<void>) {
+    this.assertAttachmentSession(session);
+    if (!current()) throw new Error('Task screen changed.');
+    const raw = await SecureStore.getItemAsync('userData');
+    this.assertAttachmentSession(session);
+    if (!current()) throw new Error('Task screen changed.');
+    const user = raw ? JSON.parse(raw) : null;
+    if (user?.id !== session.ownerId || user?.companyId !== session.companyId) throw new Error('Account changed. Reopen the task.');
+    const config = { expectedAuthToken: session.token, expectedAuthRevision: session.revision, expectedCurrent: current, fenceUnauthorizedToCurrent: true } as EvidenceConfig;
+    if (submission && beforeDispatch) config.expectedBeforeDispatch = beforeDispatch;
+    const url = `/tasks/${encodeURIComponent(taskId)}/evidence`;
+    let response;
+    if (submission) {
+      const form = new FormData();
+      form.append('requestKey', submission.requestKey); form.append('note', submission.note);
+      if (submission.file) {
+        const file = submission.file;
+        form.append('originalFileName', file.name);
+        form.append('file', {uri:file.uri,name:file.name,type:file.mimeType || 'application/octet-stream'} as any);
+      }
+      response = await this.client.post(url, form, {...config,headers:{'Content-Type':'multipart/form-data'}});
+    } else response = await this.client.get(url, config);
+    this.assertAttachmentSession(session);
+    if (!current()) throw new Error('Task screen changed.');
+    return response.data;
+  }
+
   async requestAttachmentReceipt(session: AttachmentSession, requestKey: string, file?: { uri: string; name: string; mimeType?: string; timeEntryId: string }, current: () => boolean = () => true) {
     this.assertAttachmentSession(session);
     if (!current()) throw new Error('Attachment screen changed. Reopen the original time entry.');

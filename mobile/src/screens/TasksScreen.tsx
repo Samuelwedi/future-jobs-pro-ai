@@ -1,5 +1,5 @@
 import { useLang } from '../context/LanguageContext';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +15,8 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
+import TaskEvidence from '../components/TaskEvidence';
+import {AdaptiveModal} from '../components/AdaptiveModal';
 import { api } from '../services/api';
 
 type Status = 'pending' | 'in_progress' | 'completed';
@@ -28,11 +30,16 @@ const statusMeta: Record<Status, { label: string; color: string; icon: keyof typ
 };
 
 export default function TasksScreen() {
+  const {user}=useAuth();
+  if(!user)return <View style={styles.container}/>;
+  return <TasksBoard key={`${user.id}:${user.companyId}:${user.role}`}/>;
+}
+function TasksBoard() {
   const { t } = useLang();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const role = String((user as any)?.role || '').toLowerCase();
-  const isManager = ['boss', 'manager', 'admin'].includes(role);
+  const isManager = ['boss', 'owner', 'manager', 'admin'].includes(role);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [description, setDescription] = useState('');
@@ -41,20 +48,29 @@ export default function TasksScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showComposer, setShowComposer] = useState(false);
+  const [evidenceTask,setEvidenceTask]=useState<Task|null>(null);
+  const selectedEvidence=useRef<string|null>(null);
+  const mounted=useRef(true);
+  const currentOwner=useRef(user);currentOwner.current=user;
+  const closeEvidence=()=>{selectedEvidence.current=null;setEvidenceTask(null);};
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;selectedEvidence.current=null;};},[]);
 
   const load = useCallback(async () => {
     try {
       const response = await api.get<{ tasks: Task[] }>('/tasks');
+      if(!mounted.current)return;
       setTasks(response.tasks || []);
       if (isManager) {
         const people = await api.get<{ users: Employee[] }>('/kiosk/users');
+        if(!mounted.current)return;
         setEmployees(people.users || []);
       }
     } catch (cause: any) {
+      if(!mounted.current)return;
       Alert.alert(t('Tasks unavailable'), cause?.response?.data?.message || cause?.message || t("Could not load tasks."));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if(mounted.current){setLoading(false);
+      setRefreshing(false);}
     }
   }, [isManager]);
 
@@ -68,12 +84,14 @@ export default function TasksScreen() {
     if (!description.trim()) return Alert.alert(t('Task details required'), t('Describe the work that needs to be completed.'));
     try {
       const response = await api.post<{ task: Task }>('/tasks', { description: description.trim(), assigned_to: assignedTo || null });
+      if(!mounted.current)return;
       const assignee = employees.find(person => person.id === assignedTo);
       setTasks(current => [{ ...response.task, assigned_name: assignee ? `${assignee.first_name} ${assignee.last_name}` : undefined }, ...current]);
       setDescription('');
       setAssignedTo('');
       setShowComposer(false);
     } catch (cause: any) {
+      if(!mounted.current)return;
       Alert.alert(t('Task not created'), cause?.response?.data?.message || cause?.message || t("Please try again."));
     }
   };
@@ -82,8 +100,10 @@ export default function TasksScreen() {
     const next: Status = task.status === 'pending' ? 'in_progress' : task.status === 'in_progress' ? 'completed' : 'pending';
     try {
       await api.patch(`/tasks/${task.id}`, { status: next });
+      if(!mounted.current)return;
       setTasks(current => current.map(item => item.id === task.id ? { ...item, status: next } : item));
     } catch (cause: any) {
+      if(!mounted.current)return;
       Alert.alert(t('Task not updated'), cause?.response?.data?.message || cause?.message || t("You may only update tasks assigned to you."));
     }
   };
@@ -125,18 +145,25 @@ export default function TasksScreen() {
         renderItem={({ item }) => {
           const meta = statusMeta[item.status] || statusMeta.pending;
           return (
-            <TouchableOpacity style={styles.card} onPress={() => advance(item)} activeOpacity={0.75}>
+            <View style={styles.card}>
               <View style={[styles.statusIcon, { backgroundColor: `${meta.color}20` }]}><MaterialIcons name={meta.icon} size={24} color={meta.color} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.description}>{item.description}</Text>
                 <View style={styles.metaRow}><Text style={[styles.statusText, { color: meta.color }]}>{t(meta.label)}</Text><Text style={styles.dotText}>•</Text><Text style={styles.assignee}>{item.assigned_name || t('Unassigned')}</Text></View>
-                <Text style={styles.tapHint}>{t("Tap to")} {item.status === 'pending' ? t("start work") : item.status === 'in_progress' ? t("mark complete") : t("reopen")}</Text>
+                <TouchableOpacity accessibilityRole="button" style={{minHeight:44,justifyContent:"center"}} onPress={()=>advance(item)}><Text style={styles.tapHint}>{t("Tap to")} {item.status === 'pending' ? t("start work") : item.status === 'in_progress' ? t("mark complete") : t("reopen")}</Text></TouchableOpacity>
+                <TouchableOpacity accessibilityRole="button" onPress={()=>{selectedEvidence.current=item.id;setEvidenceTask(item);}} style={{paddingVertical:12}}><Text style={{color:"#67E8F9"}}>{t("Receipts & notes")}</Text></TouchableOpacity>
               </View>
-              <MaterialIcons name="chevron-right" size={22} color="#64748B" />
-            </TouchableOpacity>
+            </View>
           );
         }}
       />
+      <AdaptiveModal visible={Boolean(evidenceTask&&user)} onRequestClose={closeEvidence} animationType="slide">
+        <View style={{flex:1,backgroundColor:'#07111F',padding:20}}>
+          <TouchableOpacity accessibilityRole="button" onPress={closeEvidence} style={{padding:16}}><Text style={{color:'#67E8F9'}}>{t('Close')}</Text></TouchableOpacity>
+          <Text style={{color:'#FFF',fontSize:20,marginBottom:16}}>{evidenceTask?.description}</Text>
+          <ScrollView automaticallyAdjustKeyboardInsets keyboardShouldPersistTaps="handled">{evidenceTask&&user&&<TaskEvidence key={`${user.id}:${user.companyId}:${evidenceTask.id}`} taskId={evidenceTask.id} ownerId={user.id} companyId={user.companyId} isCurrent={()=>selectedEvidence.current===evidenceTask.id&&currentOwner.current?.id===user.id&&currentOwner.current?.companyId===user.companyId&&currentOwner.current?.role===user.role}/>}</ScrollView>
+        </View>
+      </AdaptiveModal>
     </View>
   );
 }
@@ -146,5 +173,5 @@ const styles = StyleSheet.create({
   header: { paddingTop: 16, paddingHorizontal: 18, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#1E3144' }, title: { color: '#FFF', fontSize: 22, fontWeight: '900' }, muted: { color: '#8FA0B5', fontSize: 11, marginTop: 3 }, addButton: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#22D3EE' },
   progressTrack: { height: 3, backgroundColor: '#172536' }, progressFill: { height: 3, backgroundColor: '#34D399' }, composer: { margin: 14, padding: 15, borderRadius: 16, backgroundColor: '#17112B', borderWidth: 1, borderColor: '#5B21B6' }, sectionLabel: { color: '#A78BFA', fontSize: 10, letterSpacing: 1.3, fontWeight: '900' }, input: { marginTop: 10, minHeight: 70, borderRadius: 12, padding: 12, color: '#FFF', backgroundColor: '#0B1624', borderWidth: 1, borderColor: '#334B61', textAlignVertical: 'top' }, personChip: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 11, backgroundColor: '#101E2D', borderWidth: 1, borderColor: '#263B50', marginRight: 7 }, personSelected: { backgroundColor: '#164E63', borderColor: '#22D3EE' }, chipText: { color: '#E2E8F0', fontSize: 11, fontWeight: '700' }, createButton: { marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: '#22D3EE', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }, createText: { color: '#06131B', fontWeight: '900' },
   filters: { maxHeight: 55, paddingVertical: 10 }, filter: { paddingHorizontal: 13, paddingVertical: 8, borderRadius: 12, backgroundColor: '#101E2D', borderWidth: 1, borderColor: '#263B50' }, filterActive: { backgroundColor: '#164E63', borderColor: '#22D3EE' }, filterText: { color: '#D6E4F0', fontSize: 11, fontWeight: '800' },
-  list: { padding: 14, paddingBottom: 45 }, card: { flexDirection: 'row', gap: 12, alignItems: 'center', padding: 15, borderRadius: 16, marginBottom: 10, backgroundColor: '#101E2D', borderWidth: 1, borderColor: '#263B50' }, statusIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, description: { color: '#F8FAFC', fontSize: 14, fontWeight: '700', lineHeight: 20 }, metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5 }, statusText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase' }, dotText: { color: '#52667B', marginHorizontal: 6 }, assignee: { color: '#9FB0C2', fontSize: 11 }, tapHint: { color: '#5F758C', fontSize: 9, marginTop: 5 }, empty: { alignItems: 'center', paddingTop: 70 }, emptyTitle: { color: '#D6E4F0', fontSize: 16, fontWeight: '800', marginTop: 12 },
+  list: { padding: 14, paddingBottom: 45 }, card: { flexDirection: 'row', gap: 12, alignItems: 'center', padding: 15, borderRadius: 16, marginBottom: 10, backgroundColor: '#101E2D', borderWidth: 1, borderColor: '#263B50' }, statusIcon: { width: 43, height: 43, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, description: { color: '#F8FAFC', fontSize: 14, fontWeight: '700', lineHeight: 20 }, metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5 }, statusText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase' }, dotText: { color: '#52667B', marginHorizontal: 6 }, assignee: { color: '#9FB0C2', fontSize: 11 }, tapHint: { color: '#CBD5E1', fontSize: 12, marginTop: 5 }, empty: { alignItems: 'center', paddingTop: 70 }, emptyTitle: { color: '#D6E4F0', fontSize: 16, fontWeight: '800', marginTop: 12 },
 });
