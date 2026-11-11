@@ -13,5 +13,5 @@ test('chat keeps taps available with keyboard open and removes keyboard listener
   assert.match(source, /keyboardShouldPersistTaps="handled"/);
   assert.match(source, /Keyboard.addListener\('keyboardDidShow'/);
   assert.match(source, /show.remove\(\); hide.remove\(\)/);
-  assert.match(source, /onLayout=\{\(\) => \{ if \(keyboardVisible\) flatListRef.current\?\.scrollToEnd/);
+  assert.match(source, /onLayout=\{\(\) => \{ if \(keyboardVisible && nearBottom.current\) flatListRef.current\?\.scrollToEnd/);
 });

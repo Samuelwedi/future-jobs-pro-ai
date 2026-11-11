@@ -10,6 +10,7 @@ import { pipeline } from 'node:stream/promises';
 import { uploadPrivateChatFile, removePrivateChatFile, readPrivateChatFile } from '../services/chatStorage';
 import { CHAT_FILE_LIMIT, chatFileType, safeFilename } from '../services/chatFiles';
 import { saveMessage } from '../services/chatService';
+import { ChatHistoryError, parseChatHistoryQuery, readChatHistory } from '../services/chatHistory';
 
 const router = express.Router();
 router.use((req, res, next) => {
@@ -117,66 +118,32 @@ router.post('/message', async (req: Request, res: Response) => {
   }
 });
 
-// ─── GET /api/chat/room/:roomId ────────────────────────────────────
-router.get('/room/:roomId', async (req: Request, res: Response) => {
+// Both history aliases share validation, authorization, ordering and cursors.
+async function roomHistory(req: Request, res: Response) {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer '))
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-
     const decoded = verifyToken(req);
-    const access = await roomAccess(decoded.id, String(req.params.roomId));
-    if (!access.allowed) return res.status(403).json({ success: false, message: 'Forbidden' });
-
-    const result = await pool.query(
-      `SELECT cm.*, u.first_name || ' ' || u.last_name AS sender_name, u.profile_pic AS sender_avatar,
-              a.filename AS attachment_name, a.mime_type AS attachment_type, a.size_bytes AS attachment_size
-       FROM chat_messages cm
-       JOIN users u ON cm.sender_id = u.id
-       LEFT JOIN chat_attachments a ON a.id = cm.attachment_id
-       WHERE cm.room_id = $1
-       ORDER BY cm.created_at DESC, cm.id DESC
-       LIMIT 200`,
-      [req.params.roomId]
-    );
-    res.json({ success: true, messages: result.rows.reverse() });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// ─── GET /api/chat/messages/:roomId ────────────────────────────────
-router.get('/messages/:roomId', async (req: Request, res: Response) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer '))
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-
-    const decoded = verifyToken(req);
-
-    const roomId = String(req.params.roomId || '');
-    if (!roomId) {
-      return res.status(400).json({ success: false, message: 'roomId required' });
+    const rawQuery = String(req.originalUrl || req.url).split('?').slice(1).join('?');
+    if (rawQuery.length > 1024) throw new ChatHistoryError(400, 'CHAT_QUERY_INVALID', 'History query is too long.');
+    const options = parseChatHistoryQuery(req.query);
+    const result = await readChatHistory({
+      userId: decoded.id,
+      roomId: String(req.params.roomId || ''),
+      // Bind even old tokens without a company claim to the gate's request-start
+      // company. A transfer while this request is in flight must fail closed.
+      requestCompanyId: res.locals.subscriptionActor?.companyId || decoded.companyId || null,
+      claimedCompanyId: decoded.companyId || null,
+    }, options);
+    return res.json(result);
+  } catch (error) {
+    if (error instanceof ChatHistoryError) {
+      return res.status(error.status).json({ success: false, code: error.code, message: error.message,
+        ...(error.code === 'CHAT_CURSOR_INVALID' ? { refreshRequired: true } : {}) });
     }
-    const access = await roomAccess(decoded.id, roomId);
-    if (!access.allowed) return res.status(403).json({ success: false, message: 'Forbidden' });
-
-    const result = await pool.query(
-      `SELECT cm.*, u.first_name || ' ' || u.last_name AS sender_name, u.profile_pic AS sender_avatar,
-              a.filename AS attachment_name, a.mime_type AS attachment_type, a.size_bytes AS attachment_size
-       FROM chat_messages cm
-       JOIN users u ON cm.sender_id = u.id
-       LEFT JOIN chat_attachments a ON a.id = cm.attachment_id
-       WHERE cm.room_id = $1
-       ORDER BY cm.created_at DESC, cm.id DESC
-       LIMIT 200`,
-      [roomId]
-    );
-    res.json({ success: true, messages: result.rows.reverse() });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: 'Could not load conversation' });
   }
-});
+}
+router.get('/room/:roomId', roomHistory);
+router.get('/messages/:roomId', roomHistory);
 
 // ─── GET /api/chat/rooms/:userId ───────────────────────────────────
 router.get('/rooms/:userId', async (req: Request, res: Response) => {

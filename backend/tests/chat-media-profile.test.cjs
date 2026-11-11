@@ -12,14 +12,16 @@ test('private chat attachments, room photos, and effective profile rates',async(
  storage.uploadPrivateChatFile=async(bytes,name)=>{files.set(name,bytes);return name;};storage.readPrivateChatFile=async(name)=>require('stream').Readable.from(files.get(name));
  let server;
  try {
-  await db.exec(`CREATE TABLE companies(id uuid PRIMARY KEY,timezone text);
+  await db.exec(`CREATE TABLE companies(id uuid PRIMARY KEY,timezone text,subscription_status text DEFAULT 'active',
+    subscription_tier text DEFAULT 'pro',subscription_provider text,subscription_current_period_end timestamptz,subscription_expires_at timestamptz);
+   CREATE TABLE support_tickets(id uuid PRIMARY KEY,company_id uuid,user_id uuid);
    CREATE TABLE users(id uuid PRIMARY KEY,company_id uuid,role text,is_active boolean DEFAULT true,first_name text,last_name text,email text,full_name text,profile_pic text,sin text,date_of_birth date);
    CREATE TABLE chat_rooms(id text PRIMARY KEY,company_id uuid,is_group boolean,name text,created_by uuid,updated_at timestamptz DEFAULT now());
    CREATE TABLE chat_room_members(room_id text,user_id uuid);
    CREATE TABLE chat_messages(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),company_id uuid,sender_id uuid,room_id text,message text NOT NULL,created_at timestamptz DEFAULT now());
    CREATE TABLE compensation_history(user_id uuid,hourly_rate numeric,effective_date date,created_at timestamptz DEFAULT now(),created_by uuid);`);
   await db.exec(require('fs').readFileSync(require('path').join(__dirname,'../migrations/20261012_chat_media.sql'),'utf8'));
-  for(const c of [company,other])await query('INSERT INTO companies VALUES($1,$2)',[c,'America/Edmonton']);
+  for(const c of [company,other])await query('INSERT INTO companies(id,timezone) VALUES($1,$2)',[c,'America/Edmonton']);
   for(const [id,c,role] of [[boss,company,'boss'],[worker,company,'employee'],[foreign,other,'employee'],[outside,company,'employee'],[inactive,company,'employee']])await query('INSERT INTO users(id,company_id,role,first_name,last_name,profile_pic) VALUES($1,$2,$3,$4,$5,$6)',[id,c,role,'Test','User','https://example.invalid/avatar.jpg']);
   await query('UPDATE users SET is_active=false WHERE id=$1',[inactive]);
   await query("INSERT INTO chat_rooms(id,company_id,is_group,name,created_by) VALUES('group-test',$1,true,'Crew',$2)",[company,boss]);

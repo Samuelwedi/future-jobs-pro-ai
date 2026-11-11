@@ -277,7 +277,12 @@ class ApiService {
     const { token, isCurrent, assertCurrent, read, write } = await this.openChatTransport(owner, current);
     return {
       token, isCurrent,
-      readMessages: () => read(`/chat/messages/${encodeURIComponent(roomId)}`),
+      readMessages: (page?: { limit?: number; before?: string }) => {
+        // No options preserves the legacy endpoint. Paging shares every existing
+        // owner/session/pre-dispatch/401 fence and never enters the write queue.
+        const query = page ? `?limit=${page.limit ?? 200}${page.before ? `&before=${encodeURIComponent(page.before)}` : ''}` : '';
+        return read(`/chat/messages/${encodeURIComponent(roomId)}${query}`);
+      },
       readRoom: () => read(`/chat/room/${encodeURIComponent(roomId)}/details`),
       sendMessage: (message: string) => write('/chat/message', { roomId, message }),
       upload: (kind: 'attachments' | 'photo', asset: { uri: string; name: string; mimeType?: string }) => {

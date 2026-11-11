@@ -9,6 +9,7 @@ import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native'
 import { useAuth } from '../context/AuthContext';
 import { io, Socket } from 'socket.io-client';
 import { API_URL, api } from '../services/api';
+import { createChatHistory, emptyHistoryView, HistoryGeneration } from '../utils/chatHistory';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import * as DocumentPicker from 'expo-document-picker';
@@ -22,14 +23,16 @@ type ChatOwner = { id: string; companyId: string; role: string };
 function validMessage(message: any, roomId: string, companyId: string) {
   return message && typeof message.id === 'string' && message.id.length > 0
     && message.room_id === roomId && message.company_id === companyId
-    && typeof message.sender_id === 'string' && typeof message.created_at === 'string';
+    && typeof message.sender_id === 'string'
+    && (message.created_at === null || (typeof message.created_at === 'string' && Number.isFinite(Date.parse(message.created_at))));
 }
 
 function mergeMessages(previous: any[], incoming: any[]) {
   const byId = new Map(previous.map(message => [message.id, message]));
   for (const message of incoming) byId.set(message.id, message);
   return Array.from(byId.values()).sort((a, b) =>
-    String(a.created_at).localeCompare(String(b.created_at)) || a.id.localeCompare(b.id));
+    (a.created_at === null ? (b.created_at === null ? 0 : 1) : b.created_at === null ? -1
+      : Date.parse(a.created_at) - Date.parse(b.created_at)) || a.id.localeCompare(b.id));
 }
 
 export default function ChatScreen() {
@@ -74,11 +77,15 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const flatListRef = useRef<FlatList>(null);
+  const nearBottom = useRef(true);
+  const scrollAfterLayout = useRef(false);
+  const historyRef = useRef<ReturnType<typeof createChatHistory> | null>(null);
+  const [history, setHistory] = useState(emptyHistoryView);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => {
       setKeyboardVisible(true);
-      flatListRef.current?.scrollToEnd({ animated: true });
+      if (nearBottom.current) flatListRef.current?.scrollToEnd({ animated: true });
     });
     const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
     return () => { show.remove(); hide.remove(); };
@@ -101,46 +108,23 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
         const socketCurrent = () => current() && session.isCurrent();
         let generation = 0;
         let transportConnected = false;
-        let historyReading = false;
-        type HistoryGeneration = number | 'initial';
-        let pendingHistory: HistoryGeneration | null = null;
-        // HTTP history is independently authenticated. A socket failure or denied
-        // join must not discard the initial fallback for this current session.
+        // Initial and manual HTTP reads remain independent of socket availability.
         const historyCurrent = (requestedGeneration: HistoryGeneration) => socketCurrent()
           && (requestedGeneration === 'initial' || requestedGeneration === generation);
-        // Keep the initial HTTP fallback, then reconcile after each authorized
-        // join. Only one read runs at a time; reconnect bursts retain just the
-        // newest request. Post-join reads cannot publish for a disconnected generation.
-        const readHistory = async (requestedGeneration: HistoryGeneration) => {
-          if (!historyCurrent(requestedGeneration)) return;
-          pendingHistory = requestedGeneration;
-          if (historyReading) return;
-          historyReading = true;
-          try {
-            while (pendingHistory !== null && socketCurrent()) {
-              const readingGeneration: HistoryGeneration = pendingHistory;
-              pendingHistory = null;
-              try {
-                const data = await session.readMessages();
-                if (!historyCurrent(readingGeneration)) continue;
-                if (!Array.isArray(data?.messages) || data.messages.some((message: any) => !validMessage(message, roomId, user.companyId))) {
-                  throw new Error('Invalid conversation response');
-                }
-                // Keep socket/HTTP messages received while this snapshot was pending.
-                setMessages(previous => mergeMessages(data.messages, previous));
-                setError(previous => previous === t("Conversation could not be loaded") ? '' : previous);
-              } catch {
-                if (historyCurrent(readingGeneration)) setError(previous => previous || t("Conversation could not be loaded"));
-              }
-            }
-          } finally {
-            historyReading = false;
-          }
-        };
+        const historyController = createChatHistory({
+          read: page => session.readMessages(page),
+          current: historyCurrent,
+          valid: message => validMessage(message, roomId, user.companyId),
+          merge: rows => setMessages(previous => mergeMessages(rows, previous)),
+          publish: setHistory,
+          failed: () => setError(previous => previous || t("Conversation could not be loaded")),
+          recovered: () => setError(previous => previous === t("Conversation could not be loaded") ? '' : previous),
+        });
+        historyRef.current = historyController;
         const invalidateConnection = () => {
           generation++;
           transportConnected = false;
-          pendingHistory = null;
+          historyController.invalidate();
         };
         const onConnect = () => {
           if (!socketCurrent()) { socket?.disconnect(); return; }
@@ -155,7 +139,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
             else {
               setConnected(true);
               setError(previous => previous === t("Could not join conversation") || previous === t("Message connection failed") ? '' : previous);
-              void readHistory(joinedGeneration);
+              historyController.refresh(joinedGeneration);
             }
           });
         };
@@ -173,7 +157,8 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
         const onMessage = (message: any) => {
           if (!socketCurrent() || !transportConnected || !validMessage(message, roomId, user.companyId)) return;
           setMessages(previous => mergeMessages(previous, [message]));
-          flatListRef.current?.scrollToEnd({ animated: true });
+          // Scroll only after layout and only if the reader was already at the end.
+          scrollAfterLayout.current = nearBottom.current;
         };
         socket.on('connect', onConnect);
         socket.on('disconnect', onDisconnect);
@@ -189,7 +174,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
         void session.readRoom().then(data => {
           if (socketCurrent()) setRoom(data?.room || null);
         }).catch(() => {});
-        void readHistory('initial');
+        historyController.refresh('initial');
       } catch {
         if (current()) setError(t("Conversation could not be loaded"));
       }
@@ -199,6 +184,8 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       active = false;
       mounted.current = false;
       sessionRef.current = null;
+      historyRef.current?.dispose();
+      historyRef.current = null;
       disposeSocket();
       if (socketRef.current === socket) socketRef.current = null;
       socket?.emit('leave-room', roomId);
@@ -320,7 +307,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
         {!isMine && <Text style={styles.sender}>{item.sender_name || `${item.first_name || ''} ${item.last_name || ''}`.trim() || t("Team member")}</Text>}
         {item.message?<Text style={styles.message}>{item.message}</Text>:null}
         {item.attachment_id && <MediaAttachment sessionCurrent={isCurrent} path={`/chat/attachments/${item.attachment_id}/content`} name={item.attachment_name || 'attachment'} mime={item.attachment_type || 'application/octet-stream'}/>}
-        <Text style={styles.time}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+        <Text style={styles.time}>{item.created_at === null ? t('Time unavailable') : new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
       </View>
     );
   };
@@ -341,7 +328,38 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
         <Text style={styles.status}>{t("Send not confirmed. Do not resend these messages: they may already be saved. Nothing will retry automatically.")}</Text>
         {uncertainMessages.map(message => <Text key={message} style={styles.status}>{message}</Text>)}
       </View> : null}
-      <FlatList ref={flatListRef} data={messages} renderItem={renderItem} keyExtractor={item => item.id} contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" onLayout={() => { if (keyboardVisible) flatListRef.current?.scrollToEnd({ animated: true }); }} />
+      <View style={styles.historyControls}>
+        {history.busy ? <ActivityIndicator accessibilityLabel={t("Loading conversation history")} color="#67E8F9" /> : null}
+        {history.problem ? <>
+          <Text style={styles.status}>{history.problem === 'cursor'
+            ? t("History position expired. Refresh to continue; loaded messages will stay visible.")
+            : history.problem === 'metadata' ? t("History completeness could not be verified. Refresh to try again.")
+              : t("History could not be loaded. Try again.")}</Text>
+          <TouchableOpacity accessibilityRole="button" disabled={history.busy} onPress={() => historyRef.current?.retry()} style={styles.historyButton}>
+            <Text style={styles.historyText}>{history.problem === 'load' ? t("Retry history") : t("Refresh history")}</Text>
+          </TouchableOpacity>
+        </> : <>
+          {history.gaps > 0 ? <TouchableOpacity accessibilityRole="button" disabled={history.busy} onPress={() => historyRef.current?.continueRecovery()} style={styles.historyButton}>
+            <Text style={styles.historyText}>{t("Continue recovering missed messages")}</Text>
+          </TouchableOpacity> : null}
+          {history.hasOlder ? <TouchableOpacity accessibilityRole="button" disabled={history.busy} onPress={() => historyRef.current?.older()} style={styles.historyButton}>
+            <Text style={styles.historyText}>{t("Load older messages")}</Text>
+          </TouchableOpacity> : history.hasOlder === false && history.gaps === 0 ? <Text style={styles.historyText}>{t("Beginning of conversation")}</Text> : null}
+        </>}
+      </View>
+      <FlatList ref={flatListRef} data={messages} renderItem={renderItem} keyExtractor={item => item.id}
+        contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        scrollEventThrottle={16}
+        onScroll={({ nativeEvent }) => {
+          nearBottom.current = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y < 48;
+          if (!nearBottom.current) scrollAfterLayout.current = false;
+        }}
+        onContentSizeChange={() => {
+          if (scrollAfterLayout.current && nearBottom.current) flatListRef.current?.scrollToEnd({ animated: true });
+          scrollAfterLayout.current = false;
+        }}
+        onLayout={() => { if (keyboardVisible && nearBottom.current) flatListRef.current?.scrollToEnd({ animated: true }); }} />
       {uploading && <ActivityIndicator color="#00D4FF" />}
       <View style={[styles.inputBar, { paddingBottom: keyboardVisible ? 12 : Math.max(12, safeInsets.bottom) }]}>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Attach document")} disabled={!ready || uploading || mediaUncertain} onPress={() => void chooseAttachment('file')} style={{padding:8}}><MaterialIcons name="attach-file" size={24} color="#67E8F9" /></TouchableOpacity>
@@ -356,6 +374,9 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
 }
 
 const styles = StyleSheet.create({
+  historyControls: { paddingHorizontal: 16, paddingVertical: 4 },
+  historyButton: { minHeight: 44, justifyContent: 'center', alignItems: 'center' },
+  historyText: { color: '#67E8F9', textAlign: 'center' },
   status: { color: '#FFB020', paddingHorizontal: 16, paddingVertical: 6 },
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: { flexDirection: 'row', alignItems: 'center', paddingTop: 16, paddingBottom: 16, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#333' },

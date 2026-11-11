@@ -11,7 +11,7 @@ function setup(){let requestInterceptor,responseFailure,read=async key=>key==='u
  if(name==='./offlineService')return {checkOnlineStatus:()=>online(),getOnlineStatus:()=>false,queueAction:async action=>queued.push(action),requiresOnlineConfirmation:url=>/^\/chat(?:\/|$)/.test(url)};
  if(name==='../utils/uploadMetadata')return {uploadMetadata:()=>({name:'file.pdf',type:'application/pdf'})};
  if(name==='expo-file-system/legacy')return {};throw Error(name);}};
- vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/services/api.ts'),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,context);
+ vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(process.env.CHAT_SOURCE_ROOT || path.join(__dirname,'..'),'src/services/api.ts'),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,context);
  const api=context.exports.api;api.token='token';return {api,sent,queued,get responseFailure(){return responseFailure;},set response(fn){response=fn;},set beforeSend(fn){beforeSend=fn;},set read(fn){read=fn;},set online(fn){online=fn;},set remove(fn){remove=fn;}};
 }
 test('chat transport binds every read/text/upload to room, owner, token and auth revision; it never queues',async()=>{const f=setup(),session=await f.api.openChatSession('room/x',owner,()=>true);await session.readMessages();await session.readRoom();await session.sendMessage('hello');await session.upload('attachments',{uri:'file:///a.pdf',name:'a.pdf'});await session.upload('photo',{uri:'file:///a.jpg',name:'a.jpg'});assert.deepEqual(f.sent.map(x=>x.url),['/chat/messages/room%2Fx','/chat/room/room%2Fx/details','/chat/message','/chat/room/room%2Fx/attachments','/chat/room/room%2Fx/photo']);for(const request of f.sent){assert.equal(request.config.expectedAuthToken,'token');assert.equal(request.config.expectedAuthRevision,0);assert.equal(request.config.fenceUnauthorizedToCurrent,true);assert.equal(request.config.headers.Authorization,'Bearer token');}assert.equal(f.queued.length,0);});
@@ -118,4 +118,45 @@ test('creation picker 401/402 after blur or session replacement cannot sign out 
   const session = await f.api.openChatCreationSession(owner, () => current); await session.readUsers(); const config = f.sent[0].config;
   for (const status of [401, 402]) { current = false; await assert.rejects(f.responseFailure({ response: { status }, config })); current = true; f.api.authRevision++; await assert.rejects(f.responseFailure({ response: { status }, config })); }
   assert.equal(f.api.token, 'token'); assert.equal(unauthorized, 0); assert.equal(subscription, 0);
+});
+
+test('paged history encodes only room and opaque cursor while preserving legacy no-query reads', async () => {
+  const f = setup(), session = await f.api.openChatSession('room/x', owner, () => true);
+  await session.readMessages(); await session.readMessages({ limit: 200 });
+  await session.readMessages({ before: 'v1/opaque+?=#' }); await session.readMessages({ limit: 1, before: 'other' });
+  assert.deepEqual(f.sent.map(request => request.url), [
+    '/chat/messages/room%2Fx', '/chat/messages/room%2Fx?limit=200',
+    '/chat/messages/room%2Fx?limit=200&before=v1%2Fopaque%2B%3F%3D%23', '/chat/messages/room%2Fx?limit=1&before=other',
+  ]);
+  for (const request of f.sent) {
+    assert.equal(request.config.expectedAuthToken, 'token'); assert.equal(request.config.expectedAuthRevision, 0);
+    assert.equal(request.config.fenceUnauthorizedToCurrent, true); assert.equal(typeof request.config.expectedBeforeDispatch, 'function');
+  }
+  assert.equal(f.queued.length, 0);
+});
+
+test('paged history retains room/account/session dispatch and response fences without automatic retries', async () => {
+  for (const stage of ['dispatch', 'response']) for (const change of ['token', 'revision', 'view', 'storedOwner']) {
+    const f = setup(); let current = true; const session = await f.api.openChatSession('room', owner, () => current);
+    const mutate = () => {
+      if (change === 'token') f.api.token = 'replacement';
+      else if (change === 'revision') f.api.authRevision++;
+      else if (change === 'view') current = false;
+      else f.read = async () => JSON.stringify({ ...owner, id: 'replacement' });
+    };
+    // Storage identity is checked at dispatch; auth revision/current guard protects late responses.
+    if (stage === 'response' && change === 'storedOwner') continue;
+    if (stage === 'dispatch') f.beforeSend = mutate;
+    else f.response = async () => { mutate(); return { data: { messages: [], hasMore: false, nextCursor: null } }; };
+    await assert.rejects(session.readMessages({ limit: 200, before: 'opaque' }));
+    assert.equal(f.sent.length, stage === 'dispatch' ? 0 : 1); assert.equal(f.queued.length, 0);
+  }
+});
+
+test('invalid pagination cursor response reaches the reader unchanged and never retries', async () => {
+  const f = setup(), session = await f.api.openChatSession('room', owner, () => true);
+  f.response = async () => { throw { response: { status: 400, data: { code: 'CHAT_CURSOR_INVALID', refreshRequired: true } } }; };
+  await assert.rejects(session.readMessages({ before: 'expired' }), error => error.response.data.code === 'CHAT_CURSOR_INVALID'
+    && error.response.data.refreshRequired === true);
+  assert.equal(f.sent.length, 1); assert.equal(f.queued.length, 0);
 });

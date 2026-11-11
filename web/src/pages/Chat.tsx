@@ -1,6 +1,6 @@
 import { getAuthRevision } from '../services/authSession';
 import MediaAttachment from '../components/MediaAttachment';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import {
   Alert, Avatar, Box, Button, Container, Typography, TextField, IconButton, Paper, CircularProgress, Stack,
@@ -9,6 +9,8 @@ import { Send, ArrowBack, ForumOutlined, AttachFile, AddAPhoto } from '@mui/icon
 import { io } from 'socket.io-client';
 import { WS_URL } from '../services/api';
 import { chatOwnerKey, openChatSession, readChatOwner, type ChatOwner } from '../services/chatSession';
+import { createHistoryController, createHistoryState, historyView, mergeHistoryRows, type HistoryView } from '../services/chatHistory';
+import { captureChatScroll, restoreChatScroll, type ChatScrollSnapshot } from '../services/chatScroll';
 
 interface Message {
   id: string;
@@ -19,7 +21,7 @@ interface Message {
   first_name?: string;
   last_name?: string;
   message: string;
-  created_at: string;
+  created_at: string | null;
   sender_avatar?: string;
   attachment_id?: string;
   attachment_name?: string;
@@ -30,13 +32,14 @@ interface Message {
 type ChatSession = ReturnType<typeof openChatSession>;
 type SendAttempt = { message: string; revision: number; session: ChatSession };
 
-function validMessage(message: any, roomId: string, companyId: string): message is Message {
+function validMessage(message: any, roomId: string, companyId: string, allowUnknownTime = false): message is Message {
   return message && typeof message.id === 'string' && !!message.id && message.room_id === roomId
     && typeof message.company_id === 'string' && !!message.company_id
     // Support rooms use ticket authorization and may belong to another company.
     && (roomId.startsWith('support-ticket-') || message.company_id === companyId)
     && typeof message.sender_id === 'string' && typeof message.message === 'string'
-    && typeof message.created_at === 'string' && Number.isFinite(Date.parse(message.created_at));
+    && ((allowUnknownTime && message.created_at === null)
+      || (typeof message.created_at === 'string' && Number.isFinite(Date.parse(message.created_at))));
 }
 
 function ChatAttachment({ message, session }: { message: Message; session: ChatSession }) {
@@ -106,16 +109,27 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const scrollSnapshot = useRef<ChatScrollSnapshot | null>(null);
+  const didInitialScroll = useRef(false);
+  const historyState = useRef(createHistoryState());
+  const [history, setHistory] = useState<HistoryView>(() => historyView(historyState.current));
+  const historyRef = useRef<ReturnType<typeof createHistoryController<Message>> | null>(null);
 
-  const mergeMessages = useCallback((incoming: Message[]) => {
-    setMessages(current => {
-      const byId = new Map(current.map(message => [message.id, message]));
-      incoming.forEach(message => byId.set(message.id, { ...byId.get(message.id), ...message }));
-      return [...byId.values()].sort((left, right) =>
-        new Date(left.created_at).getTime() - new Date(right.created_at).getTime() || left.id.localeCompare(right.id));
-    });
+  const mergeMessages = useCallback((incoming: Message[], kind: 'latest' | 'history' = 'latest') => {
+    if (messageListRef.current && !scrollSnapshot.current) {
+      scrollSnapshot.current = captureChatScroll(messageListRef.current, kind === 'history');
+    }
+    setMessages(current => mergeHistoryRows(current, incoming));
   }, []);
+  useLayoutEffect(() => {
+    const container = messageListRef.current;
+    if (!container) return;
+    if (scrollSnapshot.current) restoreChatScroll(container, scrollSnapshot.current);
+    else if (!didInitialScroll.current && messages.length) container.scrollTop = container.scrollHeight - container.clientHeight;
+    scrollSnapshot.current = null;
+    if (messages.length) didInitialScroll.current = true;
+  }, [messages, loading]);
 
   const changeInput = (text: string) => {
     draft.current = { text, revision: draft.current.revision + 1 };
@@ -176,20 +190,16 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     const session = openChatSession(roomId, user, () => active && isCurrent() && foreground.current.active && foreground.current.epoch === epoch);
     sessionRef.current = session;
     setReady(true);
-    const fetchMessages = async (quiet = false) => {
-      try {
-        const data = await session.readMessages();
-        if (!session.isCurrent()) return;
-        if (!Array.isArray(data?.messages) || data.messages.some((message: any) => !validMessage(message, roomId, user.companyId))) {
-          throw new Error('Conversation could not be loaded.');
-        }
-        mergeMessages(data.messages);
-      } catch (cause: any) {
-        if (!session.isCurrent()) return;
-        if (cause?.code === 'CHAT_ACCESS_CHANGED') accessChanged();
-        else if (!quiet) setError('Conversation could not be loaded.');
-      } finally { if (session.isCurrent() && !quiet) setLoading(false); }
-    };
+    const historyController = createHistoryController<Message>(historyState.current, {
+      readMessages: session.readMessages,
+      isCurrent: session.isCurrent,
+      validMessage: (message: any): message is Message => validMessage(message, roomId, user.companyId, true),
+      onMessages: mergeMessages,
+      onChange: next => { setHistory(next); if (!next.busy) setLoading(false); },
+      onAccessChanged: accessChanged,
+    });
+    historyRef.current = historyController;
+    const fetchMessages = () => historyController.refresh();
     void fetchMessages();
     void session.readRoom().then(data => {
       if (session.isCurrent() && data?.success === true && data.room?.id === roomId) setRoom(data.room);
@@ -204,26 +214,27 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       socket.emit('join-room', roomId, (result: any) => {
         if (!session.isCurrent()) return;
         if (result?.success !== true) { setConnected(false); setError('Could not join this conversation.'); }
-        else { setConnected(true); void fetchMessages(true); }
+        else { setConnected(true); void fetchMessages(); }
       });
     });
     socket.on('disconnect', () => { if (session.isCurrent()) setConnected(false); });
     socket.on('connect_error', () => { if (session.isCurrent()) setError('Message connection could not be established.'); });
     socket.on('new-message', (message: Message) => {
-      if (!session.isCurrent() || !validMessage(message, roomId, user.companyId)) return;
+      if (!session.isCurrent() || !validMessage(message, roomId, user.companyId, true)) return;
       mergeMessages([message]);
-      window.setTimeout(() => { if (session.isCurrent()) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, 100);
     });
     // Keep reconciliation on reconnect, polling, visibility and focus. These are
     // read-only: uncertain writes are never replayed by reconnect or resume.
-    const poll = window.setInterval(() => { if (session.isCurrent()) void fetchMessages(true); }, 5000);
+    const poll = window.setInterval(() => { if (session.isCurrent()) void fetchMessages(); }, 5000);
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible' && session.isCurrent()) void fetchMessages(true);
+      if (document.visibilityState === 'visible' && session.isCurrent()) void fetchMessages();
     };
     document.addEventListener('visibilitychange', refreshWhenVisible);
     window.addEventListener('focus', refreshWhenVisible);
     return () => {
       active = false;
+      historyController.dispose();
+      if (historyRef.current === historyController) historyRef.current = null;
       if (sessionRef.current === session) sessionRef.current = null;
       window.clearInterval(poll);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
@@ -323,7 +334,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     const isMine = msg.sender_id === user.id;
     const senderName = msg.sender_name || (msg.first_name && msg.last_name ? `${msg.first_name} ${msg.last_name}` : 'Unknown');
     return (
-      <Box key={msg.id} sx={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', mb: 1.5 }}>
+      <Box key={msg.id} data-message-id={msg.id} sx={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', mb: 1.5 }}>
         {!isMine && <Avatar src={msg.sender_avatar} sx={{width:28,height:28,mr:1}}>{senderName.charAt(0)}</Avatar>}
         <Paper
           sx={{
@@ -344,7 +355,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
           </Typography>
           {msg.attachment_id && sessionRef.current && <ChatAttachment key={viewEpoch} message={msg} session={sessionRef.current} />}
           <Typography variant="caption" sx={{ color: '#888', display: 'block', textAlign: 'right', mt: 0.5 }}>
-            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {msg.created_at === null ? 'Time unavailable' : new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Typography>
         </Paper>
       </Box>
@@ -383,10 +394,22 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       {mediaUncertain && <Alert severity="warning" sx={{ borderRadius: 0 }}>Upload not confirmed. It may already be saved. Check the conversation or group photo before uploading again. Nothing will retry automatically.</Alert>}
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ borderRadius: 0 }}>{error}</Alert>}
 
-      <Box sx={{ flex: 1, minHeight: 420, maxHeight: 'calc(100vh - 260px)', overflowY: 'auto', p: { xs: 2, md: 3 }, bgcolor: '#0B1016' }}>
-        {messages.length === 0 && !error && <Stack alignItems="center" justifyContent="center" sx={{ minHeight: 350 }}><ForumOutlined sx={{ color: '#526579', fontSize: 54 }} /><Typography sx={{ color: '#FFF', mt: 2 }}>No messages yet</Typography><Typography sx={{ color: '#7D8FA2' }}>Send the first message to begin.</Typography></Stack>}
+      {history.latestError && <Alert severity="warning" sx={{ borderRadius: 0 }}>{history.latestError}
+        <Button disabled={!ready || !!history.busy} onClick={() => void historyRef.current?.refresh()}>Retry recent messages</Button>
+      </Alert>}
+      {history.pageError && <Alert severity="warning" sx={{ borderRadius: 0 }}>{history.pageError}</Alert>}
+      {history.refreshRequired && <Button disabled={!ready || !!history.busy} onClick={() => void historyRef.current?.refresh(true)}>Refresh history</Button>}
+      {history.gaps > 0 && <Alert severity="info" role="status" sx={{ borderRadius: 0 }}>Some messages between loaded sections are still missing.
+        <Button disabled={!ready || !!history.busy || history.refreshRequired} onClick={() => void historyRef.current?.continueRecovery()}>Continue loading missing messages</Button>
+      </Alert>}
+      <Box sx={{ display: 'flex', justifyContent: 'center', minHeight: 48 }}>
+        {history.busy && <Typography role="status" sx={{ color: '#7D8FA2', p: 1 }}>Loading messages…</Typography>}
+        {history.hasOlder && <Button disabled={!ready || !!history.busy || history.refreshRequired} onClick={() => void historyRef.current?.older()}>{history.pageError && !history.gaps ? 'Retry older messages' : 'Load older messages'}</Button>}
+        {history.initialized && history.hasOlder === false && !history.gaps && <Typography variant="caption" sx={{ color: '#7D8FA2', p: 1 }}>Beginning of conversation</Typography>}
+      </Box>
+      <Box ref={messageListRef} sx={{ flex: 1, minHeight: 420, maxHeight: 'calc(100vh - 260px)', overflowY: 'auto', p: { xs: 2, md: 3 }, bgcolor: '#0B1016' }}>
+        {messages.length === 0 && history.initialized && !error && <Stack alignItems="center" justifyContent="center" sx={{ minHeight: 350 }}><ForumOutlined sx={{ color: '#526579', fontSize: 54 }} /><Typography sx={{ color: '#FFF', mt: 2 }}>No messages yet</Typography><Typography sx={{ color: '#7D8FA2' }}>Send the first message to begin.</Typography></Stack>}
         {messages.map(renderMessage)}
-        <div ref={messagesEndRef} />
       </Box>
 
       <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1, p: 2, borderTop: '1px solid #202C39' }}>

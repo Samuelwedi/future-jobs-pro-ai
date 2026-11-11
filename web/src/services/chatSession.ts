@@ -47,6 +47,9 @@ export function openChatSession(roomId: string, owner: ChatOwner, viewCurrent: (
       const data = blob && response.ok ? await response.blob() : await response.json().catch(() => null);
       assertCurrent();
       if (!response.ok) {
+        if (kind === 'read' && response.status === 400 && data?.code === 'CHAT_CURSOR_INVALID' && data.refreshRequired === true) {
+          throw Object.assign(chatError('CHAT_CURSOR_INVALID', 'Refresh history to continue.', 400), { refreshRequired: true });
+        }
         if ([401, 403, 404].includes(response.status)) {
           throw chatError('CHAT_ACCESS_CHANGED', 'Your access to this conversation changed. Reopen it or sign in again.', response.status);
         }
@@ -61,7 +64,13 @@ export function openChatSession(roomId: string, owner: ChatOwner, viewCurrent: (
   }
   return {
     token: owner.token, isCurrent,
-    readMessages: () => request(base),
+    readMessages: (query?: { limit?: number; before?: string }) => {
+      const params = query ? [
+        ...(query.limit !== undefined ? [`limit=${encodeURIComponent(query.limit)}`] : []),
+        ...(query.before !== undefined ? [`before=${encodeURIComponent(query.before)}`] : []),
+      ] : [];
+      return request(`${base}${params.length ? `?${params.join('&')}` : ''}`);
+    },
     readRoom: () => request(`${base}/details`),
     sendMessage: (message: string) => request('/api/chat/message', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roomId, message }),

@@ -1,5 +1,6 @@
 const {test}=require('node:test'), assert=require('node:assert/strict'), fs=require('node:fs'), path=require('node:path'), vm=require('node:vm'), ts=require('typescript');
 const root=process.env.WEB_CHAT_SOURCE_ROOT||path.join(__dirname,'..');
+const historyExports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/services/chatHistory.ts'),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,{exports:historyExports});
 const source=fs.readFileSync(path.join(root,'src/pages/Chat.tsx'),'utf8');
 const ast=ts.createSourceFile('Chat.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 function evaluate(code,c){return vm.runInNewContext(ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,c);}
@@ -11,7 +12,7 @@ const message=(id='saved',extra={})=>({id,room_id:'room',company_id:'company',se
 function fixture(){
  const pending=deferred(),events=[],listeners={},docListeners={},intervals=[];
  const c={input:'hello',sending:false,uploading:false,roomId:'room',token:'token',user:{id:'owner',companyId:'company',role:'employee',token:'token'},room:{can_edit_photo:true},mounted:{current:true},foreground:{current:{active:true,epoch:0}},sendLock:{current:null},mediaLock:{current:null},mediaUncertainRef:{current:false},draft:{current:{text:'hello',revision:1}},uncertainTexts:{current:new Set()},uncertainMessages:[],sessionRef:{current:null},denied:{current:false},messagesEndRef:{current:null},auth:true,scope:true,events,messages:[],API_BASE:'https://example.test',WS_URL:'https://example.test',FormData:class{append(){}},listeners,docListeners,intervals};
- c.state={};
+ c.state={};c.createHistoryController=historyExports.createHistoryController;c.historyState={current:historyExports.createHistoryState()};c.historyRef={current:null};c.setHistory=value=>{c.history=value;};
  c.isCurrent=()=>c.mounted.current&&c.auth&&c.scope&&!c.denied.current;
  c.makeSession=()=>{const epoch=c.foreground.current.epoch;return {token:'token',isCurrent:()=>c.isCurrent()&&c.foreground.current.active&&c.foreground.current.epoch===epoch,sendMessage:()=>{events.push('send');return pending.promise;},upload:()=>{events.push('upload');return pending.promise;}};};
  c.sessionRef.current=c.makeSession();c.acquireSession=()=>c.sessionRef.current;
@@ -48,12 +49,12 @@ test('history, polling, focus, reconnect and socket callbacks are scoped, dedupl
  c.openChatSession=(_room,_owner,current)=>({...c.makeSession(),isCurrent:()=>current()&&c.auth,readMessages:()=>{const d=deferred();history.push(d);return d.promise;},readRoom:()=>{const d=deferred();rooms.push(d);return d.promise;}});
  c.io=(_url,options)=>{assert.deepEqual([...options.transports],['websocket','polling']);return {on:(key,fn)=>callbacks[key]=fn,emit:(key,_room,ack)=>{if(key==='join-room'){joins++;joinAck=ack;}},disconnect:()=>disconnects++};};
  const cleanup=effect('const fetchMessages',c)();assert.equal(history.length,1);assert.equal(rooms.length,1);
- callbacks.connect();assert.equal(joins,1);assert.notEqual(c.connected,true);joinAck({success:true});assert.equal(c.connected,true);assert.equal(history.length,2);
- callbacks['new-message'](message('new'));callbacks['new-message'](message('foreign',{room_id:'other'}));history[0].resolve({messages:[message('old')]});await flush();assert.equal(c.messages.length,2);
- c.intervals[0]();c.listeners.focus[0]();c.docListeners.visibilitychange[0]();assert.equal(history.length,5);
+ callbacks.connect();assert.equal(joins,1);assert.notEqual(c.connected,true);joinAck({success:true});assert.equal(c.connected,true);assert.equal(history.length,1);
+ callbacks['new-message'](message('new'));callbacks['new-message'](message('foreign',{room_id:'other'}));history[0].resolve({success:true,messages:[message('old')],hasMore:false,nextCursor:null});await flush();assert.equal(c.messages.length,2);
+ c.intervals[0]();c.listeners.focus[0]();c.docListeners.visibilitychange[0]();assert.equal(history.length,2);
  callbacks['new-message'](message('new'));assert.equal(c.messages.length,2);
  rooms[0].resolve({success:true,room:{id:'room',can_edit_photo:true}});await flush();assert.equal(c.room.can_edit_photo,true);
- cleanup();const before=c.events.length;joinAck({success:true});callbacks.disconnect();callbacks.connect_error(Error('old'));callbacks['new-message'](message('late'));c.scroll();history.slice(1).forEach(d=>d.resolve({messages:[message('late')]}));await flush();assert.equal(c.events.length,before);assert.equal(disconnects,1);assert.equal(c.sessionRef.current,null);assert.equal(c.events.includes('send'),false);
+ cleanup();const before=c.events.length;joinAck({success:true});callbacks.disconnect();callbacks.connect_error(Error('old'));callbacks['new-message'](message('late'));c.scroll?.();history.slice(1).forEach(d=>d.resolve({success:true,messages:[message('late')],hasMore:false,nextCursor:null}));await flush();assert.equal(c.events.length,before);assert.equal(disconnects,1);assert.equal(c.sessionRef.current,null);assert.equal(c.events.includes('send'),false);
 });
 test('web view is keyed by owner, token, room and auth epoch; IME/repeat Enter is not sent',()=>{assert.match(source,/JSON.stringify\(\[chatOwnerKey\(owner\), roomId, authEpoch\]\)/);assert.match(source,/<OwnedChat key=\{scope\}/);assert.match(source,/!e.nativeEvent.isComposing && !e.repeat/);assert.doesNotMatch(source,/api\.upload\(|api\.download\(|Message was not delivered/);assert.match(source,/Nothing will retry automatically/);});
 test('file picker returning focus before React effects can still dispatch exactly once',async()=>{
