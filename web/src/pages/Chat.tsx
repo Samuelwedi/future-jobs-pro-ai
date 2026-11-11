@@ -10,6 +10,9 @@ import { io } from 'socket.io-client';
 import { WS_URL } from '../services/api';
 import { chatOwnerKey, openChatSession, readChatOwner, type ChatOwner } from '../services/chatSession';
 import { createHistoryController, createHistoryState, historyView, mergeHistoryRows, type HistoryView } from '../services/chatHistory';
+import { browserTextStore } from '../services/chatTextQueue';
+import { createTextRecord, validTextReceipt, type TextRecord, type TextRows } from '../services/chatTextOutbox';
+import { readTextAuthorization } from '../services/chatTextTransport';
 import { captureChatScroll, restoreChatScroll, type ChatScrollSnapshot } from '../services/chatScroll';
 
 interface Message {
@@ -22,11 +25,11 @@ interface Message {
   last_name?: string;
   message: string;
   created_at: string | null;
-  sender_avatar?: string;
-  attachment_id?: string;
-  attachment_name?: string;
-  attachment_type?: string;
-  attachment_size?: number;
+  sender_avatar?: string | null;
+  attachment_id?: string | null;
+  attachment_name?: string | null;
+  attachment_type?: string | null;
+  attachment_size?: number | null;
 }
 
 type ChatSession = ReturnType<typeof openChatSession>;
@@ -85,7 +88,13 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
   user: ChatOwner; roomId: string; roomName: string; scopeCurrent: () => boolean;
 }) {
   const navigate = useNavigate();
+  const isSupport = roomId.startsWith('support-ticket-');
+  const pendingEnqueue = useRef<{ record: TextRecord; revision: number } | null>(null);
+  const enqueueLock = useRef<object | null>(null);
+  const [outbox, setOutbox] = useState<TextRows>({ records: [], invalid: 0 });
+  const [queueError, setQueueError] = useState('');
   const mounted = useRef(true);
+  const pageActive = useRef(true);
   const foreground = useRef({ active: document.visibilityState !== 'hidden' && document.hasFocus(), epoch: 0 });
   const [viewEpoch, setViewEpoch] = useState(0);
   const denied = useRef(false);
@@ -152,6 +161,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
 
   useEffect(() => {
     mounted.current = true;
+    pageActive.current = true;
     foreground.current = { active: document.visibilityState !== 'hidden' && document.hasFocus(), epoch: foreground.current.epoch + 1 };
     const suspend = () => {
       if (!foreground.current.active) return;
@@ -165,11 +175,15 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       setViewEpoch(value => value + 1);
     };
     const resume = () => {
-      if (document.visibilityState === 'hidden' || !document.hasFocus() || !isCurrent() || foreground.current.active) return;
+      if (!pageActive.current || document.visibilityState === 'hidden' || !document.hasFocus() || !isCurrent() || foreground.current.active) return;
       foreground.current = { active: true, epoch: foreground.current.epoch + 1 };
       setViewEpoch(value => value + 1);
     };
     const visibility = () => document.visibilityState === 'hidden' ? suspend() : resume();
+    const hidePage = () => { pageActive.current = false; suspend(); };
+    const restorePage = () => { pageActive.current = true; suspend(); resume(); };
+    window.addEventListener('pagehide', hidePage);
+    window.addEventListener('pageshow', restorePage);
     window.addEventListener('blur', suspend);
     window.addEventListener('focus', resume);
     document.addEventListener('visibilitychange', visibility);
@@ -177,6 +191,8 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       mounted.current = false;
       foreground.current = { active: false, epoch: foreground.current.epoch + 1 };
       sessionRef.current = null;
+      window.removeEventListener('pagehide', hidePage);
+      window.removeEventListener('pageshow', restorePage);
       window.removeEventListener('blur', suspend);
       window.removeEventListener('focus', resume);
       document.removeEventListener('visibilitychange', visibility);
@@ -224,7 +240,8 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       mergeMessages([message]);
     });
     // Keep reconciliation on reconnect, polling, visibility and focus. These are
-    // read-only: uncertain writes are never replayed by reconnect or resume.
+    // read-only. Durable ordinary text is recovered separately by the app shell;
+    // support/media writes are never replayed by reconnect or resume.
     const poll = window.setInterval(() => { if (session.isCurrent()) void fetchMessages(); }, 5000);
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible' && session.isCurrent()) void fetchMessages();
@@ -245,7 +262,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
   }, [viewEpoch, roomId, user, mergeMessages]);
 
   const acquireSession = () => {
-    if (!isCurrent() || document.visibilityState === 'hidden' || !document.hasFocus()) return null;
+    if (!pageActive.current || !isCurrent() || document.visibilityState === 'hidden' || !document.hasFocus()) return null;
     // A native file chooser can fire change immediately after focus, before
     // React runs the connection effect. Establish the same fenced transport
     // synchronously so an ordinary selection does not get silently dropped.
@@ -260,7 +277,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     return session;
   };
 
-  const sendMessage = async () => {
+  const sendSupportMessage = async () => {
     const message = draft.current.text.trim();
     const session = acquireSession();
     if (!message || message.length > 5000 || sendLock.current || uncertainTexts.current.has(message)
@@ -269,7 +286,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     sendLock.current = attempt;
     setSending(true); setSendStatus('Sending…'); setError('');
     try {
-      const result = await session.sendMessage(message);
+      const result = await session.sendSupportMessage(message);
       if (!isCurrent() || !session.isCurrent()) return;
       if (result?.success !== true || !validMessage(result.message, roomId, user.companyId)
         || result.message.sender_id !== user.id || result.message.message !== message) throw new Error('Invalid acknowledgement');
@@ -286,6 +303,84 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
         if (isCurrent() && session.isCurrent()) setSending(false);
       }
     }
+  };
+
+  // Read-only view subscription. Accepted intents belong to the authenticated
+  // owner, not this route, so navigation cannot cancel or retarget their sends.
+  useEffect(() => {
+    if (isSupport || !foreground.current.active || !isCurrent()) return;
+    let active = true;
+    const session = acquireSession();
+    if (!session) return;
+    const current = () => active && session.isCurrent();
+    const reload = () => {
+      void browserTextStore().list({ actorId: user.id, companyId: user.companyId, roomId }).then(rows => {
+        if (current()) setOutbox(rows);
+      }).catch(() => { if (current()) setQueueError('Local message storage is unavailable. No queued messages were discarded.'); });
+    };
+    const saved = (event: Event) => {
+      const { receipt, localCommitted } = (event as CustomEvent).detail || {};
+      const identity = { key: receipt?.request?.key, actorId: user.id, companyId: user.companyId, roomId, text: receipt?.message?.message };
+      if (!current() || !validTextReceipt(receipt, identity)) return;
+      mergeMessages([receipt.message]);
+      setSendStatus(localCommitted ? 'Saved to conversation. This does not confirm delivery or reading.'
+        : 'Saved to conversation. Local confirmation could not be stored; recovery will reuse the same request.');
+      reload();
+    };
+    reload();
+    window.addEventListener('chat-text-updated', reload);
+    window.addEventListener('chat-text-saved', saved);
+    return () => { active = false; window.removeEventListener('chat-text-updated', reload); window.removeEventListener('chat-text-saved', saved); };
+  }, [viewEpoch, roomId, user, mergeMessages]);
+
+  const persistIntent = async (intent: { record: TextRecord; revision: number }) => {
+    const session = acquireSession();
+    if (enqueueLock.current || !session?.isCurrent() || !isCurrent()) return;
+    enqueueLock.current = intent;
+    setSending(true); setQueueError('');
+    try {
+      const record = await browserTextStore().enqueue(intent.record, session.isCurrent);
+      // Even if storage committed just before a lifecycle change, never mutate a
+      // stale view or clear a newer draft. The immutable intent stays recoverable.
+      if (!session.isCurrent() || !isCurrent()) return;
+      pendingEnqueue.current = null;
+      setSendStatus(record.state === 'saved' ? 'This request was already saved to the conversation.'
+        : 'Queued on this browser. Waiting for server save confirmation.');
+      if (draft.current.revision === intent.revision) changeInput('');
+      window.dispatchEvent(new Event('chat-text-enqueued'));
+      try {
+        const rows = await browserTextStore().list({ actorId: user.id, companyId: user.companyId, roomId });
+        if (session.isCurrent()) setOutbox(rows);
+      } catch { if (session.isCurrent()) setQueueError('Message queued. Its local status could not be refreshed yet.'); }
+    } catch {
+      if (session.isCurrent() && isCurrent()) setQueueError('Local queue confirmation failed. Use Retry storing below for this same request; do not create another copy.');
+    } finally {
+      if (enqueueLock.current === intent) {
+        enqueueLock.current = null;
+        if (session.isCurrent() && isCurrent()) setSending(false);
+      }
+    }
+  };
+  const sendMessage = async () => {
+    if (isSupport) { await sendSupportMessage(); return; }
+    const text = draft.current.text;
+    const session = acquireSession();
+    if (!text.trim() || pendingEnqueue.current || enqueueLock.current || !session?.isCurrent() || !isCurrent()) return;
+    try {
+      const intent = { record: createTextRecord({ actorId: user.id, companyId: user.companyId, roomId }, text, readTextAuthorization(user)), revision: draft.current.revision };
+      // Reserve the one key synchronously, BEFORE the first storage await. An
+      // ambiguous write retains this intent, even if the user edits their draft.
+      pendingEnqueue.current = intent;
+      await persistIntent(intent);
+    } catch { if (session.isCurrent()) setQueueError('Could not prepare this text message. Check its length and browser storage support.'); }
+  };
+  const reviewText = async (record: TextRecord, action: 'send' | 'status') => {
+    const session = acquireSession();
+    if (!session?.isCurrent()) return;
+    try {
+      await browserTextStore().review(record, readTextAuthorization(user), action, session.isCurrent);
+      if (session.isCurrent()) window.dispatchEvent(new Event('chat-text-enqueued'));
+    } catch { if (session.isCurrent()) setQueueError('Local queue could not be updated. The original request was kept.'); }
   };
 
   const uploadFile = async (file: File, photo = false) => {
@@ -335,7 +430,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     const senderName = msg.sender_name || (msg.first_name && msg.last_name ? `${msg.first_name} ${msg.last_name}` : 'Unknown');
     return (
       <Box key={msg.id} data-message-id={msg.id} sx={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', mb: 1.5 }}>
-        {!isMine && <Avatar src={msg.sender_avatar} sx={{width:28,height:28,mr:1}}>{senderName.charAt(0)}</Avatar>}
+        {!isMine && <Avatar src={msg.sender_avatar || undefined} sx={{width:28,height:28,mr:1}}>{senderName.charAt(0)}</Avatar>}
         <Paper
           sx={{
             maxWidth: '70%',
@@ -384,6 +479,19 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       </Box>
 
       {sendStatus && <Alert severity="info" role="status" sx={{ borderRadius: 0 }}>{sendStatus}</Alert>}
+      {!isSupport && <Alert severity="info" sx={{ borderRadius: 0 }}>Ordinary text is kept on this browser before sending. Recovery runs while this page is active, including after reload. Browser storage is not a backup or end-to-end encryption. Support messages and attachments are not queued.</Alert>}
+      {!isSupport && queueError && <Alert severity="warning">{queueError}</Alert>}
+      {!isSupport && pendingEnqueue.current && <Alert severity="warning">This Send request still needs local storage confirmation.
+        <Button disabled={sending || !ready} onClick={() => { if (pendingEnqueue.current) void persistIntent(pendingEnqueue.current); }}>Retry storing same request</Button>
+      </Alert>}
+      {!isSupport && outbox.invalid > 0 && <Alert severity="warning">{outbox.invalid} invalid local record(s) were kept untouched. Automatic sends in this conversation are paused for review.</Alert>}
+      {!isSupport && outbox.records.filter(record => record.state !== 'saved').map((record, index) => <Alert key={record.key} severity={record.state === 'needs-review' ? 'warning' : 'info'} sx={{ borderRadius: 0 }}>
+        <Typography variant="caption">{record.state === 'sending' ? 'Sending or awaiting confirmation' : record.state === 'needs-review' ? 'Needs review' : record.state === 'uncertain' ? 'Save uncertain' : 'Queued'}{index > 0 ? ' · Waiting for earlier messages' : ''}</Typography>
+        <Typography sx={{ overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>{record.text}</Typography>
+        {record.reason && <Typography variant="body2">{record.reason}</Typography>}
+        <Button disabled={!ready || index > 0 || (record.lease !== null && record.lease.until > Date.now())} onClick={() => void reviewText(record, 'status')}>Check saved status</Button>
+        {!record.unavailable && <Button disabled={!ready || index > 0 || (record.lease !== null && record.lease.until > Date.now())} onClick={() => void reviewText(record, 'send')}>Retry same request</Button>}
+      </Alert>)}
       {uncertainMessages.length > 0 && <Alert severity="warning" sx={{ borderRadius: 0 }}>Send not confirmed. Do not resend these messages: they may already be saved. Nothing will retry automatically. Check the conversation before sending again.
         {uncertainMessages.map(message => <Typography key={message} sx={{ overflowWrap: 'anywhere' }}>{message}</Typography>)}
       </Alert>}
@@ -432,7 +540,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
             },
           }}
         />
-        <IconButton onClick={sendMessage} aria-label="Send message" disabled={!ready || !input.trim() || sending || uncertainMessages.includes(input.trim())} sx={{ bgcolor: '#00D4FF', borderRadius: '50%', p: 1.25, '&:hover': { bgcolor: '#5CE6FF' } }}>
+        <IconButton onClick={sendMessage} aria-label="Send message" disabled={!ready || !input.trim() || sending || (!isSupport && !!pendingEnqueue.current) || uncertainMessages.includes(input.trim())} sx={{ bgcolor: '#00D4FF', borderRadius: '50%', p: 1.25, '&:hover': { bgcolor: '#5CE6FF' } }}>
           <Send sx={{ color: '#0A0A0A' }} />
         </IconButton>
       </Box>

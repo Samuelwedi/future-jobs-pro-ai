@@ -3,6 +3,7 @@
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
+import type { ChatTextRecord, ChatTextOwner } from './chatTextOutboxStore';
 import { uploadMetadata } from '../utils/uploadMetadata';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
@@ -15,7 +16,7 @@ export type VoiceSession = Readonly<{ token: string; revision: number; ownerId: 
 // The create-group request limit counts submitted IDs before server deduplication.
 // The server adds the creator separately; this is not a company/team size limit.
 export const MAX_CHAT_GROUP_MEMBER_IDS = 100;
-type EvidenceConfig = AxiosRequestConfig & { expectedAuthToken: string; expectedAuthRevision?: number; expectedCurrent?: () => boolean; expectedBeforeDispatch?: () => Promise<void>; fenceUnauthorizedToCurrent?: boolean };
+type EvidenceConfig = AxiosRequestConfig & { expectedAuthToken: string; expectedAuthRevision?: number; expectedCurrent?: () => boolean; expectedBeforeDispatch?: () => Promise<void>; fenceUnauthorizedToCurrent?: boolean; quietChatText?: boolean };
 export const createEvidenceRequestKey = () => `evidence-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 function evidenceError(code:string,message:string){return Object.assign(new Error(message),{code});}
 const pendingEvidence = () => evidenceError('EVIDENCE_PENDING','Upload status is pending or unavailable. Your capture is saved on this device. Check its status before taking another.');
@@ -29,6 +30,9 @@ class ApiService {
   private client: AxiosInstance;
   private token: string | null = null;
   private authRevision = 0;
+  private chatTextGeneration: string | null = null;
+  private authClearing = false;
+  private authStorageWrites: Promise<unknown> = Promise.resolve();
   private evidenceInFlight = new Map<string,Promise<any>>();
   private onSubscriptionRequired: (() => void) | null = null;
   setSubscriptionRequiredHandler(handler:()=>void){this.onSubscriptionRequired=handler;}
@@ -93,10 +97,10 @@ class ApiService {
         const expected = (error.config as EvidenceConfig | undefined)?.expectedAuthToken;
         const expectedRevision = (error.config as EvidenceConfig | undefined)?.expectedAuthRevision;
         const expectedCurrent = (error.config as EvidenceConfig | undefined)?.expectedCurrent;
-        if (error.response?.status === 402 && (!expected || expected === this.token)
+        if (!(error.config as EvidenceConfig | undefined)?.quietChatText && error.response?.status === 402 && (!expected || expected === this.token)
           && (expectedRevision === undefined || expectedRevision === this.authRevision)
           && (!expectedCurrent || expectedCurrent())) this.onSubscriptionRequired?.();
-        if (error.response?.status === 401 && (!expected || expected === this.token)
+        if (!(error.config as EvidenceConfig | undefined)?.quietChatText && error.response?.status === 401 && (!expected || expected === this.token)
           && (expectedRevision === undefined || expectedRevision === this.authRevision)
           && (!(error.config as EvidenceConfig | undefined)?.fenceUnauthorizedToCurrent || !expectedCurrent || expectedCurrent())) {
           console.warn('🔑 Token expired – redirecting to login');
@@ -118,27 +122,47 @@ class ApiService {
     this.onUnauthorized = handler;
   }
 
-  async setToken(token: string): Promise<void> {
-    this.authRevision++;
-    this.token = token;
-    await SecureStore.setItemAsync('authToken', token);
+  private writeAuthStorage<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.authStorageWrites.then(work);
+    this.authStorageWrites = next.catch(() => undefined);
+    return next;
+  }
 
+  async setToken(token: string): Promise<void> {
+    const revision = ++this.authRevision;
+    this.token = token;
+    this.authClearing = false;
+    const generation = `login-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    this.chatTextGeneration = generation;
+    await this.writeAuthStorage(async () => {
+      if (revision !== this.authRevision) return;
+      await SecureStore.setItemAsync('chatTextAuthGeneration', generation);
+      if (revision !== this.authRevision) return;
+      await SecureStore.setItemAsync('authToken', token);
+    });
   }
 
   async getToken(): Promise<string | null> {
+    if (this.authClearing) return null;
     if (!this.token) {
       const revision = this.authRevision;
       const token = await SecureStore.getItemAsync('authToken');
-      if (revision === this.authRevision) this.token = token;
+      if (revision === this.authRevision && !this.authClearing) this.token = token;
     }
     return this.token;
   }
 
   async clearToken(): Promise<void> {
-    this.authRevision++;
+    const revision = ++this.authRevision;
     this.token = null;
-    await SecureStore.deleteItemAsync('authToken');
-
+    this.chatTextGeneration = null;
+    this.authClearing = true;
+    // Live authority ends synchronously. Durable deletion is ordered after any
+    // already-started token write, so an old login cannot resurrect it later.
+    await this.writeAuthStorage(async () => {
+      if (revision !== this.authRevision) return;
+      await SecureStore.deleteItemAsync('authToken');
+    });
   }
 
   async replayQueued(action:any):Promise<void>{
@@ -206,8 +230,8 @@ class ApiService {
     return { data: response.data, isSessionCurrent };
   }
 
-  // Chat has no durable server idempotency contract. Keep every mutation online,
-  // tied to the opening owner/session, and never replay an uncertain outcome.
+  // Legacy support/media/creation transports remain online-only. Ordinary text
+  // uses the separate durable transport below, never the generic offline queue.
   private async openChatTransport(owner: { id: string; companyId: string; role: string }, current: () => boolean) {
     const expectedOwner = { ...owner };
     const revision = this.authRevision;
@@ -261,6 +285,69 @@ class ApiService {
       return response.data;
     };
     return { token: token!, isCurrent, assertCurrent, read, write };
+  }
+
+  // Auth refresh is a session-owned read. A late old-account 401 must not
+  // clear a replacement token before AuthContext can fence its own callback.
+  async readAuthSession<T>(current: () => boolean): Promise<T> {
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const isCurrent = () => !!token && token === this.token && revision === this.authRevision && current();
+    const assertCurrent = () => { if (!isCurrent()) throw new Error('Authentication session changed.'); };
+    assertCurrent();
+    const response = await this.client.get<T>('/auth/session', {
+      expectedAuthToken: token!, expectedAuthRevision: revision, expectedCurrent: isCurrent,
+      fenceUnauthorizedToCurrent: true,
+    } as EvidenceConfig);
+    assertCurrent();
+    return response.data;
+  }
+
+  async openChatTextSession(owner: ChatTextOwner, current: () => boolean) {
+    const expected = { ...owner };
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const isCurrent = () => !!token && token === this.token && revision === this.authRevision && current();
+    const assertCurrent = () => {
+      if (!isCurrent()) throw evidenceError('CHAT_TEXT_PAUSED', 'Account or foreground session changed.');
+    };
+    const authorize = async () => {
+      assertCurrent();
+      const stored = JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+      assertCurrent();
+      if (!expected.id || !expected.companyId || stored?.id !== expected.id || stored?.companyId !== expected.companyId
+        || stored?.role !== expected.role || stored?.mustChangePassword) {
+        throw evidenceError('CHAT_TEXT_SCOPE_CHANGED', 'Account access changed. Review this saved text.');
+      }
+    };
+    await authorize();
+    const generation = this.chatTextGeneration || await SecureStore.getItemAsync('chatTextAuthGeneration') || 'existing-session-v1';
+    await authorize();
+    return {
+      isCurrent, authorize, generation,
+      request: async (intent: ChatTextRecord, lookup: boolean) => {
+        const r = { ...intent };
+        await authorize();
+        if (r.ownerId !== expected.id || r.companyId !== expected.companyId || r.approvedRole !== expected.role || r.approvedGeneration !== generation) {
+          throw evidenceError('CHAT_TEXT_SCOPE_CHANGED', 'Saved text belongs to a different account or role.');
+        }
+        const online = await checkOnlineStatus();
+        await authorize();
+        if (!online) throw evidenceError('CHAT_TEXT_OFFLINE', 'Queued on this device until online.');
+        const config = { expectedAuthToken: token!, expectedAuthRevision: revision,
+          expectedCurrent: isCurrent, expectedBeforeDispatch: authorize, fenceUnauthorizedToCurrent: true,
+          quietChatText: true, timeout: 20000, headers: { 'Cache-Control': 'no-store' },
+          // Return typed status/error bodies to the outbox; no redirect or generic queue.
+          validateStatus: (status: number) => status >= 200 && status < 600,
+        } as EvidenceConfig;
+        const response = lookup
+          ? await this.client.get(`/chat/room/${encodeURIComponent(r.roomId)}/requests/${encodeURIComponent(r.requestKey)}?expectedCompanyId=${encodeURIComponent(r.companyId)}&expectedActorId=${encodeURIComponent(r.ownerId)}`, config)
+          : await this.client.post('/chat/message-requests', { roomId: r.roomId, message: r.text,
+            requestKey: r.requestKey, expectedCompanyId: r.companyId, expectedActorId: r.ownerId }, config);
+        await authorize();
+        return { status: response.status, data: response.data };
+      },
+    };
   }
 
   async openChatCreationSession(owner: { id: string; companyId: string; role: string }, current: () => boolean) {

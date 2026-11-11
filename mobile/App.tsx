@@ -46,6 +46,7 @@ import FoldersScreen from './src/screens/FoldersScreen';
 import ProjectMediaScreen from './src/screens/ProjectMediaScreen';
 import MonthMediaScreen from './src/screens/MonthMediaScreen';
 import { api } from './src/services/api';
+import { startChatTextOutbox } from './src/services/chatTextOutbox';
 import MonthMediaTypeScreen from './src/screens/MonthMediaTypeScreen';
 import WebViewScreen from './src/screens/WebViewScreen';
 import SelectEmployeesScreen from './src/screens/SelectEmployeesScreen';
@@ -95,7 +96,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 }
 
 function AppNavigator() {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, isLogoutPending } = useAuth();
   const isProcessing = useRef(false);
   useEffect(()=>{api.setSubscriptionRequiredHandler(()=>{if(navigationRef.isReady() && !['Subscription','Support'].includes(navigationRef.getCurrentRoute()?.name || ''))navigationRef.navigate('Subscription');});return()=>api.setSubscriptionRequiredHandler(()=>{});},[]);
   const wakeWordRef = useRef<WakeWordService | null>(null);
@@ -175,6 +176,11 @@ function AppNavigator() {
     });
     return cleanup;
   }, [isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    if (isLoading || !isAuthenticated || !user || user.mustChangePassword || isLogoutPending()) return;
+    return startChatTextOutbox({ id: user.id, companyId: user.companyId, role: user.role }, () => !isLogoutPending());
+  }, [isLoading, isAuthenticated, user?.id, user?.companyId, user?.role, user?.mustChangePassword]);
 
   if (isLoading) return null;
 

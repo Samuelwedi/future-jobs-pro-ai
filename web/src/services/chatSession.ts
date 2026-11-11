@@ -72,9 +72,14 @@ export function openChatSession(roomId: string, owner: ChatOwner, viewCurrent: (
       return request(`${base}${params.length ? `?${params.join('&')}` : ''}`);
     },
     readRoom: () => request(`${base}/details`),
-    sendMessage: (message: string) => request('/api/chat/message', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roomId, message }),
-    }, 'text'),
+    // Explicit legacy support behavior only. Ordinary text must use the durable
+    // outbox and must never fall back to this endpoint after any queued attempt.
+    sendSupportMessage: (message: string) => {
+      if (!roomId.startsWith('support-ticket-')) return Promise.reject(chatError('CHAT_NOT_SENT', 'Ordinary text requires the durable queue.'));
+      return request('/api/chat/message', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roomId, message }),
+      }, 'text');
+    },
     upload: (kind: 'photo' | 'attachments', form: FormData) => request(`${base}/${kind}`, { method: 'POST', body: form }, 'media'),
     download: (id: string) => request(`/api/chat/attachments/${encodeURIComponent(id)}/content`, {}, 'read', true) as Promise<Blob>,
   };

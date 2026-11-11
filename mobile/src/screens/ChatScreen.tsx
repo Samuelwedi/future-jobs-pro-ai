@@ -3,13 +3,15 @@ import MediaAttachment from '../components/MediaAttachment';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Keyboard, Platform, Image, ActivityIndicator,
+  View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Keyboard, Platform, Image, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { useNavigation, useRoute, useIsFocused } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { io, Socket } from 'socket.io-client';
 import { API_URL, api } from '../services/api';
 import { createChatHistory, emptyHistoryView, HistoryGeneration } from '../utils/chatHistory';
+import { chatTextOutbox } from '../services/chatTextOutbox';
+import { createChatTextIntent, ChatTextIntent, ChatTextRecord, ChatTextSnapshot, validChatTextReceipt } from '../services/chatTextOutboxStore';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import * as DocumentPicker from 'expo-document-picker';
@@ -59,6 +61,13 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
   const isCurrent = () => mounted.current && scopeCurrent() && authCurrent();
   const sessionRef = useRef<ChatSession | null>(null);
   const sendLock = useRef(false);
+  const pendingAdmission = useRef<{ intent: ChatTextIntent; revision: number } | null>(null);
+  const outboxViewGeneration = useRef(0);
+  const [outbox, setOutbox] = useState<ChatTextSnapshot>({ records: [], problems: [] });
+  const [outboxProblem, setOutboxProblem] = useState('');
+  const [outboxBusy, setOutboxBusy] = useState(false);
+  const outboxLock = useRef(false);
+  const [outboxLimit, setOutboxLimit] = useState(10);
   const mediaLock = useRef(false);
   const mediaUncertainRef = useRef(false);
   const draft = useRef({ text: '', revision: 0 });
@@ -198,7 +207,80 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     setInput(text);
   };
 
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      const generation = ++outboxViewGeneration.current;
+      const current = () => active && isCurrent() && generation === outboxViewGeneration.current;
+      try {
+        const result = await chatTextOutbox.snapshot(user, () => { if (!current()) throw new Error('Conversation changed.'); });
+        if (!current()) return;
+        setOutbox({ records: result.records.filter(record => record.roomId === roomId),
+          problems: result.problems.filter(problem => !problem.roomId || problem.roomId === roomId) });
+        const saved = result.records.filter(record => record.roomId === roomId && record.state === 'saved' && validChatTextReceipt(record, record.receipt));
+        if (saved.length) setMessages(previous => mergeMessages(previous, saved.map(record => record.receipt.message)));
+        setOutboxProblem('');
+      } catch { if (current()) setOutboxProblem(t('Saved text could not be loaded. Nothing has been discarded.')); }
+    };
+    const unsubscribe = chatTextOutbox.subscribe(() => { void refresh(); });
+    void refresh();
+    return () => { active = false; outboxViewGeneration.current++; unsubscribe(); };
+  }, []);
+
+  const recoverText = async (record: ChatTextRecord, mode: 'check' | 'retry' | 'dismiss') => {
+    if (outboxLock.current || !isCurrent()) return;
+    outboxLock.current = true; setOutboxBusy(true); setOutboxProblem('');
+    try {
+      if (mode === 'dismiss') await chatTextOutbox.dismiss(record, isCurrent);
+      else await chatTextOutbox.retry(record, mode === 'check');
+      if (!isCurrent()) return;
+      // Clear only the unchanged draft whose original admission was ambiguous.
+      // Newer edits (including same words retyped) remain owned by the composer.
+      const pending = pendingAdmission.current;
+      if (pending?.intent.requestKey === record.requestKey) {
+        const snapshot = await chatTextOutbox.snapshot(user, () => { if (!isCurrent()) throw new Error('Conversation changed.'); });
+        if (!isCurrent()) return;
+        const retained = snapshot.records.find(item => item.requestKey === record.requestKey);
+        if (retained && !retained.reason?.startsWith('Local save')) {
+          if (draft.current.revision === pending.revision) changeInput('');
+          pendingAdmission.current = null;
+        }
+      }
+    } catch (cause: any) {
+      if (isCurrent()) setOutboxProblem(t(cause?.message || 'Recovery could not be confirmed. The same request is retained.'));
+    } finally { outboxLock.current = false; if (isCurrent()) setOutboxBusy(false); }
+  };
+
+  const queueOrdinaryText = async (retryOriginal = false) => {
+    const raw = draft.current.text;
+    const session = sessionRef.current;
+    if ((!retryOriginal && (!raw.trim() || raw.length > 5000)) || (retryOriginal && !pendingAdmission.current) || sendLock.current || !isCurrent() || !session?.isCurrent()) return;
+    if (pendingAdmission.current && !retryOriginal) {
+      setSendStatus(t('An earlier text needs review. Use Retry saving original text before sending this draft.')); return;
+    }
+    sendLock.current = true;
+    setSending(true); setSendStatus(''); setError('');
+    try {
+      if (!pendingAdmission.current) pendingAdmission.current = { intent: createChatTextIntent(user, roomId, raw), revision: draft.current.revision };
+      const admission = pendingAdmission.current;
+      await chatTextOutbox.enqueue(admission.intent, isCurrent);
+      if (!isCurrent() || !session.isCurrent()) return;
+      if (draft.current.revision === admission.revision) changeInput('');
+      pendingAdmission.current = null;
+      setSendStatus(t('Queued on this device. It will be saved while the app is open and access is available.'));
+    } catch (cause: any) {
+      if (isCurrent() && session.isCurrent()) setSendStatus(t(cause?.message || 'Local save not confirmed. Retry the same request; your draft is unchanged.'));
+    } finally { sendLock.current = false; if (isCurrent() && session.isCurrent()) setSending(false); }
+  };
+
+  // Support has its explicit legacy online path. An ordinary queued request
+  // never falls back to this path, even if the server rejects keyed support.
   const sendMessage = async () => {
+    if (!roomId.startsWith('support-ticket-')) { await queueOrdinaryText(); return; }
+    await sendSupportMessage();
+  };
+
+  const sendSupportMessage = async () => {
     const message = draft.current.text.trim();
     const session = sessionRef.current;
     if (!message || message.length > 5000 || sendLock.current || uncertainTexts.current.has(message)
@@ -328,6 +410,32 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
         <Text style={styles.status}>{t("Send not confirmed. Do not resend these messages: they may already be saved. Nothing will retry automatically.")}</Text>
         {uncertainMessages.map(message => <Text key={message} style={styles.status}>{message}</Text>)}
       </View> : null}
+      {pendingAdmission.current ? <View style={{ paddingHorizontal: 16 }}>
+        <Text style={styles.status}>{t('Original text awaiting local confirmation:')} {pendingAdmission.current.intent.text}</Text>
+        <TouchableOpacity accessibilityRole="button" disabled={sending} onPress={() => void queueOrdinaryText(true)}><Text style={styles.historyText}>{t('Retry saving original text')}</Text></TouchableOpacity>
+      </View> : null}
+      {outboxProblem ? <Text accessibilityLiveRegion="polite" style={styles.status}>{outboxProblem}</Text> : null}
+      {outbox.records.length || outbox.problems.length ? <ScrollView style={{ maxHeight: 190 }} contentContainerStyle={{ paddingHorizontal: 16 }} keyboardShouldPersistTaps="handled">
+        <Text style={styles.historyText}>{t('Text outbox on this device')}</Text>
+        {outbox.problems.map(problem => <Text key={problem.storageKey} style={styles.status}>{t(problem.reason)}</Text>)}
+        {outbox.records.slice(0, outboxLimit).map(record => <View key={record.requestKey} style={{ paddingVertical: 6 }}>
+          <Text style={styles.message}>{record.text}</Text>
+          <Text accessibilityLiveRegion="polite" style={styles.status}>{record.state === 'saved' ? t('Saved to conversation. Delivery and reading are not confirmed.')
+            : record.state === 'queued' ? t('Queued on this device') : record.state === 'sending' ? t('Sending or awaiting saved-status recovery…')
+              : record.state === 'uncertain' ? t('Save not confirmed. Same request retained.') : t('Needs review. Automatic sending paused.')}</Text>
+          {record.reason ? <Text style={styles.status}>{record.reason === 'unavailable' ? t('The original saved message is unavailable. This request will not be recreated.')
+            : record.reason === 'conflict' ? t('This key conflicts with the saved request. Only status recovery is allowed.') : t(record.reason)}</Text> : null}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+            {record.state === 'saved' ? <><TouchableOpacity accessibilityRole="button" disabled={outboxBusy} onPress={() => void recoverText(record, 'dismiss')}><Text style={styles.historyText}>{t('Dismiss saved receipt')}</Text></TouchableOpacity>
+                {record.reason ? <TouchableOpacity accessibilityRole="button" disabled={outboxBusy} onPress={() => void recoverText(record, 'retry')}><Text style={styles.historyText}>{t('Recover local saved receipt')}</Text></TouchableOpacity> : null}</>
+              : <>
+                <TouchableOpacity accessibilityRole="button" disabled={outboxBusy} onPress={() => void recoverText(record, 'check')}><Text style={styles.historyText}>{t('Check saved status')}</Text></TouchableOpacity>
+                {!record.stopPost ? <TouchableOpacity accessibilityRole="button" disabled={outboxBusy} onPress={() => void recoverText(record, 'retry')}><Text style={styles.historyText}>{t('Retry same request')}</Text></TouchableOpacity> : null}
+              </>}
+          </View>
+        </View>)}
+        {outbox.records.length > outboxLimit ? <TouchableOpacity accessibilityRole="button" onPress={() => setOutboxLimit(value => value + 10)}><Text style={styles.historyText}>{t('Show more saved requests')}</Text></TouchableOpacity> : null}
+      </ScrollView> : null}
       <View style={styles.historyControls}>
         {history.busy ? <ActivityIndicator accessibilityLabel={t("Loading conversation history")} color="#67E8F9" /> : null}
         {history.problem ? <>

@@ -49,6 +49,7 @@ const ProjectMedia = lazy(() => import('./pages/ProjectMedia'));
 const MonthMedia = lazy(() => import('./pages/MonthMedia'));
 const MonthMediaType = lazy(() => import('./pages/MonthMediaType'));
 import Layout from './components/Layout';
+import ChatTextRecovery from './components/ChatTextRecovery';
 
 // âœ… NEW PAGES
 const CompanySettings = lazy(() => import('./pages/CompanySettings'));
@@ -68,6 +69,7 @@ const WorkerTools=lazy(()=>import('./pages/WorkerTools'));
 export default function App() {
   return (
     <Router>
+      <ChatTextRecovery />
       <Suspense fallback={<div role="status" style={{padding:32}}>Loading workspaceâ€¦</div>}><Routes>
         {/* Public routes */}
         <Route path="/" element={<Landing />} />
