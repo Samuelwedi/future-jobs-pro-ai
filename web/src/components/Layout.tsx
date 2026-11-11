@@ -1,6 +1,6 @@
 import { captureAuthSession, clearAuthSession, updateAuthUser } from '../services/authSession';
 import React, { lazy,Suspense,useState,useEffect } from 'react';
-import { useNavigate, useLocation, Outlet } from 'react-router-dom';
+import { useNavigate, useLocation, useMatch, Outlet } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -168,6 +168,7 @@ const managerOnlyPaths=new Set(['/company-settings','/operations','/admin-dashbo
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const isReportsRoute = useMatch('/reports');
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const appTheme = useAppTheme();
@@ -372,7 +373,9 @@ export default function Layout() {
           width:{xs:'100%',md:'calc(100% - 280px)'},
         }}
       >
-        <Outlet />
+        {isReportsRoute && !canManage
+          ? <Typography role="alert">Manager access is required to view reports.</Typography>
+          : <Outlet />}
       </Box>
     </Box>
   );

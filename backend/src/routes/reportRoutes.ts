@@ -1,19 +1,23 @@
 import express, { Request, Response } from 'express';
 import { verifyToken } from '../utils/auth';
 import { pool } from '../config/database';
+import { isManagerRole } from '../middleware/companyActor';
 import { generateComprehensiveReport, ProjectReportData } from '../services/comprehensiveReportService';
 
 const router = express.Router();
 
 type Actor = { id: string; companyId: string };
+class ReportAccessDenied extends Error {}
 
 async function actor(req: Request): Promise<Actor> {
   const decoded = verifyToken(req);
   const result = await pool.query(
-    'SELECT id, company_id FROM users WHERE id = $1',
+    `SELECT id, company_id, role FROM users
+     WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE`,
     [decoded.id],
   );
   if (!result.rowCount || !result.rows[0].company_id) throw new Error('Not authenticated');
+  if (!isManagerRole(result.rows[0].role)) throw new ReportAccessDenied('Manager access is required to view reports');
   return { id: String(result.rows[0].id), companyId: String(result.rows[0].company_id) };
 }
 
@@ -174,7 +178,7 @@ router.get('/summary', async (req: Request, res: Response) => {
       workforce: data.workforce,
     });
   } catch (error: any) {
-    const status = /authenticated/i.test(error.message) ? 401 : /not found/i.test(error.message) ? 404 : 400;
+    const status = error instanceof ReportAccessDenied ? 403 : /authenticated/i.test(error.message) ? 401 : /not found/i.test(error.message) ? 404 : 400;
     res.status(status).json({ success: false, message: error.message });
   }
 });
@@ -194,7 +198,7 @@ router.post('/comprehensive', async (req: Request, res: Response) => {
     res.send(pdfBuffer);
   } catch (error: any) {
     console.error('Comprehensive report error:', error);
-    const status = /authenticated/i.test(error.message) ? 401 : /not found/i.test(error.message) ? 404 : 400;
+    const status = error instanceof ReportAccessDenied ? 403 : /authenticated/i.test(error.message) ? 401 : /not found/i.test(error.message) ? 404 : 400;
     res.status(status).json({ success: false, message: error.message });
   }
 });
@@ -225,7 +229,7 @@ router.get('/timesheet.csv', async (req: Request, res: Response) => {
     res.setHeader('Content-Disposition', `attachment; filename="timesheet-${range.startDate}-${range.endDate}.csv"`);
     res.send(`\uFEFF${csv}`);
   } catch (error: any) {
-    const status = /authenticated/i.test(error.message) ? 401 : /not found/i.test(error.message) ? 404 : 400;
+    const status = error instanceof ReportAccessDenied ? 403 : /authenticated/i.test(error.message) ? 401 : /not found/i.test(error.message) ? 404 : 400;
     res.status(status).json({ success: false, message: error.message });
   }
 });
