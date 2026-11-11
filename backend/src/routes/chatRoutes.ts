@@ -59,7 +59,7 @@ router.get('/company/:companyId', async (req: Request, res: Response) => {
 
     const decoded = verifyToken(req);
 
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1 AND COALESCE(is_active,TRUE)=TRUE', [decoded.id]);
     if (userRes.rows.length === 0) return res.status(404).json({ success: false, message: 'User not found' });
     if (userRes.rows[0].company_id !== req.params.companyId)
       return res.status(403).json({ success: false, message: 'Forbidden' });
@@ -71,9 +71,19 @@ router.get('/company/:companyId', async (req: Request, res: Response) => {
        JOIN users u ON cm.sender_id = u.id
        LEFT JOIN chat_attachments a ON a.id = cm.attachment_id
        WHERE cm.company_id = $1
+         -- Support has separate ticket/role authorization through the room endpoints.
+         AND cm.room_id NOT LIKE 'support-ticket-%'
+         AND EXISTS (
+           SELECT 1 FROM chat_rooms cr
+           JOIN chat_room_members crm ON crm.room_id = cr.id
+           JOIN users requester ON requester.id = crm.user_id
+           WHERE cr.id = cm.room_id AND cr.company_id = cm.company_id
+             AND crm.user_id = $2 AND requester.company_id = cr.company_id
+             AND COALESCE(requester.is_active,TRUE)=TRUE
+         )
        ORDER BY cm.created_at DESC, cm.id DESC
        LIMIT 200`,
-      [req.params.companyId]
+      [req.params.companyId, decoded.id]
     );
     res.json({ success: true, messages: result.rows.reverse() });
   } catch (error: any) {
