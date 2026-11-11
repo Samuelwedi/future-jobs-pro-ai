@@ -1,6 +1,7 @@
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
 import { pool } from '../config/database';
+import { scheduleConflictPreview } from './scheduleConflictPreview';
 
 const router = express.Router();
 async function scheduleTransaction<T>(work: (client: any) => Promise<T>): Promise<T> {
@@ -37,6 +38,9 @@ const getActor = async (req: Request) => {
 
 const canManageSchedule = (role: string) => ['boss', 'manager', 'admin'].includes(role);
 
+// Read-only advisory preview. Never reserves time or changes assignments.
+router.post('/conflicts', scheduleConflictPreview);
+
 // GET /api/schedule/shifts?start=&end= (company‑scoped)
 router.get('/shifts', async (req: Request, res: Response) => {
   try {
@@ -60,24 +64,28 @@ router.get('/shifts', async (req: Request, res: Response) => {
   }
 });
 
-// ===== FIXED my-shifts (without test bypass) =====
+// Personal/selected-employee schedule, with complete edit assignments for managers.
 router.get('/my-shifts', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
-    const decoded = verifyToken(req);
+    let decoded;
+    try { decoded = verifyToken(req); }
+    catch { return res.status(401).json({ success: false, message: 'Not authenticated' }); }
 
     const { userId, start, end } = req.query;
     if (!userId || !start || !end) {
       return res.status(400).json({ success: false, message: 'userId, start, and end are required' });
     }
 
-    // Get company IDs
-    const requestUserRes = await pool.query('SELECT company_id, role FROM users WHERE id = $1', [decoded.id]);
-    if (requestUserRes.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Requesting user not found' });
+    // Current database membership and role, never stale token claims.
+    const requestUserRes = await pool.query(
+      'SELECT company_id, role FROM users WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE', [decoded.id],
+    );
+    if (!requestUserRes.rows[0]?.company_id) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
     }
     const requestCompanyId = requestUserRes.rows[0].company_id;
 
@@ -90,24 +98,34 @@ router.get('/my-shifts', async (req: Request, res: Response) => {
     if (requestCompanyId !== targetCompanyId) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
-    if (String(userId) !== String(decoded.id) && !canManageSchedule(String(requestUserRes.rows[0].role || ''))) {
+    const managesSchedule = canManageSchedule(String(requestUserRes.rows[0].role || ''));
+    if (String(userId) !== String(decoded.id) && !managesSchedule) {
       return res.status(403).json({ success: false, message: 'Manager access is required to view another employee schedule' });
     }
 
+    // Match the selected employee independently of the aggregate: filtering the
+    // aggregate join by that employee silently removes coworkers on a later edit.
+    // Only managers need the full same-company set. Preserve inactive assignees
+    // (existing edits permit them), but never return foreign/moved employee IDs.
+    // Project ownership matches edit/delete; projectless legacy rows fail closed.
     const result = await pool.query(
       `SELECT s.*, s.date::date::text AS date,
-              array_agg(DISTINCT sa.user_id) FILTER (WHERE sa.user_id IS NOT NULL) AS assigned_user_ids,
+              array_agg(DISTINCT employee.id) FILTER (WHERE employee.id IS NOT NULL) AS assigned_user_ids,
               p.name as project_name,
               p.address as project_address
        FROM shifts s
-       LEFT JOIN shift_assignments sa ON s.id = sa.shift_id
-       LEFT JOIN projects p ON s.project_id = p.id
-       WHERE (s.user_id = $1 OR sa.user_id = $1)
+       JOIN projects p ON s.project_id = p.id AND p.company_id = $4
+       LEFT JOIN shift_assignments sa ON s.id = sa.shift_id AND ($5::boolean OR sa.user_id = $1)
+       LEFT JOIN users employee ON employee.id = sa.user_id AND employee.company_id = $4
+       WHERE (s.user_id = $1 OR EXISTS (
+         SELECT 1 FROM shift_assignments selected_assignment
+         WHERE selected_assignment.shift_id = s.id AND selected_assignment.user_id = $1
+       ))
          AND s.date >= $2::date
          AND s.date < $3::date + interval '1 day'
        GROUP BY s.id, p.name, p.address
        ORDER BY s.date, s.start_time`,
-      [userId, start, end]
+      [userId, start, end, requestCompanyId, managesSchedule]
     );
     res.json({ success: true, shifts: result.rows });
   } catch (error: any) {

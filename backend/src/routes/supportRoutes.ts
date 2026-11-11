@@ -1,3 +1,4 @@
+import { emitAuthorizedSupportQueue } from '../services/socketAuthorization';
 import {mountSupportMedia,supportMessageQuery} from '../services/supportMedia';
 import express, { Request, Response } from 'express';
 import {lucyInferenceReady,lucyResponse} from '../services/lucyInference';
@@ -79,7 +80,7 @@ router.post('/request-human', async (req: Request, res: Response) => {
           [ticketId, isLucy ? null : actor.id, isLucy ? 'lucy' : 'customer', isLucy ? 'Lucy' : actor.name, message],
         );
       }
-      req.app.get('io')?.to('platform-support-queue').emit('new-ticket', { ticketId, userName: actor.name, status: 'open' });
+      await emitAuthorizedSupportQueue(req.app.get('io'), 'new-ticket', { ticketId, userName: actor.name, status: 'open' });
     }
     res.status(created ? 201 : 200).json({ success: true, ticketId, roomId: `support-ticket-${ticketId}`, created });
   } catch (error: any) { fail(res, error); }
@@ -109,7 +110,7 @@ router.post('/tickets/:ticketId/messages', async (req: Request, res: Response) =
        RETURNING id, sender_type AS "senderType", sender_name AS "senderName", message, created_at AS "createdAt"`,
       [req.params.ticketId, actor.id, actor.name, message],
     );
-    req.app.get('io')?.to('platform-support-queue').emit('support-message', { ticketId: req.params.ticketId, ...inserted.rows[0] });
+    await emitAuthorizedSupportQueue(req.app.get('io'), 'support-message', { ticketId: req.params.ticketId, ...inserted.rows[0] });
     res.status(201).json({ success: true, message: inserted.rows[0] });
   } catch (error: any) { fail(res, error); }
 });

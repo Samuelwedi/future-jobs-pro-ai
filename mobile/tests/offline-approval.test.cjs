@@ -80,3 +80,11 @@ test('personal shift actions cannot be queued or replayed with a later server ti
   f.saved=[{id:'old-personal-clock',url,method:'POST',data:{projectId:'project'},timestamp:1}];await f.api.processQueue();assert.equal(f.saved.length,1);assert.equal(f.replayed.length,0);assert.equal((await f.api.getOfflineQueueState()).items[0].status,'review');
  }
 });
+
+test('legacy chat messages and media remain review-only with original payloads intact',async()=>{
+ const f=setup();for(const url of ['/chat/message','/chat/room/room/attachments','/chat/room/room/photo','/api/chat/message?old=1','/CHAT/MESSAGE/']){
+  const original={id:'old-chat',url,method:'POST',data:{message:'keep my words'},fileUri:'file:///original.pdf'};
+  await assert.rejects(f.api.queueAction({url,method:'POST',data:original.data}),/online/);f.saved=[original];await f.api.processQueue();assert.deepEqual(f.saved,[original]);assert.equal(f.replayed.length,0);assert.equal(f.deleted.length,0);assert.equal((await f.api.getOfflineQueueState()).items[0].status,'review');
+  await f.api.setOfflineReviewArchived(original.id,'employee',true);await f.api.setOfflineReviewArchived(original.id,'employee',false);assert.equal(f.saved[0].data.message,'keep my words');assert.equal(f.saved[0].fileUri,'file:///original.pdf');
+ }
+});

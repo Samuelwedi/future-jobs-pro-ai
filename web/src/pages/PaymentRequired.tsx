@@ -1,3 +1,4 @@
+import { clearAuthSession } from '../services/authSession';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, Container, Paper, Stack, Typography } from '@mui/material';
 import { Lock } from '@mui/icons-material';
@@ -52,7 +53,7 @@ export default function PaymentRequired() {
             <Button variant="outlined" disabled={working} onClick={manageBilling}>{working ? 'Opening…' : 'Manage existing billing'}</Button>
           </Stack>}
           <BillingPermissions />
-          <Button onClick={()=>{localStorage.removeItem('token');localStorage.removeItem('user');navigate('/login');}}>Sign in with another account</Button>
+          <Button onClick={()=>{clearAuthSession();navigate('/login');}}>Sign in with another account</Button>
         </Paper>
       </Container>
     </Box>

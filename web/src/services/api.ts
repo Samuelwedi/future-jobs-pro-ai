@@ -1,3 +1,5 @@
+import { captureAuthSession, clearAuthSession } from './authSession';
+
 const configuredBase = (import.meta.env as any).VITE_API_URL || (import.meta.env as any).VITE_API_BASE;
 
 export const API_BASE = String(
@@ -26,10 +28,10 @@ const getHeaders = (json = true): Record<string, string> => {
   };
 };
 
-const handleSessionStatus = (status: number) => {
+const handleSessionStatus = (status: number, current: () => boolean) => {
+  if (!current()) return;
   if (status === 401) {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    if (!clearAuthSession(current)) return;
     if (window.location.pathname !== '/login') window.location.assign('/login');
   }
   if (status === 402 && !['/payment-required','/pricing','/subscription','/support'].includes(window.location.pathname)) {
@@ -37,8 +39,8 @@ const handleSessionStatus = (status: number) => {
   }
 };
 
-async function parseResponse<T>(response: Response): Promise<T> {
-  handleSessionStatus(response.status);
+async function parseResponse<T>(response: Response, current: () => boolean): Promise<T> {
+  handleSessionStatus(response.status, current);
   const contentType = response.headers.get('content-type') || '';
   const body: any = contentType.includes('application/json')
     ? await response.json().catch(() => ({}))
@@ -51,11 +53,12 @@ async function parseResponse<T>(response: Response): Promise<T> {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const session = captureAuthSession();
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: { ...getHeaders(init.body !== undefined), ...(init.headers || {}) },
   });
-  return parseResponse<T>(response);
+  return parseResponse<T>(response, session.isCurrent);
 }
 
 export const api = {
@@ -75,16 +78,18 @@ export const api = {
     return request<T>(path, { method: 'DELETE', headers: getHeaders(false) });
   },
   async upload<T = any>(path: string, formData: FormData): Promise<T> {
+    const session = captureAuthSession();
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'POST',
       body: formData,
       headers: getHeaders(false),
     });
-    return parseResponse<T>(response);
+    return parseResponse<T>(response, session.isCurrent);
   },
   async download(path: string): Promise<Blob> {
+    const session = captureAuthSession();
     const response = await fetch(`${API_BASE}${path}`, { headers: getHeaders(false) });
-    handleSessionStatus(response.status);
+    handleSessionStatus(response.status, session.isCurrent);
     if (!response.ok) throw new ApiError(`Download failed with status ${response.status}`, response.status);
     return response.blob();
   },

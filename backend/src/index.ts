@@ -25,6 +25,7 @@ import { apiTrafficLimit, lucyTrafficLimit } from './middleware/trafficControl';
 import { createSharedRedisClient, trackSharedRedisClient, closeSharedRedisClients } from './config/redis';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { saveMessage } from './services/chatService';
+import { socketAuthorization, socketRoomAccess, loadSocketActor, assertSocketTokenCurrent, socketAgentRoles, socketGlobalAgentRoles, emitAuthorizedRoom } from './services/socketAuthorization';
 import {
   hasCompanyEntitlement,
   loadSubscriptionActor,
@@ -820,8 +821,6 @@ void (async () => {
 })();
 
 // Customer JWTs never grant access to the platform support-agent dashboard.
-const socketAgentRoles = new Set<string>();
-const socketGlobalAgentRoles = new Set<string>();
 
 io.use(trackSocketHandler(async (socket, next) => {
   try {
@@ -832,6 +831,11 @@ io.use(trackSocketHandler(async (socket, next) => {
     if (!decoded.id || decoded.purpose) throw new Error('Invalid access token');
     const actor = await loadSubscriptionActor(decoded.id, decoded.companyId);
     if (shutdown.isStopping()) throw new Error('Backend is shutting down');
+    socket.data.authorization = socketAuthorization(decoded, actor);
+    // The Redis adapter serializes handshake alongside data in fetchSockets.
+    socket.handshake.auth = {};
+    delete socket.handshake.headers.authorization;
+    assertSocketTokenCurrent(socket);
     socket.data.actor = {
       id: actor.id,
       companyId: actor.companyId,
@@ -844,40 +848,6 @@ io.use(trackSocketHandler(async (socket, next) => {
     next(new Error(error.message || 'Unauthorized'));
   }
 }));
-
-async function socketRoomAccess(socket: any, roomId: string): Promise<{ allowed: boolean; companyId: string }> {
-  const actor = socket.data.actor;
-  const supportMatch = /^support-ticket-([a-zA-Z0-9-]+)$/.exec(roomId);
-  if (supportMatch) {
-    const ticket = await pool.query(
-      'SELECT company_id, user_id FROM support_tickets WHERE id = $1',
-      [supportMatch[1]],
-    );
-    if (!ticket.rowCount) return { allowed: false, companyId: '' };
-    const row = ticket.rows[0];
-    const isOwner = String(row.user_id) === actor.id;
-    const isGlobalAgent = socketGlobalAgentRoles.has(actor.role);
-    const isCompanyAgent = socketAgentRoles.has(actor.role) && String(row.company_id) === actor.companyId;
-    return {
-      allowed: isOwner || isGlobalAgent || isCompanyAgent,
-      companyId: String(row.company_id),
-    };
-  }
-
-  if (!actor.subscriptionAccess) return { allowed: false, companyId: '' };
-
-  const room = await pool.query(
-    `SELECT cr.company_id,
-            EXISTS(SELECT 1 FROM chat_room_members crm WHERE crm.room_id = cr.id AND crm.user_id = $2) AS member
-     FROM chat_rooms cr WHERE cr.id = $1`,
-    [roomId, actor.id],
-  );
-  if (!room.rowCount) return { allowed: false, companyId: '' };
-  return {
-    allowed: Boolean(room.rows[0].member) && String(room.rows[0].company_id) === actor.companyId,
-    companyId: String(room.rows[0].company_id),
-  };
-}
 
 function resolveWorkforceRange(value: string, explicitStart?: string, explicitEnd?: string) {
   if (explicitStart && explicitEnd) return { start: explicitStart, end: explicitEnd };
@@ -902,30 +872,31 @@ io.on('connection', (socket) => {
       const normalizedRoomId = String(roomId || '');
       const access = await socketRoomAccess(socket, normalizedRoomId);
       if (!access.allowed) throw new Error('Room access denied');
-      socket.join(`room-${normalizedRoomId}`);
-      if (/^support-ticket-/.test(normalizedRoomId) && socketAgentRoles.has(socket.data.actor.role)) {
-        socket.to(`room-${normalizedRoomId}`).emit('agent-joined', {
-          agentName: socket.data.actor.name,
-        });
+      if (shutdown.isStopping()) throw new Error('Backend is shutting down');
+      await socket.join(`room-${normalizedRoomId}`);
+      if (/^support-ticket-/.test(normalizedRoomId) && socketAgentRoles.has(access.actor.role)) {
+        await emitAuthorizedRoom(io, normalizedRoomId, 'agent-joined', {
+          agentName: access.actor.name,
+        }, socket.id);
       }
-      acknowledge?.({ success: true });
+      if (typeof acknowledge === 'function') acknowledge({ success: true });
     } catch (error: any) {
-      acknowledge?.({ success: false, message: error.message });
+      if (typeof acknowledge === 'function') acknowledge({ success: false, message: error.message });
     }
   }));
   socket.on('leave-room', (roomId) => socket.leave(`room-${String(roomId || '')}`));
-  socket.on('join-agent-dashboard', (acknowledge) => {
-    if (!socketAgentRoles.has(socket.data.actor.role)) {
-      acknowledge?.({ success: false, message: 'Support agent access is required' });
-      return;
+  socket.on('join-agent-dashboard', trackSocketHandler(async (acknowledge) => {
+    try {
+      if (shutdown.isStopping()) throw new Error('Backend is shutting down');
+      const actor = await loadSocketActor(socket);
+      if (!socketAgentRoles.has(actor.role)) throw new Error('Support agent access is required');
+      if (shutdown.isStopping()) throw new Error('Backend is shutting down');
+      await socket.join(socketGlobalAgentRoles.has(actor.role) ? 'agent-dashboard-global' : `agent-dashboard-${actor.companyId}`);
+      if (typeof acknowledge === 'function') acknowledge({ success: true });
+    } catch (error: any) {
+      if (typeof acknowledge === 'function') acknowledge({ success: false, message: error.message });
     }
-    if (socketGlobalAgentRoles.has(socket.data.actor.role)) {
-      socket.join('agent-dashboard-global');
-    } else {
-      socket.join(`agent-dashboard-${socket.data.actor.companyId}`);
-    }
-    acknowledge?.({ success: true });
-  });
+  }));
   socket.on('chat-message', trackSocketHandler(async (data) => {
     try {
       if (shutdown.isStopping()) return;
@@ -934,10 +905,11 @@ io.on('connection', (socket) => {
       if (!roomId || !message || message.length > 5000) throw new Error('Invalid message');
       const access = await socketRoomAccess(socket, roomId);
       if (!access.allowed) throw new Error('Room access denied');
-      const saved = await saveMessage(socket.data.actor.id, roomId, message, access.companyId);
-      io.to(`room-${roomId}`).emit('new-message', {
+      if (shutdown.isStopping()) return;
+      const saved = await saveMessage(access.actor.id, roomId, message, access.companyId);
+      await emitAuthorizedRoom(io, roomId, 'new-message', {
         ...saved,
-        sender_name: socket.data.actor.name,
+        sender_name: access.actor.name,
       });
     } catch (error) {
       console.error('Chat message error:', error);

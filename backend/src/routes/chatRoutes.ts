@@ -1,5 +1,7 @@
+import { emitAuthorizedRoom } from '../services/socketAuthorization';
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
+import type { PoolClient } from 'pg';
 import { pool } from '../config/database';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
@@ -108,7 +110,7 @@ router.post('/message', async (req: Request, res: Response) => {
     if (!access.allowed) return res.status(403).json({ success: false, message: 'Forbidden' });
     const saved = await saveMessage(decoded.id, roomId, message, access.companyId);
     const io = req.app.get('io');
-    io?.to(`room-${roomId}`).emit('new-message', saved);
+    await emitAuthorizedRoom(io, roomId, 'new-message', saved);
     res.json({ success: true, message: saved });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
@@ -189,41 +191,49 @@ router.get('/rooms/:userId', async (req: Request, res: Response) => {
       return res.status(403).json({ success: false, message: 'You can only list your own conversations' });
     }
 
-    // Verify the requesting user belongs to the same company as target user
-    const requestingUser = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    const requestingUser = await pool.query(
+      'SELECT company_id FROM users WHERE id = $1 AND COALESCE(is_active,TRUE)=TRUE', [userId]);
     if (requestingUser.rows.length === 0)
       return res.status(404).json({ success: false, message: 'Requesting user not found' });
 
-    const targetUser = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId]);
-    if (targetUser.rows.length === 0)
-      return res.status(404).json({ success: false, message: 'Target user not found' });
-
-    if (requestingUser.rows[0].company_id !== targetUser.rows[0].company_id)
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-
-    // Fetch rooms from chat_rooms table
-    // We'll join with chat_room_members to get rooms the user is in
-    // and also get other user names for direct chats.
+    // Recheck current authorization in this statement, not JWT tenant/role claims or
+    // the earlier lookup. EXISTS also avoids duplicate rooms from legacy memberships.
     const result = await pool.query(`
-      SELECT 
-        cr.id,
-        cr.name,
-        cr.is_group, cr.avatar_url,
-        (SELECT u.profile_pic FROM chat_room_members m JOIN users u ON u.id=m.user_id WHERE m.room_id=cr.id AND u.id<>$1 LIMIT 1) AS other_user_avatar,
-        COALESCE(
-          (SELECT u.first_name || ' ' || u.last_name
-           FROM chat_room_members crm2
-           JOIN users u ON crm2.user_id = u.id
-           WHERE crm2.room_id = cr.id
-             AND crm2.user_id != $1
-           LIMIT 1),
-          'Chat'
-        ) AS other_user_name
+      SELECT cr.id, cr.name, COALESCE(cr.is_group,FALSE) AS is_group, cr.avatar_url,
+        peer.profile_pic AS other_user_avatar,
+        COALESCE(peer.display_name, 'Chat') AS other_user_name,
+        latest.last_message, latest.last_message_type, latest.last_message_at
       FROM chat_rooms cr
-      JOIN chat_room_members crm ON crm.room_id = cr.id
-      WHERE crm.user_id = $1
-        AND cr.company_id = (SELECT company_id FROM users WHERE id = $1)
-      ORDER BY cr.updated_at DESC
+      JOIN users requester ON requester.id = $1
+        AND requester.company_id = cr.company_id
+        AND COALESCE(requester.is_active,TRUE)=TRUE
+      LEFT JOIN LATERAL (
+        SELECT u.profile_pic, u.first_name || ' ' || u.last_name AS display_name
+        FROM users u
+        WHERE u.id <> $1 AND u.company_id = cr.company_id
+          AND COALESCE(u.is_active,TRUE)=TRUE
+          AND EXISTS (SELECT 1 FROM chat_room_members m WHERE m.room_id=cr.id AND m.user_id=u.id)
+        ORDER BY u.id
+        LIMIT 1
+      ) peer ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT LEFT(cm.message, 160) AS last_message,
+          CASE WHEN a.id IS NULL THEN 'text'
+               WHEN a.mime_type LIKE 'image/%' THEN 'image'
+               WHEN a.mime_type LIKE 'audio/%' THEN 'audio'
+               ELSE 'file' END AS last_message_type,
+          cm.created_at AS last_message_at, cm.id AS message_id
+        FROM chat_messages cm
+        JOIN users sender ON sender.id = cm.sender_id
+        LEFT JOIN chat_attachments a ON a.id = cm.attachment_id AND a.room_id = cr.id
+        WHERE cm.room_id = cr.id AND cm.company_id = cr.company_id
+        ORDER BY cm.created_at DESC NULLS LAST, cm.id DESC
+        LIMIT 1
+      ) latest ON TRUE
+      WHERE cr.id NOT LIKE 'support-ticket-%'
+        AND EXISTS (SELECT 1 FROM chat_room_members crm WHERE crm.room_id=cr.id AND crm.user_id=$1)
+      ORDER BY (latest.message_id IS NOT NULL) DESC, latest.last_message_at DESC NULLS LAST,
+        CASE WHEN latest.message_id IS NULL THEN cr.updated_at END DESC NULLS LAST, cr.id ASC
     `, [userId]);
 
     res.json({ success: true, rooms: result.rows });
@@ -233,120 +243,152 @@ router.get('/rooms/:userId', async (req: Request, res: Response) => {
   }
 });
 
+// Creation uses one checked-out connection. Lock all requested users in UUID
+// order before validating their current tenant/activity, then room and members.
+// This serializes overlapping participant sets without reversed-pair deadlocks.
+class ChatCreationError extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
+const chatUserId = (value: unknown): string | null =>
+  typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+    ? value.toLowerCase() : null;
+const MAX_GROUP_MEMBERS = 100;
+
+async function createWithMembers(
+  actorId: string,
+  memberIds: string[],
+  expectedCompanyId: string | undefined,
+  create: (client: PoolClient, companyId: string, members: string[]) => Promise<string>,
+): Promise<string> {
+  const client = await pool.connect();
+  let discardClient = false;
+  let commitAttempted = false;
+  try {
+    await client.query('BEGIN');
+    await client.query("SET LOCAL lock_timeout = '5s'");
+    await client.query("SET LOCAL statement_timeout = '10s'");
+    const members = [...new Set([actorId, ...memberIds])].sort();
+    // Do not filter by activity/company before locking: use the current row after
+    // any concurrent update commits, not the subscription gate's earlier read.
+    const result = await client.query(
+      `SELECT id, company_id, COALESCE(is_active, TRUE) AS active FROM users
+       WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE`,
+      [members],
+    );
+    const actor = result.rows.find(user => user.id === actorId);
+    if (!actor) throw new ChatCreationError(404, 'User not found');
+    if (!actor.active || !actor.company_id || (expectedCompanyId && expectedCompanyId !== actor.company_id)) {
+      throw new ChatCreationError(403, 'Your account is no longer eligible to create this conversation');
+    }
+    if (result.rows.length !== members.length || result.rows.some(user => !user.active || user.company_id !== actor.company_id)) {
+      throw new ChatCreationError(403, 'Every participant must be an active user in your company');
+    }
+    const roomId = await create(client, actor.company_id, members);
+    commitAttempted = true;
+    await client.query('COMMIT');
+    return roomId;
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch { discardClient = true; }
+    if (commitAttempted) {
+      // A ROLLBACK acknowledgment cannot undo a COMMIT that already succeeded.
+      // Do not reuse this connection or classify an unknown outcome as retryable.
+      discardClient = true;
+      throw new Error('Conversation creation commit was not acknowledged', { cause: error });
+    }
+    throw error;
+  } finally {
+    client.release(discardClient);
+  }
+}
+function creationFailure(res: Response, error: any): void {
+  if (error instanceof ChatCreationError) {
+    res.status(error.status).json({ success: false, message: error.message });
+  } else if (['55P03', '57014', '40P01'].includes(error?.code)) {
+    // No automatic retry, especially for groups, whose commit outcome can be
+    // uncertain after a connection failure. Only definite SQL contention maps here.
+    res.status(503).json({ success: false, message: 'Conversation creation is busy. Check your chats before trying again.' });
+  } else {
+    console.error('Error creating chat:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+}
+
 // ─── POST /api/chat/create-direct ──────────────────────────────────
 router.post('/create-direct', async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer '))
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-
     const decoded = verifyToken(req);
-    const userId1 = decoded.id;
-    const userId2 = String(req.body?.userId2 || '');
-    if (!userId2 || userId1 === userId2) {
+    const userId1 = chatUserId(decoded.id);
+    const userId2 = chatUserId(req.body?.userId2);
+    if (!userId1 || !userId2 || userId1 === userId2) {
       return res.status(400).json({ success: false, message: 'Choose another user for this conversation' });
     }
-
-    // Ensure users exist and belong to same company
-    const user1 = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId1]);
-    const user2 = await pool.query('SELECT company_id FROM users WHERE id = $1', [userId2]);
-    if (user1.rows.length === 0 || user2.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-    if (user1.rows[0].company_id !== user2.rows[0].company_id) {
-      return res.status(403).json({ success: false, message: 'Users not in same company' });
-    }
-
-    // Create a deterministic room ID (sorted user IDs)
-    const roomId = [userId1, userId2].sort().join('-');
-
-    // Check if the room already exists in chat_rooms
-    const existing = await pool.query('SELECT id FROM chat_rooms WHERE id = $1', [roomId]);
-    if (existing.rows.length === 0) {
-      // Create the room
-      await pool.query(
-        `INSERT INTO chat_rooms (id, is_group, company_id)
-         VALUES ($1, false, $2)`,
-        [roomId, user1.rows[0].company_id]
+    const expectedCompanyId = res.locals.subscriptionActor?.companyId || decoded.companyId;
+    const roomId = await createWithMembers(userId1, [userId2], expectedCompanyId, async (client, companyId, members) => {
+      const id = members.join('-');
+      // A primary-key conflict may come from a legacy/other writer. Never update
+      // that room or add members to it merely because its ID matches this pair.
+      const inserted = await client.query(
+        `INSERT INTO chat_rooms (id, is_group, company_id) VALUES ($1, false, $2)
+         ON CONFLICT (id) DO NOTHING RETURNING id`,
+        [id, companyId],
       );
-      // Add both users as members
-      await pool.query(
-        `INSERT INTO chat_room_members (room_id, user_id)
-         VALUES ($1, $2), ($1, $3)`,
-        [roomId, userId1, userId2]
-      );
-    }
-
+      if (inserted.rowCount) {
+        await client.query(
+          `INSERT INTO chat_room_members (room_id, user_id)
+           SELECT $1, unnest($2::uuid[])`,
+          [id, members],
+        );
+      } else {
+        const room = (await client.query(
+          'SELECT company_id, is_group FROM chat_rooms WHERE id = $1 FOR UPDATE', [id],
+        )).rows[0];
+        // The room lock blocks new FK-backed memberships; lock existing members
+        // too so removal/replacement cannot race the exact-membership check.
+        const existing = await client.query(
+          'SELECT user_id FROM chat_room_members WHERE room_id = $1 ORDER BY user_id LIMIT 3 FOR UPDATE', [id],
+        );
+        if (!room || room.company_id !== companyId || room.is_group !== false ||
+            existing.rows.length !== members.length || existing.rows.some((member, index) => member.user_id !== members[index])) {
+          throw new ChatCreationError(409, 'This conversation cannot be reopened. Contact your administrator.');
+        }
+      }
+      return id;
+    });
     res.json({ success: true, roomId });
-  } catch (error) {
-    console.error('Error creating direct chat:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+  } catch (error) { creationFailure(res, error); }
 });
 
 // ─── POST /api/chat/create-group ───────────────────────────────────
 router.post('/create-group', async (req: Request, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer '))
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
-
     const decoded = verifyToken(req);
-    const name = String(req.body?.name || '').trim();
-    const creatorId = decoded.id;
-    const memberIds = Array.isArray(req.body?.memberIds)
-      ? [...new Set(req.body.memberIds.map((id: unknown) => String(id)).filter(Boolean))]
-      : [];
-    if (!name || name.length > 100 || memberIds.length === 0) {
-      return res.status(400).json({ success: false, message: 'A group name and at least one member are required' });
+    const creatorId = chatUserId(decoded.id);
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const requested = req.body?.memberIds;
+    if (!creatorId || !name || name.length > 100 || name.includes('\0') || !Array.isArray(requested) ||
+        !requested.length || requested.length > MAX_GROUP_MEMBERS || requested.some(id => !chatUserId(id))) {
+      return res.status(400).json({ success: false, message: 'A group name and 1 to 100 valid members are required' });
     }
-
-    // Ensure creator belongs to a company
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [creatorId]);
-    if (userRes.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Creator not found' });
-    }
-    const companyId = userRes.rows[0].company_id;
-
-    const allowedMembers = await pool.query(
-      `SELECT id FROM users WHERE company_id = $1 AND id = ANY($2::uuid[]) AND COALESCE(is_active, TRUE) = TRUE`,
-      [companyId, memberIds],
-    );
-    if (allowedMembers.rowCount !== memberIds.length) {
-      return res.status(403).json({ success: false, message: 'Every group member must be an active user in your company' });
-    }
-
-    // Generate a unique room ID for group
-    const roomId = `group-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
+    const memberIds = requested.map(id => chatUserId(id)!);
+    const expectedCompanyId = res.locals.subscriptionActor?.companyId || decoded.companyId;
+    const roomId = await createWithMembers(creatorId, memberIds, expectedCompanyId, async (client, companyId, members) => {
+      // Keep the existing group ID/response contract. This is not a retry key:
+      // two successful requests intentionally create two distinct groups.
+      const id = `group-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
       await client.query(
         `INSERT INTO chat_rooms (id, name, is_group, company_id, created_by)
          VALUES ($1, $2, true, $3, $4)`,
-        [roomId, name, companyId, creatorId],
+        [id, name, companyId, creatorId],
       );
-      const allMembers = [...new Set([creatorId, ...memberIds])];
-      for (const userId of allMembers) {
-        await client.query(
-          `INSERT INTO chat_room_members (room_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [roomId, userId],
-        );
-      }
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-
+      await client.query(
+        `INSERT INTO chat_room_members (room_id, user_id)
+         SELECT $1, unnest($2::uuid[])`,
+        [id, members],
+      );
+      return id;
+    });
     res.json({ success: true, roomId });
-  } catch (error) {
-    console.error('Error creating group chat:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+  } catch (error) { creationFailure(res, error); }
 });
 
 router.get('/room/:roomId/details', async (req, res) => {
@@ -390,6 +432,7 @@ router.post('/room/:roomId/attachments', async(req,res,next)=>{
  }catch{res.status(500).json({success:false,message:'Could not check conversation access'});}
 },parseFile(fileUpload.single('file')),async(req,res)=>{
  const client=await pool.connect();
+ let released=false;
  let uploaded:string|null=null;
  let committed=false;
  try {
@@ -404,11 +447,12 @@ router.post('/room/:roomId/attachments', async(req,res,next)=>{
   await client.query('UPDATE chat_rooms SET updated_at=NOW() WHERE id=$1',[req.params.roomId]);
   const sender=await client.query("SELECT first_name || ' ' || last_name AS sender_name,profile_pic AS sender_avatar FROM users WHERE id=$1",[(req as any).chatUser]);
   await client.query('COMMIT');committed=true;
+  client.release();released=true;
   const message={...saved.rows[0],...sender.rows[0],attachment_name:filename,attachment_type:mime,attachment_size:req.file.size};
-  req.app.get('io')?.to(`room-${req.params.roomId}`).emit('new-message',message);
+  await emitAuthorizedRoom(req.app.get('io'), String(req.params.roomId), 'new-message', message);
   res.status(201).json({success:true,message});
- }catch(e:any){await client.query('ROLLBACK');if(uploaded&&!committed)await removePrivateChatFile(uploaded).catch(()=>{});res.status(400).json({success:false,message:e.message||'Attachment upload failed'});}
- finally{client.release();}
+ }catch(e:any){if(!committed)await client.query('ROLLBACK');if(uploaded&&!committed)await removePrivateChatFile(uploaded).catch(()=>{});res.status(400).json({success:false,message:e.message||'Attachment upload failed'});}
+ finally{if(!released)client.release();}
 });
 router.get('/attachments/:id/content',async(req,res)=>{
  try {

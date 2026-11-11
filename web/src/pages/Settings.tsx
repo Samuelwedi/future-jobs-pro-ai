@@ -1,3 +1,4 @@
+import { captureAuthSession, updateAuthUser } from '../services/authSession';
 import { api } from '../services/api';
 import { Link as RouterLink } from 'react-router-dom';
 import React, { useState, useEffect } from 'react';
@@ -46,10 +47,11 @@ export default function Settings() {
     setError(''); setSaved(false);
     if (!firstName.trim() || !lastName.trim()) { setError('First and last names are required.'); return; }
     setSaving(true);
+    const session = captureAuthSession();
     try {
     const response = await api.put('/api/users/profile', {firstName: firstName.trim(), lastName: lastName.trim()});
     const updated = { ...user, firstName: response.user.first_name, lastName: response.user.last_name, fullName: response.user.full_name };
-    localStorage.setItem('user', JSON.stringify(updated));
+    if (!updateAuthUser(updated, session.isCurrent)) return;
     setUser(updated);
     setSaved(true);
     } catch (cause: any) { setError(cause.message || 'Profile could not be saved.'); }

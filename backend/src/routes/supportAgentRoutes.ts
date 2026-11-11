@@ -1,3 +1,4 @@
+import { emitAuthorizedRoom } from '../services/socketAuthorization';
 import {mountSupportMedia,supportMessageQuery} from '../services/supportMedia';
 import express, { NextFunction, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
@@ -175,7 +176,7 @@ router.post('/tickets/:ticketId/accept', authenticateAgent, async (req: AgentReq
     [req.supportAgent!.id, req.params.ticketId],
   );
   if (!result.rowCount) return res.status(409).json({ success: false, message: 'This ticket was accepted by another agent' });
-  req.app.get('io')?.to(`room-support-ticket-${req.params.ticketId}`).emit('agent-joined', {
+  await emitAuthorizedRoom(req.app.get('io'), `support-ticket-${req.params.ticketId}`, 'agent-joined', {
     agentName: `${req.supportAgent!.firstName} ${req.supportAgent!.lastName}`,
   });
   res.json({ success: true });
@@ -210,7 +211,7 @@ router.post('/tickets/:ticketId/reply', authenticateAgent, async (req: AgentRequ
      RETURNING id, sender_type AS "senderType", sender_name AS "senderName", message, created_at AS "createdAt"`,
     [req.params.ticketId, req.supportAgent!.id, senderName, message],
   );
-  req.app.get('io')?.to(`room-support-ticket-${req.params.ticketId}`).emit('support-message', inserted.rows[0]);
+  await emitAuthorizedRoom(req.app.get('io'), `support-ticket-${req.params.ticketId}`, 'support-message', inserted.rows[0]);
   res.status(201).json({ success: true, message: inserted.rows[0] });
 });
 
@@ -221,7 +222,7 @@ router.post('/tickets/:ticketId/resolve', authenticateAgent, async (req: AgentRe
     [req.params.ticketId, req.supportAgent!.id],
   );
   if (!result.rowCount) return res.status(403).json({ success: false, message: 'Only the assigned agent can resolve this ticket' });
-  req.app.get('io')?.to(`room-support-ticket-${req.params.ticketId}`).emit('ticket-resolved', { ticketId: req.params.ticketId });
+  await emitAuthorizedRoom(req.app.get('io'), `support-ticket-${req.params.ticketId}`, 'ticket-resolved', { ticketId: req.params.ticketId });
   res.json({ success: true });
 });
 

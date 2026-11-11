@@ -13,7 +13,7 @@ const key=(id:string)=>`offline-queue-v2:${id}`;
 // Apply this to both new work and old queued records before replay.
 export function requiresOnlineConfirmation(url:string){
  const path=url.split('?')[0].toLowerCase();
- return /^\/(?:api\/)?voice\/process(?:-transcript)?\/?$/.test(path) || /^\/(?:api\/)?attachments\/upload\/?$/.test(path) || /^\/(?:api\/)?voice\/[^/]+\/transcript\/?$/.test(path) || /\/(?:time-entries\/(?:bulk-)?clock-(?:in|out)|crew\/clock-(?:in|out))(?:\/|$)/.test(path) || /\/(auth|team|users|projects|kiosk|workforce-operations|pto|pto-history|companies|payroll-rules|payroll|manual-payroll|direct-deposit|payouts?|stripe|subscriptions?|billing|approvals?|lucy(?:-v2)?|invoices?|expenses|integrations)(\/|$)/.test(path);
+ return /^\/(?:api\/)?chat(?:\/|$)/.test(path) || /^\/(?:api\/)?voice\/process(?:-transcript)?\/?$/.test(path) || /^\/(?:api\/)?attachments\/upload\/?$/.test(path) || /^\/(?:api\/)?voice\/[^/]+\/transcript\/?$/.test(path) || /\/(?:time-entries\/(?:bulk-)?clock-(?:in|out)|crew\/clock-(?:in|out))(?:\/|$)/.test(path) || /\/(auth|team|users|projects|kiosk|workforce-operations|pto|pto-history|companies|payroll-rules|payroll|manual-payroll|direct-deposit|payouts?|stripe|subscriptions?|billing|approvals?|lucy(?:-v2)?|invoices?|expenses|integrations)(\/|$)/.test(path);
 }
 export type QueuedAction = {id:string;timestamp:number;url:string;method:string;archived?:boolean;fileUri?:string;[key:string]:any};
 export const isEvidenceUpload = (url:string) => /^\/(?:api\/)?photos\/upload\/?(?:\?|$)/i.test(url);

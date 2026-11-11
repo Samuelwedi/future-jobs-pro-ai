@@ -11,6 +11,7 @@ import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { calendarDate, parseCalendarDate } from '../utils/calendarDate';
+import { ScheduleConflictNotice } from '../components/ScheduleConflictNotice';
 import { format as formatDate } from 'date-fns';
 
 interface Project {
@@ -40,7 +41,7 @@ export default function CreateShiftScreen() {
   const [projectSearchText, setProjectSearchText] = useState(editing?.project_name || '');
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
-  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>((editing?.assigned_user_ids || [editing?.user_id]).filter(Boolean));
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>(Array.isArray(editing?.assigned_user_ids) ? editing.assigned_user_ids.filter((id: unknown) => typeof id === 'string' && id) : []);
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; type: string } | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -252,6 +253,9 @@ export default function CreateShiftScreen() {
         multiline
         numberOfLines={3}
       />
+
+      <ScheduleConflictNotice date={calendarDate(date)} startTime={startTime} endTime={endTime}
+        projectId={selectedProjectId} employeeIds={selectedEmployeeIds} excludeShiftId={editing?.id} />
 
       {/* File Attachment */}
       <View style={styles.attachmentSection}>

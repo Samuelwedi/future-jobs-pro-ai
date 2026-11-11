@@ -176,6 +176,121 @@ class ApiService {
     return { data: response.data, isSessionCurrent };
   }
 
+  async getChatRooms(owner: { id: string; companyId: string; role: string }, current: () => boolean): Promise<{ data: unknown; isSessionCurrent: () => boolean }> {
+    const expectedOwner = { ...owner };
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const isSessionCurrent = () => !!token && token === this.token && revision === this.authRevision;
+    const assertCurrent = () => {
+      if (!isSessionCurrent() || !current()) throw new Error('Account or inbox changed. Refresh conversations.');
+    };
+    const beforeDispatch = async () => {
+      assertCurrent();
+      const stored = JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+      assertCurrent();
+      if (!expectedOwner.id || !expectedOwner.companyId || stored?.id !== expectedOwner.id
+        || stored?.companyId !== expectedOwner.companyId || stored?.role !== expectedOwner.role) {
+        throw new Error('Account or inbox changed. Refresh conversations.');
+      }
+    };
+    await beforeDispatch();
+    assertCurrent();
+    const response = await this.client.get(`/chat/rooms/${encodeURIComponent(expectedOwner.id)}`, {
+      expectedAuthToken: token!, expectedAuthRevision: revision, expectedCurrent: current,
+      expectedBeforeDispatch: beforeDispatch, fenceUnauthorizedToCurrent: true,
+    } as EvidenceConfig);
+    assertCurrent();
+    return { data: response.data, isSessionCurrent };
+  }
+
+  // Chat has no durable server idempotency contract. Keep every mutation online,
+  // tied to the opening owner/session, and never replay an uncertain outcome.
+  private async openChatTransport(owner: { id: string; companyId: string; role: string }, current: () => boolean) {
+    const expectedOwner = { ...owner };
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const isCurrent = () => !!token && token === this.token && revision === this.authRevision && current();
+    const assertCurrent = () => {
+      if (!isCurrent()) throw evidenceError('CHAT_NOT_SENT', 'Account or conversation changed. Reopen the conversation.');
+    };
+    assertCurrent();
+    const stored = JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+    assertCurrent();
+    if (!expectedOwner.id || !expectedOwner.companyId || stored?.id !== expectedOwner.id
+      || stored?.companyId !== expectedOwner.companyId || stored?.role !== expectedOwner.role) {
+      throw evidenceError('CHAT_NOT_SENT', 'Account or conversation changed. Reopen the conversation.');
+    }
+    const beforeDispatch = async () => {
+      const latest = JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+      assertCurrent();
+      if (latest?.id !== expectedOwner.id || latest?.companyId !== expectedOwner.companyId || latest?.role !== expectedOwner.role) {
+        throw evidenceError('CHAT_NOT_SENT', 'Account or conversation changed. Reopen the conversation.');
+      }
+    };
+    const config = { expectedAuthToken: token!, expectedAuthRevision: revision, expectedCurrent: current, expectedBeforeDispatch: beforeDispatch, fenceUnauthorizedToCurrent: true } as EvidenceConfig;
+    const read = async (url: string) => {
+      assertCurrent();
+      const response = await this.client.get(url, config);
+      assertCurrent();
+      return response.data;
+    };
+    const write = async (url: string, data: unknown, multipart = false) => {
+      assertCurrent();
+      const online = await checkOnlineStatus();
+      assertCurrent();
+      if (!online) throw evidenceError('CHAT_NOT_SENT', 'Offline. Nothing was sent or queued.');
+      let response;
+      try {
+        response = await this.client.post(url, data, {
+          ...config, ...(multipart ? { headers: { 'Content-Type': 'multipart/form-data' } } : {}),
+        } as EvidenceConfig);
+      } catch (error: any) {
+        assertCurrent();
+        // Multipart routes can return 400 even after commit. Only text 400
+        // and pre-admission auth/size/type failures prove that nothing was saved.
+        if (error?.code === 'CHAT_NOT_SENT' || [401, 403, 413, 415].includes(error?.response?.status)
+          || (!multipart && error?.response?.status === 400)) {
+          throw evidenceError('CHAT_NOT_SENT', 'Not sent. Check your access and message or file.');
+        }
+        throw evidenceError('CHAT_UNCERTAIN', 'Send not confirmed. Check the conversation before sending again.');
+      }
+      assertCurrent();
+      return response.data;
+    };
+    return { token: token!, isCurrent, assertCurrent, read, write };
+  }
+
+  async openChatCreationSession(owner: { id: string; companyId: string; role: string }, current: () => boolean) {
+    const { isCurrent, read, write } = await this.openChatTransport(owner, current);
+    return {
+      isCurrent,
+      // This existing endpoint derives company from the authenticated user and
+      // returns active coworkers only. Do not send a caller-selected company.
+      readUsers: () => read('/users/company'),
+      createDirect: (userId2: string) => write('/chat/create-direct', { userId2 }),
+      createGroup: (name: string, memberIds: string[]) => write('/chat/create-group', { name, memberIds: [...memberIds] }),
+    };
+  }
+
+  async openChatSession(roomId: string, owner: { id: string; companyId: string; role: string }, current: () => boolean) {
+    if (!roomId) throw evidenceError('CHAT_NOT_SENT', 'A conversation is required.');
+    const { token, isCurrent, assertCurrent, read, write } = await this.openChatTransport(owner, current);
+    return {
+      token, isCurrent,
+      readMessages: () => read(`/chat/messages/${encodeURIComponent(roomId)}`),
+      readRoom: () => read(`/chat/room/${encodeURIComponent(roomId)}/details`),
+      sendMessage: (message: string) => write('/chat/message', { roomId, message }),
+      upload: (kind: 'attachments' | 'photo', asset: { uri: string; name: string; mimeType?: string }) => {
+        assertCurrent();
+        const field = kind === 'photo' ? 'photo' : 'file';
+        const metadata = uploadMetadata(asset.uri, field, asset);
+        const form = new FormData();
+        form.append(field, { uri: asset.uri, name: metadata.name, type: metadata.type } as any);
+        return write(`/chat/room/${encodeURIComponent(roomId)}/${kind}`, form, true);
+      },
+    };
+  }
+
   // A synchronous fence remains usable while AuthContext is awaiting storage.
   captureSessionGuard(): () => boolean {
     const token = this.token;
@@ -233,6 +348,17 @@ class ApiService {
   async readActiveClock<T>(owner: { id: string; companyId: string; role: string }, current: () => boolean): Promise<T> {
     const session = await this.clockRequestSession(owner, current);
     const response = await this.client.get<T>(`/time-entries/active?userId=${encodeURIComponent(owner.id)}`, session.config);
+    session.assertCurrent();
+    return response.data;
+  }
+
+  async checkScheduleConflicts<T>(data: Record<string, unknown>,
+    owner: { id: string; companyId: string; role: string }, current: () => boolean): Promise<T> {
+    const session = await this.clockRequestSession(owner, current);
+    if (!await checkOnlineStatus()) throw new Error('Overlap checks require an online connection.');
+    session.assertCurrent();
+    // A read-only POST: never enqueue or replay a stale preview.
+    const response = await this.client.post<T>('/schedule/conflicts', data, session.config);
     session.assertCurrent();
     return response.data;
   }

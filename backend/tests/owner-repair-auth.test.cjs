@@ -10,6 +10,7 @@ function harness(decoded, role='owner') {
    if(name==='express')return {Router:()=>router};
    if(name==='bcryptjs')return {};
    if(name==='jsonwebtoken')return {verify:()=>decoded};
+   if(name.endsWith('/socketAuthorization'))return require('../dist/services/socketAuthorization');
    if(name.endsWith('/supportMedia'))return {mountSupportMedia(){}};
    if(name.endsWith('/database'))return {pool:{query:async(sql,args)=>{queries.push({sql,args});return {rowCount:role?1:0,rows:role?[{id:'platform-agent',role}]:[]};}}};
    throw Error(name);

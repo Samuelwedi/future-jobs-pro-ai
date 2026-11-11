@@ -1,12 +1,12 @@
 import { es, fr, enUS } from 'date-fns/locale';
 import { useLang } from '../context/LanguageContext';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, SectionList, ActivityIndicator, RefreshControl,
-  TouchableOpacity,  ScrollView, Alert, TextInput, Linking,
+  TouchableOpacity,  ScrollView, Alert, TextInput, Linking, Platform,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { API_URL, api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -14,6 +14,7 @@ import { format as formatDate, startOfWeek, endOfWeek, parseISO } from 'date-fns
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { prepareTimesheetExportDirectory } from '../services/timesheetExportCache';
 import { getPendingAttachment, startAttachmentUpload, recoverAttachmentUpload, type AttachmentReceipt } from '../services/attachmentReceiptUpload';
 import { timesheetDay, sumTimesheetHours } from '../utils/timesheetTotals';
 
@@ -49,6 +50,9 @@ export default function TimesheetScreen() {
   const format = (date: Date, pattern: string) => formatDate(date, pattern, {locale: lang === 'es' ? es : lang === 'fr' ? fr : enUS});
   const navigation = useNavigation<any>();
   const { user } = useAuth();
+  // Token replacement precedes AuthContext's user update. An old user render must
+  // not acquire the replacement session, including on unrelated state rerenders.
+  const isRenderedSessionCurrent = useMemo(() => api.captureSessionGuard(), [user]);
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,7 +73,10 @@ export default function TimesheetScreen() {
   const writeLock = useRef(false);
   const writeEpoch = useRef(0);
   const [writing, setWriting] = useState(false);
-  const exportLock = useRef(false);
+  const exportLock = useRef<symbol | null>(null);
+  const exportEpoch = useRef(0);
+  const exportFocused = useRef(false);
+  const exportMounted = useRef(true);
   const [exporting, setExporting] = useState(false);
 
   const [timezone, setTimezone] = useState<string | undefined>();
@@ -82,7 +89,16 @@ export default function TimesheetScreen() {
   const weekEnd = format(endOfWeek(baseDate, { weekStartsOn: 1 }), 'yyyy-MM-dd');
   const exportScope = `${user?.id || ''}:${user?.companyId || ''}:${user?.role || ''}:${selectedUserId}:${weekStart}:${weekEnd}`;
   const currentExportScope = useRef<string | null>(exportScope);
+  if (currentExportScope.current !== exportScope) exportEpoch.current += 1;
   currentExportScope.current = exportScope;
+  useFocusEffect(useCallback(() => {
+    exportFocused.current = true;
+    return () => { exportFocused.current = false; exportEpoch.current += 1; };
+  }, []));
+  useEffect(() => {
+    exportMounted.current = true;
+    return () => { exportMounted.current = false; exportEpoch.current += 1; };
+  }, []);
   const writeScope = `${exportScope}:${selectedEntry?.id || ''}`;
   const currentWriteScope = useRef<string | null>(writeScope);
   currentWriteScope.current = writeScope;
@@ -154,43 +170,73 @@ export default function TimesheetScreen() {
 
   const onRefresh = () => { setRefreshing(true); fetchEntries(); };
 
-  const handleExport = async (format: 'csv' | 'pdf') => {
-    if (exportLock.current) return;
-    exportLock.current = true;
-    setExporting(true);
-    const scope = exportScope;
+  const handleExport = async (format: 'csv' | 'pdf', isCurrent: () => boolean) => {
+    if (!isCurrent()) return;
     let fileUri: string | null = null;
+    let handoffAttempted = false;
     try {
       const userId = selectedUserId || user?.id;
       const token = await api.getToken();
+      if (!isCurrent()) return;
       if (!userId || !token) throw new Error(t('Not authenticated'));
-      if (!(await Sharing.isAvailableAsync())) throw new Error(t('Sharing is unavailable on this device'));
-      const directory = FileSystem.cacheDirectory;
-      if (!directory) throw new Error(t('File storage is unavailable'));
+      if (Platform.OS === 'web') throw new Error(t('Sharing is unavailable on this device'));
+      const available = await Sharing.isAvailableAsync();
+      if (!isCurrent()) return;
+      if (!available) throw new Error(t('Sharing is unavailable on this device'));
+      if (!FileSystem.cacheDirectory) throw new Error(t('File storage is unavailable'));
+      const directory = await prepareTimesheetExportDirectory(FileSystem.cacheDirectory, isCurrent);
+      if (!isCurrent() || !directory) return;
       fileUri = `${directory}timesheet_${weekStart}_${weekEnd}_${Date.now()}_${Math.random().toString(36).slice(2)}.${format}`;
       const url = `${API_URL}/time-entries/export?userId=${encodeURIComponent(userId)}&start=${weekStart}&end=${weekEnd}&format=${format}`;
       const result = await FileSystem.downloadAsync(url, fileUri, {headers: {Authorization: `Bearer ${token}`}});
+      if (!isCurrent()) return;
       if (result.status !== 200) throw new Error(t('Could not export timesheet: ') + result.status);
       const mime = Object.entries(result.headers || {}).find(([key]) => key.toLowerCase() === 'content-type')?.[1] || '';
       const expected = format === 'pdf' ? 'application/pdf' : 'text/csv';
       if (!mime.toLowerCase().startsWith(expected)) throw new Error(t('Could not export timesheet: ') + t('Unexpected file type'));
       const currentToken = await api.getToken();
-      if (currentExportScope.current !== scope || currentToken !== token) return;
+      if (!isCurrent() || currentToken !== token) return;
+      // Android resolves at chooser return, before the recipient necessarily reads.
+      // A rejected native call can also have an uncertain handoff; retain either way.
+      handoffAttempted = true;
       await Sharing.shareAsync(fileUri, { mimeType: expected, UTI: format === 'pdf' ? 'com.adobe.pdf' : 'public.comma-separated-values-text' });
     } catch (error) {
-      if (currentExportScope.current === scope) Alert.alert(t('Error'), error instanceof Error ? error.message : t('Could not export timesheet: '));
+      if (isCurrent()) Alert.alert(t('Error'), error instanceof Error ? error.message : t('Could not export timesheet: '));
     } finally {
-      if (fileUri) await FileSystem.deleteAsync(fileUri, {idempotent:true}).catch(() => {});
-      exportLock.current = false;
-      if (currentExportScope.current !== null) setExporting(false);
+      if (fileUri && !handoffAttempted) await FileSystem.deleteAsync(fileUri, {idempotent:true}).catch(() => {});
     }
   };
 
-  const chooseExport = () => Alert.alert(t('Export timesheet'), t('Choose format'), [
-    {text:'CSV', onPress:() => {void handleExport('csv');}},
-    {text:'PDF', onPress:() => {void handleExport('pdf');}},
-    {text:t('Cancel'), style:'cancel'},
-  ]);
+  const chooseExport = () => {
+    if (exportLock.current) return;
+    const scope = exportScope, epoch = exportEpoch.current;
+    const isSessionCurrent = api.captureSessionGuard();
+    const isCurrent = () => exportMounted.current && exportFocused.current
+      && currentExportScope.current === scope && exportEpoch.current === epoch
+      && isRenderedSessionCurrent() && isSessionCurrent();
+    if (!isCurrent()) return;
+    const operation = Symbol('timesheet export');
+    exportLock.current = operation;
+    setExporting(true);
+    let sharing = false;
+    const finish = () => {
+      if (exportLock.current !== operation) return;
+      exportLock.current = null;
+      if (exportMounted.current) setExporting(false);
+    };
+    const cancel = () => { if (!sharing) finish(); };
+    const share = async (format: 'csv' | 'pdf') => {
+      if (sharing || exportLock.current !== operation) return;
+      sharing = true;
+      try { await handleExport(format, isCurrent); }
+      finally { finish(); }
+    };
+    Alert.alert(t('Export timesheet'), t('Choose format'), [
+      {text:'CSV', onPress:() => {void share('csv');}},
+      {text:'PDF', onPress:() => {void share('pdf');}},
+      {text:t('Cancel'), style:'cancel', onPress:cancel},
+    ], {cancelable:true, onDismiss:cancel});
+  };
 
   // ─── Group entries ───
   const groupByDay = (items: TimeEntry[]): DaySection[] => {

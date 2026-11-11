@@ -9,6 +9,8 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { searchSchedule, visibleSchedule } from '../utils/scheduleSearch';
+import { scheduleCalendar, CALENDAR_TIME_NOTICE } from '../utils/scheduleCalendar';
+import { shareCalendarFile } from '../services/calendarShare';
 import { calendarDate, parseCalendarDate } from '../utils/calendarDate';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -29,6 +31,15 @@ interface Shift {
   notes?: string;
   attachment_url?: string;
   attachment_type?: string;
+}
+
+interface LoadedSchedule {
+  shifts: Shift[];
+  start: string;
+  end: string;
+  scope: string;
+  request: number;
+  isSessionCurrent: () => boolean;
 }
 
 interface Employee {
@@ -61,6 +72,17 @@ export default function ScheduleScreen() {
   const [selectedEmployeeName, setSelectedEmployeeName] = useState(t("My Schedule"));
   const [showEmployeePicker, setShowEmployeePicker] = useState(false);
 
+  const scheduleScope = JSON.stringify([user?.id, user?.companyId, user?.role, selectedEmployeeId, viewMode, selectedDate.getTime(), currentMonth.getTime()]);
+  const currentScheduleScope = useRef(scheduleScope);
+  currentScheduleScope.current = scheduleScope;
+  const focusActive = useRef(false);
+  const mounted = useRef(true);
+  const loadedSchedule = useRef<LoadedSchedule | null>(null);
+  const [exportReady, setExportReady] = useState(false);
+  const exportLock = useRef<symbol | null>(null);
+  const [exporting, setExporting] = useState(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+
   const employeeRequestNumber = useRef(0);
   const fetchEmployees = async () => {
     const request = ++employeeRequestNumber.current;
@@ -79,6 +101,11 @@ export default function ScheduleScreen() {
   const canManage = ['boss','manager','admin'].includes(user?.role || '');
   const fetchShifts = async () => {
     const request = ++requestNumber.current;
+    const scope = scheduleScope;
+    const isSessionCurrent = api.captureSessionGuard();
+    const isCurrent = () => request === requestNumber.current && scope === currentScheduleScope.current && focusActive.current && isSessionCurrent();
+    loadedSchedule.current = null;
+    setExportReady(false);
     let start: string, end: string;
     const d = selectedDate;
     switch (viewMode) {
@@ -101,8 +128,9 @@ export default function ScheduleScreen() {
 
     try {
       const userId = selectedEmployeeId || user?.id;
+      if (!userId || !user?.companyId || !isCurrent()) return;
       const res: any = await api.get(
-        `/schedule/my-shifts?userId=${userId}&start=${start}&end=${end}`
+        `/schedule/my-shifts?userId=${encodeURIComponent(userId)}&start=${start}&end=${end}`
       );
       let fetchedShifts: Shift[] = [];
       if (res && typeof res === 'object') {
@@ -111,28 +139,75 @@ export default function ScheduleScreen() {
           fetchedShifts = data.shifts || [];
         }
       }
-      if (request !== requestNumber.current) return;
+      if (!isCurrent()) return;
+      if (!Array.isArray(fetchedShifts)) throw new Error('Invalid schedule response');
       setShifts(fetchedShifts);
+      loadedSchedule.current = { shifts: fetchedShifts, start, end, scope, request, isSessionCurrent };
+      setExportReady(fetchedShifts.length > 0);
       console.log(`📊 Fetched ${fetchedShifts.length} shifts`);
     } catch (e) {
       console.error('Error fetching shifts:', e);
-      if (request === requestNumber.current) Alert.alert(t('Error'), t('Could not load shifts'));
+      if (isCurrent()) Alert.alert(t('Error'), t('Could not load shifts'));
     } finally {
-      if(request === requestNumber.current) { setLoading(false); setRefreshing(false); }
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
   };
 
   useFocusEffect(useCallback(() => {
+    focusActive.current = true;
     setShifts([]);
     setSelectedShift(null);
     setEmployees([]);
     setLoading(true);
     void fetchShifts();
     if (canManage) void fetchEmployees();
-    return () => { requestNumber.current += 1; employeeRequestNumber.current += 1; };
-  }, [selectedDate, viewMode, selectedEmployeeId, currentMonth, user?.id, user?.companyId, canManage]));
+    return () => { requestNumber.current += 1; employeeRequestNumber.current += 1; focusActive.current = false; loadedSchedule.current = null; };
+  }, [selectedDate, viewMode, selectedEmployeeId, currentMonth, user?.id, user?.companyId, user?.role, canManage]));
 
   const onRefresh = () => { setRefreshing(true); fetchShifts(); };
+
+  const chooseCalendarExport = () => {
+    if (exportLock.current) return;
+    const snapshot = loadedSchedule.current;
+    if (!snapshot) return;
+    const isCurrent = () => mounted.current && focusActive.current && snapshot === loadedSchedule.current
+      && snapshot.request === requestNumber.current && snapshot.scope === currentScheduleScope.current && snapshot.isSessionCurrent();
+    if (!isCurrent()) return;
+    let contents: string;
+    try {
+      contents = scheduleCalendar(snapshot.shifts, {
+        companyId: user?.companyId || '', start: snapshot.start, end: snapshot.end, timeNotice: t(CALENDAR_TIME_NOTICE),
+      });
+    } catch (error) {
+      Alert.alert(t('Could not export calendar'), t(error instanceof Error ? error.message : 'Could not export calendar'));
+      return;
+    }
+    const operation = Symbol('calendar export');
+    exportLock.current = operation;
+    setExporting(true);
+    let sharing = false;
+    const finish = () => {
+      if (exportLock.current !== operation) return;
+      exportLock.current = null;
+      if (mounted.current) setExporting(false);
+    };
+    const cancel = () => { if (!sharing) finish(); };
+    const share = async () => {
+      if (sharing || exportLock.current !== operation) return;
+      sharing = true;
+      try {
+        await shareCalendarFile(contents, isCurrent);
+      } catch (error) {
+        if (isCurrent()) Alert.alert(t('Could not export calendar'), t(error instanceof Error ? error.message : 'Could not export calendar'));
+      } finally { finish(); }
+    };
+    Alert.alert(t('Export calendar file'),
+      t('Export all {count} loaded shifts for {employee} from {start} to {end}, including shifts hidden by search or the selected day. This is a one-time file, not calendar sync.', {
+        count: String(snapshot.shifts.length), employee: !selectedEmployeeId || selectedEmployeeId === user?.id ? t('My Schedule') : selectedEmployeeName, start: snapshot.start, end: snapshot.end,
+      }) + '\n\n' + t(CALENDAR_TIME_NOTICE),
+      [{ text: t('Cancel'), style: 'cancel', onPress: cancel }, { text: t('Share file'), onPress: () => { void share(); } }],
+      { cancelable: true, onDismiss: cancel });
+  };
 
   // Calendar helpers
   const monthStart = startOfMonth(currentMonth);
@@ -206,6 +281,12 @@ export default function ScheduleScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: !exportReady || exporting || refreshing, busy: exporting }}
+        disabled={!exportReady || exporting || refreshing} onPress={chooseCalendarExport}
+        style={{ minHeight: 48, justifyContent: 'center', alignItems: 'center', opacity: !exportReady || exporting || refreshing ? 0.5 : 1 }}>
+        <Text style={{ color: '#00D4FF' }}>{t(exporting ? 'Preparing calendar file...' : 'Export loaded range (.ics)')}</Text>
+      </TouchableOpacity>
 
       <View style={styles.monthNav}>
         <TouchableOpacity onPress={() => navigateMonth(-1)}>

@@ -1,3 +1,4 @@
+import { emitAuthorizedRoom, emitAuthorizedSupportQueue } from './socketAuthorization';
 import {Router,Request} from 'express';
 import multer from 'multer';
 import {pipeline} from 'node:stream/promises';
@@ -18,9 +19,10 @@ export function mountSupportMedia(router:Router,authorize:(req:Request,ticketId:
    const message=(await client.query(`INSERT INTO platform_support_messages(ticket_id,customer_user_id,support_agent_id,sender_type,sender_name,message,attachment_id)
     VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,sender_type AS "senderType",sender_name AS "senderName",message,created_at AS "createdAt",attachment_id`,[req.params.ticketId,sender.type==='customer'?sender.id:null,sender.type==='agent'?sender.id:null,sender.type,sender.name,filename,attachment.id])).rows[0];
    await client.query('COMMIT');storage=undefined;
+   client.release();client=undefined;
    const payload={...message,attachment_name:filename,attachment_type:mime,attachment_size:req.file.size};
-   req.app.get('io')?.to(`room-support-ticket-${req.params.ticketId}`).emit('support-message',payload);
-   req.app.get('io')?.to('platform-support-queue').emit('support-message',{ticketId:req.params.ticketId,...payload});
+   await emitAuthorizedRoom(req.app.get('io'), `support-ticket-${req.params.ticketId}`, 'support-message',payload);
+   await emitAuthorizedSupportQueue(req.app.get('io'), 'support-message',{ticketId:req.params.ticketId,...payload});
    res.status(201).json({success:true,message:payload});
   }catch(e:any){if(client)await client.query('ROLLBACK').catch(()=>{});if(storage)await removePrivateChatFile(storage).catch(()=>{});res.status(e.status||400).json({success:false,message:e.message||'Attachment was not saved'});}
   finally{client?.release();}
