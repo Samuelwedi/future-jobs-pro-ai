@@ -76,11 +76,15 @@ test('company overtime database and API integration',async t=>{
   await db.exec(`CREATE TABLE companies(id uuid PRIMARY KEY,timezone text DEFAULT 'UTC',overtime_multiplier numeric DEFAULT 1.5);
    CREATE TABLE users(id uuid PRIMARY KEY,company_id uuid REFERENCES companies(id),role text,is_active boolean DEFAULT true,first_name text,last_name text,vacation_pay_rate numeric DEFAULT 0,vacation_pay_method text DEFAULT 'accrue');
    CREATE TABLE projects(id uuid PRIMARY KEY,name text,address text);
+   CREATE TABLE shifts(id uuid PRIMARY KEY);
+   CREATE TABLE tasks(id uuid PRIMARY KEY);
    CREATE TABLE compensation_history(user_id uuid,hourly_rate numeric,effective_date date,created_at timestamptz DEFAULT now());
    CREATE TABLE time_entries(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid REFERENCES users(id),project_id uuid,clock_in timestamptz,clock_out timestamptz,break_minutes numeric DEFAULT 0,regular_hours numeric DEFAULT 0,overtime_hours numeric DEFAULT 0,total_wage numeric,approval_status text DEFAULT 'approved',status text DEFAULT 'completed',payroll_locked_at timestamptz,latitude_out numeric,longitude_out numeric,clock_out_latitude numeric,clock_out_longitude numeric,is_manual boolean,correction_reason text,updated_at timestamptz);
    CREATE TABLE time_entry_audit_logs(time_entry_id uuid,company_id uuid,actor_id uuid,action text,before_values jsonb,after_values jsonb,reason text);
    CREATE TABLE payrolls(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),company_id uuid,period_start date,period_end date,total_hours numeric,total_pay numeric,created_by uuid,status text);
    CREATE TABLE payroll_items(payroll_id uuid,employee_id uuid,hours numeric,hourly_rate numeric,adjustments numeric,cpp_deduction numeric,ei_deduction numeric,tax_deduction numeric,timesheet_ids uuid[],vacation_hours numeric,banked_hours numeric,vacation_pay numeric);`);
+  // Use the actual deployment migration, not a hand-written attachment stub.
+  await require('../scripts/run-attachment-schema-migration.cjs').migrate({query:sql=>db.exec(sql)});
   const migration=fs.readFileSync(path.join(__dirname,'../migrations/20261002_company_overtime_policy.sql'),'utf8');await db.exec(migration);await db.exec(migration);
   const c='aaaaaaaa-0000-4000-a000-000000000001',other='aaaaaaaa-0000-4000-a000-000000000002';
   const boss='bbbbbbbb-0000-4000-a000-000000000001',worker='bbbbbbbb-0000-4000-a000-000000000002',outsider='bbbbbbbb-0000-4000-a000-000000000003',manager='bbbbbbbb-0000-4000-a000-000000000004';
@@ -116,6 +120,16 @@ test('company overtime database and API integration',async t=>{
    const r=await request('/time-entries'+url,worker);assert.equal(r.status,200,JSON.stringify(r));assert.equal(r.data.entries.length,5);assert.equal(r.data.entries[0].overtimeHours,'0.50');assert.equal(r.data.entries[0].regularHours,'8.50');
    const csv=await request('/time-entries/export'+url,worker);assert.equal(csv.status,200);assert.match(csv.data,/9\.00,8\.50,0\.50,185\.00/);
    assert.equal(Number((await query('SELECT SUM(overtime_hours) hours FROM time_entries')).rows[0].hours),0,'GET must not change recorded rows');
+   const pdf=await request('/time-entries/export'+url+'&format=pdf',worker);assert.equal(pdf.status,200);assert.ok(pdf.data.startsWith('%PDF-'));
+   for(const format of ['csv','pdf']) {
+    assert.equal((await request('/time-entries/export'+url+'&format='+format,outsider)).status,403);
+    assert.equal((await request('/time-entries/export'+url+'&format='+format,null)).status,401);
+    const otherUserUrl=`?userId=${boss}&start=2026-09-21&end=2026-09-25&format=${format}`;
+    assert.equal((await request('/time-entries/export'+otherUserUrl,worker)).status,403);
+   }
+   for(const suffix of ['&format=html','&start=2026-09-22','&format=csv&format=pdf']) assert.equal((await request('/time-entries/export'+url+suffix,worker)).status,400);
+   assert.equal((await request(`/time-entries/export?userId=${worker}&start=2026-02-30&end=2026-09-25`,worker)).status,400);
+
   });
   await t.test('payroll recalculates weekly overtime and does not restart the week at a partial pay period',async()=>{
    const {generatePayroll}=require('../dist/services/payrollGenerator');

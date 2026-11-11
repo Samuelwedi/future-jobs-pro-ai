@@ -1,3 +1,4 @@
+require('./fixtures/lucy-funded-processor.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {PGlite}=require('@electric-sql/pglite');

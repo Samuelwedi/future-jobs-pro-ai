@@ -38,6 +38,27 @@ router.post('/repairs',async(req:AgentRequest,res)=>{
   await db.query('COMMIT');res.status(201).json({repair:result.rows[0]});
  }catch{await db.query('ROLLBACK').catch(()=>{});res.status(503).json({message:'Could not queue repair'});}finally{db.release();}
 });
+// Cancellation is local and safe only before dispatch intent is recorded.
+// Once GitHub may have accepted a run, keep its duplicate lock until reconciled.
+router.post('/repairs/:id/cancel',async(req:AgentRequest,res)=>{
+ const id=String(req.params.id);
+ if(!validId(id))return res.status(400).json({message:'Invalid repair'});
+ const db=await pool.connect();
+ try {
+  await db.query('BEGIN');
+  const result=await db.query("UPDATE owner_repair_jobs SET status='cancelled',completed_at=now(),error=NULL WHERE id=$1 AND owner_id=$2 AND status='queued' RETURNING id",[id,req.supportAgent!.id]);
+  if(!result.rowCount){
+   const existing=(await db.query('SELECT status FROM owner_repair_jobs WHERE id=$1 AND owner_id=$2',[id,req.supportAgent!.id])).rows[0];
+   await db.query('ROLLBACK');
+   if(!existing)return res.status(404).json({message:'Repair not found'});
+   if(existing.status==='cancelled')return res.json({success:true,message:'Queued repair cancelled. No workflow was dispatched.'});
+   return res.status(409).json({message:'Dispatch may already have started. Open the verified GitHub run to check or cancel it; this request has not cancelled the workflow.'});
+  }
+  await db.query('INSERT INTO owner_operations_audit(owner_id,action) VALUES($1,$2)',[req.supportAgent!.id,'repair_cancelled:'+id]);
+  await db.query('COMMIT');
+  res.json({success:true,message:'Queued repair cancelled. No workflow was dispatched.'});
+ }catch{await db.query('ROLLBACK').catch(()=>{});res.status(503).json({message:'Could not confirm cancellation. Refresh repair status before retrying.'});}finally{db.release();}
+});
 router.post('/jobs',async(req:AgentRequest,res)=>{
  const {department,instruction}=req.body||{};
  if(!departments.includes(department)||typeof instruction!=='string'||!instruction.trim()||instruction.length>4000) return res.status(400).json({message:'Choose a department and enter 1–4000 characters.'});

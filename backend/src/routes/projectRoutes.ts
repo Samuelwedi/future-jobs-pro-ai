@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { PoolClient, QueryResult } from 'pg';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
 
@@ -10,10 +11,10 @@ const projectManagers = new Set(['boss', 'manager', 'admin']);
 
 type Actor = { id: string; companyId: string; role: string };
 
-async function actor(req: Request): Promise<Actor> {
+async function actor(req: Request, client?: PoolClient): Promise<Actor> {
   const decoded = verifyToken(req);
-  const result = await pool.query(
-    'SELECT id, company_id, role FROM users WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE',
+  const result = await (client || pool).query(
+    'SELECT id, company_id, role FROM users WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE' + (client ? ' FOR UPDATE' : ''),
     [decoded.id],
   );
   if (!result.rowCount || !result.rows[0].company_id) {
@@ -34,6 +35,23 @@ function requireProjectManager(current: Actor): void {
     error.status = 403;
     throw error;
   }
+}
+
+// Lock the current user until commit so role, company and active state cannot
+// change between authorization and a project write. UPDATE locks the project row.
+async function managedWrite(req: Request, write: (client: PoolClient, current: Actor) => Promise<QueryResult>): Promise<QueryResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const current = await actor(req, client);
+    requireProjectManager(current);
+    const result = await write(client, current);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally { client.release(); }
 }
 
 function sendError(res: Response, error: any): void {
@@ -67,13 +85,17 @@ const upload = multer({
 router.get('/', async (req: Request, res: Response) => {
   try {
     const current = await actor(req);
+    const archived = req.query.archived;
+    if (archived !== undefined && archived !== 'true' && archived !== 'false') {
+      return res.status(400).json({ success: false, message: 'archived must be true or false' });
+    }
     const result = await pool.query(
       `SELECT id, name, client_name, address, latitude, longitude,
               COALESCE(geofence_radius, 100) AS geofence_radius,
-              COALESCE(status, 'active') AS status
-       FROM projects WHERE company_id = $1
+              COALESCE(status, 'active') AS status, archived_at
+       FROM projects WHERE company_id = $1 AND (archived_at IS NOT NULL) = $2
        ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, name`,
-      [current.companyId],
+      [current.companyId, archived === 'true'],
     );
     res.json({ success: true, projects: result.rows });
   } catch (error: any) {
@@ -87,7 +109,7 @@ router.get('/active', async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT id, name, client_name, address, latitude, longitude,
               COALESCE(geofence_radius, 100) AS geofence_radius, status
-       FROM projects WHERE company_id = $1 AND status = 'active' ORDER BY name`,
+       FROM projects WHERE company_id = $1 AND status = 'active' AND archived_at IS NULL ORDER BY name`,
       [current.companyId],
     );
     res.json({ success: true, projects: result.rows });
@@ -102,7 +124,7 @@ router.post('/', async (req: Request, res: Response) => {
     requireProjectManager(current);
     const name = String(req.body?.name || '').trim();
     if (!name) return res.status(400).json({ success: false, message: 'Project name is required' });
-    const result = await pool.query(
+    const result = await managedWrite(req, (client, current) => client.query(
       `INSERT INTO projects
        (company_id, name, client_name, address, latitude, longitude, geofence_radius, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
@@ -116,7 +138,7 @@ router.post('/', async (req: Request, res: Response) => {
         Number(req.body?.geofence_radius) || 100,
         ['active', 'on_hold', 'completed'].includes(req.body?.status) ? req.body.status : 'active',
       ],
-    );
+    ));
     res.status(201).json({ success: true, project: result.rows[0] });
   } catch (error: any) {
     sendError(res, error);
@@ -129,10 +151,13 @@ router.put('/:id', async (req: Request, res: Response) => {
     requireProjectManager(current);
     const name = String(req.body?.name || '').trim();
     if (!name) return res.status(400).json({ success: false, message: 'Project name is required' });
-    const status = ['active', 'on_hold', 'completed'].includes(req.body?.status) ? req.body.status : 'active';
-    const result = await pool.query(
+    if (req.body?.status !== undefined && !['active', 'on_hold', 'completed'].includes(req.body.status)) {
+      return res.status(400).json({ success: false, message: 'Invalid project status' });
+    }
+    const status = req.body?.status ?? null;
+    const result = await managedWrite(req, (client, current) => client.query(
       `UPDATE projects SET name = $1, client_name = $2, address = $3,
-              latitude = $4, longitude = $5, geofence_radius = $6, status = $7
+              latitude = $4, longitude = $5, geofence_radius = $6, status = COALESCE($7, status)
        WHERE id = $8 AND company_id = $9 RETURNING *`,
       [
         name,
@@ -145,7 +170,7 @@ router.put('/:id', async (req: Request, res: Response) => {
         String(req.params.id),
         current.companyId,
       ],
-    );
+    ));
     if (!result.rowCount) return res.status(404).json({ success: false, message: 'Project not found' });
     res.json({ success: true, project: result.rows[0] });
   } catch (error: any) {
@@ -157,11 +182,11 @@ router.put('/:id/geofence', async (req: Request, res: Response) => {
   try {
     const current = await actor(req);
     requireProjectManager(current);
-    const result = await pool.query(
+    const result = await managedWrite(req, (client, current) => client.query(
       `UPDATE projects SET latitude = $1, longitude = $2, geofence_radius = $3
        WHERE id = $4 AND company_id = $5 RETURNING *`,
       [req.body?.latitude, req.body?.longitude, Number(req.body?.geofence_radius) || 100, String(req.params.id), current.companyId],
-    );
+    ));
     if (!result.rowCount) return res.status(404).json({ success: false, message: 'Project not found' });
     res.json({ success: true, project: result.rows[0] });
   } catch (error: any) {
@@ -173,16 +198,28 @@ router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const current = await actor(req);
     requireProjectManager(current);
-    const result = await pool.query(
-      `UPDATE projects SET status = 'completed'
-       WHERE id = $1 AND company_id = $2 RETURNING id`,
+    const result = await managedWrite(req, (client, current) => client.query(
+      `UPDATE projects SET archived_at = COALESCE(archived_at, CURRENT_TIMESTAMP)
+       WHERE id = $1 AND company_id = $2 RETURNING *`,
       [String(req.params.id), current.companyId],
-    );
+    ));
     if (!result.rowCount) return res.status(404).json({ success: false, message: 'Project not found' });
-    res.json({ success: true, message: 'Project archived' });
+    res.json({ success: true, message: 'Project archived', project: result.rows[0] });
   } catch (error: any) {
     sendError(res, error);
   }
+});
+
+router.post('/:id/restore', async (req: Request, res: Response) => {
+  try {
+    const result = await managedWrite(req, (client, current) => client.query(
+      `UPDATE projects SET archived_at = NULL
+       WHERE id = $1 AND company_id = $2 RETURNING *`,
+      [String(req.params.id), current.companyId],
+    ));
+    if (!result.rowCount) return res.status(404).json({ success: false, message: 'Project not found' });
+    res.json({ success: true, message: 'Project restored', project: result.rows[0] });
+  } catch (error: any) { sendError(res, error); }
 });
 
 router.post('/:id/attachments', upload.single('file'), async (req: Request, res: Response) => {

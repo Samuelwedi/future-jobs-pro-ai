@@ -1,6 +1,6 @@
 const fs=require('node:fs');
 const path=require('node:path');
-const files=['20261108_lucy_background_work.sql','20261108_lucy_user_preferences.sql','20261108_lucy_request_ledger.sql','20261108_lucy_work_modes.sql','20261108_lucy_work_briefing.sql'];
+const files=['20261108_lucy_background_work.sql','20261108_lucy_user_preferences.sql','20261108_lucy_request_ledger.sql','20261108_lucy_work_modes.sql','20261108_lucy_work_briefing.sql','20261108_lucy_inference_budget.sql'];
 async function migrate(client){
  await client.query('BEGIN');
  try{
@@ -16,6 +16,8 @@ async function migrate(client){
   await client.query('SELECT id,company_id,user_id,actor_role,mode,options,status,lease_token,lease_until FROM lucy_background_work LIMIT 0');
   await client.query('SELECT company_id,user_id,preference_key,value,provenance,expires_at FROM lucy_user_preferences LIMIT 0');
   await client.query('SELECT company_id,user_id,actor_role,request_id,payload_hash,status,response_body FROM lucy_request_ledger LIMIT 0');
+  await client.query('SELECT id,fingerprint,maximum_nanos,reserved_nanos,expires_at,blocked FROM lucy_inference_grants LIMIT 0');
+  await client.query('SELECT id,grant_id,reserved_nanos,outcome FROM lucy_inference_reservations LIMIT 0');
   await client.query('COMMIT');
  }catch(error){await client.query('ROLLBACK');throw error;}
 }

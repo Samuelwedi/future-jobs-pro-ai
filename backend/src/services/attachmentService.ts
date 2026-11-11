@@ -4,9 +4,10 @@
 // ============================================
 
 import { pool } from '../config/database';
+import type { PoolClient } from 'pg';
 export type AttachmentTarget = { shiftId?: string; timeEntryId?: string; projectId?: string; taskId?: string; subjectUserId?: string };
-export async function saveAttachment(companyId: string, uploadedBy: string, fileName: string, fileUrl: string, fileType: string, fileSize: number, target: AttachmentTarget, category = 'general') {
-  const result = await pool.query(
+export async function saveAttachment(companyId: string, uploadedBy: string, fileName: string, fileUrl: string, fileType: string, fileSize: number, target: AttachmentTarget, category = 'general', db: Pick<PoolClient, 'query'> = pool) {
+  const result = await db.query(
     `INSERT INTO attachments (company_id, uploaded_by, shift_id, time_entry_id, project_id, task_id, subject_user_id, file_name, file_url, file_type, file_size, category)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
     [companyId, uploadedBy, target.shiftId || null, target.timeEntryId || null, target.projectId || null, target.taskId || null, target.subjectUserId || null, fileName, fileUrl, fileType, fileSize, category]

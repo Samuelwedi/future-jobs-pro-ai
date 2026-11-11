@@ -4,11 +4,18 @@
 // ============================================
 
 import { uploadMetadata } from '../utils/uploadMetadata';
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
-import { checkOnlineStatus, getOnlineStatus, queueAction } from './offlineService';
+import { checkOnlineStatus, getOnlineStatus, queueAction, isEvidenceUpload, validEvidenceKey, getPendingEvidence, completeQueuedEvidence, requiresOnlineConfirmation } from './offlineService';
+
+export type AttachmentSession = { token: string; revision: number; ownerId: string; companyId: string };
+export type VoiceSession = Readonly<{ token: string; revision: number; ownerId: string; companyId: string }>;
+type EvidenceConfig = AxiosRequestConfig & { expectedAuthToken: string; expectedAuthRevision?: number; expectedCurrent?: () => boolean; expectedBeforeDispatch?: () => Promise<void>; fenceUnauthorizedToCurrent?: boolean };
+export const createEvidenceRequestKey = () => `evidence-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+function evidenceError(code:string,message:string){return Object.assign(new Error(message),{code});}
+const pendingEvidence = () => evidenceError('EVIDENCE_PENDING','Upload status is pending or unavailable. Your capture is saved on this device. Check its status before taking another.');
 
 // Railway permanent backend
 const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
@@ -18,6 +25,8 @@ export const API_URL = (process.env.EXPO_PUBLIC_API_URL || (__DEV__ ? DEV_API_UR
 class ApiService {
   private client: AxiosInstance;
   private token: string | null = null;
+  private authRevision = 0;
+  private evidenceInFlight = new Map<string,Promise<any>>();
   private onSubscriptionRequired: (() => void) | null = null;
   setSubscriptionRequiredHandler(handler:()=>void){this.onSubscriptionRequired=handler;}
   private onUnauthorized: (() => void) | null = null;
@@ -31,11 +40,28 @@ class ApiService {
     // --- Request interceptor: add token ---
     this.client.interceptors.request.use(
       async (config) => {
-        let token = this.token;
-        if (!token) {
-          token = await SecureStore.getItemAsync('authToken');
-          if (token) {
-            this.token = token;
+        const revision = this.authRevision;
+        const token = this.token || await this.getToken();
+        const expected = (config as EvidenceConfig).expectedAuthToken;
+        const expectedRevision = (config as EvidenceConfig).expectedAuthRevision;
+        if (expected && (token !== expected || this.token !== expected || revision !== this.authRevision
+          || (expectedRevision !== undefined && expectedRevision !== this.authRevision))) {
+          throw evidenceError('EVIDENCE_ACCOUNT_CHANGED','Account changed. Reopen the saved capture in its original account.');
+        }
+
+        if ((config as EvidenceConfig).expectedCurrent && !(config as EvidenceConfig).expectedCurrent!()) {
+          throw new Error('Attachment screen changed. Reopen the original time entry.');
+        }
+
+        const beforeDispatch = (config as EvidenceConfig).expectedBeforeDispatch;
+        if (beforeDispatch) {
+          await beforeDispatch();
+          if (token !== this.token || revision !== this.authRevision
+            || (expectedRevision !== undefined && expectedRevision !== this.authRevision)) {
+            throw new Error('Account changed. Reopen the saved recording.');
+          }
+          if ((config as EvidenceConfig).expectedCurrent && !(config as EvidenceConfig).expectedCurrent!()) {
+            throw new Error('Voice screen changed. Reopen the original recording.');
           }
         }
 
@@ -61,10 +87,23 @@ class ApiService {
     this.client.interceptors.response.use(
       (response) => response,
       async (error) => {
-        if (error.response?.status === 402) this.onSubscriptionRequired?.();
-        if (error.response?.status === 401) {
+        const expected = (error.config as EvidenceConfig | undefined)?.expectedAuthToken;
+        const expectedRevision = (error.config as EvidenceConfig | undefined)?.expectedAuthRevision;
+        const expectedCurrent = (error.config as EvidenceConfig | undefined)?.expectedCurrent;
+        if (error.response?.status === 402 && (!expected || expected === this.token)
+          && (expectedRevision === undefined || expectedRevision === this.authRevision)
+          && (!expectedCurrent || expectedCurrent())) this.onSubscriptionRequired?.();
+        if (error.response?.status === 401 && (!expected || expected === this.token)
+          && (expectedRevision === undefined || expectedRevision === this.authRevision)
+          && (!(error.config as EvidenceConfig | undefined)?.fenceUnauthorizedToCurrent || !expectedCurrent || expectedCurrent())) {
           console.warn('🔑 Token expired – redirecting to login');
-          try { await this.clearToken(); } finally { this.onUnauthorized?.(); }
+          const clearedRevision = this.authRevision + 1;
+          try { await this.clearToken(); } finally {
+            // A subscription response must not sign out an account that replaced
+            // the failed session while secure storage was being cleared.
+            if (!(error.config as EvidenceConfig | undefined)?.fenceUnauthorizedToCurrent
+              || (this.authRevision === clearedRevision && this.token === null)) this.onUnauthorized?.();
+          }
         }
         return Promise.reject(error);
       }
@@ -77,7 +116,7 @@ class ApiService {
   }
 
   async setToken(token: string): Promise<void> {
-
+    this.authRevision++;
     this.token = token;
     await SecureStore.setItemAsync('authToken', token);
 
@@ -85,25 +124,127 @@ class ApiService {
 
   async getToken(): Promise<string | null> {
     if (!this.token) {
-      this.token = await SecureStore.getItemAsync('authToken');
+      const revision = this.authRevision;
+      const token = await SecureStore.getItemAsync('authToken');
+      if (revision === this.authRevision) this.token = token;
     }
     return this.token;
   }
 
   async clearToken(): Promise<void> {
+    this.authRevision++;
     this.token = null;
     await SecureStore.deleteItemAsync('authToken');
 
   }
 
   async replayQueued(action:any):Promise<void>{
-    if(action.fileUri){await this.uploadFileWithData(action.url,action.fileUri,action.data||{},action.fieldName||'file',true,action.fileInfo);return;}
+    if(requiresOnlineConfirmation(action.url))throw new Error('This saved action needs online review and cannot be replayed.');
+    if(isEvidenceUpload(action.url)&&(!validEvidenceKey(action.data?.requestKey)||!action.fileUri))throw new Error('This older evidence upload needs review before it can be sent.');
+    if(action.fileUri){await this.uploadFileWithData(action.url,action.fileUri,action.data||{},action.fieldName||'file',true,action.fileInfo,undefined,action.ownerId);return;}
     await this.client.request({method:action.method,url:action.url,data:action.data});
   }
   async get<T>(url: string): Promise<T> {
 
     const response = await this.client.get<T>(url);
 
+    return response.data;
+  }
+
+  async getProjectFiles(projectId: string, owner: { id: string; companyId: string; role: string }, current: () => boolean): Promise<{ data: unknown; isSessionCurrent: () => boolean }> {
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const isSessionCurrent = () => !!token && token === this.token && revision === this.authRevision;
+    const assertCurrent = () => {
+      if (!isSessionCurrent() || !current()) {
+        throw new Error('Account or project changed. Reopen project files.');
+      }
+    };
+    assertCurrent();
+    if (!projectId || !owner.id || !owner.companyId) throw new Error('A current project and account are required');
+    const stored = JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+    assertCurrent();
+    if (stored?.id !== owner.id || stored?.companyId !== owner.companyId || stored?.role !== owner.role) {
+      throw new Error('Account or project changed. Reopen project files.');
+    }
+    const response = await this.client.get(`/attachments?projectId=${encodeURIComponent(projectId)}`, {
+      expectedAuthToken: token, expectedAuthRevision: revision, expectedCurrent: current,
+    } as EvidenceConfig);
+    assertCurrent();
+    // Keep cached links tied to this session even while logout/login is awaiting
+    // storage and AuthContext has not rendered the replacement user yet.
+    return { data: response.data, isSessionCurrent };
+  }
+
+  // A synchronous fence remains usable while AuthContext is awaiting storage.
+  captureSessionGuard(): () => boolean {
+    const token = this.token;
+    const revision = this.authRevision;
+    return () => !!token && token === this.token && revision === this.authRevision;
+  }
+
+  async readSubscription<T>(endpoint: 'status' | 'capabilities', owner: { id: string; companyId: string; role: string }, current: () => boolean): Promise<T> {
+    const token = this.token;
+    const revision = this.authRevision;
+    const assertCurrent = () => {
+      if (!token || token !== this.token || revision !== this.authRevision || !current()) {
+        throw new Error('Account or subscription screen changed. Retry subscription status.');
+      }
+    };
+    assertCurrent();
+    const stored = JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+    assertCurrent();
+    if (!owner.id || !owner.companyId || stored?.id !== owner.id || stored?.companyId !== owner.companyId || stored?.role !== owner.role) {
+      throw new Error('Account or subscription screen changed. Retry subscription status.');
+    }
+    const response = await this.client.get<T>(`/subscriptions/${endpoint}`, {
+      expectedAuthToken: token, expectedAuthRevision: revision, expectedCurrent: current, fenceUnauthorizedToCurrent: true,
+    } as EvidenceConfig);
+    assertCurrent();
+    return response.data;
+  }
+
+  private async clockRequestSession(owner: { id: string; companyId: string; role: string }, current: () => boolean) {
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const assertCurrent = () => {
+      if (!token || token !== this.token || revision !== this.authRevision || !current()) {
+        throw new Error('Account or shift screen changed. Refresh shift status.');
+      }
+    };
+    assertCurrent();
+    const stored = JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+    assertCurrent();
+    if (!owner.id || !owner.companyId || stored?.id !== owner.id || stored?.companyId !== owner.companyId || stored?.role !== owner.role) {
+      throw new Error('Account or shift screen changed. Refresh shift status.');
+    }
+    return { assertCurrent, config: { expectedAuthToken: token, expectedAuthRevision: revision, expectedCurrent: current } as EvidenceConfig };
+  }
+
+  async postForegroundGps(data: Record<string, unknown>, owner: { id: string; companyId: string; role: string }, current: () => boolean) {
+    const session = await this.clockRequestSession(owner, current);
+    if (!await checkOnlineStatus()) throw new Error('GPS update requires an online connection.');
+    session.assertCurrent();
+    const response = await this.client.post('/gps/update', data, session.config);
+    session.assertCurrent();
+    return response.data;
+  }
+
+  async readActiveClock<T>(owner: { id: string; companyId: string; role: string }, current: () => boolean): Promise<T> {
+    const session = await this.clockRequestSession(owner, current);
+    const response = await this.client.get<T>(`/time-entries/active?userId=${encodeURIComponent(owner.id)}`, session.config);
+    session.assertCurrent();
+    return response.data;
+  }
+
+  async writeClock<T>(action: 'in' | 'out', data: { projectId?: string; timeEntryId?: string; latitude: number | null; longitude: number | null },
+    owner: { id: string; companyId: string; role: string }, current: () => boolean): Promise<T> {
+    const session = await this.clockRequestSession(owner, current);
+    if (!await checkOnlineStatus()) throw new Error('Connect to the internet to start or finish a shift.');
+    session.assertCurrent();
+    // Never enqueue a clock action: the server records its current time, not tap time.
+    const response = await this.client.post<T>(`/time-entries/clock-${action}`, data, session.config);
+    session.assertCurrent();
     return response.data;
   }
 
@@ -142,6 +283,180 @@ class ApiService {
     return response.data;
   }
 
+  async setProjectArchived<T>(projectId: string, archived: boolean): Promise<T> {
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const assertSession = () => {
+      if (!token || token !== this.token || revision !== this.authRevision) throw new Error('Account changed. Reopen projects.');
+    };
+    assertSession();
+    if (!await checkOnlineStatus()) throw new Error('Connect to the internet to archive or restore a project.');
+    assertSession();
+    const config = { expectedAuthToken: token } as EvidenceConfig;
+    const url = `/projects/${encodeURIComponent(projectId)}`;
+    const response = archived ? await this.client.delete<T>(url, config) : await this.client.post<T>(url + '/restore', {}, config);
+    assertSession();
+    return response.data;
+  }
+
+  async getVoiceTranscript<T>(noteId: string): Promise<T> {
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const assertSession = () => {
+      if (!token || token !== this.token || revision !== this.authRevision) throw new Error('Account changed. Reopen the voice note.');
+    };
+    assertSession();
+    const response = await this.client.get<T>(`/voice/${encodeURIComponent(noteId)}/transcript`, { expectedAuthToken: token } as EvidenceConfig);
+    assertSession();
+    return response.data;
+  }
+
+  async editVoiceTranscript<T>(noteId: string, transcript: string, expectedTranscript: string): Promise<T> {
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const assertSession = () => {
+      if (!token || token !== this.token || revision !== this.authRevision) throw new Error('Account changed. Reopen the voice note.');
+    };
+    assertSession();
+    if (!await checkOnlineStatus()) throw new Error('Connect to the internet to save transcript changes.');
+    assertSession();
+    const response = await this.client.patch<T>(`/voice/${encodeURIComponent(noteId)}/transcript`,
+      { transcript, expectedTranscript }, { expectedAuthToken: token } as EvidenceConfig);
+    assertSession();
+    return response.data;
+  }
+
+  assertVoiceSession(session: VoiceSession) {
+    if (!session.token || !session.ownerId || !session.companyId || this.token !== session.token || this.authRevision !== session.revision) {
+      throw new Error('Account changed. Reopen the saved recording in its original account.');
+    }
+  }
+
+  private async assertVoiceOwner(session: VoiceSession, current: () => boolean) {
+    const assertCurrent = () => {
+      this.assertVoiceSession(session);
+      if (!current()) throw new Error('Voice screen changed. Reopen the original recording.');
+    };
+    assertCurrent();
+    const raw = await SecureStore.getItemAsync('userData');
+    assertCurrent();
+    const user = raw ? JSON.parse(raw) : null;
+    if (user?.id !== session.ownerId || user?.companyId !== session.companyId) {
+      throw new Error('Account changed. Reopen the saved recording in its original account.');
+    }
+  }
+
+  async getVoiceSession(ownerId: string, companyId: string): Promise<VoiceSession> {
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const session = Object.freeze({ token: token || '', revision, ownerId, companyId });
+    await this.assertVoiceOwner(session, () => true);
+    return session;
+  }
+
+  async captureVoiceSession(ownerId: string, companyId: string): Promise<VoiceSession> {
+    return this.getVoiceSession(ownerId, companyId);
+  }
+
+  // Receipt requests never use the generic offline queue or retry provider work.
+  async requestVoiceReceipt(session: VoiceSession, requestKey: string,
+    file?: { uri: string; name: string; mimeType: string; projectId: string; timeEntryId: string | null; mode: 'audio-only' | 'audio-transcribed' },
+    current: () => boolean = () => true) {
+    if (!validEvidenceKey(requestKey)) throw new Error('A valid stable voice request key is required.');
+    const identity = Object.freeze({ ...session });
+    const payload = file ? Object.freeze({ ...file }) : undefined;
+    if (payload && (!payload.uri || !payload.name || !payload.mimeType || !payload.projectId
+      || (payload.timeEntryId !== null && (typeof payload.timeEntryId !== 'string' || !payload.timeEntryId))
+      || !['audio-only', 'audio-transcribed'].includes(payload.mode))) throw new Error('The saved recording metadata is incomplete.');
+    await this.assertVoiceOwner(identity, current);
+    const online = await checkOnlineStatus();
+    await this.assertVoiceOwner(identity, current);
+    if (!online) throw new Error('Connect to the internet to check or send this saved recording. Nothing was queued.');
+    const config: EvidenceConfig = {
+      expectedAuthToken: identity.token, expectedAuthRevision: identity.revision, expectedCurrent: current,
+      expectedBeforeDispatch: () => this.assertVoiceOwner(identity, current), timeout: 120000,
+    };
+    let response;
+    if (payload) {
+      const form = new FormData();
+      // Exact retained name and MIME type are part of the server fingerprint.
+      form.append('audio', { uri: payload.uri, name: payload.name, type: payload.mimeType } as any);
+      form.append('requestKey', requestKey);
+      form.append('projectId', payload.projectId);
+      if (payload.timeEntryId !== null) form.append('timeEntryId', payload.timeEntryId);
+      form.append('transcribe', payload.mode === 'audio-transcribed' ? 'true' : 'false');
+      response = await this.client.post('/voice/process', form, { ...config, headers: { 'Content-Type': 'multipart/form-data' } });
+    } else {
+      response = await this.client.get(`/voice/requests/${encodeURIComponent(requestKey)}`, {
+        ...config, params: { _: Date.now() }, headers: { 'Cache-Control': 'no-cache, no-store', Pragma: 'no-cache' },
+        validateStatus: status => [200, 202, 404, 410].includes(status),
+      } as EvidenceConfig);
+    }
+    await this.assertVoiceOwner(identity, current);
+    return { status: response.status, data: response.data };
+  }
+
+  assertAttachmentSession(session: AttachmentSession) {
+    if (!session.token || this.token !== session.token || this.authRevision !== session.revision) throw new Error('Account changed. Reopen the timesheet.');
+  }
+
+  async captureAttachmentSession(ownerId: string, companyId: string): Promise<AttachmentSession> {
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const session = { token: token || '', revision, ownerId, companyId };
+    this.assertAttachmentSession(session);
+    const raw = await SecureStore.getItemAsync('userData');
+    this.assertAttachmentSession(session);
+    const user = raw ? JSON.parse(raw) : null;
+    if (!ownerId || !companyId || user?.id !== ownerId || user?.companyId !== companyId) throw new Error('Account changed. Reopen the timesheet.');
+    return session;
+  }
+
+  async requestAttachmentReceipt(session: AttachmentSession, requestKey: string, file?: { uri: string; name: string; mimeType?: string; timeEntryId: string }, current: () => boolean = () => true) {
+    this.assertAttachmentSession(session);
+    if (!current()) throw new Error('Attachment screen changed. Reopen the original time entry.');
+    const raw = await SecureStore.getItemAsync('userData');
+    this.assertAttachmentSession(session);
+    if (!current()) throw new Error('Attachment screen changed. Reopen the original time entry.');
+    const user = raw ? JSON.parse(raw) : null;
+    if (user?.id !== session.ownerId || user?.companyId !== session.companyId) throw new Error('Account changed. Reopen the timesheet.');
+    const config = { expectedAuthToken: session.token, expectedAuthRevision: session.revision, expectedCurrent: current } as EvidenceConfig;
+    let response;
+    if (file) {
+      const form = new FormData();
+      const info = uploadMetadata(file.uri,'file',{name:file.name,mimeType:file.mimeType});
+      form.append('file',{uri:file.uri,name:info.name,type:info.type} as any);
+      form.append('originalFileName',file.name);
+      form.append('timeEntryId',file.timeEntryId); form.append('requestKey',requestKey);
+      response = await this.client.post('/attachments/upload',form,{...config,headers:{'Content-Type':'multipart/form-data'}});
+    } else {
+      response = await this.client.get(`/attachments/uploads/${encodeURIComponent(requestKey)}`,{
+        ...config, validateStatus: status => [200,202,404,410].includes(status),
+      });
+    }
+    this.assertAttachmentSession(session);
+    if (!current()) throw new Error('Attachment screen changed. Reopen the original time entry.');
+    return { status: response.status, data: response.data };
+  }
+
+  async writeTimeEntry<T>(entryId: string, action: 'correct' | 'approve', data?: any): Promise<T> {
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const assertSession = () => {
+      if (!token || token !== this.token || revision !== this.authRevision) throw new Error('Account changed. Reopen the timesheet.');
+    };
+    assertSession();
+    if (!await checkOnlineStatus()) throw new Error('Connect to the internet to change or approve a time entry.');
+    assertSession();
+    const config = { expectedAuthToken: token, expectedAuthRevision: revision } as EvidenceConfig;
+    const url = `/workforce-operations/time-entries/${encodeURIComponent(entryId)}`;
+    const response = action === 'approve'
+      ? await this.client.post<T>(url + '/approve', {}, config)
+      : await this.client.patch<T>(url, data, config);
+    assertSession();
+    return response.data;
+  }
+
   async patch<T>(url: string, data?: any): Promise<T> {
     const online = getOnlineStatus();
     if (!online) {
@@ -174,8 +489,11 @@ class ApiService {
     extraFields: Record<string, string>,
     fieldName = 'photo',
     replay = false,
-    fileInfo?: { name: string; mimeType?: string }
+    fileInfo?: { name: string; mimeType?: string },
+    expectedToken?: string | null,
+    expectedOwner?: string
   ): Promise<T> {
+    if (isEvidenceUpload(url)) return this.uploadEvidence<T>(url,fileUri,extraFields,fieldName,replay,fileInfo,expectedToken,expectedOwner);
     const online = await checkOnlineStatus();
     if (!online && !replay) {
       console.log('📴 Offline – queuing upload:', url);
@@ -197,6 +515,87 @@ class ApiService {
     });
 
     return response.data;
+  }
+
+  private async uploadEvidence<T>(url:string,fileUri:string,extraFields:Record<string,string>,fieldName:string,replay:boolean,fileInfo?:{name:string;mimeType?:string},expectedToken?:string|null,expectedOwner?:string):Promise<T> {
+    // Capture auth and immutable metadata before the first await, including network/storage checks.
+    const revision=this.authRevision;
+    const initialToken=this.token;
+    const fields=Object.freeze({...extraFields});
+    const info=fileInfo?Object.freeze({...fileInfo}):undefined;
+    if(!validEvidenceKey(fields.requestKey))throw new Error('A stable upload request key is required. Reopen the camera.');
+    const token=expectedToken === undefined ? (initialToken || await this.getToken()) : expectedToken;
+    const assertSession=()=>{if(!token||this.token!==token||this.authRevision!==revision)throw evidenceError('EVIDENCE_ACCOUNT_CHANGED','Account changed. Reopen the saved capture in its original account.');};
+    assertSession();
+    const raw=await SecureStore.getItemAsync('userData');
+    assertSession();
+    const owner=raw?String(JSON.parse(raw)?.id||''):'';
+    if(!owner||(expectedOwner&&owner!==expectedOwner))throw evidenceError('EVIDENCE_ACCOUNT_CHANGED','Account changed. Reopen the saved capture in its original account.');
+    const flightKey=`${owner}:${fields.requestKey}`;
+    const inFlight=this.evidenceInFlight.get(flightKey);
+    if(inFlight)return inFlight;
+    const task=(async()=>{
+      // The persisted original, not mutable screen state, is authoritative on every retry.
+      const online=await checkOnlineStatus();
+      assertSession();
+      const config:EvidenceConfig={expectedAuthToken:token!};
+      const completed=(response:any)=>response.status===200&&response.data?.success===true&&response.data?.requestKey===fields.requestKey&&typeof response.data?.photoId==='string'&&response.data.photoId.length>0;
+      let uploadAllowed=false;
+      if(online){
+      let status;
+      try { status=await this.client.get(`/photos/upload-status/${encodeURIComponent(fields.requestKey)}`,config); }
+      catch(error:any){
+        assertSession();
+        if(error.response?.status===404&&error.response.data?.code==='EVIDENCE_REQUEST_NOT_FOUND'&&error.response.data?.requestKey===fields.requestKey)status=error.response;
+        else if(error.response?.status===401||error.response?.status===403)throw error;
+        // Retain a new capture before reporting a transient or ambiguous status failure.
+      }
+      assertSession();
+      if(status&&completed(status)){
+        await completeQueuedEvidence(fields.requestKey,owner);
+        assertSession();
+        return status.data as T;
+      }
+      // A generic 404 (including an older server without receipts) is NOT upload permission.
+      uploadAllowed=status?.status===404&&status.data?.code==='EVIDENCE_REQUEST_NOT_FOUND'&&status.data?.requestKey===fields.requestKey;
+      }
+      let saved=await getPendingEvidence(owner,undefined,fields.requestKey);
+      assertSession();
+      if(!saved){
+        if(replay)throw new Error('The saved capture is unavailable. Reopen offline sync.');
+        if(!FileSystem.documentDirectory)throw new Error('Local storage is unavailable. Your capture has not been sent.');
+        const metadata=uploadMetadata(fileUri,fieldName,info);
+        const extension=/\.([a-z0-9]+)$/i.exec(metadata.name)?.[1] || 'bin';
+        const permanentUri=FileSystem.documentDirectory+`${fields.requestKey}.${extension}`;
+        await FileSystem.copyAsync({from:fileUri,to:permanentUri});
+        assertSession();
+        await queueAction({method:'POST',url,data:fields,fileUri:permanentUri,fieldName,fileInfo:{name:metadata.name,mimeType:metadata.type}},owner);
+        saved=await getPendingEvidence(owner,undefined,fields.requestKey);
+      }
+      assertSession();
+      if(!saved?.fileUri)throw new Error('The saved capture is unavailable. Nothing was sent.');
+      if(!online)throw evidenceError('EVIDENCE_QUEUED','Offline – upload queued for later');
+      if(!uploadAllowed)throw pendingEvidence();
+      const formData=new FormData();
+      const metadata=uploadMetadata(saved.fileUri,saved.fieldName||fieldName,saved.fileInfo);
+      formData.append(saved.fieldName||fieldName,{uri:saved.fileUri,name:metadata.name,type:metadata.type} as any);
+      Object.entries(saved.data as Record<string,string>).forEach(([key,value])=>formData.append(key,value));
+      let response;
+      try {
+        response=await this.client.post<T>(url,formData,{...config,timeout:25*60*1000,headers:{'Content-Type':'multipart/form-data'}} as EvidenceConfig);
+      }catch(error:any){
+        assertSession();
+        if(error.response?.status===401||error.response?.status===403)throw error;
+        throw pendingEvidence();
+      }
+      assertSession();
+      if(!completed(response))throw pendingEvidence();
+      await completeQueuedEvidence(fields.requestKey,owner);
+      assertSession();
+      return response.data;
+    })();
+    this.evidenceInFlight.set(flightKey,task);
+    try{return await task;}finally{if(this.evidenceInFlight.get(flightKey)===task)this.evidenceInFlight.delete(flightKey);}
   }
 
   async uploadFile<T>(url: string, fileUri: string, fieldName = 'file'): Promise<T> {

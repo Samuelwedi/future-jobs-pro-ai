@@ -1,4 +1,6 @@
 import { bulkClockIn, personalClockIn } from '../services/bulkClockService';
+import { exportRows, timesheetCsv, timesheetPdf } from '../services/timesheetExport';
+import { validateRange } from '../services/payPeriodCalendar';
 import { companyDate } from '../services/payPeriodCalendar';
 import { completeTimeEntry, employeeOvertime } from '../services/overtimeService';
 import express, { Request, Response } from 'express';
@@ -50,6 +52,22 @@ router.get('/', async (req: Request, res: Response) => {
       [userId, start, end, computed.policy.timezone]
     );
 
+    // Recover saved attachment metadata only for the already-authorized returned entries.
+    const attachmentsByEntry = new Map<string, any[]>();
+    if (result.rows.length) {
+      const attachments = await pool.query(
+        `SELECT id,time_entry_id,file_name,file_url,file_type,file_size,created_at
+         FROM attachments WHERE company_id=$1 AND time_entry_id=ANY($2::uuid[])
+         ORDER BY created_at DESC,id DESC`,
+        [companyId, result.rows.map((row: any) => row.id)],
+      );
+      for (const attachment of attachments.rows) {
+        const items = attachmentsByEntry.get(attachment.time_entry_id) || [];
+        items.push(attachment);
+        attachmentsByEntry.set(attachment.time_entry_id, items);
+      }
+    }
+
     const entries = result.rows.map((row: any) => {
       const calculated = row.payroll_locked_at ? undefined : computed.hours.get(row.id);
       const regularHours = calculated?.regular ?? (Number(row.regular_hours) || 0);
@@ -75,7 +93,7 @@ router.get('/', async (req: Request, res: Response) => {
         approval_status: row.approval_status || 'draft',
         correction_reason: row.correction_reason || '',
         payroll_locked: Boolean(row.payroll_locked_at),
-        attachments: [],
+        attachments: attachmentsByEntry.get(row.id) || [],
       };
     });
 
@@ -249,7 +267,7 @@ router.post('/clock-out', async (req: Request, res: Response) => {
   }
 });
 
-// ─── GET /api/time-entries/export ─── (CSV export)
+// ─── GET /api/time-entries/export ─── (CSV or PDF export)
 router.get('/export', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization;
@@ -258,6 +276,11 @@ router.get('/export', async (req: Request, res: Response) => {
     }
     const decoded = verifyToken(req);
     const { userId, start, end } = req.query;
+    const format = req.query.format ?? 'csv';
+    if (typeof userId !== 'string' || typeof start !== 'string' || typeof end !== 'string' || !['csv', 'pdf'].includes(String(format)) || typeof format !== 'string') {
+      return res.status(400).json({success:false, message:'Use userId, start, end and csv or pdf format'});
+    }
+    try { validateRange(start, end); } catch { return res.status(400).json({success:false, message:'Choose valid dates in order, covering no more than 367 days'}); }
     if (!userId || !start || !end) {
       return res.status(400).json({ success: false, message: 'userId, start, and end required' });
     }
@@ -294,36 +317,17 @@ router.get('/export', async (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: 'No entries found for the period' });
     }
 
-    const safeToFixed = (value: any, decimals: number = 2): string => {
-      const num = Number(value);
-      return isNaN(num) ? '0.00' : num.toFixed(decimals);
-    };
-
-    let csv = 'Date,Clock In,Clock Out,Project,Hours,Regular,Overtime,Wage\n';
-    for (const row of rows) {
-      const date = new Date(row.clock_in).toLocaleDateString();
-      const clockIn = new Date(row.clock_in).toLocaleTimeString();
-      const clockOut = row.clock_out ? new Date(row.clock_out).toLocaleTimeString() : '';
-      const project = '"'+String(row.project_name || '').replace(/"/g,'""').replace(/^[=+@-]/,"'$&")+'"';
-
-      let hours = '0.00';
-      if (row.clock_out) {
-        const diffMs = new Date(row.clock_out).getTime() - new Date(row.clock_in).getTime();
-        hours = Math.max(0,diffMs / 3600000-Number(row.break_minutes??0)/60).toFixed(2);
-      }
-
-      const calculated=row.payroll_locked_at?undefined:computed.hours.get(row.id);
-      const regular = safeToFixed(calculated?.regular??row.regular_hours);
-      const overtime = safeToFixed(calculated?.overtime??row.overtime_hours);
-      const rate=Number(computed.rows.find((entry:any)=>entry.id===row.id)?.overtime_hourly_rate);
-      const wage = row.payroll_locked_at ? safeToFixed(row.total_wage) : (rate>0 && calculated ? safeToFixed((calculated.regular+calculated.overtime*computed.policy.overtime_multiplier)*rate) : '');
-
-      csv += `${date},${clockIn},${clockOut},${project},${hours},${regular},${overtime},${wage}\n`;
+    const records = exportRows(rows, computed);
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (format === 'pdf') {
+      const pdf = await timesheetPdf(records, {userId, start, end, timezone: computed.policy.timezone});
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=timesheet_${start}_${end}.pdf`);
+      return res.send(pdf);
     }
-
-    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename=timesheet_${start}_${end}.csv`);
-    res.send(csv);
+    res.send(timesheetCsv(records));
   } catch (error: any) {
     console.error('Export error:', error);
     res.status(500).json({ success: false, message: error.message });

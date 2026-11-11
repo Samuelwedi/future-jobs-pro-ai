@@ -4,12 +4,12 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
 import sharp from 'sharp';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface WatermarkOptions {
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
@@ -20,6 +20,7 @@ export interface WatermarkOptions {
 export interface WatermarkResult {
   outputPath: string;
   verificationHash: string;
+  applied: boolean;
 }
 
 // ---------- OpenWeatherMap ----------
@@ -28,7 +29,7 @@ async function fetchWeather(lat: number, lng: number): Promise<string> {
   if (!apiKey) return 'Weather unavailable';
   const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&units=metric&appid=${apiKey}`;
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, {signal: AbortSignal.timeout(5000)});
     if (!res.ok) return 'Weather unavailable';
     const data: any = await res.json();
     const temp = Math.round(data.main.temp);
@@ -44,7 +45,7 @@ async function fetchWeather(lat: number, lng: number): Promise<string> {
 async function getAddressFromCoords(lat: number, lng: number): Promise<string | undefined> {
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18&addressdetails=1`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'Future Jobs Pro AI' } });
+    const res = await fetch(url, { headers: { 'User-Agent': 'Future Jobs Pro AI' }, signal: AbortSignal.timeout(5000) });
     if (!res.ok) return undefined;
     const data: any = await res.json();
     return data?.display_name?.split(',').slice(0, 3).join(',');
@@ -53,11 +54,19 @@ async function getAddressFromCoords(lat: number, lng: number): Promise<string | 
   }
 }
 
-// ---------- Hash ----------
+// Coordinates are recorded metadata, not independently verified location evidence.
+function hasValidCoordinates(metadata: any): boolean {
+  return typeof metadata.latitude === 'number' && Number.isFinite(metadata.latitude)
+    && Math.abs(metadata.latitude) <= 90
+    && typeof metadata.longitude === 'number' && Number.isFinite(metadata.longitude)
+    && Math.abs(metadata.longitude) <= 180;
+}
+
+// ---------- Metadata checksum (not an authenticity proof) ----------
 function generateVerificationHash(metadata: any): string {
   const data = JSON.stringify({
-    lat: metadata.latitude || 0,
-    lng: metadata.longitude || 0,
+    lat: hasValidCoordinates(metadata) ? metadata.latitude : null,
+    lng: hasValidCoordinates(metadata) ? metadata.longitude : null,
     address: metadata.address || '',
     weather: metadata.weather || '',
     time: (metadata.takenAt || new Date()).toISOString(),
@@ -93,11 +102,11 @@ export async function applyWatermark(
   const takenAt = metadata.takenAt || new Date();
 
   let address = metadata.address;
-  if (!address && metadata.latitude && metadata.longitude) {
+  if (!address && hasValidCoordinates(metadata)) {
     address = await getAddressFromCoords(metadata.latitude, metadata.longitude) || 'No location';
   }
   let weather = metadata.weather;
-  if (!weather && metadata.latitude && metadata.longitude) {
+  if (!weather && hasValidCoordinates(metadata)) {
     weather = await fetchWeather(metadata.latitude, metadata.longitude);
   } else if (!weather) {
     weather = 'Weather unavailable';
@@ -110,15 +119,13 @@ export async function applyWatermark(
     path.extname(inputPath).toLowerCase()
   );
 
-  if (isVideo) {
-    await applyVideoWatermark(inputPath, outputPath, fullMeta, options, hash);
-  } else {
-    await applyImageWatermark(inputPath, outputPath, fullMeta, options, hash);
-  }
-
-  const stats = fs.statSync(outputPath);
-  console.log(`📦 Output file size: ${(stats.size / 1024).toFixed(2)} KB`);
-  return { outputPath, verificationHash: hash };
+  const applied = isVideo
+    ? await applyVideoWatermark(inputPath, outputPath, fullMeta, options, hash)
+    : await applyImageWatermark(inputPath, outputPath, fullMeta, options, hash);
+  const actualPath = applied ? outputPath : inputPath;
+  const stats = fs.statSync(actualPath);
+  if (stats.size === 0) throw new Error('Evidence file is empty');
+  return { outputPath: actualPath, verificationHash: hash, applied };
 }
 
 // ============================================================
@@ -130,9 +137,7 @@ async function getDimensions(inputPath: string): Promise<{ width: number; height
   );
   if (isVideo) {
     try {
-      const { stdout } = await execAsync(
-        `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "${inputPath}"`
-      );
+      const { stdout } = await execFileAsync('ffprobe', ['-v','error','-select_streams','v:0','-show_entries','stream=width,height','-of','csv=p=0',inputPath], {timeout:15000, killSignal:'SIGKILL', maxBuffer:1024*1024});
       const dims = stdout.trim().split(',');
       if (dims.length === 2) {
         return { width: parseInt(dims[0], 10), height: parseInt(dims[1], 10) };
@@ -182,21 +187,21 @@ function buildTextLines(metadata: any, options: WatermarkOptions, hash: string):
     lines.push('Weather: Not available');
   }
 
-  if (metadata.latitude && metadata.longitude) {
+  if (hasValidCoordinates(metadata)) {
     const latDir = metadata.latitude >= 0 ? 'N' : 'S';
     const lngDir = metadata.longitude >= 0 ? 'E' : 'W';
     const gps = `${Math.abs(metadata.latitude).toFixed(6)}°${latDir}, ${Math.abs(metadata.longitude).toFixed(6)}°${lngDir}`;
-    lines.push(gps);
+    lines.push(`Recorded GPS: ${gps}`);
   }
 
-  lines.push(`Verified: ${hash}`);
+  lines.push(`Metadata checksum: ${hash}`);
   return lines;
 }
 
 // ============================================================
 // BUILD FFMPEG COMMAND – with re‑encode to H.264/AAC
 // ============================================================
-async function buildDrawtextCommand(
+async function buildDrawtextArgs(
   inputPath: string,
   outputPath: string,
   lines: string[],
@@ -204,7 +209,7 @@ async function buildDrawtextCommand(
   width: number,
   height: number,
   isVideo: boolean
-): Promise<string> {
+): Promise<string[]> {
   const fontSize = options.fontSize || Math.round(width / 35);
   const lineSpacing = Math.round(fontSize * 0.4);
 
@@ -216,27 +221,12 @@ async function buildDrawtextCommand(
   const x = margin;
   const y = `h - (text_h + ${margin})`;
 
-  let cmd =
-    `ffmpeg -i "${inputPath}" ` +
-    `-vf "drawtext=textfile='${textFile}':` +
-    `fontcolor=white:` +
-    `box=1:` +
-    `boxcolor=black@0.8:` +
-    `boxborderw=12:` +
-    `fontsize=${fontSize}:` +
-    `x=${x}:` +
-    `y=${y}:` +
-    `line_spacing=${lineSpacing}" `;
-
-  if (isVideo) {
-    // RE‑ENCODE to H.264/AAC for broad compatibility
-    cmd += `-c:v libx264 -preset fast -crf 23 -c:a aac -b:a 128k -movflags +faststart `;
-  } else {
-    cmd += `-frames:v 1 `;
-  }
-  cmd += `"${outputPath}" -y`;
-
-  return cmd;
+  const filter = `drawtext=textfile='${textFile}':fontcolor=white:box=1:boxcolor=black@0.8:boxborderw=12:fontsize=${fontSize}:x=${x}:y=${y}:line_spacing=${lineSpacing}`;
+  const args = ['-i', inputPath, '-vf', filter];
+  if (isVideo) args.push('-c:v','libx264','-preset','fast','-crf','23','-c:a','aac','-b:a','128k','-movflags','+faststart');
+  else args.push('-frames:v','1');
+  args.push(outputPath, '-y');
+  return args;
 }
 
 // ============================================================
@@ -248,19 +238,19 @@ async function applyImageWatermark(
   metadata: any,
   options: WatermarkOptions,
   hash: string
-): Promise<void> {
+): Promise<boolean> {
   console.log('🖼️ Applying image watermark...');
-  const dims = await getDimensions(inputPath);
-  const lines = buildTextLines(metadata, options, hash);
-  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height, false);
-
   const textFile = inputPath + '.text.txt';
   try {
-    await execAsync(cmd);
+    const dims = await getDimensions(inputPath);
+    const lines = buildTextLines(metadata, options, hash);
+    const args = await buildDrawtextArgs(inputPath, outputPath, lines, options, dims.width, dims.height, false);
+    await execFileAsync('ffmpeg', args, {timeout:300000, killSignal:'SIGKILL', maxBuffer:4*1024*1024});
     console.log(`✅ Image watermark applied: ${path.basename(outputPath)}`);
+    return fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0;
   } catch (err) {
-    console.error('❌ ffmpeg failed for image, copying original:', err);
-    fs.copyFileSync(inputPath, outputPath);
+    console.error('❌ ffmpeg failed for image, preserving original:', err);
+    return false;
   } finally {
     if (fs.existsSync(textFile)) fs.unlinkSync(textFile);
   }
@@ -275,36 +265,36 @@ async function applyVideoWatermark(
   metadata: any,
   options: WatermarkOptions,
   hash: string
-): Promise<void> {
+): Promise<boolean> {
   console.log('🎬 Applying video watermark with re‑encode...');
   const inputStats = fs.statSync(inputPath);
   console.log(`📥 Input video size: ${(inputStats.size / 1024).toFixed(2)} KB`);
 
-  const dims = await getDimensions(inputPath);
-  const lines = buildTextLines(metadata, options, hash);
-  const cmd = await buildDrawtextCommand(inputPath, outputPath, lines, options, dims.width, dims.height, true);
-
   const textFile = inputPath + '.text.txt';
   try {
+    const dims = await getDimensions(inputPath);
+    const lines = buildTextLines(metadata, options, hash);
+    const args = await buildDrawtextArgs(inputPath, outputPath, lines, options, dims.width, dims.height, true);
     console.log('🎬 Running ffmpeg with H.264/AAC re‑encode...');
-    await execAsync(cmd);
+    await execFileAsync('ffmpeg', args, {timeout:300000, killSignal:'SIGKILL', maxBuffer:4*1024*1024});
 
     if (fs.existsSync(outputPath)) {
       const outStats = fs.statSync(outputPath);
       if (outStats.size < 5000) {
         console.warn(`⚠️ Output video too small (${outStats.size} bytes). Falling back to original.`);
-        fs.copyFileSync(inputPath, outputPath);
+        return false;
       } else {
         console.log(`✅ Video watermarked and re‑encoded: ${(outStats.size / 1024).toFixed(2)} KB`);
+        return true;
       }
     } else {
-      console.error('❌ Output file missing, copying original.');
-      fs.copyFileSync(inputPath, outputPath);
+      console.error('❌ Output file missing; preserving original.');
+      return false;
     }
   } catch (err: any) {
     console.error('❌ ffmpeg failed for video:', err.message);
     console.log('🔄 Falling back to original video (no watermark).');
-    fs.copyFileSync(inputPath, outputPath);
+    return false;
   } finally {
     if (fs.existsSync(textFile)) fs.unlinkSync(textFile);
   }

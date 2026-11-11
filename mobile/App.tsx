@@ -15,6 +15,7 @@ import CameraView from './src/screens/CameraView';
 import VoiceNoteScreen from './src/screens/VoiceNoteScreen';
 import ProjectsScreen from './src/screens/ProjectsScreen';
 import ProjectAlbumScreen from './src/screens/ProjectAlbumScreen';
+import ProjectFilesScreen from './src/screens/ProjectFilesScreen';
 import TimesheetScreen from './src/screens/TimesheetScreen';
 import ScheduleScreen from './src/screens/ScheduleScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
@@ -53,6 +54,7 @@ import CompanySettingsScreen from './src/screens/CompanySettingsScreen';
 import WorkerToolsScreen from './src/screens/WorkerToolsScreen';
 import PayrollRulesScreen from './src/screens/PayrollRulesScreen';
 import { mobileDiagnosticContext } from './src/services/mobileDiagnostics';
+import { cameraMicrophoneHeld, observeCameraMicrophone } from './src/services/cameraMicrophone';
 import { WakeWordService } from './src/services/wakeWordService';
 
 const Stack = createStackNavigator();
@@ -97,27 +99,39 @@ function AppNavigator() {
   const isProcessing = useRef(false);
   useEffect(()=>{api.setSubscriptionRequiredHandler(()=>{if(navigationRef.isReady() && !['Subscription','Support'].includes(navigationRef.getCurrentRoute()?.name || ''))navigationRef.navigate('Subscription');});return()=>api.setSubscriptionRequiredHandler(()=>{});},[]);
   const wakeWordRef = useRef<WakeWordService | null>(null);
+  const wakeSyncGenerationRef = useRef(0);
+  const wakeStoppingRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     let disposed = false;
     let microphoneBusy = false;
 
-    const stopWakeWord = async () => {
-      const service = wakeWordRef.current;
-      wakeWordRef.current = null;
-      if (service) await service.stop();
+    const reportWakeError = (error: unknown) => console.warn('Hey Lucy microphone transition failed:', error);
+    const runWakeTransition = (transition: Promise<void>) => { void transition.catch(reportWakeError); };
+    const stopWakeWord = async (invalidatePendingStart = true) => {
+      if (invalidatePendingStart) wakeSyncGenerationRef.current++;
+      // Each retry reconciles the retained native handle. A rejected stop neither
+      // clears ownership nor permanently poisons the serialization chain.
+      const stopping = wakeStoppingRef.current.catch(() => undefined).then(async () => {
+        const service = wakeWordRef.current;
+        if (service) await service.stop();
+        if (wakeWordRef.current === service) wakeWordRef.current = null;
+      });
+      wakeStoppingRef.current = stopping;
+      await stopping;
     };
 
     const syncWakeWord = async (preference?: boolean) => {
-      await stopWakeWord();
+      const generation = ++wakeSyncGenerationRef.current;
+      await stopWakeWord(false);
       const enabled = preference ?? (await AsyncStorage.getItem('lucyWakeWordEnabled')) === 'true';
-      if (disposed || microphoneBusy || user?.mustChangePassword || !enabled || !isAuthenticated || !user || AppState.currentState !== 'active') return;
+      if (generation !== wakeSyncGenerationRef.current || disposed || microphoneBusy || cameraMicrophoneHeld() || user?.mustChangePassword || !enabled || !isAuthenticated || !user || AppState.currentState !== 'active') return;
 
       const service = new WakeWordService(() => {
         // Release the wake microphone before Lucy starts command recording on iOS.
-        void service.stop().finally(() => {
+        void stopWakeWord().then(() => {
           if (navigationRef.isReady()) navigationRef.navigate('AIAssistant', { autoRecord: true, wakeEvent: Date.now() });
-        });
+        }).catch(reportWakeError);
       });
       wakeWordRef.current = service;
       try {
@@ -127,22 +141,26 @@ function AppNavigator() {
       }
     };
 
-    syncWakeWord();
-    const microphoneListener = DeviceEventEmitter.addListener('lucyMicrophoneBusy', (busy:boolean) => {microphoneBusy=busy; if(busy)void stopWakeWord();else void syncWakeWord();});
-    const preferenceListener = DeviceEventEmitter.addListener('lucyWakeWordPreferenceChanged', (enabled: boolean) => syncWakeWord(Boolean(enabled)));
-    const conversationListener = DeviceEventEmitter.addListener('lucyConversationEnded', () => syncWakeWord());
+    const stopObservingCamera = observeCameraMicrophone(async held => {
+      if (held) await stopWakeWord();
+      else await syncWakeWord();
+    });
+    runWakeTransition(syncWakeWord());
+    const microphoneListener = DeviceEventEmitter.addListener('lucyMicrophoneBusy', (busy:boolean) => {microphoneBusy=busy; runWakeTransition(busy ? stopWakeWord() : syncWakeWord());});
+    const preferenceListener = DeviceEventEmitter.addListener('lucyWakeWordPreferenceChanged', (enabled: boolean) => runWakeTransition(syncWakeWord(Boolean(enabled))));
+    const conversationListener = DeviceEventEmitter.addListener('lucyConversationEnded', () => runWakeTransition(syncWakeWord()));
     const appStateListener = AppState.addEventListener('change', state => {
-      if (state === 'active') syncWakeWord();
-      else stopWakeWord();
+      runWakeTransition(state === 'active' ? syncWakeWord() : stopWakeWord());
     });
 
     return () => {
       disposed = true;
+      stopObservingCamera();
       microphoneListener.remove();
       preferenceListener.remove();
       conversationListener.remove();
       appStateListener.remove();
-      stopWakeWord();
+      runWakeTransition(stopWakeWord());
     };
   }, [isAuthenticated, user?.id, user?.mustChangePassword]);
 
@@ -179,6 +197,7 @@ function AppNavigator() {
             <Stack.Screen name="VoiceNote" component={VoiceNoteScreen} />
             <Stack.Screen name="Projects" component={ProjectsScreen} />
             <Stack.Screen name="ProjectAlbum" component={ProjectAlbumScreen} />
+            <Stack.Screen name="ProjectFiles" component={ProjectFilesScreen} />
             <Stack.Screen name="Timesheet" component={TimesheetScreen} />
             <Stack.Screen name="Schedule" component={ScheduleScreen} />
             <Stack.Screen name="History" component={HistoryScreen} />

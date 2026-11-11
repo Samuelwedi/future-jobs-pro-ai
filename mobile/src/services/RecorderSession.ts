@@ -6,6 +6,7 @@ type Lease = {
   cancelled: boolean;
   released: boolean;
   recording: boolean;
+  paused: boolean;
 };
 
 /** Owns native lifetime: no release while prepare/stop is awaiting native work. */
@@ -19,10 +20,13 @@ export class RecorderSession {
 
   get isRecording() { return !!this.lease?.recording && !this.lease.cancelled; }
 
+  get isPaused() { return !!this.lease?.paused && !this.lease.cancelled; }
+  get hasRecording() { return this.isRecording || this.isPaused; }
+
   async start(): Promise<boolean> {
     if (!this.enabled || this.lease) return false;
     const lease: Lease = {
-      recorder: this.create(), pending: true, cancelled: false, released: false, recording: false,
+      recorder: this.create(), pending: true, cancelled: false, released: false, recording: false, paused: false,
     };
     this.lease = lease;
     try {
@@ -40,11 +44,42 @@ export class RecorderSession {
     }
   }
 
+  pause(): boolean {
+    const lease = this.lease;
+    if (!this.enabled || !lease || lease.pending || lease.cancelled || !lease.recording) return false;
+    try {
+      lease.recorder.pause();
+      lease.recording = false;
+      lease.paused = true;
+      return true;
+    } catch (error) {
+      // Native state is uncertain on failure; discard safely rather than resume it.
+      this.cancel();
+      throw error;
+    }
+  }
+
+  resume(): boolean {
+    const lease = this.lease;
+    if (!this.enabled || !lease || lease.pending || lease.cancelled || !lease.paused) return false;
+    try {
+      // Expo 55 resumes an existing paused recording with record(), not prepare().
+      lease.recorder.record();
+      lease.paused = false;
+      lease.recording = true;
+      return true;
+    } catch (error) {
+      this.cancel();
+      throw error;
+    }
+  }
+
   async stop(): Promise<string | null> {
     const lease = this.lease;
-    if (!lease || lease.cancelled || lease.pending || !lease.recording) return null;
+    if (!lease || lease.cancelled || lease.pending || (!lease.recording && !lease.paused)) return null;
     lease.pending = true;
     lease.recording = false;
+    lease.paused = false;
     try {
       await lease.recorder.stop();
       // A navigation/unmount during stop must not read uri or upload audio.
@@ -58,7 +93,7 @@ export class RecorderSession {
 
   status(): RecorderState | null {
     const lease = this.lease;
-    if (!this.enabled || !lease || lease.pending || lease.cancelled || !lease.recording) return null;
+    if (!this.enabled || !lease || lease.pending || lease.cancelled || (!lease.recording && !lease.paused)) return null;
     try {
       return lease.recorder.getStatus();
     } catch (error) {
@@ -71,8 +106,9 @@ export class RecorderSession {
     const lease = this.lease;
     if (!lease) return;
     lease.cancelled = true;
-    const wasRecording = lease.recording;
+    const wasRecording = lease.recording || lease.paused;
     lease.recording = false;
+    lease.paused = false;
     if (lease.pending) return;
     if (!wasRecording) { this.release(lease); return; }
     lease.pending = true;

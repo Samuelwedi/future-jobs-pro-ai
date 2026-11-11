@@ -4,7 +4,7 @@ import {startBackgroundLocation,stopBackgroundLocation} from '../services/backgr
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, ActivityIndicator, RefreshControl,
+  Alert, ActivityIndicator, RefreshControl, AppState,
   useWindowDimensions, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -36,6 +36,11 @@ interface Shift {
 }
 
 export default function HomeScreen() {
+  const { user } = useAuth();
+  return <HomeWorkspace key={`${user?.id || ''}:${user?.companyId || ''}:${user?.role || ''}`} />;
+}
+
+function HomeWorkspace() {
   const { fontScale } = useWindowDimensions();
   const [contentWidth, setContentWidth] = useState(0);
   const grid = homeGridLayout(contentWidth, fontScale);
@@ -55,21 +60,51 @@ export default function HomeScreen() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const gpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const homeAlive = useRef(true);
+  const homeFocused = useRef(false);
+  const clockEpoch = useRef(0);
+  const clockRead = useRef(0);
+  const clockLock = useRef(false);
+  const clockNeedsRefresh = useRef(true);
+  const clockReady = useRef(false);
+  const [clockBusy, setClockBusy] = useState(false);
+  const [clockChecked, setClockChecked] = useState(false);
+  const [clockNotice, setClockNotice] = useState('');
+  const selectionKey = `${selectionMode}:${selectionMode === 'project' ? selectedProject?.id || '' : selectedSchedule?.id || ''}`;
+  const selectionRef = useRef(selectionKey);
+  selectionRef.current = selectionKey;
+
+  useEffect(() => {
+    homeAlive.current = true;
+    const listener = AppState.addEventListener('change', state => {
+      if (state !== 'active') {
+        clockEpoch.current += 1;
+        clockReady.current = false;
+        clockNeedsRefresh.current = true;
+        setClockChecked(false);
+      } else if (homeFocused.current) void loadActiveEntry();
+    });
+    return () => { homeAlive.current = false; clockEpoch.current += 1; listener.remove(); };
+  }, []);
 
   const [livePulse, setLivePulse] = useState({ activeWorkers: 0, activeProjects: 0, revenueToday: 0 });
 
   // ─── Derived clocked‑in status ───
   const isClockedIn = activeTimeEntry !== null;
 
-  useEffect(() => {
-    (async () => {
+  const refreshLocation = async () => {
+    const epoch = clockEpoch.current;
+    const sessionCurrent = api.captureSessionGuard();
+    const current = () => homeAlive.current && clockEpoch.current === epoch && sessionCurrent();
+    try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({});
-        setCurrentLocation(loc);
-      }
-    })();
-  }, []);
+      if (!current()) return;
+      if (status !== 'granted') { setCurrentLocation(null); return; }
+      const location = await Location.getCurrentPositionAsync({});
+      if (current()) setCurrentLocation(location);
+    } catch { if (current()) setCurrentLocation(null); }
+  };
+  useEffect(() => { void refreshLocation(); }, []);
 
   useEffect(() => {
     const anim = Animated.loop(
@@ -105,7 +140,7 @@ export default function HomeScreen() {
   useEffect(()=>{const listener=DeviceEventEmitter.addListener('gps-tracking-status',setGpsStatus);return()=>listener.remove();},[]);
   useEffect(()=>{
     let mounted=true;
-    if(isClockedIn&&activeTimeEntry&&user?.id){
+    if(isClockedIn&&activeTimeEntry?.id&&activeTimeEntry?.project_id&&user?.id){
       setGpsStatus(t("Starting background tracking…"));
       startBackgroundLocation({userId:user.id,timeEntryId:activeTimeEntry.id,projectId:activeTimeEntry.project_id}).catch((e:Error)=>{if(mounted)setGpsStatus(e.message);});
     }else{void stopBackgroundLocation().catch(()=>undefined);setGpsStatus(t("Off clock"));}
@@ -114,11 +149,15 @@ export default function HomeScreen() {
   // Foreground updates remain available if background permission is declined.
   // ─── GPS tracking ───
   useEffect(() => {
-    if (isClockedIn && activeTimeEntry) {
+    let cancelled = false;
+    const sessionCurrent = api.captureSessionGuard();
+    const current = () => !cancelled && homeAlive.current && sessionCurrent();
+    if (isClockedIn && activeTimeEntry?.id && activeTimeEntry?.project_id && user) {
       gpsIntervalRef.current = setInterval(async () => {
         try {
           const location = await Location.getCurrentPositionAsync({});
-          await api.post('/gps/update', {
+          if (!current()) return;
+          await api.postForegroundGps({
             userId: user?.id,
             timeEntryId: activeTimeEntry.id,
             projectId: activeTimeEntry.project_id,
@@ -128,7 +167,7 @@ export default function HomeScreen() {
             altitude: location.coords.altitude,
             speed: location.coords.speed,
             heading: location.coords.heading,
-          });
+          }, user, current);
         } catch (e) {
           console.error('GPS update error:', e);
         }
@@ -140,6 +179,7 @@ export default function HomeScreen() {
       }
     }
     return () => {
+      cancelled = true;
       if (gpsIntervalRef.current) clearInterval(gpsIntervalRef.current);
     };
   }, [isClockedIn, activeTimeEntry]);
@@ -188,79 +228,146 @@ export default function HomeScreen() {
   };
 
   const loadActiveEntry = async () => {
+    if (clockLock.current || !user || !homeAlive.current || !homeFocused.current || AppState.currentState !== 'active') return;
+    const sequence = ++clockRead.current;
+    const epoch = clockEpoch.current;
+    const sessionCurrent = api.captureSessionGuard();
+    const current = () => homeAlive.current && homeFocused.current && clockEpoch.current === epoch
+      && clockRead.current === sequence && sessionCurrent() && AppState.currentState === 'active';
+    clockReady.current = false;
+    setClockChecked(false);
     try {
-      const res: any = await api.get(`/time-entries/active?userId=${user?.id}`);
-      const data = res.data || res;
-      if (data.success && data.entry) {
-        setActiveTimeEntry(data.entry);
-        const clockInTime = new Date(data.entry.clock_in).getTime();
-        const now = Date.now();
-        setElapsedSeconds(Math.floor((now - clockInTime) / 1000));
-      } else {
-        setActiveTimeEntry(null);
-        setElapsedSeconds(0);
+      const data = await api.readActiveClock<any>(user, current);
+      if (!current()) return;
+      if (data?.success !== true || (data.entry !== null && (typeof data.entry?.id !== 'string' || !data.entry.id || (data.entry.project_id !== null && (typeof data.entry.project_id !== 'string' || !data.entry.project_id)) || typeof data.entry.clock_in !== 'string' || !data.entry.clock_in || !Number.isFinite(new Date(data.entry.clock_in).getTime())))) {
+        throw new Error('Invalid active shift response');
       }
-    } catch (e) {
-      console.error('Failed to fetch active time entry', e);
+      setActiveTimeEntry(data.entry);
+      setElapsedSeconds(data.entry ? Math.max(0, Math.floor((Date.now() - new Date(data.entry.clock_in).getTime()) / 1000)) : 0);
+      clockNeedsRefresh.current = false;
+      clockReady.current = true;
+      setClockChecked(true);
+      setClockNotice('');
+    } catch {
+      if (!current()) return;
+      clockNeedsRefresh.current = true;
+      setClockNotice(t("Shift status could not be confirmed. Refresh before starting or finishing a shift."));
     }
   };
 
   useFocusEffect(useCallback(() => {
+    homeFocused.current = true;
     loadData();
     loadSchedules();
     loadAISuggestions();
-    loadActiveEntry();
+    void loadActiveEntry();
+    return () => {
+      homeFocused.current = false;
+      clockEpoch.current += 1;
+      clockReady.current = false;
+      clockNeedsRefresh.current = true;
+      setClockChecked(false);
+    };
   }, []));
 
-  // ─── Clock In/Out ───
+  // A shared synchronous lock also covers rapid taps before React rerenders.
   const handleClockIn = async () => {
-    let projectId = null;
+    if (clockLock.current || !clockReady.current || clockNeedsRefresh.current || activeTimeEntry || !user) return;
+    let projectId: string;
+    let projectName: string | undefined;
     if (selectionMode === 'project') {
-      if (!selectedProject) { Alert.alert(t("Select a project first")); return; }
+      if (!selectedProject?.id) { Alert.alert(t("Select a project first")); return; }
       projectId = selectedProject.id;
+      projectName = selectedProject.name;
     } else {
       if (!selectedSchedule) { Alert.alert(t("Select a schedule first")); return; }
       if (selectedSchedule.date?.slice(0,10) !== format(new Date(),'yyyy-MM-dd')) { Alert.alert(t("Schedule unavailable"), t("Choose a shift scheduled for today.")); return; }
       if (!selectedSchedule.project_id) { Alert.alert(t("This schedule has no project")); return; }
       projectId = selectedSchedule.project_id;
+      projectName = selectedSchedule.project_name;
     }
+    const latitude = currentLocation?.coords.latitude;
+    const longitude = currentLocation?.coords.longitude;
+    if (typeof latitude !== 'number' || !Number.isFinite(latitude) || Math.abs(latitude) > 90
+      || typeof longitude !== 'number' || !Number.isFinite(longitude) || Math.abs(longitude) > 180) {
+      Alert.alert(t("Location unavailable"), t("Refresh location before starting a shift."));
+      return;
+    }
+    const epoch = clockEpoch.current;
+    const sessionCurrent = api.captureSessionGuard();
+    const current = () => homeAlive.current && homeFocused.current && clockEpoch.current === epoch
+      && sessionCurrent() && AppState.currentState === 'active' && selectionRef.current === selectionKey;
+    if (!current()) return;
+    clockLock.current = true;
+    clockRead.current += 1;
+    clockNeedsRefresh.current = true;
+    clockReady.current = false;
+    setClockBusy(true);
+    setClockChecked(false);
     try {
-      const payload: any = {
-        projectId,
-        latitude: currentLocation?.coords.latitude || 0,
-        longitude: currentLocation?.coords.longitude || 0
-      };
-      const res = await api.post<any>('/time-entries/clock-in', payload);
-      setActiveTimeEntry({ ...res, clock_in: res.clockIn });
-      await loadActiveEntry();
-      // The active shift card confirms clock-in; do not cover the location disclosure.
-    } catch (e: any) {
-      if (e.response?.status === 400 && e.response?.data?.message?.includes('Already clocked in')) {
-        Alert.alert(t("Already Clocked In"), t("You are already clocked in. Refreshing status..."));
-        await loadActiveEntry();
-      } else {
-        Alert.alert(t("Error"), e.message || t("Clock-in failed"));
+      const res = await api.writeClock<any>('in', { projectId, latitude, longitude }, user, current);
+      if (!current()) return;
+      if (res?.success !== true || typeof res.timeEntryId !== 'string' || !res.timeEntryId || typeof res.clockIn !== 'string' || !res.clockIn || !Number.isFinite(new Date(res.clockIn).getTime())) {
+        throw new Error('Invalid clock-in response');
       }
+      // The POST and active-entry endpoints use different field names.
+      setActiveTimeEntry({ id: res.timeEntryId, project_id: projectId, project_name: projectName, clock_in: res.clockIn });
+      clockNeedsRefresh.current = false;
+      clockReady.current = true;
+      setClockChecked(true);
+      setClockNotice('');
+    } catch {
+      if (current()) {
+        setClockNotice(t("Shift change was not confirmed. Refresh status before trying again."));
+        Alert.alert(t("Shift change not confirmed"), t("Shift change was not confirmed. Refresh status before trying again."));
+      }
+    } finally {
+      clockLock.current = false;
+      if (homeAlive.current) setClockBusy(false);
     }
   };
 
   const handleClockOut = async () => {
-    if (!activeTimeEntry) {
-      Alert.alert(t("Error"), t("No active time entry"));
-      return;
-    }
+    if (clockLock.current || !clockReady.current || clockNeedsRefresh.current || !activeTimeEntry?.id || !user) return;
+    const timeEntryId = activeTimeEntry.id;
+    const epoch = clockEpoch.current;
+    const sessionCurrent = api.captureSessionGuard();
+    const current = () => homeAlive.current && homeFocused.current && clockEpoch.current === epoch
+      && sessionCurrent() && AppState.currentState === 'active';
+    if (!current()) return;
+    clockLock.current = true;
+    clockRead.current += 1;
+    clockNeedsRefresh.current = true;
+    clockReady.current = false;
+    setClockBusy(true);
+    setClockChecked(false);
     try {
-      await api.post('/time-entries/clock-out', {
-        timeEntryId: activeTimeEntry.id,
-        latitude: currentLocation?.coords.latitude || 0,
-        longitude: currentLocation?.coords.longitude || 0
-      });
+      const res = await api.writeClock<any>('out', {
+        timeEntryId,
+        latitude: Number.isFinite(currentLocation?.coords.latitude) && Math.abs(currentLocation!.coords.latitude) <= 90 ? currentLocation!.coords.latitude : null,
+        longitude: Number.isFinite(currentLocation?.coords.longitude) && Math.abs(currentLocation!.coords.longitude) <= 180 ? currentLocation!.coords.longitude : null,
+      }, user, current);
+      if (!current()) return;
+      if (res?.success !== true || res.timeEntryId !== timeEntryId || typeof res.clockOut !== 'string' || !res.clockOut || !Number.isFinite(new Date(res.clockOut).getTime())) {
+        throw new Error('Invalid clock-out response');
+      }
       setActiveTimeEntry(null);
       setElapsedSeconds(0);
-      await api.recordAIEvent('clock_out', { timeEntryId: activeTimeEntry.id });
+      clockNeedsRefresh.current = false;
+      clockReady.current = true;
+      setClockChecked(true);
+      setClockNotice('');
+      // Analytics failure must not turn an acknowledged clock-out into a failure.
+      void api.recordAIEvent('clock_out', { timeEntryId }).catch(() => undefined);
       Alert.alert(t("Clocked Out"), t("Your time entry has been saved."));
-    } catch (e: any) {
-      Alert.alert(t("Error"), e.message);
+    } catch {
+      if (current()) {
+        setClockNotice(t("Shift change was not confirmed. Refresh status before trying again."));
+        Alert.alert(t("Shift change not confirmed"), t("Shift change was not confirmed. Refresh status before trying again."));
+      }
+    } finally {
+      clockLock.current = false;
+      if (homeAlive.current) setClockBusy(false);
     }
   };
 
@@ -289,7 +396,7 @@ export default function HomeScreen() {
 
     if (action.needsProject) {
       // If clocked in, use the active project/time entry
-      if (isClockedIn && activeTimeEntry) {
+      if (isClockedIn && activeTimeEntry?.id && activeTimeEntry?.project_id) {
         projectId = activeTimeEntry.project_id;
         timeEntryId = activeTimeEntry.id;
       } else if (selectedProject) {
@@ -377,7 +484,7 @@ export default function HomeScreen() {
       <ScrollView
         onLayout={event => setContentWidth(event.nativeEvent.layout.width)}
         contentContainerStyle={investorStyles.scrollContent}
-        refreshControl={<RefreshControl refreshing={false} onRefresh={() => { loadData(); loadSchedules(); loadAISuggestions(); loadActiveEntry(); }} tintColor="#67E8F9" />}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={() => { loadData(); loadSchedules(); loadAISuggestions(); loadActiveEntry(); void refreshLocation(); }} tintColor="#67E8F9" />}
         showsVerticalScrollIndicator={false}
       >
         <View style={investorStyles.topBar}>
@@ -414,7 +521,7 @@ export default function HomeScreen() {
                 <View style={investorStyles.signal}><MaterialIcons name="my-location" size={16} color="#A7F3D0" /><Text style={investorStyles.signalText}>{gpsStatus}</Text></View>
                 <View style={investorStyles.signal}><MaterialIcons name="lock-clock" size={16} color="#A7F3D0" /><Text style={investorStyles.signalText}>{t("Evidence live")}</Text></View>
               </View>
-              <TouchableOpacity style={investorStyles.clockOutButton} onPress={handleClockOut}><MaterialIcons name="stop-circle" size={21} color="#FFF" /><Text style={investorStyles.clockOutText}>{t("Finish shift")}</Text></TouchableOpacity>
+              <TouchableOpacity disabled={clockBusy || !clockChecked} style={[investorStyles.clockOutButton, {opacity: clockBusy || !clockChecked ? 0.45 : 1}]} onPress={handleClockOut}><MaterialIcons name="stop-circle" size={21} color="#FFF" /><Text style={investorStyles.clockOutText}>{t("Finish shift")}</Text></TouchableOpacity>
             </>
           ) : (
             <>
@@ -422,31 +529,41 @@ export default function HomeScreen() {
               <Text style={investorStyles.heroTitle}>{t('Everything ready.\nStart with confidence.')}</Text>
               <Text style={investorStyles.heroCopy}>{t("Choose today’s project or scheduled shift. Future Jobs will connect time, GPS, media, and job context automatically.")}</Text>
               <View style={investorStyles.modeSwitch}>
-                <TouchableOpacity style={[investorStyles.modeButton, selectionMode === 'project' && investorStyles.modeButtonActive]} onPress={() => setSelectionMode('project')}><Text style={[investorStyles.modeText, selectionMode === 'project' && investorStyles.modeTextActive]}>{t("Projects")}</Text></TouchableOpacity>
-                <TouchableOpacity style={[investorStyles.modeButton, selectionMode === 'schedule' && investorStyles.modeButtonActive]} onPress={() => setSelectionMode('schedule')}><Text style={[investorStyles.modeText, selectionMode === 'schedule' && investorStyles.modeTextActive]}>{t("Today’s schedule")}</Text></TouchableOpacity>
+                <TouchableOpacity style={[investorStyles.modeButton, selectionMode === 'project' && investorStyles.modeButtonActive]} disabled={clockBusy} onPress={() => setSelectionMode('project')}><Text style={[investorStyles.modeText, selectionMode === 'project' && investorStyles.modeTextActive]}>{t("Projects")}</Text></TouchableOpacity>
+                <TouchableOpacity style={[investorStyles.modeButton, selectionMode === 'schedule' && investorStyles.modeButtonActive]} disabled={clockBusy} onPress={() => setSelectionMode('schedule')}><Text style={[investorStyles.modeText, selectionMode === 'schedule' && investorStyles.modeTextActive]}>{t("Today’s schedule")}</Text></TouchableOpacity>
               </View>
 
               {selectionMode === 'project' ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={investorStyles.selectorScroll}>
                   {projects.length === 0 ? <Text style={investorStyles.emptySelector}>{t("No active projects")}</Text> : projects.map((project, index) => {
                     const selected = selectedProject?.id === project.id || (!selectedProject && index === 0);
-                    return <TouchableOpacity key={project.id || index} onPress={() => setSelectedProject(project)} style={[investorStyles.selectorCard, selected && investorStyles.selectorCardActive]}><View style={[investorStyles.selectorIcon, selected && investorStyles.selectorIconActive]}><MaterialIcons name="business-center" size={18} color={selected ? '#06121D' : '#67E8F9'} /></View><Text numberOfLines={1} style={[investorStyles.selectorTitle, selected && investorStyles.selectorTitleActive]}>{project.name}</Text><Text numberOfLines={1} style={investorStyles.selectorMeta}>{project.client_name || t("Active project")}</Text></TouchableOpacity>;
+                    return <TouchableOpacity key={project.id || index} disabled={clockBusy} onPress={() => setSelectedProject(project)} style={[investorStyles.selectorCard, selected && investorStyles.selectorCardActive]}><View style={[investorStyles.selectorIcon, selected && investorStyles.selectorIconActive]}><MaterialIcons name="business-center" size={18} color={selected ? '#06121D' : '#67E8F9'} /></View><Text numberOfLines={1} style={[investorStyles.selectorTitle, selected && investorStyles.selectorTitleActive]}>{project.name}</Text><Text numberOfLines={1} style={investorStyles.selectorMeta}>{project.client_name || t("Active project")}</Text></TouchableOpacity>;
                   })}
                 </ScrollView>
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={investorStyles.selectorScroll}>
                   {schedules.length === 0 ? <Text style={investorStyles.emptySelector}>{t("No scheduled shifts today")}</Text> : schedules.map((shift) => {
                     const selected = selectedSchedule?.id === shift.id;
-                    return <TouchableOpacity key={shift.id} onPress={() => { setSelectedSchedule(shift); if (shift.project_id) setSelectedProject(projects.find(p => p.id === shift.project_id)); }} style={[investorStyles.selectorCard, selected && investorStyles.selectorCardActive]}><View style={[investorStyles.selectorIcon, selected && investorStyles.selectorIconActive]}><MaterialIcons name="event" size={18} color={selected ? '#06121D' : '#67E8F9'} /></View><Text numberOfLines={1} style={[investorStyles.selectorTitle, selected && investorStyles.selectorTitleActive]}>{shift.name || t("Scheduled shift")}</Text><Text numberOfLines={1} style={investorStyles.selectorMeta}>{shift.start_time} · {shift.project_name || t("Project")}</Text></TouchableOpacity>;
+                    return <TouchableOpacity key={shift.id} disabled={clockBusy} onPress={() => { setSelectedSchedule(shift); if (shift.project_id) setSelectedProject(projects.find(p => p.id === shift.project_id)); }} style={[investorStyles.selectorCard, selected && investorStyles.selectorCardActive]}><View style={[investorStyles.selectorIcon, selected && investorStyles.selectorIconActive]}><MaterialIcons name="event" size={18} color={selected ? '#06121D' : '#67E8F9'} /></View><Text numberOfLines={1} style={[investorStyles.selectorTitle, selected && investorStyles.selectorTitleActive]}>{shift.name || t("Scheduled shift")}</Text><Text numberOfLines={1} style={investorStyles.selectorMeta}>{shift.start_time} · {shift.project_name || t("Project")}</Text></TouchableOpacity>;
                   })}
                 </ScrollView>
               )}
-              <TouchableOpacity style={[investorStyles.clockInButton, {opacity: (selectionMode === 'project' ? selectedProject : selectedSchedule) ? 1 : 0.45}]} disabled={!(selectionMode === 'project' ? selectedProject : selectedSchedule)} onPress={handleClockIn}>
+              <TouchableOpacity accessibilityRole="button" disabled={clockBusy} onPress={() => void refreshLocation()} style={{paddingVertical: 12}}>
+                <Text style={{color: '#67E8F9'}}>{t("Refresh location")}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[investorStyles.clockInButton, {opacity: !clockBusy && clockChecked && (selectionMode === 'project' ? selectedProject : selectedSchedule) ? 1 : 0.45}]} disabled={clockBusy || !clockChecked || !(selectionMode === 'project' ? selectedProject : selectedSchedule)} onPress={handleClockIn}>
                 <LinearGradient colors={['#67E8F9', '#22D3EE']} style={investorStyles.clockInGradient}><View style={investorStyles.clockIcon}><MaterialIcons name="play-arrow" size={21} color="#06121D" /></View><Text style={investorStyles.clockInText}>{t("Start verified shift")}</Text><MaterialIcons name="arrow-forward" size={20} color="#06121D" /></LinearGradient>
               </TouchableOpacity>
             </>
           )}
         </LinearGradient>
+
+        {(clockNotice || !clockChecked) && <View style={{padding: 12}}>
+          <Text accessibilityRole="alert" style={{color: '#FDE68A'}}>{clockNotice || t("Refresh shift status before continuing.")}</Text>
+          <TouchableOpacity accessibilityRole="button" disabled={clockBusy} onPress={() => { void loadActiveEntry(); void refreshLocation(); }} style={{paddingVertical: 12}}>
+            <Text style={{color: '#67E8F9'}}>{clockBusy ? t("Checking shift...") : t("Refresh shift status")}</Text>
+          </TouchableOpacity>
+        </View>}
 
         <View style={investorStyles.readinessRow}>
           {readinessItems.map((item) => <View key={item.label} style={investorStyles.readinessItem}><MaterialIcons name={item.icon as any} size={17} color={item.color} /><Text style={investorStyles.readinessText} numberOfLines={1}>{item.label}</Text></View>)}

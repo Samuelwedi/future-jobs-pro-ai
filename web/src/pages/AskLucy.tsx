@@ -3,6 +3,7 @@ import { Alert, Avatar, Box, Button, Chip, CircularProgress, IconButton, List, L
 import { CheckCircle, Mic, Send, SmartToy, StopCircle } from '@mui/icons-material';
 import { api, API_BASE } from '../services/api';
 import LucyWorkspacePanel from '../components/LucyWorkspacePanel';
+import LucyActivityPanel from '../components/LucyActivityPanel';
 import LucySourceEvidence from '../components/LucySourceEvidence';
 import type {LucyEvidence} from '../utils/lucyEvidence';
 import { LucyWakeControl } from '../components/LucyWakeControl';
@@ -40,6 +41,7 @@ export default function AskLucy({initialPrompt = ''}: {initialPrompt?:string}) {
   useEffect(()=>setInput(initialPrompt),[initialPrompt]);
   const [loading, setLoading] = useState(false);
   const [workspaceOpen,setWorkspaceOpen]=useState(false);
+  const [activityOpen,setActivityOpen]=useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [error, setError] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
@@ -65,7 +67,7 @@ export default function AskLucy({initialPrompt = ''}: {initialPrompt?:string}) {
     deniedScope.current = null;
     if (controller.setScope(nextScope)) {
       lifecycle.current++; stopVoice(); interacted.current = false;
-      setMessages([{text: greeting, isUser: false}]); setInput(scopeReady.current ? '' : initialPrompt); scopeReady.current = true; setLoading(false); setError(''); setWorkspaceOpen(false); syncRequest();
+      setMessages([{text: greeting, isUser: false}]); setInput(scopeReady.current ? '' : initialPrompt); scopeReady.current = true; setLoading(false); setError(''); setWorkspaceOpen(false); setActivityOpen(false); syncRequest();
     }
   };
   const viewCurrent = (epoch: number) => mounted.current && lifecycle.current === epoch && document.visibilityState !== 'hidden';
@@ -194,8 +196,9 @@ export default function AskLucy({initialPrompt = ''}: {initialPrompt?:string}) {
   return <Box sx={{ bgcolor: '#070B10', minHeight: '100vh', py: 4, display: 'flex', justifyContent: 'center' }}><Box sx={{ width: '100%', maxWidth: 960, px: 2, display: 'flex', flexDirection: 'column', height: '82vh' }}>
     <Typography variant="h4" sx={{ color: '#FFF', fontWeight: 850, mb: 1, textAlign: 'center' }}><SmartToy sx={{ mr: 1, verticalAlign: 'middle' }} />Ask Lucy</Typography>
     <Typography variant="body2" sx={{ color: '#8FA5B8', mb: 2, textAlign: 'center' }}>Your voice-first workforce command centre. Lucy explains every action and asks before protected operations.</Typography>
-    <Box sx={{textAlign:'center',mb:1}}><Button onClick={()=>setWorkspaceOpen(true)}>Tasks and preferences</Button></Box>
+    <Box sx={{textAlign:'center',mb:1}}><Button onClick={()=>setWorkspaceOpen(true)}>Tasks and preferences</Button><Button onClick={()=>setActivityOpen(true)}>Activity history</Button></Box>
     <LucyWorkspacePanel open={workspaceOpen} onClose={()=>setWorkspaceOpen(false)}/>
+    <LucyActivityPanel open={activityOpen} onClose={()=>setActivityOpen(false)} onOpenWork={()=>setWorkspaceOpen(true)}/>
     <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}><LucyWakeControl suspended={voiceBusy || requestState.pending} onWake={() => void startVoice(true)} /></Box>
     {requestState.pending && <Alert severity="warning" sx={{mb: 2}}><Typography role="status" aria-live="polite">{lucyRequestNotice(requestState)}</Typography><Stack direction="row" spacing={1}><Button onClick={checkPrevious} disabled={!requestState.canCheck}>Check previous request</Button><Button onClick={startNew} disabled={requestState.busy}>Start a new request…</Button></Stack></Alert>}
     {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}

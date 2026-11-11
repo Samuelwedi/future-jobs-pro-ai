@@ -16,6 +16,7 @@ ENV NODE_ENV=production
 COPY --from=build /app/backend/package*.json ./backend/
 COPY --from=build /app/backend/node_modules ./backend/node_modules
 COPY --from=build /app/backend/dist ./backend/dist
+COPY --from=build /app/backend/assets ./backend/assets
 COPY --from=build /app/backend/migrations ./backend/migrations
 COPY --from=build /app/backend/scripts ./backend/scripts
 COPY --from=build /app/web/dist ./web/dist

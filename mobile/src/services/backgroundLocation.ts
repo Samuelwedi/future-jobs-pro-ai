@@ -87,7 +87,10 @@ TaskManager.defineTask(TASK, async ({ data, error }: any) => {
   }
   for (const point of data?.locations || []) {
     // Do not send a queued point after logout, clock-out or a session switch.
-    if (run !== generation || await SecureStore.getItemAsync(SESSION) !== raw) return;
+    if (run !== generation) return;
+    const currentSession = await SecureStore.getItemAsync(SESSION);
+    // A stop/account change can occur while secure storage is resolving.
+    if (run !== generation || currentSession !== raw) return;
     try {
       const { disclosureVersion: _consent, ...shift } = session;
       const response = await fetch(`${API_URL}/gps/update`, {

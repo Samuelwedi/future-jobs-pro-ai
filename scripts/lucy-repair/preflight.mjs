@@ -12,7 +12,17 @@ export async function preflight(env = process.env, request = fetch) {
     if (!r.ok) throw new Error(`Provider HTTP ${r.status}`);
     return r.json();
   }
-  await check('GPT repair credential configured', async()=>{required('LUCY_OPENAI_API_KEY');});
+  await check('OpenAI support repair model access and spend authorization', async()=>{
+    const token=required('LUCY_OPENAI_API_KEY');
+    const model=required('LUCY_REPAIR_MODEL');
+    if(!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,119}$/.test(model))throw new Error('Invalid LUCY_REPAIR_MODEL');
+    if(env.LUCY_REPAIR_SPEND_APPROVED!=='true')throw new Error('Support repair spending has not been approved');
+    // Model metadata is read-only, not an inference call or proof of available
+    // credit, Codex compatibility, a price, or an enforceable spending ceiling.
+    const data=await json(`https://api.openai.com/v1/models/${encodeURIComponent(model)}`,token);
+    if(data.id!==model)throw new Error('Configured OpenAI model access could not be verified');
+  });
+  if(env.REPAIR_SCOPE && !['support-portal','portal-app'].includes(env.REPAIR_SCOPE) && env.REPAIR_MODE!=='preflight')return checks;
   await check('Railway deployment access and baseline', async()=>{
     const token=required('RAILWAY_API_TOKEN');
     const body={query:'query($serviceId:String!,$environmentId:String!){serviceInstance(serviceId:$serviceId,environmentId:$environmentId){latestDeployment{id status meta}}}',variables:{serviceId:required('RAILWAY_SERVICE_ID'),environmentId:required('RAILWAY_ENVIRONMENT_ID')}};

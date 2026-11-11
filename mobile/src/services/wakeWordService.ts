@@ -63,12 +63,17 @@ export class WakeWordService {
       }, 1200);
     });
 
+    this.service = service;
     try {
       await service.start();
-      this.service = service;
       this.status('listening');
     } catch (cause) {
-      await service.stop().catch(() => undefined);
+      try {
+        await service.stop();
+        if (this.service === service) this.service = undefined;
+      } catch {
+        // Retain the handle: a later handoff must retry native cleanup, not assume release.
+      }
       const message = cause instanceof Error ? cause.message : 'Hey Lucy could not start.';
       this.status('error', message);
       throw cause;
@@ -76,9 +81,18 @@ export class WakeWordService {
   }
 
   async stop(): Promise<void> {
+    // Permission/native startup can still be pending when camera claims the microphone.
+    // Wait for it to settle so no detector starts after the awaited handoff completes.
+    if (this.starting) await this.starting.catch(() => undefined);
     const service = this.service;
-    this.service = undefined;
-    if (service) await service.stop().catch(() => undefined);
+    if (service) {
+      try { await service.stop(); }
+      catch (error) {
+        this.status('error', 'Could not release the Hey Lucy microphone.');
+        throw error;
+      }
+      if (this.service === service) this.service = undefined;
+    }
     this.status('off');
   }
 }

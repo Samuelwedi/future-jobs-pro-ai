@@ -4,10 +4,11 @@ import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
-  TouchableOpacity,  Linking, ScrollView, Alert,
+  TouchableOpacity, TextInput, Linking, ScrollView, Alert,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import { searchSchedule, visibleSchedule } from '../utils/scheduleSearch';
 import { calendarDate, parseCalendarDate } from '../utils/calendarDate';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -48,6 +49,7 @@ export default function ScheduleScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const [shifts, setShifts] = useState<Shift[]>([]);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
@@ -59,13 +61,15 @@ export default function ScheduleScreen() {
   const [selectedEmployeeName, setSelectedEmployeeName] = useState(t("My Schedule"));
   const [showEmployeePicker, setShowEmployeePicker] = useState(false);
 
+  const employeeRequestNumber = useRef(0);
   const fetchEmployees = async () => {
+    const request = ++employeeRequestNumber.current;
     try {
       const companyId = user?.companyId;
       if (!companyId) return;
       const res = await api.get<TeamMembersResponse>(`/team/members/${companyId}`);
       const members = res.members || [];
-      setEmployees(members);
+      if (request === employeeRequestNumber.current) setEmployees(members);
     } catch (e) {
       console.error('Failed to fetch employees', e);
     }
@@ -112,18 +116,21 @@ export default function ScheduleScreen() {
       console.log(`📊 Fetched ${fetchedShifts.length} shifts`);
     } catch (e) {
       console.error('Error fetching shifts:', e);
-      Alert.alert(t('Error'), t('Could not load shifts'));
+      if (request === requestNumber.current) Alert.alert(t('Error'), t('Could not load shifts'));
     } finally {
       if(request === requestNumber.current) { setLoading(false); setRefreshing(false); }
     }
   };
 
   useFocusEffect(useCallback(() => {
-    if (user?.role === 'boss' || user?.role === 'manager') {
-      fetchEmployees();
-    }
-    fetchShifts();
-  }, [selectedDate, viewMode, selectedEmployeeId, currentMonth]));
+    setShifts([]);
+    setSelectedShift(null);
+    setEmployees([]);
+    setLoading(true);
+    void fetchShifts();
+    if (canManage) void fetchEmployees();
+    return () => { requestNumber.current += 1; employeeRequestNumber.current += 1; };
+  }, [selectedDate, viewMode, selectedEmployeeId, currentMonth, user?.id, user?.companyId, canManage]));
 
   const onRefresh = () => { setRefreshing(true); fetchShifts(); };
 
@@ -149,13 +156,10 @@ export default function ScheduleScreen() {
     return format(parseCalendarDate(dateStr.split('T')[0]), 'EEE, MMM d');
   };
 
-  const shiftDates = new Set(shifts.map(s => s.date ? getShiftDateString(s.date) : ''));
-
+  const matchingShifts = searchSchedule(shifts, search);
+  const shiftDates = new Set(matchingShifts.map(s => s.date ? getShiftDateString(s.date) : ''));
   const selectedDateStr = getUTCDateString(selectedDate);
-  const shiftsForSelectedDate = shifts.filter(s => {
-    if (!s.date) return false;
-    return getShiftDateString(s.date) === selectedDateStr;
-  });
+  const visibleShifts = visibleSchedule(shifts, search, selectedDateStr, viewMode === 'month' || viewMode === 'day');
 
   const handleOpenDirections = (address?: string) => {
     if (!address) return;
@@ -251,8 +255,14 @@ export default function ScheduleScreen() {
         })}
       </View>
 
+      <View style={{paddingHorizontal:20, paddingVertical:8}}>
+        <TextInput accessibilityLabel={t("Search this date range")} placeholder={t("Search this date range")} placeholderTextColor="#AAA" value={search} onChangeText={setSearch} maxLength={200} returnKeyType="search" style={{color:'#FFF', backgroundColor:'#1A1A1A', borderRadius:8, padding:12}} />
+        {search.trim() ? <TouchableOpacity accessibilityRole="button" onPress={() => setSearch('')} style={{paddingVertical:8}}><Text style={{color:'#00D4FF'}}>{t("Clear search")}</Text></TouchableOpacity> : null}
+      </View>
       <FlatList
-        data={viewMode === 'month' || viewMode === 'day' ? shiftsForSelectedDate : shifts}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        data={visibleShifts}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.shiftCard} onPress={() => setSelectedShift(item)}>
             <Text style={styles.shiftDate}>{item.date ? formatShiftDate(item.date) : ''}</Text>
@@ -270,7 +280,7 @@ export default function ScheduleScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />}
-        ListEmptyComponent={<Text style={styles.empty}>{t("No shifts on this day")}</Text>}
+        ListEmptyComponent={<Text style={styles.empty}>{search.trim() ? t("No matching shifts in this date range") : t("No shifts on this day")}</Text>}
       />
 
       {/* Shift Detail Modal */}

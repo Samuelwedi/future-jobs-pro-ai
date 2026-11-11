@@ -98,3 +98,59 @@ test('mobile review candidates explain the release requirement without claiming 
  expect(screen.getByText(/Mobile source checks do not update installed apps/)).toBeInTheDocument();
  expect(screen.getByText('Verify resolution')).toBeInTheDocument();
 });
+
+test('cancels queued repairs once and refreshes terminal status', async () => {
+ const queued={id:'repair',incident_id:incident.id,status:'queued',scope:'portal-app'};
+ let repair=queued,finish;
+ const api={get:jest.fn(path=>Promise.resolve({data:path.includes('incidents')?response.data:{repairEnabled:true,repairs:[repair]}})),post:jest.fn(()=>new Promise(resolve=>{finish=()=>{repair={...queued,status:'cancelled'};resolve({data:{success:true}});};}))};
+ render(<LiveMonitoring client={()=>api} isOwner onUnauthorized={jest.fn()}/>);
+ const cancel=await screen.findByText('Cancel queued repair');
+ fireEvent.click(cancel);fireEvent.click(cancel);expect(api.post).toHaveBeenCalledTimes(1);
+ expect(api.post).toHaveBeenCalledWith('/api/owner-operations/repairs/repair/cancel',{});
+ await act(async()=>finish());
+ expect(await screen.findByText('Cancelled before dispatch')).toBeInTheDocument();
+ expect(screen.queryByText('Cancel queued repair')).not.toBeInTheDocument();
+ expect(screen.getByText('Fix with Lucy')).toBeEnabled();
+});
+
+test('running or uncertain dispatch offers no misleading local cancellation', async () => {
+ const api={get:jest.fn(path=>Promise.resolve({data:path.includes('incidents')?response.data:{repairEnabled:true,repairs:[{id:'repair',incident_id:incident.id,status:'dispatching',error:'Workflow dispatch is unconfirmed.'}]}}))};
+ render(<LiveMonitoring client={()=>api} isOwner onUnauthorized={jest.fn()}/>);
+ await screen.findByText('Workflow dispatch is unconfirmed.');
+ expect(screen.queryByText('Cancel queued repair')).not.toBeInTheDocument();
+ expect(screen.getByText('Fix with Lucy')).toBeDisabled();
+ expect(screen.getByText(/Pausing this feed does not stop a repair/)).toBeInTheDocument();
+});
+
+test('unmounting while diagnostics are pending prevents a later repair dispatch', async () => {
+ let finish;
+ const api={get:jest.fn(path=>Promise.resolve({data:path.includes('incidents')?response.data:{repairEnabled:true,repairs:[]}})),post:jest.fn(()=>new Promise(resolve=>{finish=resolve;}))};
+ const {unmount}=render(<LiveMonitoring client={()=>api} isOwner onUnauthorized={jest.fn()}/>);
+ fireEvent.click(await screen.findByText('Fix with Lucy'));unmount();
+ await act(async()=>finish({data:{success:true}}));
+ expect(api.post).toHaveBeenCalledTimes(1);
+});
+
+test('a post-action refresh supersedes an old in-flight poll', async () => {
+ jest.useFakeTimers();let poll=0;const pending=[];
+ const active={id:'repair',incident_id:incident.id,status:'queued',scope:'portal-app'};
+ const api={get:jest.fn(path=>{
+  if(poll===1)return new Promise(resolve=>pending.push(()=>resolve({data:path.includes('incidents')?response.data:{repairEnabled:true,repairs:[active]}})));
+  return Promise.resolve({data:path.includes('incidents')?response.data:{repairEnabled:true,repairs:[{...active,status:poll===2?'cancelled':'queued'}]}});
+ }),post:jest.fn(async()=>{poll=2;return {data:{success:true}};})};
+ const {unmount}=render(<LiveMonitoring client={()=>api} isOwner onUnauthorized={jest.fn()}/>);
+ await act(async()=>{});poll=1;await act(async()=>jest.advanceTimersByTime(5000));
+ fireEvent.click(screen.getByText('Cancel queued repair'));
+ await act(async()=>{});expect(screen.getByText('Cancelled before dispatch')).toBeInTheDocument();
+ await act(async()=>pending.forEach(resolve=>resolve()));
+ expect(screen.getByText('Cancelled before dispatch')).toBeInTheDocument();
+ expect(screen.queryByText('Cancel queued repair')).not.toBeInTheDocument();unmount();jest.useRealTimers();
+});
+
+test('non-owner views never fetch repair controls or expose cancellation', async () => {
+ const api={get:jest.fn().mockResolvedValue(response),post:jest.fn()};
+ render(<LiveMonitoring client={()=>api} isOwner={false} onUnauthorized={jest.fn()}/>);
+ await screen.findByText('Recording interrupted');
+ expect(api.get).toHaveBeenCalledTimes(1);expect(screen.queryByText('Fix with Lucy')).not.toBeInTheDocument();
+ expect(screen.queryByText('Cancel queued repair')).not.toBeInTheDocument();
+});

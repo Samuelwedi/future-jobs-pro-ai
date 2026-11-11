@@ -34,3 +34,20 @@ Remaining limits: no production logs, live database migration, Android UI/audio 
 ## Production integration — October 22
 
 Reapplied on production commit 11b8790, preserving the expo-audio migration, payroll navigation and media changes. Mobile version 1.2.6. Backend compilation and 35 release tests pass; mobile TypeScript, seven tester regressions and Android export pass. Native device verification and signed store release remain pending. Railway deployment e91ac0d9 is queued; migration completion not yet observed.
+
+## November 11: keep the legacy root gate current
+
+Run from repository root: `node --test tests/tester-regressions.cjs`.
+The old duplicated VM harness failed all seven cases on unchanged integration-base source because it assumed obsolete imports and offline behavior. This test-only update changes no runtime code. Installed mobile/backend dependencies are still required.
+
+Coverage mapping:
+- Offline audio: maintained `voice-receipt-native.test.cjs` and `offline-approval.test.cjs` replace the obsolete expectation that unkeyed voice POSTs automatically replay. They verify app-owned M4A persistence, original mode, restart/status-only reconciliation and legacy review-only records.
+- Lucy late responses: `lucy-chat-retries.test.cjs` covers blur/refocus, background, identity changes and actual handler fencing.
+- Lucy speech: `lucy-speech-lifecycle.test.cjs` covers preparation, superseded callbacks, microphone ordering and stop failures. The root gate additionally asserts a throwing native speak mock is actually called and delays voice selection across the actual source-loaded background lifecycle, asserting that no second utterance occurs.
+- Recorder release: `recorder-session.test.cjs` verifies delayed preparation/stop, cancellation, release order and no use after release.
+- Localization: the original device-language and all-copy checks remain. Six existing named i18n aliases (vacation, sick, personal, pending, approved, rejected) have explicit exact expected values; all other keys retain exact English/Spanish/French assertions. The original delayed preference read test remains with the current localization/useCallback mocks.
+- Voice upload: original mocked route assertions still verify WAV extension/content, stored summary, temporary-file cleanup on success/provider failure/database failure, and failure responses. Newly imported receipt/transcript services are stubbed without loading a real database.
+
+Each selected maintained suite runs under a separate Node test process against current source. Nonzero exit, signal, startup error or zero executed tests fails the root gate and includes child output. A local intentionally failing sentinel fixture proves assertion failures propagate; it is removed afterward. `NODE_TEST_CONTEXT` is removed only from child environment to avoid inheriting Node's internal parent-worker protocol, and TAP output is explicitly selected. No test failures are skipped or converted to pass.
+
+This remains source/mocked verification. It does not establish native devices, provider behavior, builds or deployment acceptance.

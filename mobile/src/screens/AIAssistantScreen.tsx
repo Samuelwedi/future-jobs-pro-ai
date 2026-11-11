@@ -81,6 +81,8 @@ export default function AIAssistantScreen() {
   const [wakeStatus, setWakeStatus] = useState('starting');
   const flatListRef = useRef<FlatList>(null);
   const isSpeaking = useRef(false);
+  const speechGeneration = useRef(0);
+  const audioModeQueue = useRef<Promise<void>>(Promise.resolve());
   const finishingRecording = useRef(false);
   const heardSpeech = useRef(false);
   const silenceStartedAt = useRef<number | null>(null);
@@ -201,6 +203,7 @@ export default function AIAssistantScreen() {
   // Authentication scope changes drop all private chat and unresolved payloads.
   useEffect(() => {
     generation.current++; interacted.current = false;
+    isSpeaking.current = false;
     conversationActiveRef.current = false;
     for (const timer of [followUpTimer, conversationTimer, maximumRecordingTimer]) {
       if (timer.current) clearTimeout(timer.current); timer.current = null;
@@ -247,20 +250,33 @@ export default function AIAssistantScreen() {
       .catch(() => {});
   }, [user?.id, user?.companyId, user?.role]);
 
+  // Native audio mode writes must settle in order, even when their UI owner expires.
+  const setSessionAudioMode = (options: Parameters<typeof setAudioModeAsync>[0], valid: () => boolean) => {
+    const operation = audioModeQueue.current.catch(() => {}).then(async () => {
+      if (valid()) await setAudioModeAsync(options);
+    });
+    audioModeQueue.current = operation;
+    return operation;
+  };
+
   // Speak Lucy's response
   const speakText = async (text: string): Promise<void> => {
     const epoch = generation.current;
-    if (!current(epoch)) return;
+    if (!current(epoch) || startingRecording.current || recorderRef.current?.hasRecording) return;
+    const speechId = ++speechGeneration.current;
+    const currentSpeech = () => current(epoch) && speechGeneration.current === speechId
+      && !startingRecording.current && !recorderRef.current?.hasRecording;
     try {
-    if (isSpeaking.current) await Speech.stop();
-    if (!current(epoch)) return;
-    await setAudioModeAsync({
+    await Speech.stop();
+    if (!currentSpeech()) return;
+    await setSessionAudioMode({
       allowsRecording: false,
       playsInSilentMode: true,
       interruptionMode: 'duckOthers',
-    });
+    }, currentSpeech);
+    if (!currentSpeech()) return;
     const voices = await Speech.getAvailableVoicesAsync().catch(() => []);
-    if (!current(epoch)) return;
+    if (!currentSpeech()) return;
     const preferred = voices.find(voice =>
       /samantha|zira|ava|victoria|female|serena|karen/i.test(`${voice.name} ${voice.identifier}`)
       && voice.language.toLowerCase().startsWith(lang)
@@ -272,13 +288,13 @@ export default function AIAssistantScreen() {
       voice: preferred?.identifier,
       pitch: 1.0,
       rate: 0.9,
-      onDone: () => { isSpeaking.current = false; resolve(); },
-      onStopped: () => { isSpeaking.current = false; resolve(); },
-      onError: () => { isSpeaking.current = false; resolve(); },
+      onDone: () => { if (currentSpeech()) isSpeaking.current = false; resolve(); },
+      onStopped: () => { if (currentSpeech()) isSpeaking.current = false; resolve(); },
+      onError: () => { if (currentSpeech()) isSpeaking.current = false; resolve(); },
     }));
     } catch {
       // Speech is optional: native audio failures must not reject UI handlers.
-      if (current(epoch)) isSpeaking.current = false;
+      if (currentSpeech()) isSpeaking.current = false;
     }
   };
 
@@ -424,17 +440,22 @@ export default function AIAssistantScreen() {
     if (!current(epoch) || startingRecording.current || finishingRecording.current || recorderRef.current?.isRecording) return;
     if (controller.snapshot().pending) return;
     startingRecording.current = true;
+    // Invalidate speech that is still awaiting audio setup or voice selection.
+    speechGeneration.current += 1;
     try {
+      await Speech.stop();
+      if (!current(epoch)) return;
+      isSpeaking.current = false;
       const permission = await requestRecordingPermissionsAsync();
       if (!current(epoch)) return;
       if (!permission.granted) {
         Alert.alert(t('Permission required'), t("Please grant microphone access."));
         return;
       }
-      await setAudioModeAsync({
+      await setSessionAudioMode({
         allowsRecording: true,
         playsInSilentMode: true,
-      });
+      }, () => current(epoch));
       if (!current(epoch)) return;
 
       const started = await audioRecorder.start();

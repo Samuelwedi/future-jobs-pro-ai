@@ -21,115 +21,88 @@ function load(relative, mocks = {}, globals = {}, transform = s => s) {
 }
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 
-test('offline audio uses the supported filesystem API and retains its extension', async () => {
-  const copied = [], queued = [];
-  const { api } = load('mobile/src/services/api.ts', {
-    axios: { create: () => ({ interceptors: { request: { use() {} }, response: { use() {} } } }) },
-    'expo-secure-store': {},
-    'expo-file-system/legacy': { documentDirectory: 'file:///documents/', copyAsync: async args => { copied.push(args); } },
-    'react-native': { Platform: {} },
-    './offlineService': { getOnlineStatus: () => false, queueAction: async args => { queued.push(args); } },
-  }, { __DEV__: false });
-  await assert.rejects(api.uploadFileWithData('/voice/process', 'file:///cache/note.m4a', { projectId: 'project' }, 'audio'), /queued for later/);
-  assert.equal(copied.length, 1);
-  assert.match(copied[0].to, /^file:\/\/\/documents\/offline-\d+\.m4a$/);
-  assert.equal(queued[0].fileUri, copied[0].to);
-  assert.equal(queued[0].fieldName, 'audio');
-});
-
-function lucy(overrides = {}) {
-  const effects = [], cleanups = [], listeners = {};
-  const stateUpdates = [];
-  let speechCount = 0, stopCount = 0, appChange;
-  const React = {
-    createElement: () => null,
-    useState: value => [value, update => stateUpdates.push(update)],
-    useRef: value => ({ current: value }),
-    useEffect: effect => effects.push(effect),
-  };
-  const Speech = {
-    stop: async () => { stopCount++; },
-    getAvailableVoicesAsync: async () => [],
-    speak: (_, options) => { speechCount++; options.onDone(); },
-    ...overrides.speech,
-  };
-  const recording = { isRecording: false, prepareToRecordAsync: overrides.prepareRecording || (async () => {}), record() { this.isRecording = true; }, stop: overrides.stopRecording || (async () => {}) };
-  const Audio = {
-    setAudioModeAsync: async () => {}, requestPermissionsAsync: async () => ({ granted: true }),
-    RecordingOptionsPresets: { HIGH_QUALITY: { android: {}, ios: {} } },
-    Recording: { createAsync: overrides.createRecording || (async () => { throw Error('unused'); }) },
-  };
-  const globals = { handlers: {} };
-  const module = load('mobile/src/screens/AIAssistantScreen.tsx', {
-    react: React,
-    'react-native': { StyleSheet: { create: v => v }, Platform: {}, Alert: { alert() {} }, DeviceEventEmitter: { emit() {}, addListener: () => ({ remove() {} }) }, AppState: { addEventListener: (_, cb) => { appChange = cb; return { remove() {} }; } } },
-    '@expo/vector-icons': {},
-    '../context/AuthContext': { useAuth: () => ({ user: null }) },
-    '../services/api': { api: { post: overrides.post || (async () => ({ text: 'Hello' })) } },
-    '@react-navigation/native': { useNavigation: () => ({ addListener: (name, cb) => { listeners[name] = cb; return () => {}; }, isFocused: () => true }), useRoute: () => ({}) },
-    'expo-audio': { RecordingPresets: { HIGH_QUALITY: {} }, useAudioRecorder: () => recording, useAudioRecorderState: () => ({}), setAudioModeAsync: async () => {}, requestRecordingPermissionsAsync: async () => ({ granted: true }) }, 'expo-speech': Speech,
-    'react-native-safe-area-context': { useSafeAreaInsets: () => ({}) },
-    'expo-file-system/legacy': {}, 'expo-sharing': {},
-    '@react-native-async-storage/async-storage': { getItem: async () => null },
-  }, globals, source => source.replace('  return (\n    <KeyboardAvoidingView', '  Object.assign(handlers, { sendMessage, speakText, startRecording });\n  return (\n    <KeyboardAvoidingView'));
-  module.default();
-  effects.forEach(effect => { const cleanup = effect(); if (cleanup) cleanups.push(cleanup); });
-  return { ...globals.handlers, blur: () => listeners.blur(), focus: () => listeners.focus(), background: () => appChange('background'), unmount: () => cleanups.forEach(f => f()), speechCount: () => speechCount, stopCount: () => stopCount, stateUpdates };
+// The old duplicated UI mocks targeted expo-av and generic queued voice uploads.
+// Run the maintained source suites in isolated Node processes instead. A child
+// failure (including an assertion failure or missing dependency) fails this gate.
+function sourceSuites(files) {
+  const { spawnSync } = require('node:child_process');
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT; // Do not inherit the parent runner's child-worker protocol.
+  const result = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-concurrency=1', ...files], {
+    cwd: root, encoding: 'utf8', timeout: 120000, maxBuffer: 8 * 1024 * 1024,
+    env,
+  });
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.signal, null, `Child suite terminated: ${result.signal}`);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /(?:#|ℹ) tests [1-9]/, 'Child suite must execute tests');
 }
+test('offline voice preserves app-owned audio and reconciles submitted recordings without blind replay', () => {
+  sourceSuites(['mobile/tests/voice-receipt-native.test.cjs', 'mobile/tests/offline-approval.test.cjs']);
+});
+test('Lucy drops late responses after blur/refocus and identity changes', () => {
+  sourceSuites(['mobile/tests/lucy-chat-retries.test.cjs']);
+});
+test('Lucy fences speech preparation, recording and superseded native callbacks', async () => {
+  sourceSuites(['mobile/tests/lucy-speech-lifecycle.test.cjs']);
+  const source = fs.readFileSync(path.join(root, 'mobile/src/screens/AIAssistantScreen.tsx'), 'utf8');
+  const mode = source.match(/const setSessionAudioMode =[\s\S]*?(?=\n  \/\/ Speak Lucy)/)[0];
+  const speech = source.match(/const speakText = async[\s\S]*?(?=\n  const runRequest =)/)[0];
+  let speakCalls = 0, background;
+  const voices = deferred(), selecting = deferred();
+  const context = { active:{current:true}, controller:{suspend(){},resume(){}}, conversationActiveRef:{current:false},
+    followUpTimer:{current:null},conversationTimer:{current:null},maximumRecordingTimer:{current:null},
+    clearTimeout, syncRequest(){},setIsRecording(){},setLoading(){},setConversationActive(){},setVoiceStatus(){},
+    navigation:{isFocused:()=>true,addListener:()=>()=>{}},DeviceEventEmitter:{emit(){}},
+    AppState:{currentState:'active',addEventListener:(_name,fn)=>{background=fn;return {remove(){}};}},
+    audioModeQueue: {current:Promise.resolve()}, generation:{current:0}, speechGeneration:{current:0}, isSpeaking:{current:false},
+    startingRecording:{current:false}, recorderRef:{current:{hasRecording:false,isRecording:false,cancel(){}}},
+    current:epoch=>context.active.current && context.generation.current===epoch, lang:'en', setAudioModeAsync:async()=>{},
+    Speech:{stop:async()=>{},getAvailableVoicesAsync:async()=>[],speak:()=>{speakCalls++;throw Error('native unavailable');}} };
+  vm.runInNewContext(ts.transpileModule(mode+'\n'+speech+'\nthis.speakText=speakText;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText, context);
+  await assert.doesNotReject(context.speakText('test'));
+  assert.equal(speakCalls, 1, 'native failure path must actually invoke Speech.speak');
+  const ast = ts.createSourceFile('Lucy.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  let lifecycle;
+  function visit(node) { if(ts.isCallExpression(node) && node.expression.getText(ast)==='useEffect'
+    && node.arguments[0]?.getText(ast).includes("AppState.addEventListener")) lifecycle=node.arguments[0]; ts.forEachChild(node,visit); }
+  visit(ast); assert.ok(lifecycle);
+  vm.runInNewContext(ts.transpileModule('this.lifecycle='+lifecycle.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);
+  const cleanup = context.lifecycle();
+  context.Speech.getAvailableVoicesAsync=()=>{selecting.resolve();return voices.promise;};
+  const pending=context.speakText('late speech');
+  await selecting.promise;
+  background('background');
+  voices.resolve([]);
+  await pending;
+  assert.equal(speakCalls,1,'background during voice lookup must prevent another native utterance');
+  assert.equal(context.active.current,false); cleanup();
 
-test('Lucy ignores a response arriving after blur, even after refocus', async () => {
-  const response = deferred();
-  const screen = lucy({ post: () => response.promise });
-  await Promise.resolve(); // Finish the independent wake-word preference load.
-  const pending = screen.sendMessage('test');
-  screen.blur(); screen.focus();
-  const updates = screen.stateUpdates.length;
-  response.resolve({ text: 'Late response' });
-  await pending;
-  assert.equal(screen.speechCount(), 0);
-  assert.equal(screen.stateUpdates.length, updates);
-  screen.unmount();
 });
-test('Lucy cancels speech preparation on background and catches native failures', async () => {
-  const voices = deferred();
-  const screen = lucy({ speech: { getAvailableVoicesAsync: () => voices.promise } });
-  const pending = screen.speakText('test');
-  await Promise.resolve(); screen.background(); voices.resolve([]);
-  await pending;
-  assert.equal(screen.speechCount(), 0);
-  assert.ok(screen.stopCount() > 0);
-  screen.unmount();
-  const failing = lucy({ speech: { speak: () => { throw Error('native unavailable'); } } });
-  await assert.doesNotReject(failing.speakText('test'));
-  failing.unmount();
-});
-test('Lucy releases a recorder created after leaving the screen', async () => {
-  const created = deferred(), started = deferred(); let unloaded = 0;
-  const screen = lucy({ prepareRecording: () => { started.resolve(); return created.promise; }, stopRecording: async () => { unloaded++; } });
-  const pending = screen.startRecording();
-  await started.promise;
-  screen.blur();
-  created.resolve();
-  await pending;
-  assert.equal(unloaded, 1);
-  screen.unmount();
+test('recorder cancellation waits for preparation/stop and never uses a released object', () => {
+  sourceSuites(['mobile/tests/recorder-session.test.cjs']);
 });
 test('supported device locales and every Home/Profile translation resolve', () => {
   const { t, deviceLanguage } = load('mobile/src/services/i18n.ts');
   const { screenCopy } = load('mobile/src/services/screenTranslations.ts');
   for (const [locale, expected] of [['es-MX','es'], ['fr_CA','fr'], ['de-DE','en'], [undefined,'en']]) assert.equal(deviceLanguage(locale), expected);
+  // Existing named i18n aliases intentionally take precedence over lowercase enum copy.
+  const aliases = {vacation:['Vacation','Vacaciones','Vacances'], sick:['Sick','Enfermedad','Maladie'],
+    personal:['Personal','Personal','Personnel'], pending:['Pending','Pendiente','En attente'],
+    approved:['Approved','Aprobado','Approuvé'], rejected:['Rejected','Rechazado','Refusé']};
   for (const [key, values] of Object.entries(screenCopy)) {
-    assert.equal(t(key, 'en'), key);
-    assert.equal(t(key, 'es'), values[0]);
-    assert.equal(t(key, 'fr'), values[1]);
+    const expected = aliases[key] || [key, ...values];
+    for (const [index,lang] of ['en','es','fr'].entries()) assert.equal(t(key,lang),expected[index],`${key}:${lang}`);
   }
   assert.equal(t('{count} shifts today', 'es', { count: '3' }), 'Turnos hoy: 3');
 });
 
 function voiceRoute({ failProcessing = false, failSave = false } = {}) {
   const routes = {}, writes = []; let tempFile;
-  const router = { post: (url, ...handlers) => { routes[url] = handlers.at(-1); }, get() {} };
+  const router = { patch() {}, post: (url, ...handlers) => { routes[url] = handlers.at(-1); }, get() {} };
   load('backend/src/routes/voiceRoutes.ts', {
+    '../services/voiceTranscriptService': { TranscriptEditError: class extends Error {} },
+    '../services/voiceReceipts': { validVoiceKey: () => false, VoiceReceiptError: class extends Error {} },
     '../utils/auth': { verifyToken: () => ({ id: 'user' }) },
     express: { Router: () => router }, multer: Object.assign(() => ({ single: () => {} }), { memoryStorage: () => ({}) }),
     cloudinary: { v2: { config() {}, uploader: { upload: async input => { assert.match(input, /^data:audio\/wav;base64,/); return { secure_url: 'https://example.test/audio' }; } } } },
@@ -161,7 +134,8 @@ test('saved language loads, while a delayed read cannot overwrite a new choice',
       useRef: value => ({ current: value }), useEffect: effect => effects.push(effect),
     };
     const { LanguageProvider } = load('mobile/src/context/LanguageContext.tsx', {
-      react: React,
+      react: { ...React, useCallback: fn => fn },
+      'expo-localization': { getLocales: () => [{languageTag:'en-US'}] },
       '@react-native-async-storage/async-storage': { getItem: () => saved.promise, setItem: async (...args) => { writes.push(args); } },
     });
     const provider = LanguageProvider({ children: null });
@@ -187,4 +161,13 @@ test('voice upload preserves format, stores summary and always removes temporary
     assert.ok(res.body.requestId);
     assert.match(res.body.message, /retry your saved recording/);
   }
+});
+
+test('root regression gate fails closed when a selected child assertion fails', () => {
+  const folder = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'future-gate-check-'));
+  const fixture = path.join(folder, 'failure.test.cjs');
+  try {
+    fs.writeFileSync(fixture, "require('node:test').test('sentinel assertion',()=>require('node:assert/strict').fail('intentional gate check'));\n");
+    assert.throws(() => sourceSuites([fixture]), /intentional gate check/);
+  } finally { fs.rmSync(folder, {recursive:true,force:true}); }
 });

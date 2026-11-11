@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { isManagerRole } from '../middleware/companyActor';
 import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
 import { sendPushNotification } from '../services/notificationService';
@@ -9,21 +10,21 @@ router.get('/', async (req: Request, res: Response) => {
   try {
     const decoded = verifyToken(req);
     const actorResult = await pool.query(
-      'SELECT company_id, role FROM users WHERE id = $1',
+      'SELECT company_id, role FROM users WHERE id = $1 AND COALESCE(is_active,TRUE)=TRUE',
       [decoded.id]
     );
     const actor = actorResult.rows[0];
     if (!actor?.company_id) return res.status(401).json({ success: false, message: 'Not authenticated' });
-    const canSeeCompany = ['boss', 'manager', 'admin'].includes(String(actor.role || '').toLowerCase());
+    const canSeeCompany = isManagerRole(actor.role);
     const result = await pool.query(
       `SELECT pr.*, u.first_name || ' ' || u.last_name AS user_name,
               u.email AS user_email,
               GREATEST(1, (pr.end_date::date - pr.start_date::date) + 1) AS calendar_days,
               TRIM(COALESCE(approver.first_name, '') || ' ' || COALESCE(approver.last_name, '')) AS approved_by_name
        FROM pto_requests pr
-       JOIN users u ON u.id = pr.user_id
-       LEFT JOIN users approver ON approver.id = pr.approved_by
-       WHERE COALESCE(pr.company_id, u.company_id) = $1
+       JOIN users u ON u.id = pr.user_id AND u.company_id=pr.company_id
+       LEFT JOIN users approver ON approver.id = pr.approved_by AND approver.company_id=u.company_id
+       WHERE pr.company_id = $1
          AND ($2::boolean = true OR pr.user_id = $3)
        ORDER BY pr.start_date DESC, pr.created_at DESC`,
       [actor.company_id, canSeeCompany, decoded.id]
@@ -40,7 +41,7 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
     const decoded=verifyToken(req);
     const actorResult=await pool.query("SELECT company_id,LOWER(COALESCE(role,'employee')) role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE)=TRUE",[decoded.id]);
     const actor=actorResult.rows[0];
-    if(!actor || !['boss','manager','admin'].includes(actor.role)) return res.status(403).json({success:false,message:'Manager access is required'});
+    if(!actor || !isManagerRole(actor.role)) return res.status(403).json({success:false,message:'Manager access is required'});
     const status=String(req.body.status||'').toLowerCase();
     if(!['approved','rejected'].includes(status)) return res.status(400).json({success:false,message:'Status must be approved or rejected'});
     const managerNote=String(req.body.managerNote||'').trim();
@@ -48,7 +49,7 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
     if(status==='rejected' && managerNote.length<3) return res.status(400).json({success:false,message:'Add a reason for rejecting this request'});
     const result=await pool.query(
       `UPDATE pto_requests pr SET status=$1,approved_by=$2,approved_at=NOW(),manager_note=$3,updated_at=NOW()
-       FROM users u WHERE pr.id=$4 AND u.id=pr.user_id AND COALESCE(pr.company_id,u.company_id)=$5
+       FROM users u WHERE pr.id=$4 AND u.id=pr.user_id AND pr.company_id=$5 AND u.company_id=$5
          AND pr.status = 'pending' RETURNING pr.*`,
       [status,decoded.id,managerNote||null,String(req.params.id),actor.company_id],
     );

@@ -1,4 +1,10 @@
-const {test,before,after}=require('node:test');
+// The route authorization tests use the same fake model for both adapters.
+require('../dist/services/lucyBackgroundInference').lucyBackgroundResponse = request => require('../dist/services/lucyInference').lucyResponse(request);
+require('./fixtures/lucy-funded-processor.cjs');
+const {test,before,after,beforeEach,afterEach}=require('node:test');
+let backgroundFlag;
+beforeEach(context=>{backgroundFlag=process.env.LUCY_BACKGROUND_WORK_ENABLED;if(context.name.startsWith('background'))process.env.LUCY_BACKGROUND_WORK_ENABLED='true';});
+afterEach(()=>{if(backgroundFlag===undefined)delete process.env.LUCY_BACKGROUND_WORK_ENABLED;else process.env.LUCY_BACKGROUND_WORK_ENABLED=backgroundFlag;});
 const assert=require('node:assert/strict');
 const {PGlite}=require('@electric-sql/pglite');
 const express=require('express');
@@ -20,24 +26,28 @@ before(async()=>{
   await db.exec(`
     CREATE TABLE companies(id uuid primary key,is_active boolean default true,subscription_status text default 'active',subscription_tier text default 'professional',subscription_provider text,subscription_current_period_end timestamptz,subscription_expires_at timestamptz);
     CREATE TABLE users(id uuid primary key,company_id uuid,role text,is_active boolean default true,must_change_password boolean default false,full_name text,first_name text,last_name text,email text);
-    CREATE TABLE projects(id uuid primary key,company_id uuid,name text,client_name text,status text);
+    CREATE TABLE projects(id uuid primary key,company_id uuid,name text,client_name text,address text,status text);
     CREATE TABLE tasks(id uuid primary key default gen_random_uuid(),company_id uuid,assigned_to uuid,description text,status text,created_at timestamptz default now());
-    CREATE TABLE shifts(id uuid primary key,project_id uuid,name text,date date,start_time time,end_time time);
+    CREATE TABLE shifts(id uuid primary key,project_id uuid,company_id uuid,name text,date date,start_time time,end_time time);
     CREATE TABLE shift_assignments(shift_id uuid,user_id uuid);
-    CREATE TABLE time_entries(id uuid primary key,project_id uuid,user_id uuid);
+    CREATE TABLE time_entries(id uuid primary key,project_id uuid,user_id uuid,company_id uuid,clock_in timestamptz,clock_out timestamptz,break_minutes numeric,approval_status text,payroll_locked_at timestamptz);
+    CREATE TABLE pto_requests(id uuid primary key default gen_random_uuid(),user_id uuid,company_id uuid,start_date date,end_date date,type text,reason text,status text,approved_by uuid,created_at timestamptz default now());
+    CREATE TABLE in_app_notifications(company_id uuid,user_id uuid,title text,message text,notification_type text,action_url text);
+    CREATE TABLE approvals(id uuid primary key default gen_random_uuid(),user_id uuid,action_type text,action_payload jsonb,status text,created_at timestamptz default now(),resolved_at timestamptz);
     CREATE TABLE lucy_conversations(id uuid default gen_random_uuid(),user_id uuid,company_id uuid,role text,content text,created_at timestamptz default now());
     CREATE TABLE command_events(company_id uuid,actor_id uuid,kind text,title text,details jsonb);
   `);
   await query('INSERT INTO companies(id) VALUES($1),($2)',[company,other]);
   await db.exec(require('node:fs').readFileSync(require('node:path').join(__dirname,'../migrations/20261108_lucy_request_ledger.sql'),'utf8'));
   for(const [user,tenant,role,name] of [[owner,company,'owner','Owner'],[employee,company,'employee','Alex'],[coworker,company,'employee','Blair'],[outsider,other,'owner','Other']])await query('INSERT INTO users(id,company_id,role,full_name) VALUES($1,$2,$3,$4)',[user,tenant,role,name]);
-  for(const [project,tenant,name] of [[id(21),company,'North site'],[id(22),company,'North secret'],[id(23),other,'North foreign']])await query("INSERT INTO projects VALUES($1,$2,$3,'Customer','active')",[project,tenant,name]);
+  for(const [project,tenant,name] of [[id(21),company,'North site'],[id(22),company,'North secret'],[id(23),other,'North foreign']])await query("INSERT INTO projects(id,company_id,name,client_name,status) VALUES($1,$2,$3,'Customer','active')",[project,tenant,name]);
   for(const [task,tenant,user,description] of [[id(31),company,employee,'North assigned'],[id(32),company,coworker,'North coworker'],[id(33),other,outsider,'North foreign'],[id(34),company,employee,'100% complete']])await query("INSERT INTO tasks(id,company_id,assigned_to,description,status) VALUES($1,$2,$3,$4,'pending')",[task,tenant,user,description]);
-  for(const [shift,project,name] of [[id(41),id(21),'North morning'],[id(42),id(22),'North restricted'],[id(43),id(23),'North foreign']])await query("INSERT INTO shifts VALUES($1,$2,$3,'2026-11-09','09:00','17:00')",[shift,project,name]);
+  for(const [shift,project,name] of [[id(41),id(21),'North morning'],[id(42),id(22),'North restricted'],[id(43),id(23),'North foreign']])await query("INSERT INTO shifts(id,project_id,name,date,start_time,end_time) VALUES($1,$2,$3,'2026-11-09','09:00','17:00')",[shift,project,name]);
   await query('INSERT INTO shift_assignments VALUES($1,$2)',[id(41),employee]);
   pool.query=query;pool.connect=async()=>({query,release(){}});
   inference.lucyInferenceReady=()=>false;
   const app=express();app.use(express.json());app.use('/lucy',require('../dist/routes/lucyJarvisRoutes').default);
+  app.use('/tasks',require('../dist/routes/taskRoutes').default);app.use('/pto',require('../dist/routes/ptoRoutes').default);app.use('/pto-history',require('../dist/routes/ptoHistoryRoutes').default);app.use('/approvals',require('../dist/routes/approvalRoutes').default);
   server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));base=`http://127.0.0.1:${server.address().port}`;
 });
 after(async()=>{await new Promise(resolve=>server.close(resolve));await db.close();await pool.end();});
@@ -256,4 +266,158 @@ test('chat instructions describe panel modes honestly without a background-job t
   if(savedAI===undefined)delete process.env.LUCY_BACKGROUND_WORK_ENABLED;else process.env.LUCY_BACKGROUND_WORK_ENABLED=savedAI;
   if(savedRecords===undefined)delete process.env.LUCY_RECORD_SEARCH_ENABLED;else process.env.LUCY_RECORD_SEARCH_ENABLED=savedRecords;
  }
+});
+
+
+test('background processor pins provider before authorization awaits and withholds changed-provider results',async()=>{
+ const subscriptions=require('../dist/middleware/trialMiddleware');const original=subscriptions.loadSubscriptionActor;const originalModel=process.env.LUCY_BACKGROUND_LLM_MODEL;
+ let calls=0;inference.lucyResponse=async()=>{calls++;return{output:[],output_text:'Must not publish'};};
+ subscriptions.loadSubscriptionActor=async()=>{process.env.LUCY_BACKGROUND_LLM_MODEL='replacement';return{id:owner,companyId:company,role:'owner',name:'Owner',subscriptionStatus:'active'};};
+ try{await assert.rejects(()=>require('../dist/routes/lucyJarvisRoutes').runLucyBackgroundResearch({actor:actor(),prompt:'Read records',shouldContinue:async()=>true}),/access/);assert.equal(calls,0);}
+ finally{subscriptions.loadSubscriptionActor=original;process.env.LUCY_BACKGROUND_LLM_MODEL=originalModel;}
+});
+test('background processor refuses temporary-password restriction before inference even when directly invoked',async()=>{
+ const subscriptions=require('../dist/middleware/trialMiddleware');const original=subscriptions.loadSubscriptionActor;let calls=0;
+ subscriptions.loadSubscriptionActor=async()=>({id:owner,companyId:company,role:'owner',name:'Owner',subscriptionStatus:'active',mustChangePassword:true});inference.lucyResponse=async()=>{calls++;throw Error('Must not call');};
+ try{await assert.rejects(()=>require('../dist/routes/lucyJarvisRoutes').runLucyBackgroundResearch({actor:actor(),prompt:'Read records',shouldContinue:async()=>true}),/access/);assert.equal(calls,0);}
+ finally{subscriptions.loadSubscriptionActor=original;}
+});
+// These tests intentionally exercise malformed cross-company references, not only
+// well-formed tenant fixtures. Provider responses are local stubs throughout.
+const api=async(path,user=owner,method='GET',body)=>{
+ const response=await fetch(base+path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+jwt.sign({id:user},process.env.JWT_SECRET)},...(body===undefined?{}:{body:JSON.stringify(body)})});
+ return {status:response.status,data:await response.json()};
+};
+async function invokeTool(name,args,user=owner,extra={}) {
+ const ready=inference.lucyInferenceReady,respond=inference.lucyResponse;let calls=0,outcome;
+ inference.lucyInferenceReady=()=>true;
+ inference.lucyResponse=async input=>{
+  if(calls++===0)return {output:[{type:'function_call',name,call_id:'permission-tool',arguments:JSON.stringify(args)}]};
+  outcome=JSON.parse(input.input.filter(item=>item.type==='function_call_output').at(-1).output);
+  return {output:[],output_text:outcome.success?'Verified result.':'Action unavailable.'};
+ };
+ try {const response=await api('/lucy',user,'POST',{message:'Explicit customer request for '+name,...extra});return {...response,outcome,calls};}
+ finally {inference.lucyInferenceReady=ready;inference.lucyResponse=respond;}
+}
+
+test('Lucy PTO uses real dates, bounded ranges and type validation before insertion',async()=>{
+ const before=(await query('SELECT count(*) n FROM pto_requests')).rows[0].n;
+ for(const args of [
+  {start_date:'2027-02-30',end_date:'2027-03-02'},
+  {start_date:'2027-01-01',end_date:'2028-01-02'},
+  {start_date:'2027-03-02',end_date:'2027-03-01'},
+  {start_date:'2027-03-01',end_date:'2027-03-02',leave_type:'automatic_approved'},
+  {start_date:'2027-03-01',end_date:'2027-03-02',leave_type:''},
+  {start_date:'2027-03-01',end_date:'2027-03-02',user_id:coworker},
+ ]){const result=await invokeTool('request_pto',args,employee);assert.equal(result.status,200);assert.equal(result.outcome.success,false);}
+ assert.equal((await query('SELECT count(*) n FROM pto_requests')).rows[0].n,before);
+ const created=await invokeTool('request_pto',{start_date:'2027-03-01',end_date:'2027-03-02'},employee);
+ assert.equal(created.outcome.success,true);assert.equal(created.outcome.result.data.type,'vacation');assert.equal(created.outcome.result.data.user_id,employee);assert.equal(created.outcome.result.data.company_id,company);assert.equal(created.outcome.result.data.status,'pending');
+ const overlap=await invokeTool('request_pto',{start_date:'2027-03-02',end_date:'2027-03-03',leave_type:'sick'},employee);
+ assert.equal(overlap.outcome.success,false);assert.match(overlap.outcome.error,/overlap/);
+});
+
+test('tracked Lucy PTO retries reuse their receipt and do not create a second request',async()=>{
+ const extra={requestId:'pto-replay-hardening',language:'en',channel:'text'};
+ const first=await invokeTool('request_pto',{start_date:'2027-04-01',end_date:'2027-04-03',leave_type:'personal'},owner,extra);
+ assert.equal(first.outcome.success,true);assert.equal(first.data.request.state,'completed');
+ const repeat=await invokeTool('request_pto',{start_date:'2027-04-01',end_date:'2027-04-03',leave_type:'personal'},owner,extra);
+ assert.equal(repeat.data.request.replayed,true);assert.equal(repeat.calls,0);assert.deepEqual(repeat.data.actions,first.data.actions);
+ assert.equal((await query('SELECT count(*) n FROM pto_requests WHERE user_id=$1 AND start_date=$2',[owner,'2027-04-01'])).rows[0].n,1);
+ const changed=await api('/lucy',owner,'POST',{message:'A changed action',...extra});assert.equal(changed.status,409);
+});
+
+test('PTO transactional role recheck denies a changed actor after route verification',async()=>{
+ const connect=pool.connect;let changed=false;
+ pool.connect=async()=>({query:async(sql,params)=>{
+  if(sql.startsWith('SELECT id FROM users')&&sql.includes('$3::text IS NULL')){changed=true;await query("UPDATE users SET role='manager' WHERE id=$1",[employee]);}
+  return query(sql,params);
+ },release(){}});
+ try{const result=await invokeTool('request_pto',{start_date:'2027-05-01',end_date:'2027-05-02'},employee);assert.equal(changed,true);assert.equal(result.outcome.success,false);assert.equal((await query('SELECT id FROM pto_requests WHERE user_id=$1 AND start_date=$2',[employee,'2027-05-01'])).rows.length,0);}
+ finally{pool.connect=connect;await query("UPDATE users SET role='employee' WHERE id=$1",[employee]);}
+});
+
+test('direct task creation accepts all manager aliases but rejects employees, foreign and inactive assignees',async()=>{
+ for(const role of ['boss','owner','manager','admin']){
+  await query('UPDATE users SET role=$1 WHERE id=$2',[role,owner]);
+  const result=await api('/tasks',owner,'POST',{description:'Tenant role '+role,assigned_to:employee});assert.equal(result.status,201,JSON.stringify(result));assert.equal(result.data.task.company_id,company);assert.equal(result.data.task.assigned_to,employee);
+ }
+ await query("UPDATE users SET role='owner' WHERE id=$1",[owner]);
+ assert.equal((await api('/tasks',employee,'POST',{description:'Forbidden employee creation'})).status,403);
+ assert.equal((await api('/tasks',owner,'POST',{description:'Foreign assignee',assigned_to:outsider})).status,404);
+ assert.equal((await api('/tasks',owner,'POST',{description:'Invalid assignee',assigned_to:{id:employee}})).status,400);
+ await query('UPDATE users SET is_active=false WHERE id=$1',[coworker]);
+ try{assert.equal((await api('/tasks',owner,'POST',{description:'Inactive assignee',assigned_to:coworker})).status,404);}
+ finally{await query('UPDATE users SET is_active=true WHERE id=$1',[coworker]);}
+ assert.equal((await query("SELECT * FROM tasks WHERE description IN ('Foreign assignee','Invalid assignee','Inactive assignee','Forbidden employee creation')")).rows.length,0);
+ const own=await api('/tasks/'+id(31),employee,'PATCH',{status:'completed'});assert.equal(own.status,200);
+ assert.equal((await api('/tasks/'+id(32),employee,'PATCH',{status:'completed'})).status,404);
+ assert.equal((await api('/tasks/'+id(33),owner,'PATCH',{status:'completed'})).status,404);
+ assert.equal((await api('/tasks/'+id(32),owner,'PATCH',{status:'in_progress'})).status,200);
+});
+
+test('Lucy task creation rechecks an assignee moved after name resolution and rolls back',async()=>{
+ const connect=pool.connect;let moved=false;
+ pool.connect=async()=>({query:async(sql,params)=>{
+  if(sql.includes('WHERE id=ANY($1::uuid[])')){moved=true;await query('UPDATE users SET company_id=$1 WHERE id=$2',[other,coworker]);}
+  return query(sql,params);
+ },release(){}});
+ try{const result=await invokeTool('create_task',{description:'Moved assignee must not create',employee:'Blair'});assert.equal(moved,true);assert.equal(result.outcome.success,false);assert.equal((await query("SELECT * FROM tasks WHERE description='Moved assignee must not create'")).rows.length,0);}
+ finally{pool.connect=connect;await query('UPDATE users SET company_id=$1 WHERE id=$2',[company,coworker]);}
+});
+
+test('task list and Lucy reads never return a foreign assignee name from corrupt references',async()=>{
+ await query("UPDATE users SET first_name='Foreign private',last_name='Person' WHERE id=$1",[outsider]);
+ await query("INSERT INTO tasks(id,company_id,assigned_to,description,status) VALUES($1,$2,$3,'Broken assignee reference','pending')",[id(701),company,outsider]);
+ const direct=await api('/tasks');assert.equal(direct.status,200);assert.doesNotMatch(JSON.stringify(direct.data),/Foreign private/);
+ const lucy=await invokeTool('tasks',{});assert.equal(lucy.outcome.success,true);assert.doesNotMatch(JSON.stringify(lucy.outcome),/Foreign private/);
+});
+
+test('direct Lucy projects and search agree on employee scope and reject mismatched stored tenant links',async()=>{
+ await query("INSERT INTO shifts(id,project_id,company_id,name,date,start_time,end_time) VALUES($1,$2,$3,'North corrupt shift',CURRENT_DATE,'09:00','17:00')",[id(702),id(22),other]);
+ await query('INSERT INTO shift_assignments VALUES($1,$2)',[id(702),employee]);
+ await query('INSERT INTO time_entries(id,project_id,user_id,company_id) VALUES($1,$2,$3,$4)',[id(703),id(22),employee,other]);
+ const lucy=await invokeTool('projects',{},employee);assert.equal(lucy.outcome.success,true);assert.deepEqual(lucy.outcome.result.data.map(row=>row.id),[id(21)]);
+ const search=await searchLucyWork(actor(employee,company,'employee'),{query:'North'});assert.ok(!search.records.some(row=>[id(22),id(702)].includes(row.id)));
+ const manager=await invokeTool('projects',{});assert.equal(manager.outcome.success,true);assert.deepEqual(new Set(manager.outcome.result.data.map(row=>row.id)),new Set([id(21),id(22)]));
+});
+
+test('Lucy schedules filter foreign crew identities and shifts with inconsistent stored company',async()=>{
+ await query('UPDATE shifts SET date=CURRENT_DATE WHERE id=$1',[id(41)]);
+ await query('INSERT INTO shift_assignments VALUES($1,$2)',[id(41),outsider]);
+ const result=await invokeTool('schedules',{days:1},employee);assert.equal(result.outcome.success,true,JSON.stringify(result.outcome));
+ assert.ok(result.outcome.result.data.shifts.every(row=>row.id!==id(702)));
+ assert.doesNotMatch(JSON.stringify(result.outcome.result.data),/Foreign private|North corrupt shift/);
+ assert.ok(result.outcome.result.data.shifts.every(row=>row.employees.every(person=>person.id!==outsider)));
+});
+
+test('Lucy time entries suppress foreign project data and mismatched entry company',async()=>{
+ await query('INSERT INTO time_entries(id,project_id,user_id,company_id,clock_in,clock_out) VALUES($1,$2,$3,$4,now()-interval \'1 hour\',now())',[id(704),id(23),employee,company]);
+ await query('UPDATE time_entries SET clock_in=now()-interval \'1 hour\',clock_out=now() WHERE id=$1',[id(703)]);
+ const result=await invokeTool('time_entries',{scope:'self',days:1},employee);assert.equal(result.outcome.success,true);assert.deepEqual(result.outcome.result.data.entries.map(row=>row.id),[id(704)]);assert.equal(result.outcome.result.data.entries[0].project_name,null);assert.doesNotMatch(JSON.stringify(result.outcome.result.data),/North foreign/);
+});
+
+test('PTO list, mine, history and Lucy exclude old-company or mismatched employee requests',async()=>{
+ for(const [key,user,tenant] of [[705,employee,other],[706,outsider,company],[711,employee,null]])await query("INSERT INTO pto_requests(id,user_id,company_id,start_date,end_date,type,status) VALUES($1,$2,$3,'2027-06-01','2027-06-02','sick','pending')",[id(key),user,tenant]);
+ for(const path of ['/pto','/pto/mine','/pto-history']){
+  const result=await api(path,employee);assert.equal(result.status,200,JSON.stringify(result));assert.ok(result.data.requests.every(row=>![id(705),id(706),id(711)].includes(row.id)),path);
+ }
+ const manager=await api('/pto',owner);assert.equal(manager.status,200);assert.ok(manager.data.requests.some(row=>row.user_id===employee));assert.ok(manager.data.requests.every(row=>![id(705),id(706),id(711)].includes(row.id)));
+ const lucy=await invokeTool('pto',{},employee);assert.equal(lucy.outcome.success,true);assert.ok(lucy.outcome.result.data.every(row=>![id(705),id(706),id(711)].includes(row.id)));
+});
+
+test('approval APIs cannot list, reject or execute proposals from a previous company or missing tenant',async()=>{
+ for(const [key,payload] of [[707,{companyId:other}],[708,{}]])await query("INSERT INTO approvals(id,user_id,action_type,action_payload,status) VALUES($1,$2,'run_payroll',$3,'pending')",[id(key),owner,JSON.stringify(payload)]);
+ const pending=await api('/approvals/pending');assert.equal(pending.status,200);assert.ok(pending.data.approvals.every(row=>![id(707),id(708)].includes(row.id)));
+ for(const key of [707,708]){assert.equal((await api('/approvals/'+id(key)+'/reject',owner,'POST',{})).status,404);assert.equal((await api('/approvals/'+id(key)+'/approve',owner,'POST',{})).status,403);}
+});
+
+test('owner role can confirm a company-bound payroll proposal through the approval API',async()=>{
+ const payroll=require('../dist/services/payrollGenerator'),calendar=require('../dist/services/lucyPayrollService');const generate=payroll.generatePayroll,resolve=calendar.resolveCompanyPayPeriod;let generated=0;
+ payroll.generatePayroll=async(companyId,start,end,user)=>{assert.equal(companyId,company);assert.equal(user,owner);generated++;return {payrollId:id(710),employeeCount:1,totalHours:8,totalPay:100};};
+ calendar.resolveCompanyPayPeriod=async()=>({start:'2027-07-01',end:'2027-07-02',label:'test period'});
+ try{await query("INSERT INTO approvals(id,user_id,action_type,action_payload,status) VALUES($1,$2,'run_payroll',$3,'pending')",[id(709),owner,JSON.stringify({companyId:company,period:{start:'2027-07-01',end:'2027-07-02'}})]);
+ const result=await api('/approvals/'+id(709)+'/approve',owner,'POST',{});assert.equal(result.status,200,JSON.stringify(result));assert.equal(generated,1);
+ const replay=await api('/approvals/'+id(709)+'/approve',owner,'POST',{});assert.equal(replay.status,400);assert.equal(generated,1);
+ }finally{payroll.generatePayroll=generate;calendar.resolveCompanyPayPeriod=resolve;}
 });

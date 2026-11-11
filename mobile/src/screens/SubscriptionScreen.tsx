@@ -21,7 +21,7 @@ import {
   type Purchase,
   useIAP,
 } from 'expo-iap';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { api, API_URL } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -46,6 +46,39 @@ type StatusResponse = {
   subscription: SubscriptionState;
 };
 
+type BillingCapabilities = {
+  success: boolean;
+  google: boolean;
+  apple: boolean;
+  canPurchase: boolean;
+  canManageBilling: boolean;
+  complimentary: boolean;
+  googleAccountId: string;
+};
+
+const KNOWN_STATUSES = new Set(['active', 'trialing', 'in_trial', 'grace_period', 'inactive', 'expired',
+  'revoked', 'billing_retry', 'canceled', 'past_due', 'unpaid', 'incomplete', 'incomplete_expired', 'paused']);
+
+function validStatus(response: StatusResponse | undefined): boolean {
+  const value = response?.subscription;
+  return response?.success === true && !!value && !Array.isArray(value)
+    && typeof value.status === 'string' && KNOWN_STATUSES.has(value.status.toLowerCase())
+    && typeof (value.tier || value.plan) === 'string' && !!(value.tier || value.plan)!.trim()
+    && [value.tier, value.plan].every(item => item == null || typeof item === 'string')
+    && (value.provider === null || (typeof value.provider === 'string'
+      && ['apple', 'google', 'stripe', 'internal', 'complimentary'].includes(value.provider)))
+    && [value.expiresAt, value.currentPeriodEnd].every(item => item == null
+      || (typeof item === 'string' && Number.isFinite(new Date(item).getTime())))
+    && (value.cancelAtPeriodEnd == null || typeof value.cancelAtPeriodEnd === 'boolean');
+}
+
+function validCapabilities(value: BillingCapabilities | undefined): boolean {
+  return value?.success === true
+    && [value.google, value.apple, value.canPurchase, value.canManageBilling, value.complimentary]
+      .every(item => typeof item === 'boolean')
+    && typeof value.googleAccountId === 'string' && !!value.googleAccountId;
+}
+
 type VerificationResponse = {
   success: boolean;
   message?: string;
@@ -55,6 +88,11 @@ type VerificationResponse = {
 const ACTIVE_STATUSES = new Set(['active', 'trialing', 'in_trial', 'grace_period']);
 
 export default function SubscriptionScreen() {
+  const { user } = useAuth();
+  return <SubscriptionWorkspace key={`${user?.id || ''}:${user?.companyId || ''}:${user?.role || ''}`} />;
+}
+
+function SubscriptionWorkspace() {
  const { t, lang } = useLang();
 function friendlyError(error: unknown): string {
   const candidate = error as { response?: { data?: { message?: string } }; message?: string };
@@ -76,12 +114,81 @@ function planLabel(tier?: string): string {
   const [loadingProducts,setLoadingProducts] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [statusKnown, setStatusKnown] = useState(false);
+  const [statusError, setStatusError] = useState('');
+  const [billingError, setBillingError] = useState('');
+  const screenAlive = useRef(true);
+  const workspaceSession = useRef(api.captureSessionGuard());
+  const screenFocused = useRef(false);
+  const statusRead = useRef(0);
+  const statusReady = useRef(false);
+  const checkedStatus = useRef<() => boolean>(() => false);
   const purchaseLock = useRef(false);
   const [processingProductId, setProcessingProductId] = useState<string | null>(null);
-  const [billing, setBilling] = useState<{google:boolean;apple:boolean;canPurchase:boolean;canManageBilling:boolean;complimentary:boolean;googleAccountId:string}|null>(null);
+  const [billing, setBilling] = useState<BillingCapabilities | null>(null);
+  const statusAvailable = statusKnown && checkedStatus.current();
+  const renderedStatusRead = statusRead.current;
   const storeReady = Boolean(billing?.canPurchase && (Platform.OS === 'android' ? billing.google : billing.apple));
 
+  const loadStatus = useCallback(async () => {
+    if (!screenAlive.current || !screenFocused.current) return;
+    const request = ++statusRead.current;
+    const sessionCurrent = api.captureSessionGuard();
+    const current = () => screenAlive.current && screenFocused.current
+      && request === statusRead.current && workspaceSession.current() && sessionCurrent();
+    checkedStatus.current = () => false;
+    statusReady.current = false;
+    setLoadingStatus(true);
+    setStatusKnown(false);
+    setStatus({});
+    setBilling(null);
+    setStatusError('');
+    setBillingError('');
+    if (!workspaceSession.current() || !sessionCurrent() || !user) {
+      setStatusError(t("Subscription status could not be confirmed. Check your connection and retry before choosing a plan."));
+      setLoadingStatus(false);
+      setRefreshing(false);
+      return;
+    }
+    const results = await globalThis.Promise.allSettled([
+      api.readSubscription<StatusResponse>('status', user, current),
+      api.readSubscription<BillingCapabilities>('capabilities', user, current),
+    ]);
+    if (!current()) return;
+    checkedStatus.current = current;
+    const statusResult = results[0];
+    if (statusResult.status === 'fulfilled' && validStatus(statusResult.value)) {
+      const next = statusResult.value.subscription;
+      setStatus({...next, tier: next.tier || next.plan});
+      statusReady.current = true;
+      setStatusKnown(true);
+    } else {
+      setStatusError(t("Subscription status could not be confirmed. Check your connection and retry before choosing a plan."));
+    }
+    const billingResult = results[1];
+    if (billingResult.status === 'fulfilled' && validCapabilities(billingResult.value)) {
+      setBilling(billingResult.value);
+    } else {
+      setBillingError(t("Billing permissions could not be confirmed. Retry subscription status or contact support."));
+    }
+    setLoadingStatus(false);
+    setRefreshing(false);
+  }, [t, user?.id, user?.companyId, user?.role]);
+
+  useEffect(() => {
+    screenAlive.current = true;
+    return () => { screenAlive.current = false; statusRead.current += 1; };
+  }, []);
+  useFocusEffect(useCallback(() => {
+    screenFocused.current = true;
+    void loadStatus();
+    return () => { screenFocused.current = false; statusRead.current += 1; };
+  }, [loadStatus]));
+
   const verifyAndFinish = useCallback(async (purchase: Purchase) => {
+    const sessionCurrent = api.captureSessionGuard();
+    const current = () => screenAlive.current && workspaceSession.current() && sessionCurrent();
+    if (!current()) return;
     try {
       const response = await api.post<VerificationResponse>('/subscriptions/verify', {
         platform: Platform.OS,
@@ -96,16 +203,17 @@ function planLabel(tier?: string): string {
       }
 
       await finishTransaction({ purchase, isConsumable: false });
-      if (response.subscription) setStatus({...response.subscription,tier:response.subscription.tier||response.subscription.plan});
-      void api.get<any>('/subscriptions/capabilities').then(c=>{if(c.success)setBilling(c);}).catch(()=>{});
+      if (!current()) return;
+      // Recheck both reads together; an older pre-purchase read cannot replace them.
+      void loadStatus();
       Alert.alert(t("Subscription activated"), t("Your purchase was verified and your workspace is ready."));
     } catch (error) {
       // Never finish an unverified transaction. The store can safely deliver it again.
-      Alert.alert(t("Verification pending"), friendlyError(error));
+      if (current()) Alert.alert(t("Verification pending"), friendlyError(error));
     } finally {
-      purchaseLock.current = false; setProcessingProductId(null);
+      if (current()) { purchaseLock.current = false; setProcessingProductId(null); }
     }
-  }, [t]);
+  }, [t, loadStatus]);
 
   const {
     connected,
@@ -125,17 +233,6 @@ function planLabel(tier?: string): string {
     onError: (error) => setStoreError(error.message || t("Store products could not be loaded.")),
   });
 
-  const loadStatus = useCallback(async () => {
-    const results = await globalThis.Promise.allSettled([
-      api.get<StatusResponse>('/subscriptions/status'), api.get<any>('/subscriptions/capabilities')
-    ]);
-    if(results[0].status==='fulfilled') {const next=results[0].value.subscription||{};setStatus({...next,tier:next.tier||next.plan});}
-    else setStoreError(friendlyError(results[0].reason));
-    if(results[1].status==='fulfilled')setBilling(results[1].value.success?results[1].value:null);
-    else setStoreError(friendlyError(results[1].reason));
-    setLoadingStatus(false);setRefreshing(false);
-  }, [t]);
-  useEffect(() => {void loadStatus();}, [loadStatus]);
   const loadProducts = useCallback(async()=>{
     if(!connected)return;
     setLoadingProducts(true);setStoreError('');
@@ -171,6 +268,10 @@ function planLabel(tier?: string): string {
 
   const startPurchase = async (plan: PlanKey) => {
     if (purchaseLock.current) return;
+    if (!statusReady.current || !statusAvailable || renderedStatusRead !== statusRead.current || !checkedStatus.current()) {
+      Alert.alert(t("Plan status unavailable"), t("Subscription status could not be confirmed. Check your connection and retry before choosing a plan."));
+      return;
+    }
     if (!storeReady) {
       Alert.alert(t("Purchases unavailable"), !billing?.canPurchase ? t("Company billing requires the boss or a manager explicitly authorized by the boss.") : t("Store billing is not available yet. Contact billing support. You can remain signed in."));
       return;
@@ -216,7 +317,7 @@ function planLabel(tier?: string): string {
   };
 
   const restore = async () => {
-    if (purchaseLock.current || !billing?.canPurchase || !connected) return;
+    if (purchaseLock.current || renderedStatusRead !== statusRead.current || !checkedStatus.current() || !billing?.canPurchase || !connected) return;
     purchaseLock.current = true;
     setProcessingProductId('restore');
     try {
@@ -231,6 +332,7 @@ function planLabel(tier?: string): string {
   };
 
   const manageSubscription = async () => {
+    if (renderedStatusRead !== statusRead.current || !checkedStatus.current()) return;
     const url = status.provider === 'apple' ? 'https://apps.apple.com/account/subscriptions'
       : status.provider === 'google' ? 'https://play.google.com/store/account/subscriptions?package=com.samuel33.futurejobspro' : null;
     if (!url) return Alert.alert(t("Web subscription"), t("Manage your existing subscription from Billing in the web workspace."));
@@ -238,7 +340,7 @@ function planLabel(tier?: string): string {
   };
   const periodEnd = status.currentPeriodEnd || status.expiresAt;
   const expired = Boolean(periodEnd && new Date(periodEnd).getTime() <= Date.now());
-  const active = ACTIVE_STATUSES.has((status.status || '').toLowerCase()) && !expired;
+  const active = statusAvailable && ACTIVE_STATUSES.has((status.status || '').toLowerCase()) && !expired;
   const renewalDate = status.currentPeriodEnd || status.expiresAt;
 
   return (
@@ -272,16 +374,26 @@ function planLabel(tier?: string): string {
         </View>
 
         {!!storeError&&<View style={{padding:16}}><Text accessibilityRole="alert" style={{color:'#FDA4AF'}}>{storeError}</Text><TouchableOpacity onPress={()=>void loadProducts()} disabled={loadingProducts} style={{padding:12}}><Text style={{color:'#67E8F9'}}>{loadingProducts?t("Loading plans…"):t("Retry store plans")}</Text></TouchableOpacity><TouchableOpacity onPress={()=>navigation.navigate('Support')} style={{padding:12}}><Text style={{color:'#67E8F9'}}>{t("Contact billing support")}</Text></TouchableOpacity></View>}
-        {!active&&!loadingStatus&&<View style={{padding:16}}><Text style={{color:'#FFF'}}>{t("Your trial or subscription has ended. You can still choose a plan, restore a purchase, or contact support here.")}</Text></View>}
+        {!!(statusError || billingError) && <View style={{padding:16}}>
+          {!!statusError && <Text accessibilityRole="alert" style={{color:'#FDA4AF'}}>{statusError}</Text>}
+          {!!billingError && <Text accessibilityRole="alert" style={{color:'#FDA4AF'}}>{billingError}</Text>}
+          <TouchableOpacity accessibilityRole="button" disabled={loadingStatus} onPress={() => void loadStatus()} style={{padding:12}}>
+            <Text style={{color:'#67E8F9'}}>{t("Retry subscription status")}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" onPress={() => navigation.navigate('Support')} style={{padding:12}}>
+            <Text style={{color:'#67E8F9'}}>{t("Contact billing support")}</Text>
+          </TouchableOpacity>
+        </View>}
+        {statusAvailable&&!active&&!loadingStatus&&<View style={{padding:16}}><Text style={{color:'#FFF'}}>{t("Your trial or subscription has ended. You can still choose a plan, restore a purchase, or contact support here.")}</Text></View>}
         <View style={styles.statusCard}>
           <View style={[styles.statusDot, active ? styles.statusActive : styles.statusInactive]} />
           <View style={styles.statusCopy}>
             <Text style={styles.statusLabel}>{t("CURRENT WORKSPACE")}</Text>
-            <Text style={styles.statusTitle}>{loadingStatus ? t("Checking entitlement…") : planLabel(status.tier)}</Text>
-            <Text style={styles.statusMeta}>
-              {active ? `${t('Status')}: ${t(({active:'Active',trialing:'Free trial',in_trial:'Free trial',grace_period:'Grace period'} as Record<string,string>)[status.status || ''] || status.status || '')}` : billing?.canPurchase ? t("Select a company plan") : t("Contact your boss about company access; no individual payment is required")}
+            <Text style={styles.statusTitle}>{loadingStatus ? t("Checking entitlement…") : statusAvailable ? planLabel(status.tier) : t("Plan status unavailable")}</Text>
+            {statusAvailable && <Text style={styles.statusMeta}>
+              {active ? `${t('Status')}: ${t(({active:'Active',trialing:'Free trial',in_trial:'Free trial',grace_period:'Grace period'} as Record<string,string>)[status.status || ''] || status.status || '')}` : billing?.canPurchase ? t("Select a company plan") : billing ? t("Contact your boss about company access; no individual payment is required") : ''}
               {renewalDate ? ` · ${status.status==='trialing' ? (expired?t("Trial ended"):t("Trial ends")) : expired?t("Ended"):status.cancelAtPeriodEnd ? t("Ends") : t("Renews")} ${new Date(renewalDate).toLocaleDateString(lang)}` : ''}
-            </Text>
+            </Text>}
           </View>
           {loadingStatus && <ActivityIndicator color="#6FE7FF" />}
         </View>
@@ -337,7 +449,7 @@ function planLabel(tier?: string): string {
               ))}
 
               <TouchableOpacity
-                disabled={selected || !!processingProductId || loadingProducts || !connected || !storeReady || !product?.displayPrice}
+                disabled={!statusAvailable || loadingStatus || selected || !!processingProductId || loadingProducts || !connected || !storeReady || !product?.displayPrice}
                 onPress={() => void startPurchase(plan)}
                 style={[styles.purchaseButton, copy.featured && styles.featuredButton, selected && styles.selectedButton]}
               >
@@ -345,7 +457,7 @@ function planLabel(tier?: string): string {
                   <ActivityIndicator color="#07111F" />
                 ) : (
                   <Text style={[styles.purchaseText, !copy.featured && !selected && styles.secondaryPurchaseText]}>
-                    {selected ? t("Current plan") : loadingProducts ? t("Loading plans…") : !storeReady || !connected || !product?.displayPrice ? t("Purchases unavailable") : t('Choose {plan}', {plan:name})}
+                    {selected ? t("Current plan") : loadingProducts ? t("Loading plans…") : !statusAvailable || !storeReady || !connected || !product?.displayPrice ? t("Purchases unavailable") : t('Choose {plan}', {plan:name})}
                   </Text>
                 )}
               </TouchableOpacity>

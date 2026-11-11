@@ -1,8 +1,9 @@
+import { TranscriptEditor } from '../components/TranscriptEditor';
 import { useLang } from '../context/LanguageContext';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ActivityIndicator, Platform, ScrollView, AppState,
+  ActivityIndicator, Platform, ScrollView, AppState, Switch, KeyboardAvoidingView,
 } from 'react-native';
 import {
   RecordingPresets,
@@ -10,16 +11,20 @@ import {
   setAudioModeAsync,
 } from 'expo-audio';
 import { useRecorderSession } from '../hooks/useRecorderSession';
+import { appendMeter, emptyMeter, meterLevel } from '../utils/recordingMeter';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../services/api';
+import { api, type VoiceSession } from '../services/api';
+import { getPendingVoice, startVoiceUpload, recoverVoiceUpload, type VoiceReceipt, type VoiceOutcome } from '../services/voiceReceiptUpload';
 import * as Haptics from 'expo-haptics';
 
 interface VoiceNoteResponse {
   success: boolean;
   voiceNoteId: string;
-  transcript: string;
+  transcriptionStatus?: 'completed' | 'skipped' | 'edited';
+  audioUrl?: string;
+  transcript: string | null;
   structuredData: {
     actions: string[];
     parts: string[];
@@ -27,13 +32,19 @@ interface VoiceNoteResponse {
     issues: string[];
     nextSteps: string[];
     people: string[];
-  };
-  clientSummary: string;
+  } | null;
+  clientSummary: string | null;
   tags: string[];
-  duration: number;
+  duration: number | null;
 }
 
 export default function VoiceNoteScreen() {
+  const { user } = useAuth();
+  const route = useRoute<any>();
+  return <VoiceNoteContent key={`${user?.id || ''}:${user?.companyId || ''}:${route.params?.projectId || ''}:${route.params?.timeEntryId || ''}`} />;
+}
+
+function VoiceNoteContent() {
  const { t, lang } = useLang();
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -44,17 +55,53 @@ export default function VoiceNoteScreen() {
 
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  const { session: audioRecorder } = useRecorderSession(RecordingPresets.HIGH_QUALITY);
+  // isRecording includes a paused, unfinished note so Stop still saves that note.
+  const [isPaused, setIsPaused] = useState(false);
+  const [meterHistory, setMeterHistory] = useState(emptyMeter);
+  const [meterAvailable, setMeterAvailable] = useState(false);
+  const { session: audioRecorder, state: recorderState, error: recorderError } = useRecorderSession(
+    { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true }, true,
+  );
+  const [transcribe, setTranscribe] = useState(true);
+  const recordingMode = useRef(true);
+  const recordingSession = useRef<VoiceSession | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<VoiceNoteResponse | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mounted = useRef(true);
   const busy = useRef(false);
   const generation = useRef(0);
   const focused = useRef(true);
   const current = (epoch: number) => mounted.current && focused.current && generation.current === epoch;
+  // retryUri is only a stopped source that has not been durably prepared yet.
+  // Once a receipt exists, all recovery goes through its immutable saved phase.
   const [retryUri, setRetryUri] = useState<string | null>(null);
+  const [savedReceipt, setSavedReceipt] = useState<VoiceReceipt | null>(null);
+  const [receiptLoading, setReceiptLoading] = useState(true);
+  const [receiptLoadError, setReceiptLoadError] = useState<string | null>(null);
+  const loadSequence = useRef(0);
+
+  const loadPending = async () => {
+    const epoch = generation.current, sequence = ++loadSequence.current;
+    const active = () => current(epoch) && loadSequence.current === sequence;
+    if (!active()) return;
+    setReceiptLoading(true);
+    try {
+      if (!user?.id || !user.companyId || !projectId) throw new Error('Sign in and select the original project.');
+      const session = await api.captureVoiceSession(user.id, user.companyId);
+      if (!active()) return;
+      const pending = await getPendingVoice(session.ownerId, session.companyId, projectId, timeEntryId || null);
+      api.assertVoiceSession(session);
+      if (!active()) return;
+      setSavedReceipt(pending || null);
+      if (pending) { recordingMode.current = pending.mode === 'audio-transcribed'; setRetryUri(null); }
+      setReceiptLoadError(null);
+    } catch (error: any) {
+      if (active()) setReceiptLoadError(error.message || t('Saved recording records could not be read.'));
+    } finally { if (active()) setReceiptLoading(false); }
+  };
+
+  useEffect(() => { void loadPending(); }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -80,7 +127,6 @@ export default function VoiceNoteScreen() {
     })();
     return () => {
       mounted.current = false;
-      if (timerRef.current) clearInterval(timerRef.current);
       generation.current += 1;
       audioRecorder.cancel();
     };
@@ -91,12 +137,15 @@ export default function VoiceNoteScreen() {
       focused.current = false;
       generation.current += 1;
       audioRecorder.cancel();
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = null;
       setIsRecording(false);
+      setIsPaused(false);
+      setMeterHistory(emptyMeter());
+      setMeterAvailable(false);
       setRecordingDuration(0);
+      setIsProcessing(false);
+      setResult(null);
     };
-    const enter = () => { focused.current = true; };
+    const enter = () => { focused.current = true; void loadPending(); };
     const blur = navigation.addListener('blur', leave);
     const focus = navigation.addListener('focus', enter);
     const appState = AppState.addEventListener('change', state => {
@@ -106,30 +155,87 @@ export default function VoiceNoteScreen() {
     return () => { blur(); focus(); appState.remove(); };
   }, [navigation, audioRecorder]);
 
+  useEffect(() => {
+    if (!isRecording || !focused.current) return;
+    if (recorderError || (recorderState && (recorderState.mediaServicesDidReset ||
+        (!recorderState.isRecording && !audioRecorder.isPaused)))) {
+      audioRecorder.cancel();
+      setIsRecording(false);
+      setIsPaused(false);
+      setMeterHistory(emptyMeter());
+      setMeterAvailable(false);
+      setRecordingDuration(0);
+      Alert.alert(t("Recording interrupted"), t("The recording stopped unexpectedly. Please record your note again."));
+      return;
+    }
+    if (!recorderState || !audioRecorder.hasRecording) return;
+    // Native duration excludes pauses, unlike wall-clock elapsed time.
+    if (Number.isFinite(recorderState.durationMillis)) {
+      setRecordingDuration(Math.max(0, Math.floor(recorderState.durationMillis / 1000)));
+    }
+    if (!recorderState.isRecording || audioRecorder.isPaused) return;
+    setMeterAvailable(meterLevel(recorderState.metering) !== null);
+    setMeterHistory(previous => appendMeter(previous, recorderState.metering));
+    // Only fresh native polls should update the meter, not a local pause/start render.
+  }, [recorderState, recorderError]);
+
+  const togglePause = () => {
+    if (!current(generation.current) || busy.current || !audioRecorder.hasRecording) return;
+    busy.current = true;
+    try {
+      if (audioRecorder.isPaused) {
+        if (audioRecorder.resume()) setIsPaused(false);
+      } else if (audioRecorder.pause()) {
+        setIsPaused(true);
+      }
+    } catch {
+      setIsRecording(false);
+      setIsPaused(false);
+      setMeterHistory(emptyMeter());
+      setMeterAvailable(false);
+      setRecordingDuration(0);
+      Alert.alert(t("Recording interrupted"), t("The recording stopped unexpectedly. Please record your note again."));
+    } finally {
+      busy.current = false;
+    }
+  };
+
   const startRecording = async () => {
     const epoch = generation.current;
-    if (!current(epoch) || busy.current || audioRecorder.isRecording) return;
+    if (!current(epoch) || busy.current || audioRecorder.hasRecording || receiptLoading || receiptLoadError || savedReceipt || retryUri) return;
     if (!hasPermission) {
       Alert.alert(t("Permission Required"), t("Please grant microphone permission in settings."));
       return;
     }
     busy.current = true;
+    recordingMode.current = transcribe;
     try {
+      if (!user?.id || !user.companyId) throw new Error('Sign in before recording.');
+      const session = await api.captureVoiceSession(user.id, user.companyId);
+      if (!current(epoch)) return;
+      const pending = await getPendingVoice(session.ownerId, session.companyId, projectId, timeEntryId || null);
+      api.assertVoiceSession(session);
+      if (!current(epoch)) return;
+      if (pending) { setSavedReceipt(pending); return; }
+      recordingSession.current = session;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      api.assertVoiceSession(session);
       if (!current(epoch)) return;
       const started = await audioRecorder.start();
       if (!current(epoch)) { audioRecorder.cancel(); return; }
+      api.assertVoiceSession(session);
       if (!started) return;
       setRetryUri(null);
       setIsRecording(true);
-      const startTime = Date.now();
-      timerRef.current = setInterval(() => {
-        setRecordingDuration(Math.floor((Date.now() - startTime) / 1000));
-      }, 1000);
+      setIsPaused(false);
+      setMeterHistory(emptyMeter());
+      setMeterAvailable(false);
+      setRecordingDuration(0);
     } catch (error: any) {
       console.error('Start recording error:', error);
-      if (mounted.current) Alert.alert(t("Error"), t('Could not start recording: {error}', {error:error.message}));
+      audioRecorder.cancel();
+      if (current(epoch)) Alert.alert(t("Error"), t('Could not start recording: {error}', {error:error.message}));
     } finally {
       busy.current = false;
     }
@@ -137,13 +243,12 @@ export default function VoiceNoteScreen() {
 
   const stopRecording = async () => {
     const epoch = generation.current;
-    if (!current(epoch) || !audioRecorder.isRecording || busy.current) return;
+    if (!current(epoch) || !audioRecorder.hasRecording || busy.current) return;
     busy.current = true;
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
     setIsRecording(false);
+    setIsPaused(false);
+    setMeterHistory(emptyMeter());
+    setMeterAvailable(false);
     setRecordingDuration(0);
     try {
       const uri = await audioRecorder.stop();
@@ -154,56 +259,69 @@ export default function VoiceNoteScreen() {
         Alert.alert(t("Error"), t("No audio file was created."));
       }
     } catch (error: any) {
-      if (mounted.current) Alert.alert(t("Error"), t('Could not stop recording: {error}', {error:error.message}));
+      if (current(epoch)) Alert.alert(t("Error"), t('Could not stop recording: {error}', {error:error.message}));
     } finally {
       busy.current = false;
     }
   };
 
-  const processRecording = async (audioUri: string) => {
-    setResult(null);
-    setIsProcessing(true);
-    try {
-      const extraFields: Record<string, string> = {
-        userId: user?.id || '',
-        projectId,
-        timeEntryId,
-      };
-      const response = await api.uploadFileWithData<VoiceNoteResponse>(
-        '/voice/process',
-        audioUri,
-        extraFields,
-        'audio'
-      );
-      if (!mounted.current) return;
-      if (!response.success || !response.transcript?.trim()) throw new Error(t("No speech was detected. Please retry your voice note."));
-      // SAFETY FALLBACK: ensure structuredData exists with empty arrays
-      if (!response.structuredData) {
-        response.structuredData = {
-          actions: [],
-          parts: [],
-          measurements: [],
-          issues: [],
-          nextSteps: [],
-          people: []
-        };
-      }
-      setResult(response);
-      setRetryUri(null);
-      api.recordAIEvent('voice_note', {
-        transcript: response.transcript,
-        duration: response.duration,
-        projectId,
-      }).catch(() => {});
+  const showOutcome = (outcome: VoiceOutcome) => {
+    if (outcome.state === 'completed') {
+      setSavedReceipt(null); setRetryUri(null); setReceiptLoadError(null);
+      // A strict saved acknowledgment is final even if its transcript is empty.
+      // Never convert saved evidence into another processing attempt.
+      setResult(outcome.response);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    } catch (error: any) {
-      if (!mounted.current) return;
-      const queued = /queued for later/i.test(error.message || '');
-      setRetryUri(queued ? null : audioUri);
-      Alert.alert(queued ? t("Upload queued") : t("Processing Failed"), error.response?.data?.message || error.message || t("Could not process voice note"));
-    } finally {
-      if (mounted.current) setIsProcessing(false);
+    } else {
+      setSavedReceipt(outcome.receipt); setRetryUri(null);
+      recordingMode.current = outcome.receipt.mode === 'audio-transcribed';
+      Alert.alert(t(outcome.state === 'prepared' ? 'Recording saved on this device' : 'Save not confirmed'),
+        t(outcome.state === 'prepared' ? 'Your recording is saved locally. Send it when you are online.' : 'Your recording has not been confirmed. Check its status; it will not be uploaded again.'));
     }
+  };
+
+  const processRecording = async (audioUri: string) => {
+    const epoch = generation.current, session = recordingSession.current;
+    if (!current(epoch) || !session) return;
+    const active = () => current(epoch);
+    setResult(null); setRetryUri(audioUri); setIsProcessing(true);
+    try {
+      api.assertVoiceSession(session);
+      const outcome = await startVoiceUpload(session, projectId, timeEntryId || null,
+        recordingMode.current ? 'audio-transcribed' : 'audio-only', audioUri, active, prepared => {
+          if (!active()) return;
+          setSavedReceipt(prepared); setRetryUri(null);
+        });
+      api.assertVoiceSession(session);
+      if (!active()) return;
+      showOutcome(outcome);
+    } catch (error: any) {
+      if (!active()) return;
+      await loadPending();
+      if (!active()) return;
+      Alert.alert(t('Recording needs attention'), error.message || t('Could not save recording.'));
+    } finally {
+      if (active()) setIsProcessing(false);
+    }
+  };
+
+  const recoverRecording = async () => {
+    const epoch = generation.current;
+    if (!current(epoch) || busy.current || receiptLoading || receiptLoadError || !savedReceipt || !user?.id || !user.companyId) return;
+    busy.current = true; setIsProcessing(true);
+    const active = () => current(epoch);
+    try {
+      const session = await api.captureVoiceSession(user.id, user.companyId);
+      if (!active()) return;
+      const outcome = await recoverVoiceUpload(session, projectId, timeEntryId || null, active);
+      api.assertVoiceSession(session);
+      if (!active()) return;
+      showOutcome(outcome);
+    } catch (error: any) {
+      if (!active()) return;
+      await loadPending();
+      if (active()) Alert.alert(t('Recording needs attention'), error.message || t('Could not check recording status.'));
+    } finally { busy.current = false; if (active()) setIsProcessing(false); }
   };
 
   const formatDuration = (seconds: number) => {
@@ -228,6 +346,80 @@ export default function VoiceNoteScreen() {
     );
   }
 
+  // Saved-note recovery does not require microphone permission or a local file
+  // after submission. A failed storage read blocks starting a replacement note.
+  if (receiptLoading || receiptLoadError || savedReceipt) {
+    return <View style={styles.center}>
+      <Text style={styles.resultTitle}>{t(isProcessing ? 'Saving or checking recording...' : receiptLoading ? 'Checking saved recordings...' : receiptLoadError ? 'Recording needs attention' : 'Saved recording')}</Text>
+      {!!savedReceipt && <Text style={styles.processingText}>{t(savedReceipt.mode === 'audio-only' ? 'Audio only. No AI processing.' : 'Transcription and summary enabled.')}</Text>}
+      <Text style={styles.processingText}>{receiptLoadError || t(isProcessing ? 'Wait for saved status to be confirmed.' : receiptLoading ? 'Checking saved recordings...' : savedReceipt?.phase === 'prepared'
+        ? 'Saved on this device and not submitted. Send when online.'
+        : 'Save not confirmed. Check status before recording another note. This will not upload again.')}</Text>
+      {(receiptLoading || isProcessing) && <ActivityIndicator size="large" color="#00D4FF" />}
+      {!receiptLoading && <TouchableOpacity accessibilityRole="button" disabled={isProcessing} style={styles.backButton}
+        onPress={receiptLoadError ? () => { void loadPending(); } : recoverRecording}>
+        <Text style={styles.backButtonText}>{t(isProcessing ? 'Saving or checking recording...' : receiptLoadError ? 'Reload saved recordings' : savedReceipt?.phase === 'prepared' ? 'Send saved recording' : 'Check recording status')}</Text>
+      </TouchableOpacity>}
+      <TouchableOpacity accessibilityRole="button" style={styles.backButton} onPress={goBack}><Text style={styles.backButtonText}>{t('Go Back')}</Text></TouchableOpacity>
+    </View>;
+  }
+
+  if (isProcessing) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#00D4FF" />
+        <Text style={styles.processingTitle}>{t(recordingMode.current ? "🤖 AI is Processing" : "Saving audio...")}</Text>
+        <Text style={styles.processingText}>{t(recordingMode.current ? "Transcribing and extracting information..." : "Saving without transcription or AI processing.")}</Text>
+      </View>
+    );
+  }
+
+  if (result) {
+    return (
+      <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.resultContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        <Text style={styles.resultTitle}>{t(result.transcriptionStatus === 'skipped' ? "Audio note saved" : "✅ Voice Note Processed")}</Text>
+        {result.transcriptionStatus === 'skipped' ? <View style={styles.card}>
+          <Text style={styles.summaryText}>{t("Audio saved in the project album. No transcript or AI summary was created.")}</Text>
+        </View> : <>
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>{t("📧 Client Summary")}</Text>
+          <Text style={styles.summaryText}>{result.transcriptionStatus === 'edited' ? t("Transcript edited. Previous AI summary and extracted details were cleared.") : result.clientSummary}</Text>
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>{t("📝 Full Transcript")}</Text>
+          <TranscriptEditor key={result.voiceNoteId} noteId={result.voiceNoteId} transcript={result.transcript || ''} audioUrl={result.audioUrl}
+            onReconcile={() => setResult(previous => previous ? {...previous, clientSummary:null, structuredData:null, tags:[]} : previous)}
+            onSaved={saved => setResult(previous => previous && previous.voiceNoteId === saved.voiceNoteId ? {...previous, ...saved} : previous)} />
+        </View>
+        </>}
+        {!!result.structuredData?.actions?.length && (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>{t("🔧 Actions")}</Text>
+            {result.structuredData.actions.map((a, i) => <Text key={i} style={styles.item}>• {a}</Text>)}
+          </View>
+        )}
+        {!!result.structuredData?.parts?.length && (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>{t("🧰 Parts/Equipment")}</Text>
+            <View style={styles.tagContainer}>
+              {result.structuredData.parts.map((p, i) => <View key={i} style={styles.tag}><Text style={styles.tagText}>{p}</Text></View>)}
+            </View>
+          </View>
+        )}
+        <View style={styles.buttonRow}>
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => setResult(null)}>
+            <Text style={styles.secondaryButtonText}>{t("New Note")}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.primaryButton} onPress={goBack}>
+            <Text style={styles.primaryButtonText}>{t("Done")}</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
   if (hasPermission === null) {
     return (
       <View style={styles.center}>
@@ -245,54 +437,6 @@ export default function VoiceNoteScreen() {
     );
   }
 
-  if (isProcessing) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#00D4FF" />
-        <Text style={styles.processingTitle}>{t("🤖 AI is Processing")}</Text>
-        <Text style={styles.processingText}>{t("Transcribing and extracting information...")}</Text>
-      </View>
-    );
-  }
-
-  if (result) {
-    return (
-      <ScrollView style={styles.container} contentContainerStyle={styles.resultContent}>
-        <Text style={styles.resultTitle}>{t("✅ Voice Note Processed")}</Text>
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>{t("📧 Client Summary")}</Text>
-          <Text style={styles.summaryText}>{result.clientSummary}</Text>
-        </View>
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>{t("📝 Full Transcript")}</Text>
-          <Text style={styles.transcriptText}>{result.transcript}</Text>
-        </View>
-        {result.structuredData.actions.length > 0 && (
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>{t("🔧 Actions")}</Text>
-            {result.structuredData.actions.map((a, i) => <Text key={i} style={styles.item}>• {a}</Text>)}
-          </View>
-        )}
-        {result.structuredData.parts.length > 0 && (
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>{t("🧰 Parts/Equipment")}</Text>
-            <View style={styles.tagContainer}>
-              {result.structuredData.parts.map((p, i) => <View key={i} style={styles.tag}><Text style={styles.tagText}>{p}</Text></View>)}
-            </View>
-          </View>
-        )}
-        <View style={styles.buttonRow}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => setResult(null)}>
-            <Text style={styles.secondaryButtonText}>{t("New Note")}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.primaryButton} onPress={goBack}>
-            <Text style={styles.primaryButtonText}>{t("Done")}</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -303,15 +447,25 @@ export default function VoiceNoteScreen() {
         <View style={{ width: 28 }} />
       </View>
 
+      <View style={styles.transcriptionOption}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>{t("Transcribe and summarize")}</Text>
+          <Text style={styles.recordHint}>{t("Turn off to save audio only, without AI processing.")}</Text>
+        </View>
+        <Switch accessibilityLabel={t("Transcribe and summarize")} value={transcribe}
+          disabled={isRecording || isProcessing || !!retryUri || receiptLoading || !!receiptLoadError || !!savedReceipt}
+          onValueChange={value => { if (!busy.current && !audioRecorder.hasRecording && !retryUri && !receiptLoading && !receiptLoadError && !savedReceipt) setTranscribe(value); }} />
+      </View>
       <View style={styles.recordingArea}>
-        <View style={styles.waveform}>
-          {[1,2,3,4,5,6,7].map(i => (
-            <View key={i} style={[styles.waveBar, { height: isRecording ? 40 + i*5 : 20, backgroundColor: isRecording ? '#00D4FF' : '#444' }]} />
+        <View style={styles.waveform} accessible={false} importantForAccessibility="no-hide-descendants">
+          {meterHistory.map((level, i) => (
+            <View key={i} style={[styles.waveBar, { height: 4 + level * 76, backgroundColor: isRecording && !isPaused ? '#00D4FF' : '#444' }]} />
           ))}
         </View>
         {isRecording && <Text style={styles.timer}>{formatDuration(recordingDuration)}</Text>}
+        {isRecording && !isPaused && !meterAvailable && <Text style={styles.recordHint}>{t("Audio level unavailable")}</Text>}
         <Text style={styles.aiGuide}>
-          {isRecording ? t("🎤 Recording... Speak clearly about the work you did") : t("Tap the mic and describe the work you performed")}
+          {isPaused ? t("Recording paused") : isRecording ? t("🎤 Recording... Speak clearly about the work you did") : t("Tap the mic and describe the work you performed")}
         </Text>
       </View>
 
@@ -320,8 +474,14 @@ export default function VoiceNoteScreen() {
           if (busy.current) return;
           busy.current = true;
           void processRecording(retryUri).finally(() => { busy.current = false; });
-        }}><Text style={styles.secondaryButtonText}>{t("Retry saved recording")}</Text></TouchableOpacity>}
-        <TouchableOpacity onPress={isRecording ? stopRecording : startRecording}>
+        }}><Text style={styles.secondaryButtonText}>{t("Save local recording")}</Text></TouchableOpacity>}
+        {isRecording && <TouchableOpacity accessibilityRole="button"
+          accessibilityLabel={t(isPaused ? "Resume recording" : "Pause recording")}
+          style={styles.pauseButton} onPress={togglePause}>
+          <MaterialIcons name={isPaused ? 'play-arrow' : 'pause'} size={24} color="#00D4FF" />
+          <Text style={styles.secondaryButtonText}>{t(isPaused ? "Resume recording" : "Pause recording")}</Text>
+        </TouchableOpacity>}
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={t(isRecording ? "Stop recording" : "Tap to Record")} disabled={!isRecording && (!!retryUri || !!savedReceipt || receiptLoading || !!receiptLoadError)} onPress={isRecording ? stopRecording : startRecording}>
           <View style={[styles.recordButton, { backgroundColor: isRecording ? '#F44336' : '#00D4FF' }]}>
             <MaterialIcons name={isRecording ? 'stop' : 'mic'} size={40} color="#FFF" />
           </View>
@@ -337,12 +497,14 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 20 },
   headerTitle: { flexShrink: 1, color: '#FFF', fontSize: 18, fontWeight: '600' },
+  transcriptionOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 12 },
   recordingArea: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
   waveform: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', height: 100, marginBottom: 30 },
-  waveBar: { width: 6, marginHorizontal: 4, borderRadius: 3 },
+  waveBar: { width: 5, marginHorizontal: 2, borderRadius: 3 },
   timer: { color: '#FFF', fontSize: 48, fontWeight: 'bold', marginBottom: 20 },
   aiGuide: { color: '#888', fontSize: 16, textAlign: 'center', marginBottom: 30 },
   recordButtonContainer: { alignItems: 'center', paddingBottom: Platform.OS === 'ios' ? 50 : 30 },
+  pauseButton: { minHeight: 48, flexDirection: 'row', gap: 8, alignItems: 'center', paddingHorizontal: 20, marginBottom: 16 },
   recordButton: { width: 80, height: 80, borderRadius: 40, justifyContent: 'center', alignItems: 'center' },
   recordHint: { color: '#888', fontSize: 14, marginTop: 15 },
   loadingText: { color: '#FFF', marginTop: 20, fontSize: 16 },

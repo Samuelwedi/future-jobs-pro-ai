@@ -3,21 +3,26 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   ScrollView, Text, StyleSheet, TouchableOpacity, Alert,
-  ActivityIndicator,
+  ActivityIndicator, AppState,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { CameraView as EmbeddedCamera, Camera } from 'expo-camera';
+import { acquireCameraMicrophone } from '../services/cameraMicrophone';
+import { highestPictureSize, MAX_VIDEO_BYTES } from '../utils/cameraSettings';
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Speech from 'expo-speech';
-import { DeviceEventEmitter } from 'react-native';
 import { requestRecordingPermissionsAsync } from 'expo-audio';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute, useNavigation, useIsFocused } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../services/api';
+import { api, createEvidenceRequestKey } from '../services/api';
+import { getPendingEvidence } from '../services/offlineService';
 import * as Haptics from 'expo-haptics';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 
+const { requestCameraPermissionsAsync } = Camera;
+
 interface UploadResponse {
+  requestKey: string;
   success: boolean;
   photoId: string;
   compliance: {
@@ -29,6 +34,7 @@ interface UploadResponse {
   verificationHash: string;
   fileType: string;
 }
+type PendingCapture = Readonly<{uri:string;isVideo:boolean;fileInfo?:{name:string;mimeType?:string};fields:Readonly<Record<string,string>>}>;
 
 const TEMPLATES = [
   { id: 'standard', label: 'Standard', desc: 'Date, Time, GPS, App name' },
@@ -40,16 +46,38 @@ const TEMPLATES = [
 export default function CameraView() {
   const { t, lang } = useLang();
   const captureLock = useRef(false);
+  const cameraRef = useRef<EmbeddedCamera | null>(null);
+  const recording = useRef(false);
+  const [microphoneOwner, setMicrophoneOwner] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [cameraFailed, setCameraFailed] = useState(false);
+  const [cameraAttempt, setCameraAttempt] = useState(0);
+  const [pictureSize, setPictureSize] = useState<string>();
+  const isFocused = useIsFocused();
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const session = useRef(0);
+  const previewActive = useRef(false);
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
   const projectId: string = route?.params?.projectId || '';
   const timeEntryId: string = route?.params?.timeEntryId || '';
+  const scope = `${user?.id || ''}:${user?.companyId || ''}:${user?.role || ''}:${projectId}:${timeEntryId}`;
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  const pendingCapture = useRef<PendingCapture | null>(null);
+  const [hasPendingCapture,setHasPendingCapture] = useState(false);
+  const [captureRecoveryReady,setCaptureRecoveryReady] = useState(false);
+  const [captureRecoveryFailed,setCaptureRecoveryFailed] = useState(false);
 
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [hasAudioPermission, setHasAudioPermission] = useState<boolean | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [mode, setMode] = useState<'photo' | 'video'>('photo');
+  const cameraIdentity = `${scope}:${mode}:${cameraAttempt}:${isFocused}:${appActive}`;
+  const currentCameraIdentity = useRef(cameraIdentity);
+  currentCameraIdentity.current = cameraIdentity;
   const [currentLocation, setCurrentLocation] = useState<Location.LocationObject | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [watermarkTemplate, setWatermarkTemplate] = useState('standard');
@@ -63,10 +91,70 @@ export default function CameraView() {
     return () => { isMounted.current = false; };
   }, []);
 
+  // A session generation invalidates permission/capture promises on blur, background or scope change.
+  previewActive.current = isFocused && appActive;
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      previewActive.current = state === 'active' && isFocused;
+      if (state !== 'active') {
+        session.current++;
+        cameraRef.current?.stopRecording();
+      }
+      setAppActive(state === 'active');
+    });
+    return () => subscription.remove();
+  }, [isFocused]);
+
+  useEffect(() => {
+    session.current++;
+    setCameraReady(false);
+    setPictureSize(undefined);
+    setIsRecording(false);
+    setIsProcessing(false);
+    return () => {
+      session.current++;
+      cameraRef.current?.stopRecording();
+      recording.current = false;
+    };
+  }, [isFocused, appActive, scope, mode, cameraAttempt]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let release: (() => void) | undefined;
+    setMicrophoneOwner('');
+    if (mode === 'video' && isFocused && appActive) {
+      void acquireCameraMicrophone().then(dispose => {
+        if (cancelled) { dispose(); return; }
+        release = dispose;
+        setMicrophoneOwner(cameraIdentity);
+      }).catch(() => { if (!cancelled) setCameraFailed(true); });
+    }
+    return () => { cancelled = true; release?.(); };
+  }, [mode, isFocused, appActive, scope, cameraAttempt]);
+
+  useEffect(() => {
+    let active=true;
+    pendingCapture.current=null;
+    setHasPendingCapture(false);
+    setCaptureRecoveryReady(false);
+    setCaptureRecoveryFailed(false);
+    if(!user?.id||!projectId)return;
+    // Recover the original key and metadata after leaving the screen or restarting the app.
+    void getPendingEvidence(user.id,projectId).then(saved=>{
+      if(!active||currentScope.current!==scope)return;
+      if(saved?.fileUri){
+        pendingCapture.current=Object.freeze({uri:saved.fileUri,isVideo:saved.data.fileType==='video',fileInfo:saved.fileInfo?Object.freeze({...saved.fileInfo}):undefined,fields:Object.freeze({...saved.data})});
+        setHasPendingCapture(true);
+      }
+      setCaptureRecoveryReady(true);
+    }).catch(()=>{if(active&&currentScope.current===scope)setCaptureRecoveryFailed(true);});
+    return()=>{active=false;};
+  },[scope]);
+
   useEffect(() => {
     (async () => {
       // Request camera permission
-      const { status: camStatus } = await ImagePicker.requestCameraPermissionsAsync();
+      const { status: camStatus } = await requestCameraPermissionsAsync();
       if (isMounted.current) setHasCameraPermission(camStatus === 'granted');
 
       void fetchLocation();
@@ -135,12 +223,21 @@ export default function CameraView() {
     );
   }
 
-  const uploadFile = async (uri: string, isVideo: boolean = false) => {
+  const uploadFile = async (uri: string, isVideo: boolean = false, fileInfo?: { name: string; mimeType?: string }, expectedToken?:string|null) => {
+    const uploadScope=currentScope.current;
+    const uploadSession=session.current;
+    const isCurrent=()=>isMounted.current&&currentScope.current===uploadScope&&session.current===uploadSession&&previewActive.current;
     setIsProcessing(true);
     try {
+      const token=expectedToken===undefined?await api.getToken():expectedToken;
+      if(!isCurrent())return;
+      let capture=pendingCapture.current;
+      if(!capture){
+      const requestKey=createEvidenceRequestKey();
       const loc = await ensureLocation();
-
+      if(!isCurrent())return;
       const extraFields: Record<string, string> = {
+        requestKey,
         userId: user?.id || '',
         projectId,
         template: watermarkTemplate,
@@ -156,14 +253,21 @@ export default function CameraView() {
       }
 
       if (isVideo) extraFields.fileType = 'video';
+      capture=Object.freeze({uri,isVideo,fileInfo:fileInfo?Object.freeze({...fileInfo}):undefined,fields:Object.freeze(extraFields)});
+      pendingCapture.current=capture;
+      setHasPendingCapture(true);
+      }
 
       const response = await api.uploadFileWithData<UploadResponse>(
         '/photos/upload',
-        uri,
-        extraFields,
-        'file', false, {name: isVideo ? 'evidence.mp4' : 'evidence.jpg', mimeType: isVideo ? 'video/mp4' : 'image/jpeg'}
+        capture.uri,
+        capture.fields,
+        'file', false, capture.fileInfo, token, user?.id
       );
-      if (!response.success) throw new Error(t('Evidence was not saved. Please retry.'));
+      if(!isCurrent())return;
+      if (!response.success || response.requestKey!==capture.fields.requestKey) throw new Error(t('Upload status is pending or unavailable. Your capture is saved on this device. Check its status before taking another.'));
+      pendingCapture.current=null;
+      setHasPendingCapture(false);
 
       const score = response?.compliance?.score;
       const hasScore = typeof score === 'number' && Number.isFinite(score);
@@ -173,12 +277,12 @@ export default function CameraView() {
 
       if (isMounted.current) setLastScore(hasScore ? score : null);
 
-      api.recordAIEvent(isVideo ? 'video_taken' : 'photo_taken', {
+      api.recordAIEvent(capture.isVideo ? 'video_taken' : 'photo_taken', {
         complianceScore: score,
         issues,
-        projectId,
-        fileType: isVideo ? 'video' : 'image',
-      }, loc ? { lat: loc.coords.latitude, lng: loc.coords.longitude } : undefined).catch(() => {});
+        projectId:capture.fields.projectId,
+        fileType: capture.isVideo ? 'video' : 'image',
+      }, capture.fields.latitude&&capture.fields.longitude ? {lat:Number(capture.fields.latitude),lng:Number(capture.fields.longitude)} : undefined).catch(() => {});
 
       if (!hasScore) {
         Alert.alert(t('Evidence saved'), t('Uploaded successfully. Automated assessment is unavailable.'), [{text:t('Done'),onPress:goBack}]);
@@ -200,27 +304,48 @@ export default function CameraView() {
         );
       }
     } catch (error: any) {
-      Alert.alert(t('Upload Failed'), error.message || t('Could not upload. Please check your connection.'));
+      if(!isCurrent())return;
+      const queued = /upload queued for later/i.test(error.message || '');
+      const unresolved=error.code==='EVIDENCE_PENDING';
+      Alert.alert(t(queued ? 'Upload queued' : unresolved ? 'Check upload status' : 'Upload Failed'), t(error.message || 'Could not upload. Please check your connection.'));
     } finally {
-      if (isMounted.current) setIsProcessing(false);
+      if (isCurrent()) setIsProcessing(false);
     }
   };
 
-  const launchNativeCamera = async () => {
-    if (captureLock.current) return;
+  const captureInApp = async () => {
+    if (recording.current) {
+      cameraRef.current?.stopRecording();
+      return;
+    }
+    if (captureLock.current || !captureRecoveryReady) return;
     captureLock.current = true;
+    const launchScope=currentScope.current;
+    const launchSession=session.current;
+    const isCurrent=()=>isMounted.current&&currentScope.current===launchScope&&session.current===launchSession&&previewActive.current;
     setIsProcessing(true);
     try {
+    // The same capture is checked again. Never silently turn an uncertain upload into a retake.
+    if(pendingCapture.current){
+      const capture=pendingCapture.current;
+      await uploadFile(capture.uri,capture.isVideo,capture.fileInfo);
+      return;
+    }
+    const captureToken=await api.getToken();
+    if(!isCurrent())return;
     if (hasCameraPermission !== true) {
       Alert.alert(t('Permission required'), t('Please grant camera permission.'));
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      const { status } = await requestCameraPermissionsAsync();
+      if(!isCurrent())return;
       setHasCameraPermission(status === 'granted');
-      if (status !== 'granted') return;
+      return; // Wait for the newly mounted preview before capturing.
     }
+    if (!cameraReady || !cameraRef.current) return;
 
     // For video, check audio permission
     if (mode === 'video' && hasAudioPermission !== true) {
       const { status } = await requestRecordingPermissionsAsync();
+      if(!isCurrent())return;
       setHasAudioPermission(status === 'granted');
       if (status !== 'granted') {
         Alert.alert(t('Audio required'), t('Microphone permission is needed for video recording.'));
@@ -231,24 +356,24 @@ export default function CameraView() {
     setIsProcessing(true);
     try {
       await Speech.stop();
-      DeviceEventEmitter.emit('lucyMicrophoneBusy',true);
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: mode === 'photo'
-          ? ImagePicker.MediaTypeOptions.Images
-          : ImagePicker.MediaTypeOptions.Videos,
-        allowsEditing: false,
-        quality: 0.9,
-        videoMaxDuration: 1800, // 30 minutes max
-        videoQuality: ImagePicker.UIImagePickerControllerQualityType.High,
-      });
+      if(!isCurrent())return;
+      const isVideo = mode === 'video';
+      if (isVideo) {
+        recording.current = true;
+        setIsRecording(true);
+      }
+      const asset = isVideo
+        ? await cameraRef.current.recordAsync({ maxDuration: 1800, maxFileSize: MAX_VIDEO_BYTES })
+        : await cameraRef.current.takePictureAsync({ quality: 1, skipProcessing: false });
+      recording.current = false;
+      if (isCurrent()) setIsRecording(false);
+      if(!isCurrent())return;
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const isVideo = asset.type === 'video';
-
+      if (asset?.uri) {
         // Validate file exists and is not empty
         try {
           const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+          if(!isCurrent())return;
           if (!fileInfo.exists || fileInfo.size === 0) {
             Alert.alert(t('Error'), t('The captured file is empty or corrupted. Please try again.'));
             setIsProcessing(false);
@@ -260,20 +385,51 @@ export default function CameraView() {
           // Continue anyway – maybe it will work
         }
 
-        await uploadFile(asset.uri, isVideo);
+        if(!isCurrent())return;
+        // Preserve the camera container type (for example iOS QuickTime), rather than relabeling every video as MP4.
+        await uploadFile(asset.uri, isVideo, undefined,captureToken);
       } else {
         // User cancelled
-        if (isMounted.current) setIsProcessing(false);
+        if (isCurrent()) setIsProcessing(false);
       }
     } catch (error: any) {
-      Alert.alert(t('Error'), error.message || t('Failed to launch camera.'));
-      if (isMounted.current) setIsProcessing(false);
-    } finally { DeviceEventEmitter.emit('lucyMicrophoneBusy',false); }
+      if(isCurrent())Alert.alert(t('Error'), error.message || t('Failed to launch camera.'));
+      if (isCurrent()) setIsProcessing(false);
+    } finally { recording.current = false; if(isCurrent())setIsRecording(false); }
     } catch (error: any) {
-      Alert.alert(t('Error'), error.message || t('Failed to launch camera.'));
+      if(isCurrent())Alert.alert(t('Error'), error.message || t('Failed to launch camera.'));
     } finally {
       captureLock.current = false;
-      if (isMounted.current) setIsProcessing(false);
+      if (isCurrent()) setIsProcessing(false);
+    }
+  };
+
+  const selectMode = async (nextMode: 'photo' | 'video') => {
+    if (nextMode === mode || captureLock.current || hasPendingCapture) return;
+    const selectionScope = currentScope.current;
+    const selectionSession = session.current;
+    const isCurrent = () => isMounted.current && previewActive.current && currentScope.current === selectionScope && session.current === selectionSession;
+    captureLock.current = true;
+    setIsProcessing(true);
+    try {
+      if (nextMode === 'video') {
+        const permission = await requestRecordingPermissionsAsync();
+        if (!isCurrent()) return;
+        setHasAudioPermission(permission.granted);
+        if (!permission.granted) {
+          Alert.alert(t('Audio required'), t('Microphone permission is needed for video recording.'));
+          return;
+        }
+        await Speech.stop();
+        if (!isCurrent()) return;
+      }
+      setCameraReady(false);
+      setMode(nextMode);
+    } catch {
+      if (isCurrent()) Alert.alert(t('Audio required'), t('Microphone permission is needed for video recording.'));
+    } finally {
+      captureLock.current = false;
+      if (isCurrent()) setIsProcessing(false);
     }
   };
 
@@ -312,18 +468,47 @@ export default function CameraView() {
         <View style={styles.modeToggle}>
           <TouchableOpacity
             style={[styles.modeBtn, mode === 'photo' && styles.modeBtnActive]}
-            disabled={isProcessing} onPress={() => setMode('photo')}
+            disabled={isProcessing || hasPendingCapture} onPress={() => selectMode('photo')}
           >
             <Text style={[styles.modeText, mode === 'photo' && styles.modeTextActive]}>{t('📸 Photo')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.modeBtn, mode === 'video' && styles.modeBtnActive]}
-            disabled={isProcessing} onPress={() => setMode('video')}
+            disabled={isProcessing || hasPendingCapture} onPress={() => selectMode('video')}
           >
             <Text style={[styles.modeText, mode === 'video' && styles.modeTextActive]}>{t('🎬 Video')}</Text>
           </TouchableOpacity>
         </View>
 
+        <View style={styles.cameraPreview}>
+          {hasCameraPermission && isFocused && appActive && !cameraFailed && (mode === 'photo' || microphoneOwner === cameraIdentity) && (
+            <EmbeddedCamera
+              key={`${scope}:${mode}:${cameraAttempt}`}
+              ref={cameraRef}
+              style={StyleSheet.absoluteFill}
+              facing="back" mode={mode === 'photo' ? 'picture' : 'video'}
+              autofocus="on" pictureSize={mode === 'photo' ? pictureSize : undefined}
+              videoQuality="2160p" mute={mode !== 'video' || hasAudioPermission !== true}
+              responsiveOrientationWhenOrientationLocked
+              onCameraReady={async () => {
+                if (currentCameraIdentity.current !== cameraIdentity) return;
+                const readySession = session.current;
+                const camera = cameraRef.current;
+                try {
+                  const sizes = await camera?.getAvailablePictureSizesAsync();
+                  if (session.current !== readySession || camera !== cameraRef.current || !previewActive.current) return;
+                  setPictureSize(highestPictureSize(sizes || []));
+                } catch { /* Native camera defaults remain available if enumeration fails. */ }
+                if (session.current === readySession && camera === cameraRef.current && previewActive.current) setCameraReady(true);
+              }}
+              onMountError={() => { if (currentCameraIdentity.current === cameraIdentity) { setCameraReady(false); setCameraFailed(true); } }}
+            />
+          )}
+          {!hasCameraPermission && <Text style={styles.captureHint}>{t('Please grant camera permission.')}</Text>}
+          {cameraFailed && <TouchableOpacity accessibilityRole="button" onPress={() => { setCameraFailed(false); setCameraAttempt(value => value + 1); }}>
+            <Text style={styles.captureHint}>{t('Camera unavailable. Tap to retry.')}</Text>
+          </TouchableOpacity>}
+        </View>
         <View style={styles.watermarkPreview}>
           {previewLines.map((line, idx) => (
             <Text key={idx} style={styles.watermarkPreviewText}>{line}</Text>
@@ -332,7 +517,7 @@ export default function CameraView() {
 
         <TouchableOpacity
           style={styles.templateToggle}
-          disabled={isProcessing} onPress={() => setShowTemplatePicker(!showTemplatePicker)}
+          disabled={isProcessing || hasPendingCapture} onPress={() => setShowTemplatePicker(!showTemplatePicker)}
         >
           <MaterialIcons name="style" size={22} color="#FFF" />
           <Text style={styles.templateToggleText}>
@@ -346,7 +531,7 @@ export default function CameraView() {
             {TEMPLATES.map((template) => (
               <TouchableOpacity
                 key={template.id}
-                disabled={isProcessing}
+                disabled={isProcessing || hasPendingCapture}
                 style={[styles.templateOption, watermarkTemplate === template.id && styles.templateOptionSelected]}
                 onPress={() => {
                   setWatermarkTemplate(template.id);
@@ -373,23 +558,25 @@ export default function CameraView() {
           </View>
         )}
 
+        {hasPendingCapture && <Text style={styles.captureHint}>{t('Previous capture is saved on this device. Check upload status before taking another.')}</Text>}
+        {captureRecoveryFailed && <Text style={styles.captureHint}>{t('Saved captures could not be checked. Reopen this screen before taking another.')}</Text>}
         {mode === 'video' && <Text style={styles.captureHint}>{t('Video records microphone audio.')}</Text>}
       </ScrollView>
 
       <View style={styles.captureButtonContainer}>
         <TouchableOpacity
           style={[styles.captureButton, isProcessing && styles.captureButtonDisabled]}
-          accessibilityRole="button" accessibilityLabel={t(mode === 'video' ? 'Record video' : 'Take photo')} onPress={launchNativeCamera}
-          disabled={isProcessing}
+          accessibilityRole="button" accessibilityLabel={t(isRecording ? 'Stop recording' : hasPendingCapture ? 'Check upload status' : mode === 'video' ? 'Record video' : 'Take photo')} onPress={captureInApp}
+          disabled={(isProcessing && !isRecording) || !captureRecoveryReady || (!hasPendingCapture && hasCameraPermission === true && !cameraReady)}
         >
-          {isProcessing ? (
+          {isRecording ? <View style={styles.stopRecording} /> : isProcessing ? (
             <ActivityIndicator size="large" color="#0A0A0A" />
           ) : (
             <View style={styles.captureInner} />
           )}
         </TouchableOpacity>
         <Text style={styles.captureHint}>
-          {isProcessing ? t('Processing...') : mode === 'video' ? t('Tap to Record (native app)') : t('Tap to Capture (native app)')}
+          {isRecording ? t('Stop recording') : isProcessing ? t('Processing...') : hasPendingCapture ? t('Check upload status') : mode === 'video' ? t('Tap to record in app') : t('Tap to capture in app')}
         </Text>
       </View>
     </View>
@@ -397,6 +584,8 @@ export default function CameraView() {
 }
 
 const styles = StyleSheet.create({
+  cameraPreview: { height: 360, overflow: 'hidden', borderRadius: 16, backgroundColor: '#161616', justifyContent: 'center', alignItems: 'center' },
+  stopRecording: { width: 32, height: 32, borderRadius: 4, backgroundColor: '#E53935' },
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' },
   previewArea: {

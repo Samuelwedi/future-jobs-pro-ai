@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { lucyBackgroundConfigured, readLucyBackgroundSelection, sameLucyBackgroundSelection, LucyBackgroundSelection } from './lucyBackgroundProvider';
 import { pool } from '../config/database';
 import { CompanyActor } from '../middleware/companyActor';
 import { loadSubscriptionActor, hasCompanyEntitlement } from '../middleware/trialMiddleware';
@@ -10,9 +11,9 @@ export const lucyRecordSearchEnabled = () => process.env.LUCY_RECORD_SEARCH_ENAB
 export const lucyWorkBriefingEnabled = () => process.env.LUCY_WORK_BRIEFING_ENABLED !== 'false';
 export const lucyWorkModes = () => ({ai_research:lucyWorkEnabled(),record_search:lucyRecordSearchEnabled(),work_briefing:lucyWorkBriefingEnabled()});
 export type LucyWorkResult = { text: string; run?: unknown };
-export type LucyWorkProcessor = (input: {actor: CompanyActor; prompt: string; options?: LucyBriefingOptions; shouldContinue: () => Promise<boolean>}) => Promise<LucyWorkResult>;
+export type LucyWorkProcessor = (input: {actor: CompanyActor; prompt: string; options?: LucyBriefingOptions; backgroundSelection?: LucyBackgroundSelection; shouldContinue: () => Promise<boolean>}) => Promise<LucyWorkResult>;
 let processor: LucyWorkProcessor | undefined;
-export const lucyWorkEnabled = () => process.env.LUCY_BACKGROUND_WORK_ENABLED === 'true';
+export const lucyWorkEnabled = () => lucyBackgroundConfigured();
 export function configureLucyWorkProcessor(value: LucyWorkProcessor) { processor = value; }
 export class LucyWorkError extends Error { constructor(public status: number, message: string) { super(message); } }
 export function publicLucyWork(row: any) {
@@ -119,7 +120,8 @@ async function executeLucyWorkOnce(): Promise<boolean> {
  if (stopping || busy || activeExecutions.size > 0) return false;
  busy = true;
  try {
-  const allowAI = lucyWorkEnabled() && Boolean(processor), allowRecords = lucyRecordSearchEnabled(), allowBriefing=lucyWorkBriefingEnabled();
+  const backgroundSelection = readLucyBackgroundSelection();
+  const allowAI = lucyWorkEnabled() && Boolean(backgroundSelection) && Boolean(processor), allowRecords = lucyRecordSearchEnabled(), allowBriefing=lucyWorkBriefingEnabled();
   if (!allowAI && !allowRecords && !allowBriefing) return false;
   await pool.query(`UPDATE lucy_background_work w SET status='failed',error='Actor unavailable or retry limit reached',result=NULL,lease_token=NULL,lease_until=NULL,updated_at=now(),completed_at=now()
    WHERE ((w.mode='record_search' AND $1::boolean) OR (w.mode='ai_research' AND $2::boolean) OR (w.mode='work_briefing' AND $3::boolean)) AND status IN ('queued','running') AND (NOT ${validActor} OR (status='running' AND lease_until<=now() AND attempts>=3))`,[allowRecords,allowAI,allowBriefing]);
@@ -133,7 +135,7 @@ async function executeLucyWorkOnce(): Promise<boolean> {
   const job = claimed.rows[0]; if (!job) return false;
   const actor: CompanyActor = {id:job.user_id,company_id:job.company_id,role:job.actor_role};
   let finished = false;
-  const modeEnabled=()=>job.mode==='ai_research'?lucyWorkEnabled():job.mode==='record_search'?lucyRecordSearchEnabled():job.mode==='work_briefing'?lucyWorkBriefingEnabled():false;
+  const modeEnabled=()=>job.mode==='ai_research'?Boolean(backgroundSelection && sameLucyBackgroundSelection(backgroundSelection)):job.mode==='record_search'?lucyRecordSearchEnabled():job.mode==='work_briefing'?lucyWorkBriefingEnabled():false;
   const shouldContinue = async () => {
    if (stopping || finished || !modeEnabled()) return false;
    const r = await pool.query(`SELECT id FROM lucy_background_work w WHERE id=$1 AND lease_token=$2 AND status='running' AND lease_until>now() AND ${validActor}`,[job.id,token]);
@@ -144,21 +146,21 @@ async function executeLucyWorkOnce(): Promise<boolean> {
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-   if (!(await shouldContinue()) || stopping) throw new Error('Work no longer authorized');
+   if (!(await shouldContinue()) || stopping || !modeEnabled()) throw new Error('Work no longer authorized');
    // A timed-out provider may still be in flight. Keep the execution slot occupied
    // until it settles; never accumulate overlapping inference calls.
    const execute = job.mode === 'record_search' ? runLucyRecordSearch : job.mode === 'work_briefing' ? runLucyWorkBriefing : job.mode === 'ai_research' ? processor : undefined;
    if (!execute) throw new Error('Unavailable work mode');
    const execution = Promise.resolve().then(() => {
-    if (stopping) throw new Error('Worker stopped');
-    return execute({actor,prompt:job.prompt,...(job.mode==='work_briefing'?{options:job.options}:{}),shouldContinue});
+    if (stopping || !modeEnabled()) throw new Error('Worker stopped or provider changed');
+    return execute({actor,prompt:job.prompt,...(job.mode==='ai_research'?{backgroundSelection}:{}),...(job.mode==='work_briefing'?{options:job.options}:{}),shouldContinue});
    }).finally(() => { activeExecutions.delete(execution); });
    activeExecutions.add(execution);
    const output = await Promise.race([execution,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('Deadline exceeded')),90000);})]);
    if (!output || typeof output.text !== 'string') throw new Error('Invalid result');
    const serialized = JSON.stringify(output);
    if (Buffer.byteLength(serialized)>128000) throw new Error('Result too large');
-   if (!(await shouldContinue()) || stopping) throw new Error('Work no longer authorized');
+   if (!(await shouldContinue()) || stopping || !modeEnabled()) throw new Error('Work no longer authorized');
    await pool.query(`UPDATE lucy_background_work w SET status=$4,result=$3::jsonb,error=NULL,lease_token=NULL,lease_until=NULL,updated_at=now(),completed_at=now() WHERE id=$1 AND lease_token=$2 AND status='running' AND lease_until>now() AND ${validActor}`,[job.id,token,serialized,(output.run as any)?.status === 'partial' ? 'partial' : 'completed']);
   } catch {
    // Shutdown interrupts read-only work, not its durable intent. Leave the

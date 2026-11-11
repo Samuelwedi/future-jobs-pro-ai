@@ -18,13 +18,15 @@ export async function searchLucyWork(actor: CompanyActor, args: {query: string; 
       UNION ALL
       SELECT 'project',p.id,p.name,p.status,json_build_object('client',p.client_name)
       FROM projects p WHERE p.company_id=$1 AND $5 IN ('all','projects')
-        AND ($3::boolean OR EXISTS(SELECT 1 FROM shifts s JOIN shift_assignments sa ON sa.shift_id=s.id WHERE s.project_id=p.id AND sa.user_id=$2)
-          OR EXISTS(SELECT 1 FROM time_entries te WHERE te.project_id=p.id AND te.user_id=$2))
+        AND ($3::boolean OR EXISTS(SELECT 1 FROM shifts s JOIN shift_assignments sa ON sa.shift_id=s.id WHERE s.project_id=p.id AND sa.user_id=$2
+          AND (to_jsonb(s)->>'company_id' IS NULL OR to_jsonb(s)->>'company_id'=$1::text))
+          OR EXISTS(SELECT 1 FROM time_entries te WHERE te.project_id=p.id AND te.user_id=$2
+            AND (to_jsonb(te)->>'company_id' IS NULL OR to_jsonb(te)->>'company_id'=$1::text)))
         AND strpos(lower(concat_ws(' ',p.name,p.client_name,p.status)),lower($4))>0
       UNION ALL
       SELECT 'schedule',s.id,COALESCE(s.name,p.name),'scheduled',json_build_object('date',s.date,'startTime',s.start_time,'endTime',s.end_time,'project',p.name)
       FROM shifts s JOIN projects p ON p.id=s.project_id
-      WHERE p.company_id=$1 AND $5 IN ('all','schedules')
+      WHERE p.company_id=$1 AND (to_jsonb(s)->>'company_id' IS NULL OR to_jsonb(s)->>'company_id'=$1::text) AND $5 IN ('all','schedules')
         AND ($3::boolean OR EXISTS(SELECT 1 FROM shift_assignments sa WHERE sa.shift_id=s.id AND sa.user_id=$2))
         AND strpos(lower(concat_ws(' ',s.name,p.name,s.date::text)),lower($4))>0
     ) results ORDER BY kind,title,id LIMIT $6`, [actor.company_id, actor.id, manages(actor), query, scope, limit + 1]);

@@ -76,3 +76,18 @@ test('same accepted active shift resumes without another disclosure',async()=>{
  assert.equal(s.log.filter(x=>x==='disclosure').length,1);assert.equal(s.log.filter(x=>x==='start').length,1);
 });
 
+test('logout during the final stored-session read prevents a queued GPS upload',async()=>{
+ const s=setup();await s.api.startBackgroundLocation(shift);
+ const get=s.modules['expo-secure-store'].getItemAsync;
+ let reads=0,resolveRead;
+ s.modules['expo-secure-store'].getItemAsync=async key=>{
+  const value=await get(key);
+  if(key==='activeGpsShift' && ++reads===2)return new Promise(resolve=>{resolveRead=()=>resolve(value)});
+  return value;
+ };
+ const event=s.task({data:{locations:[{coords:{latitude:1,longitude:2},timestamp:0}]}});
+ await tick();assert.equal(typeof resolveRead,'function');
+ await s.api.stopBackgroundLocation();s.store.delete('authToken');
+ resolveRead();await event;
+ assert.equal(s.log.includes('upload'),false);
+});

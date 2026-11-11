@@ -3,7 +3,7 @@ import MediaAttachment from '../components/MediaAttachment';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Image, Alert, ActivityIndicator,
+  View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, KeyboardAvoidingView, Keyboard, Platform, Image, Alert, ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -31,8 +31,18 @@ export default function ChatScreen() {
   const [connected, setConnected] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const flatListRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
+      flatListRef.current?.scrollToEnd({ animated: true });
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   useEffect(() => {
     let mounted=true;
@@ -96,8 +106,8 @@ export default function ChatScreen() {
   };
 
   return (
-    <KeyboardAvoidingView keyboardVerticalOffset={safeInsets.top} style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
+    <KeyboardAvoidingView keyboardVerticalOffset={0} style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <View style={[styles.header, { paddingTop: safeInsets.top + 16 }]}>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} style={{ minWidth: 48, minHeight: 48, justifyContent: 'center' }} onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
@@ -106,9 +116,9 @@ export default function ChatScreen() {
         {room?.can_edit_photo && <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Change group photo")} disabled={uploading} onPress={changeGroupPhoto}><MaterialIcons name="add-a-photo" size={24} color="#67E8F9" /></TouchableOpacity>}
       </View>
       {error?<Text style={{color:'#FF718B',paddingHorizontal:16,paddingVertical:8}}>{error}</Text>:null}
-      <FlatList ref={flatListRef} data={messages} renderItem={renderItem} keyExtractor={item => item.id} contentContainerStyle={styles.listContent} />
+      <FlatList ref={flatListRef} data={messages} renderItem={renderItem} keyExtractor={item => item.id} contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" onLayout={() => { if (keyboardVisible) flatListRef.current?.scrollToEnd({ animated: true }); }} />
       {uploading && <ActivityIndicator color="#00D4FF" />}
-      <View style={styles.inputBar}>
+      <View style={[styles.inputBar, { paddingBottom: keyboardVisible ? 12 : Math.max(12, safeInsets.bottom) }]}>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Attach document")} disabled={uploading} onPress={chooseFile} style={{padding:8}}><MaterialIcons name="attach-file" size={24} color="#67E8F9" /></TouchableOpacity>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Attach photo or video")} disabled={uploading} onPress={chooseMedia} style={{padding:8}}><MaterialIcons name="photo-library" size={24} color="#67E8F9" /></TouchableOpacity>
         <TextInput style={styles.textInput} value={input} onChangeText={setInput} placeholder={t("Message...")} placeholderTextColor="#888" />
