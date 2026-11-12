@@ -37,7 +37,7 @@ async function fixture() {
     async query(sql, params = []) {
       state.queries.push(sql);
       if (state.failAuthorization && /FROM users u|FROM chat_rooms cr|FROM support_tickets WHERE id =/.test(sql)) throw Error('Synthetic authorization DB failure');
-      if (/FROM users u/.test(sql)) assert.equal(state.heldClients, 0, 'Release committed media client before recipient lookup');
+      if (/FROM users u/.test(sql) && !sql.includes('FOR SHARE OF u,c')) assert.equal(state.heldClients, 0, 'Release committed media client before recipient lookup');
       const result = await db.query(sql, params);
       return { ...result, rowCount: result.rows.length || result.affectedRows || 0 };
     },
@@ -59,8 +59,8 @@ async function fixture() {
   await db.exec(`
     CREATE TABLE companies(id text PRIMARY KEY,is_active boolean DEFAULT true,subscription_status text DEFAULT 'active',subscription_tier text DEFAULT 'pro',subscription_provider text,subscription_current_period_end timestamptz DEFAULT now()+interval '1 day',subscription_expires_at timestamptz);
     CREATE TABLE users(id text PRIMARY KEY,company_id text REFERENCES companies(id),role text DEFAULT 'employee',first_name text,last_name text,is_active boolean DEFAULT true,must_change_password boolean DEFAULT false,profile_pic text);
-    CREATE TABLE chat_rooms(id text PRIMARY KEY,company_id text REFERENCES companies(id),updated_at timestamptz DEFAULT now());
-    CREATE TABLE chat_room_members(room_id text REFERENCES chat_rooms(id),user_id text REFERENCES users(id),PRIMARY KEY(room_id,user_id));
+    CREATE TABLE chat_rooms(id text PRIMARY KEY,company_id text REFERENCES companies(id),updated_at timestamptz DEFAULT now(),is_group boolean DEFAULT false,created_by text);
+    CREATE TABLE chat_room_members(room_id text REFERENCES chat_rooms(id),user_id text REFERENCES users(id),membership_instance_id uuid DEFAULT gen_random_uuid(),PRIMARY KEY(room_id,user_id));
     CREATE TABLE chat_attachments(id serial PRIMARY KEY,room_id text,uploader_id text,filename text,mime_type text,size_bytes integer,storage_public_id text);
     CREATE TABLE chat_messages(id serial PRIMARY KEY,sender_id text REFERENCES users(id),company_id text REFERENCES companies(id),message text,room_id text,attachment_id integer REFERENCES chat_attachments(id),created_at timestamptz DEFAULT now());
     CREATE TABLE platform_support_agents(id text PRIMARY KEY,email text,first_name text,last_name text,role text,is_active boolean DEFAULT true);
@@ -71,6 +71,7 @@ async function fixture() {
   const auth = load(source('utils/auth.ts'), { jsonwebtoken: jwt });
   const trial = load(source('middleware/trialMiddleware.ts'), { '../services/complimentaryAccess': { hasComplimentaryCompanyAccess: async () => state.complimentary }, '../config/database': { pool }, '../utils/auth': auth });
   const socketAuth = load(source('services/socketAuthorization.ts'), { '../config/database': { pool }, '../middleware/trialMiddleware': trial });
+  const mediaPolicy = load(source('services/chatMediaAuthorization.ts'), { '../config/database': { pool }, './complimentaryAccess': { hasComplimentaryAccess: () => false }, '../middleware/trialMiddleware': trial });
   const chat = load(source('services/chatService.ts'), { '../config/database': { pool } });
   const receipts = load(source('services/chatTextReceipts.ts'), { '../config/database': { pool }, 'node:crypto': require('node:crypto'), './complimentaryAccess': { hasComplimentaryAccess: () => false } }, { Buffer });
   const app = express(); app.use(express.json()); app.use('/api', trial.subscriptionGate);
@@ -82,8 +83,8 @@ async function fixture() {
   const cr = source('routes/chatRoutes.ts'), router = express.Router();
   router.use((req, _res, next) => { req.chatUser = auth.verifyToken(req).id; next(); });
   const storage = { uploadPrivateChatFile: async () => 'synthetic-file', removePrivateChatFile: async () => { state.deletedFiles++; } };
-  load(statement(cr, 'function', 'roomAccess') + '\n' + statement(cr, 'post', '/message') + '\n' + statement(cr, 'post', '/room/:roomId/attachments'), {}, {
-    router, pool, ...auth, ...socketAuth, ...storage, ...receipts, saveMessage: chat.saveMessage,
+  load(statement(cr, 'function', 'roomAccess') + '\n' + statement(cr, 'function', 'captureMediaScope') + '\n' + statement(cr, 'post', '/message') + '\n' + statement(cr, 'post', '/room/:roomId/attachments'), {}, {
+    router, pool, ...auth, ...socketAuth, ...storage, ...receipts, ...mediaPolicy, saveMessage: chat.saveMessage,
     fileUpload: multer({ storage: multer.memoryStorage() }), parseFile: p => p,
     safeFilename: x => x, chatFileType: () => 'text/plain',
   }); app.use('/api/chat', router);

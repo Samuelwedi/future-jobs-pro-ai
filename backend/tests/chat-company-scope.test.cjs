@@ -20,6 +20,7 @@ const [company, other, member, sender, outsider, inactive, foreign, boss, manage
 const supportRoom = `support-ticket-${ticket}`;
 let db, gated, isolated, historyReads = 0, beforeHistoryRead, storageReads = 0, providerCalls = 0;
 const servers = [];
+let mediaReadTransactions=false,activeMediaClients=0;
 const deniedProvider = () => { providerCalls++; throw Error('External providers are forbidden'); };
 const pool = {
   async query(sql, args) {
@@ -32,7 +33,14 @@ const pool = {
     const result = await db.query(sql, args);
     return {rows: result.rows, rowCount: result.rows.length || result.affectedRows || 0};
   },
-  connect() { throw Error('Read-only scope tests must not start a transaction'); },
+  async connect() {
+    assert.equal(mediaReadTransactions,true,'History-only scope tests must not start a transaction');
+    activeMediaClients++;let released=false;
+    return {query(sql,args){
+      assert.match(sql,/^(SELECT|BEGIN|ROLLBACK|SET LOCAL)\b/,'Media read policy must not mutate fixture records');
+      return pool.query(sql,args);
+    },release(){assert.equal(released,false);released=true;activeMediaClients--;}};
+  },
 };
 const cache = new Map();
 function load(relative) {
@@ -58,7 +66,7 @@ function load(relative) {
     if (spec.startsWith('.')) {
       const rel = path.relative(path.join(root, 'src'), path.resolve(path.dirname(filename), spec + '.ts'));
       assert.ok(['utils/auth.ts', 'middleware/trialMiddleware.ts', 'services/complimentaryAccess.ts',
-        'services/chatViews.ts', 'services/chatTextReceipts.ts', 'services/chatHistory.ts', 'services/chatService.ts', 'services/chatFiles.ts', 'services/socketAuthorization.ts'].includes(rel), `Unexpected source import: ${spec}`);
+        'services/chatMediaAuthorization.ts', 'services/chatViews.ts', 'services/chatTextReceipts.ts', 'services/chatHistory.ts', 'services/chatService.ts', 'services/chatFiles.ts', 'services/socketAuthorization.ts'].includes(rel), `Unexpected source import: ${spec}`);
       return load(rel);
     }
     assert.ok(['express', 'multer', 'jsonwebtoken', 'node:stream', 'node:stream/promises', 'node:path', 'node:crypto'].includes(spec),
@@ -93,6 +101,7 @@ async function read(actor = member, requestedCompany = company, options) {
 }
 async function seed() {
   historyReads = storageReads = providerCalls = 0;
+  mediaReadTransactions=false;
   beforeHistoryRead = undefined;
   await db.exec('TRUNCATE chat_messages, chat_attachments, chat_room_members, chat_rooms, support_tickets, users, companies CASCADE');
   for (const id of [company, other]) {
@@ -155,6 +164,7 @@ after(async () => {
   await Promise.all(servers.map(server => new Promise(resolve => server.close(resolve))));
   await db?.close();
   assert.equal(providerCalls, 0);
+  assert.equal(activeMediaClients,0);
 });
 
 test('real JWT verification denies absent, invalid, expired, and non-access tokens before history SQL', async () => {
@@ -320,6 +330,10 @@ test('the history SQL rechecks membership, active state and company if they chan
 });
 
 test('room histories and attachment downloads keep denying nonmembers and preserve legitimate member access', async () => {
+  // Keep earlier legacy/duplicate-membership history coverage unchanged. Modern
+  // attachment policy requires the actual deployed membership identity schema.
+  await db.exec(fs.readFileSync(path.join(root,'migrations/20261111_private_chat_views.sql'),'utf8'));
+  mediaReadTransactions=true;
   for (const actor of [outsider, foreign]) {
     for (const room of ['private-direct', 'private-group']) {
       for (const endpoint of ['room', 'messages']) {

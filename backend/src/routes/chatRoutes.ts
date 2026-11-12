@@ -1,3 +1,4 @@
+import { authorizeChatMedia, readChatMediaPolicy, chatMediaFailure, ChatMediaAccessError, ChatMediaIdentity } from '../services/chatMediaAuthorization';
 import { parseViewStateQuery, parseViewRequest, readChatViewState, acknowledgeChatViews, chatViewFailure } from '../services/chatViews';
 import { hasTextRequestKey, parseTextRequest, parseTextStatus, saveKeyedText, readTextRequest, textRequestFailure } from '../services/chatTextReceipts';
 import { emitAuthorizedRoom } from '../services/socketAuthorization';
@@ -427,69 +428,142 @@ router.get('/room/:roomId/details', async (req, res) => {
   res.json({success:true,room:{...room,can_edit_photo:room.is_group&&String(room.created_by)===String(userId)}});
  }catch{res.status(500).json({success:false,message:'Could not load conversation'});}
 });
+async function captureMediaScope(req:Request,res:Response,photo=false) {
+ const decoded=verifyToken(req);
+ const identity:ChatMediaIdentity={actorId:decoded.id,claimedCompanyId:decoded.companyId||null,
+  requestCompanyId:res.locals.subscriptionActor?.companyId||null,expiresAt:decoded.exp,notBefore:decoded.nbf};
+ const scope=await readChatMediaPolicy(identity,String(req.params.roomId),undefined,async(_client,policy)=>policy.scope,photo);
+ (req as any).chatMediaIdentity={...identity,requestCompanyId:scope.actorCompanyId};
+ (req as any).chatMediaScope=scope;
+}
 router.post('/room/:roomId/photo', async (req,res,next) => {
- try {
-  const access=await roomAccess((req as any).chatUser,String(req.params.roomId));
-  if(!access.allowed)return res.status(403).json({success:false,message:'Forbidden'});
-  const r=await pool.query('SELECT created_by,is_group FROM chat_rooms WHERE id=$1',[req.params.roomId]);
-  if(!r.rows[0]?.is_group||String(r.rows[0].created_by)!==String((req as any).chatUser))return res.status(403).json({success:false,message:'Only the group creator can change its photo'});
-  next();
- }catch{res.status(500).json({success:false,message:'Could not check group access'});}
+ try{await captureMediaScope(req,res,true);next();}
+ catch(error){const failure=chatMediaFailure(error);res.status(failure.status).json(failure.body);}
 },parseFile(photoUpload.single('photo')),async(req,res)=>{
+ let client:PoolClient|null=null,uploaded:any=null;
+ let transactionAttempted=false,commitAttempted=false,committed=false,discard=false;
  try {
   if(!req.file)return res.status(400).json({success:false,message:'Choose a photo'});
-  const mime=chatFileType(req.file.originalname,req.file.buffer);
+  let mime:string;
+  try{mime=chatFileType(req.file.originalname,req.file.buffer);}
+  catch{return res.status(400).json({success:false,message:'Choose a JPG, PNG or WebP photo'});}
   if(!mime.startsWith('image/'))return res.status(400).json({success:false,message:'Choose a JPG, PNG or WebP photo'});
-  const result:any=await new Promise((resolve,reject)=>{
+  uploaded=await new Promise((resolve,reject)=>{
    const stream=cloudinary.uploader.upload_stream({folder:'future-jobs-pro-ai/chat-avatars',resource_type:'image',transformation:[{width:512,height:512,crop:'fill'}]},(err,result)=>err?reject(err):resolve(result));
    Readable.from(req.file!.buffer).pipe(stream);
   });
-  await pool.query('UPDATE chat_rooms SET avatar_url=$1,updated_at=NOW() WHERE id=$2',[result.secure_url,req.params.roomId]);
-  res.json({success:true,avatar_url:result.secure_url});
- }catch(e:any){res.status(400).json({success:false,message:e.message||'Photo upload failed'});}
+  client=await pool.connect();transactionAttempted=true;
+  await client.query('BEGIN');
+  await client.query("SET LOCAL lock_timeout='5s'");
+  await client.query("SET LOCAL statement_timeout='15s'");
+  const policy=await authorizeChatMedia(client,(req as any).chatMediaIdentity,String(req.params.roomId),(req as any).chatMediaScope,true);
+  await client.query('UPDATE chat_rooms SET avatar_url=$1,updated_at=NOW() WHERE id=$2',[uploaded.secure_url,req.params.roomId]);
+  policy.recheck();commitAttempted=true;await client.query('COMMIT');committed=true;
+  res.json({success:true,avatar_url:uploaded.secure_url});
+ }catch(error){
+  let cleanupSafe=!transactionAttempted;
+  if(client&&!committed){
+   if(commitAttempted)discard=true;
+   else {try{await client.query('ROLLBACK');cleanupSafe=true;}catch{discard=true;}}
+  }
+  if(uploaded?.public_id&&!commitAttempted&&cleanupSafe) {
+   try{await cloudinary.uploader.destroy(uploaded.public_id,{resource_type:'image',invalidate:true});}catch{}
+  }
+  const failure=!commitAttempted&&cleanupSafe?chatMediaFailure(error):{status:500,body:{success:false,code:'CHAT_MEDIA_UNCERTAIN',message:'Upload not confirmed. Check the group photo before uploading again.'}};
+  res.status(failure.status).json(failure.body);
+ }finally{if(client)client.release(discard);}
 });
 router.post('/room/:roomId/attachments', async(req,res,next)=>{
- try {
-  const access=await roomAccess((req as any).chatUser,String(req.params.roomId));
-  if(!access.allowed)return res.status(403).json({success:false,message:'Forbidden'});
-  (req as any).chatCompany=access.companyId; next();
- }catch{res.status(500).json({success:false,message:'Could not check conversation access'});}
+ try{await captureMediaScope(req,res);next();}
+ catch(error){const failure=chatMediaFailure(error);res.status(failure.status).json(failure.body);}
 },parseFile(fileUpload.single('file')),async(req,res)=>{
- const client=await pool.connect();
+ let client:PoolClient|null=null;
  let released=false;
+ let discardClient=false;
  let uploaded:string|null=null;
+ let transactionAttempted=false;
+ let commitAttempted=false;
  let committed=false;
  try {
   if(!req.file)return res.status(400).json({success:false,message:'Choose a file'});
-  const filename=safeFilename(req.file.originalname),mime=chatFileType(filename,req.file.buffer);
+  const filename=safeFilename(req.file.originalname);
+  let mime:string;
+  try{mime=chatFileType(filename,req.file.buffer);}
+  catch(error:any){return res.status(400).json({success:false,message:error.message||'Choose a supported file'});}
   const caption=String(req.body?.message||'').trim();
   if(caption.length>5000)return res.status(400).json({success:false,message:'Caption is too long'});
   uploaded=await uploadPrivateChatFile(req.file.buffer,filename);
+  client=await pool.connect();
+  transactionAttempted=true;
   await client.query('BEGIN');
+  await client.query("SET LOCAL lock_timeout='5s'");
+  await client.query("SET LOCAL statement_timeout='15s'");
+  const policy=await authorizeChatMedia(client,(req as any).chatMediaIdentity,String(req.params.roomId),(req as any).chatMediaScope);
   const attachment=await client.query(`INSERT INTO chat_attachments(room_id,uploader_id,filename,mime_type,size_bytes,storage_public_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,[req.params.roomId,(req as any).chatUser,filename,mime,req.file.size,uploaded]);
-  const saved=await client.query(`INSERT INTO chat_messages(sender_id,company_id,room_id,message,attachment_id) VALUES($1,$2,$3,$4,$5) RETURNING *`,[(req as any).chatUser,(req as any).chatCompany,req.params.roomId,caption,attachment.rows[0].id]);
+  const saved=await client.query(`INSERT INTO chat_messages(sender_id,company_id,room_id,message,attachment_id) VALUES($1,$2,$3,$4,$5) RETURNING *`,[(req as any).chatUser,policy.scope.targetCompanyId,req.params.roomId,caption,attachment.rows[0].id]);
   await client.query('UPDATE chat_rooms SET updated_at=NOW() WHERE id=$1',[req.params.roomId]);
   const sender=await client.query("SELECT first_name || ' ' || last_name AS sender_name,profile_pic AS sender_avatar FROM users WHERE id=$1",[(req as any).chatUser]);
+  // A rejected COMMIT can mean its acknowledgement was lost after persistence.
+  // Never roll back or delete the blob once COMMIT has been dispatched.
+  policy.recheck();
+  commitAttempted=true;
   await client.query('COMMIT');committed=true;
-  client.release();released=true;
+  released=true;client.release();
   const message={...saved.rows[0],...sender.rows[0],attachment_name:filename,attachment_type:mime,attachment_size:req.file.size};
-  await emitAuthorizedRoom(req.app.get('io'), String(req.params.roomId), 'new-message', message);
+  // Notification is best effort; it cannot undo a confirmed saved message.
+  try{await emitAuthorizedRoom(req.app.get('io'), String(req.params.roomId), 'new-message', message);}catch{}
   res.status(201).json({success:true,message});
- }catch(e:any){if(!committed)await client.query('ROLLBACK');if(uploaded&&!committed)await removePrivateChatFile(uploaded).catch(()=>{});res.status(400).json({success:false,message:e.message||'Attachment upload failed'});}
- finally{if(!released)client.release();}
+ }catch(error){
+  let cleanupSafe=!transactionAttempted;
+  if(client&&!committed){
+   if(commitAttempted) discardClient=true;
+   else if(transactionAttempted){
+    try{await client.query('ROLLBACK');cleanupSafe=true;}
+    catch{discardClient=true;}
+   }
+  }
+  // Retain bytes whenever transaction settlement is uncertain. Orphans are safer
+  // than deleting a file that a persisted message may still reference.
+  if(uploaded&&!commitAttempted&&cleanupSafe)await removePrivateChatFile(uploaded).catch(()=>{});
+  if(!commitAttempted&&cleanupSafe&&error instanceof ChatMediaAccessError){const failure=chatMediaFailure(error);res.status(failure.status).json(failure.body);}
+  else res.status(500).json({success:false,code:'CHAT_MEDIA_UNCERTAIN',message:'Upload not confirmed. Check the conversation before uploading again.'});
+ }finally{if(client&&!released){released=true;client.release(discardClient);}}
 });
 router.get('/attachments/:id/content',async(req,res)=>{
+ let stream:Readable|undefined;
+ let streamFailed=false;
+ const streamError=()=>{streamFailed=true;};
  try {
-  // Authorize using metadata before loading potentially large file bytes.
-  const metadata=await pool.query('SELECT room_id FROM chat_attachments WHERE id=$1',[req.params.id]);
-  if(!metadata.rowCount)return res.status(404).json({success:false,message:'File not found'});
-  const access=await roomAccess((req as any).chatUser,String(metadata.rows[0].room_id));
-  if(!access.allowed)return res.status(403).json({success:false,message:'Forbidden'});
-  const result=await pool.query('SELECT filename,mime_type,storage_public_id FROM chat_attachments WHERE id=$1',[req.params.id]);
-  const file=result.rows[0];
-  const stream=await readPrivateChatFile(file.storage_public_id);
+  const decoded=verifyToken(req);
+  const identity:ChatMediaIdentity={actorId:decoded.id,claimedCompanyId:decoded.companyId||null,
+   requestCompanyId:res.locals.subscriptionActor?.companyId||null,expiresAt:decoded.exp,notBefore:decoded.nbf};
+  const metadata=(await pool.query('SELECT room_id FROM chat_attachments WHERE id=$1',[req.params.id])).rows[0];
+  if(!metadata)return res.status(404).json({success:false,message:'File not found'});
+  const captured=await readChatMediaPolicy(identity,String(metadata.room_id),undefined,async(client,policy)=>{
+   const file=(await client.query('SELECT room_id,filename,mime_type,size_bytes,storage_public_id FROM chat_attachments WHERE id=$1 FOR SHARE',[req.params.id])).rows[0];
+   if(!file||String(file.room_id)!==policy.scope.roomId)throw new ChatMediaAccessError(403,'CHAT_ACCESS_DENIED','File access changed.');
+   return {scope:policy.scope,file};
+  });
+  const {file,scope}=captured;
+  identity.requestCompanyId=scope.actorCompanyId;
+  stream=await readPrivateChatFile(file.storage_public_id);
+  // Provider bytes remain unpiped during policy checks. Guard errors now, not
+  // only after pipeline attaches its listeners at the eventual handoff.
+  stream.on('error',streamError);
+  stream.once('close',()=>stream?.off('error',streamError));
+  await readChatMediaPolicy(identity,scope.roomId,scope,async(client)=>{
+   const latest=(await client.query('SELECT room_id,filename,mime_type,size_bytes,storage_public_id FROM chat_attachments WHERE id=$1 FOR SHARE',[req.params.id])).rows[0];
+   if(!latest||['room_id','filename','mime_type','size_bytes','storage_public_id'].some(key=>latest[key]!==file[key])) {
+    throw new ChatMediaAccessError(403,'CHAT_ACCESS_DENIED','File access changed.');
+   }
+  });
+  if(streamFailed||stream.destroyed)throw new Error('Attachment stream became unavailable');
+  // Revalidation covers handoff, not continuous revocation of bytes already sent.
   res.set({'Content-Type':file.mime_type,'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});
   await pipeline(stream,res);
- }catch{if(!res.headersSent)res.status(500).json({success:false,message:'File download failed'});else res.destroy();}
+ }catch(error){
+  stream?.destroy();
+  if(!res.headersSent){const failure=chatMediaFailure(error);res.status(failure.status).json(failure.body);}else res.destroy();
+ }
 });
 export default router;

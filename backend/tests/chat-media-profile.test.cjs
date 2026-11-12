@@ -8,8 +8,8 @@ test('private chat attachments, room photos, and effective profile rates',async(
  const query=async(sql,args)=>{const r=await db.query(sql,args);return {rows:r.rows,rowCount:r.rows.length||r.affectedRows||0};};
  const ids=Array.from({length:7},(_,i)=>`00000000-0000-4000-a000-${String(i+1).padStart(12,'0')}`);
  const [company,other,boss,worker,foreign,outside,inactive]=ids;
- const storage=require('../dist/services/chatStorage'),oldUpload=storage.uploadPrivateChatFile,oldRead=storage.readPrivateChatFile;const files=new Map();
- storage.uploadPrivateChatFile=async(bytes,name)=>{files.set(name,bytes);return name;};storage.readPrivateChatFile=async(name)=>require('stream').Readable.from(files.get(name));
+ const storage=require('../dist/services/chatStorage'),oldUpload=storage.uploadPrivateChatFile,oldRead=storage.readPrivateChatFile,oldRemove=storage.removePrivateChatFile;const files=new Map();
+ storage.uploadPrivateChatFile=async(bytes,name)=>{files.set(name,bytes);return name;};storage.readPrivateChatFile=async(name)=>require('stream').Readable.from(files.get(name));storage.removePrivateChatFile=async(name)=>{files.delete(name);};
  let server;
  try {
   await db.exec(`CREATE TABLE companies(id uuid PRIMARY KEY,timezone text,subscription_status text DEFAULT 'active',
@@ -21,7 +21,8 @@ test('private chat attachments, room photos, and effective profile rates',async(
    CREATE TABLE chat_messages(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),company_id uuid,sender_id uuid,room_id text,message text NOT NULL,created_at timestamptz DEFAULT now());
    CREATE TABLE compensation_history(user_id uuid,hourly_rate numeric,effective_date date,created_at timestamptz DEFAULT now(),created_by uuid);`);
   await db.exec(require('fs').readFileSync(require('path').join(__dirname,'../migrations/20261012_chat_media.sql'),'utf8'));
-  for(const c of [company,other])await query('INSERT INTO companies(id,timezone) VALUES($1,$2)',[c,'America/Edmonton']);
+  await db.exec(require('fs').readFileSync(require('path').join(__dirname,'../migrations/20261111_private_chat_views.sql'),'utf8'));
+  for(const c of [company,other])await query("INSERT INTO companies(id,timezone,subscription_status,subscription_tier) VALUES($1,$2,'active','pro')",[c,'America/Edmonton']);
   for(const [id,c,role] of [[boss,company,'boss'],[worker,company,'employee'],[foreign,other,'employee'],[outside,company,'employee'],[inactive,company,'employee']])await query('INSERT INTO users(id,company_id,role,first_name,last_name,profile_pic) VALUES($1,$2,$3,$4,$5,$6)',[id,c,role,'Test','User','https://example.invalid/avatar.jpg']);
   await query('UPDATE users SET is_active=false WHERE id=$1',[inactive]);
   await query("INSERT INTO chat_rooms(id,company_id,is_group,name,created_by) VALUES('group-test',$1,true,'Crew',$2)",[company,boss]);
@@ -55,7 +56,7 @@ test('private chat attachments, room photos, and effective profile rates',async(
   assert.equal((await (await request('/api/users/me',worker)).json()).user.current_rate,27);
   const message=await request('/api/chat/message',worker,'POST',{roomId:'group-test',message:'Text still works'});assert.equal(message.status,200);
   await query("DELETE FROM chat_room_members WHERE user_id=$1",[worker]);assert.equal((await request(path,worker)).status,403);
- }finally{if(server)await new Promise(resolve=>server.close(resolve));pool.query=oldQuery;pool.connect=oldConnect;storage.uploadPrivateChatFile=oldUpload;storage.readPrivateChatFile=oldRead;await db.close();}
+ }finally{if(server)await new Promise(resolve=>server.close(resolve));pool.query=oldQuery;pool.connect=oldConnect;storage.uploadPrivateChatFile=oldUpload;storage.readPrivateChatFile=oldRead;storage.removePrivateChatFile=oldRemove;await db.close();}
 });
 
 test('filenames and MIME checks reject active files',()=>{
