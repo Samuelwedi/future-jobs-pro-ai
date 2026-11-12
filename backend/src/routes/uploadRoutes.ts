@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import { pool } from '../config/database';
@@ -17,24 +17,42 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 
-const getCompanyId = async (req: Request): Promise<string | null> => {
+type UploadActor = { id: string; companyId: string };
+const getUploadActor = async (req: Request): Promise<UploadActor | null> => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
     const decoded = verifyToken(req);
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
-    return userRes.rows[0]?.company_id || null;
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE', [decoded.id]);
+    // Token may expire while the database query is pending.
+    if (verifyToken(req).id !== decoded.id) return null;
+    const companyId = userRes.rows[0]?.company_id;
+    return companyId ? { id: decoded.id, companyId } : null;
   } catch {
     return null;
   }
 };
 
+const admitUpload = async (req: Request, res: Response, next: NextFunction) => {
+  const actor = await getUploadActor(req);
+  if (!actor || !tokenStillMatches(req, actor)) return res.status(401).json({ success: false, message: 'Not authenticated' });
+  res.locals.uploadActor = actor;
+  next();
+};
+
+const sameActor = (a: UploadActor | null, b: UploadActor): boolean =>
+  !!a && a.id === b.id && a.companyId === b.companyId;
+
+const tokenStillMatches = (req: Request, actor: UploadActor): boolean => {
+  try { return verifyToken(req).id === actor.id; } catch { return false; }
+};
+
 // POST /api/upload – generic file upload for attachments
-router.post('/', upload.single('file'), async (req: Request, res: Response) => {
+router.post('/', admitUpload, upload.single('file'), async (req: Request, res: Response) => {
   try {
-    const companyId = await getCompanyId(req);
-    if (!companyId) {
-      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const admitted = res.locals.uploadActor as UploadActor;
+    if (!sameActor(await getUploadActor(req), admitted) || !tokenStillMatches(req, admitted)) {
+      return res.status(403).json({ success: false, message: 'Access unavailable' });
     }
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'No file uploaded' });
@@ -50,6 +68,13 @@ router.post('/', upload.single('file'), async (req: Request, res: Response) => {
         public_id: `${Date.now()}_${req.file.originalname}`,
       }
     );
+
+    // A completed provider upload is not a reason to disclose its URL after
+    // token expiry, deactivation or company transfer. Do not retry/delete an upload
+    // with an uncertain outcome here.
+    if (!sameActor(await getUploadActor(req), admitted) || !tokenStillMatches(req, admitted)) {
+      return res.status(403).json({ success: false, message: 'Access unavailable' });
+    }
 
     res.json({
       success: true,
