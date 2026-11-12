@@ -59,6 +59,8 @@ export function createHistoryController<T extends HistoryRow>(state: HistoryStat
   readMessages: (query: { limit: number; before?: string }) => Promise<any>;
   isCurrent: () => boolean;
   validMessage: (row: any) => row is T;
+  captureRead?: () => unknown;
+  onAcceptedPage?: (data: any, before?: string, stamp?: unknown) => boolean;
   onMessages: (messages: T[], kind: 'latest' | 'history') => void;
   onChange: (view: HistoryView) => void;
   onAccessChanged: () => void;
@@ -71,9 +73,13 @@ export function createHistoryController<T extends HistoryRow>(state: HistoryStat
   const current = () => active && options.isCurrent();
   const publish = () => { if (current()) options.onChange(historyView(state, busy)); };
   const read = async (before?: string) => {
+    const stamp = options.captureRead?.();
     const data = await options.readMessages({ limit: CHAT_HISTORY_LIMIT, ...(before ? { before } : {}) });
     if (!current()) return null;
-    return parsePage(data, options.validMessage, before);
+    const page = parsePage(data, options.validMessage, before);
+    // Private view metadata must never consume a stale or malformed page.
+    if (options.onAcceptedPage?.(data, before, stamp) === false || !current()) return null;
+    return page;
   };
   const failed = (cause: any, kind: 'latest' | 'older' | 'recovery', gap?: Gap) => {
     if (!current()) return;

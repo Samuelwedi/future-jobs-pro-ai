@@ -10,6 +10,7 @@ import { io } from 'socket.io-client';
 import { WS_URL } from '../services/api';
 import { chatOwnerKey, openChatSession, readChatOwner, type ChatOwner } from '../services/chatSession';
 import { createHistoryController, createHistoryState, historyView, mergeHistoryRows, type HistoryView } from '../services/chatHistory';
+import { createPrivateViewObserver, parseViewHistory, privateViewLabel, PRIVATE_VIEW_HISTORY_NOTE, type ViewCount } from '../services/chatViews';
 import { browserTextStore } from '../services/chatTextQueue';
 import { createTextRecord, validTextReceipt, type TextRecord, type TextRows } from '../services/chatTextOutbox';
 import { readTextAuthorization } from '../services/chatTextTransport';
@@ -30,6 +31,7 @@ interface Message {
   attachment_name?: string | null;
   attachment_type?: string | null;
   attachment_size?: number | null;
+  view_version?: string;
 }
 
 type ChatSession = ReturnType<typeof openChatSession>;
@@ -121,6 +123,10 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
   const messageListRef = useRef<HTMLDivElement>(null);
   const scrollSnapshot = useRef<ChatScrollSnapshot | null>(null);
   const didInitialScroll = useRef(false);
+  const viewsRef = useRef<ReturnType<typeof createPrivateViewObserver> | null>(null);
+  const privateMembership = useRef<string | null>(null);
+  const chooserOpen = useRef(false);
+  const [viewCount, setViewCount] = useState<ViewCount | null>(null);
   const historyState = useRef(createHistoryState());
   const [history, setHistory] = useState<HistoryView>(() => historyView(historyState.current));
   const historyRef = useRef<ReturnType<typeof createHistoryController<Message>> | null>(null);
@@ -150,6 +156,8 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     setSendStatus('');
   };
   const accessChanged = () => {
+    viewsRef.current?.interrupt();
+    setViewCount(null);
     denied.current = true;
     sessionRef.current = null;
     sendLock.current = null; mediaLock.current = null;
@@ -159,11 +167,29 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     setViewEpoch(value => value + 1);
   };
 
+  const replacePrivateMembership = (membership: string) => {
+    const previous = privateMembership.current;
+    privateMembership.current = membership;
+    if (!previous || previous === membership) return false;
+    // A new membership cannot reuse old content, gaps or cursor anchors.
+    // End this session as well, fencing its outstanding room details.
+    viewsRef.current?.interrupt();
+    Object.assign(historyState.current, createHistoryState());
+    setMessages([]); setRoom(null); setViewCount(null); setLoading(true);
+    didInitialScroll.current = false; scrollSnapshot.current = null;
+    foreground.current = { active: true, epoch: foreground.current.epoch + 1 };
+    sessionRef.current = null;
+    setViewEpoch(value => value + 1);
+    return true;
+  };
+
   useEffect(() => {
     mounted.current = true;
     pageActive.current = true;
     foreground.current = { active: document.visibilityState !== 'hidden' && document.hasFocus(), epoch: foreground.current.epoch + 1 };
     const suspend = () => {
+      viewsRef.current?.interrupt();
+      setViewCount(null);
       if (!foreground.current.active) return;
       foreground.current = { active: false, epoch: foreground.current.epoch + 1 };
       sessionRef.current = null;
@@ -207,7 +233,15 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     sessionRef.current = session;
     setReady(true);
     const historyController = createHistoryController<Message>(historyState.current, {
-      readMessages: session.readMessages,
+      readMessages: query => session.readMessages({ ...query, views: !isSupport }),
+      captureRead: () => viewsRef.current?.historyEpoch(),
+      onAcceptedPage: (data, _before, stamp) => {
+        if (isSupport || !viewsRef.current?.historyCurrent(stamp)) return true;
+        const next = parseViewHistory(data, user, roomId);
+        if (next && replacePrivateMembership(next.membershipInstanceId)) return false;
+        viewsRef.current?.acceptHistory(data);
+        return true;
+      },
       isCurrent: session.isCurrent,
       validMessage: (message: any): message is Message => validMessage(message, roomId, user.companyId, true),
       onMessages: mergeMessages,
@@ -237,6 +271,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     socket.on('connect_error', () => { if (session.isCurrent()) setError('Message connection could not be established.'); });
     socket.on('new-message', (message: Message) => {
       if (!session.isCurrent() || !validMessage(message, roomId, user.companyId, true)) return;
+      viewsRef.current?.acceptMessage(message);
       mergeMessages([message]);
     });
     // Keep reconciliation on reconnect, polling, visibility and focus. These are
@@ -260,6 +295,21 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       socket.disconnect();
     };
   }, [viewEpoch, roomId, user, mergeMessages]);
+
+  useEffect(() => {
+    const session = sessionRef.current;
+    if (isSupport || !session?.isCurrent()) return;
+    const observer = createPrivateViewObserver({ owner: user, roomId, session,
+      isCurrent: () => isCurrent() && pageActive.current && foreground.current.active,
+      root: () => messageListRef.current, chooserOpen: () => chooserOpen.current,
+      onCount: setViewCount, onDenied: accessChanged, onMembershipChanged: replacePrivateMembership,
+      refreshHistory: () => { void historyRef.current?.refresh(); } });
+    viewsRef.current = observer;
+    return () => { observer.dispose(); if (viewsRef.current === observer) viewsRef.current = null; };
+  }, [viewEpoch, roomId, user]);
+
+  const beginChooser = () => { chooserOpen.current = true; viewsRef.current?.interrupt(); setViewCount(null); };
+  const endChooser = () => { chooserOpen.current = false; };
 
   const acquireSession = () => {
     if (!pageActive.current || !isCurrent() || document.visibilityState === 'hidden' || !document.hasFocus()) return null;
@@ -432,6 +482,8 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       <Box key={msg.id} data-message-id={msg.id} sx={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', mb: 1.5 }}>
         {!isMine && <Avatar src={msg.sender_avatar || undefined} sx={{width:28,height:28,mr:1}}>{senderName.charAt(0)}</Avatar>}
         <Paper
+          data-chat-view-id={!isMine && !isSupport ? msg.id : undefined}
+          data-chat-view-version={!isMine && !isSupport ? msg.view_version : undefined}
           sx={{
             maxWidth: '70%',
             p: 1.5,
@@ -475,9 +527,13 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
         </IconButton>
         <Avatar src={room?.is_group?room.avatar_url:room?.other_user_avatar} sx={{ bgcolor: '#00D4FF', color: '#071018', width: 38, height: 38, ml: 1 }}><ForumOutlined fontSize="small" /></Avatar>
         <Box ml={1.5}><Typography variant="h6" sx={{ color: '#FFF', lineHeight: 1.2 }}>{roomName || 'Chat'}</Typography><Typography variant="caption" sx={{ color: connected ? '#58D68D' : '#7D8FA2' }}>{connected ? 'Connected' : 'Reconnecting…'}</Typography></Box>
-        {room?.can_edit_photo && <Button component="label" disabled={!ready || uploading || mediaUncertain} sx={{ml:'auto',color:'#67E8F9'}} startIcon={<AddAPhoto />}>Group photo<input hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)selectFile(file,true);e.target.value='';}} /></Button>}
+        {room?.can_edit_photo && <Button component="label" disabled={!ready || uploading || mediaUncertain} sx={{ml:'auto',color:'#67E8F9'}} startIcon={<AddAPhoto />}>Group photo<input hidden type="file" onClick={beginChooser} ref={element => { if (element) element.oncancel = endChooser; }} accept="image/jpeg,image/png,image/webp" onChange={e=>{endChooser();const file=e.target.files?.[0];if(file)selectFile(file,true);e.target.value='';}} /></Button>}
       </Box>
 
+      {!isSupport && <Box sx={{ px: 2, py: 1, color: '#8FA5B8' }}>
+        <Typography role="status" aria-label={privateViewLabel(viewCount)}>{privateViewLabel(viewCount)}</Typography>
+        <Typography variant="caption">{PRIVATE_VIEW_HISTORY_NOTE}</Typography>
+      </Box>}
       {sendStatus && <Alert severity="info" role="status" sx={{ borderRadius: 0 }}>{sendStatus}</Alert>}
       {!isSupport && <Alert severity="info" sx={{ borderRadius: 0 }}>Ordinary text is kept on this browser before sending. Recovery runs while this page is active, including after reload. Browser storage is not a backup or end-to-end encryption. Support messages and attachments are not queued.</Alert>}
       {!isSupport && queueError && <Alert severity="warning">{queueError}</Alert>}
@@ -521,7 +577,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       </Box>
 
       <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1, p: 2, borderTop: '1px solid #202C39' }}>
-        <Button component="label" disabled={!ready || uploading || mediaUncertain} aria-label="Attach a photo, video or document" sx={{minWidth:44,color:'#67E8F9'}}><AttachFile /><input hidden type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.mp3,.m4a,.wav" onChange={e=>{const file=e.target.files?.[0];if(file)selectFile(file);e.target.value='';}} /></Button>
+        <Button component="label" disabled={!ready || uploading || mediaUncertain} aria-label="Attach a photo, video or document" sx={{minWidth:44,color:'#67E8F9'}}><AttachFile /><input hidden type="file" onClick={beginChooser} ref={element => { if (element) element.oncancel = endChooser; }} accept=".jpg,.jpeg,.png,.webp,.mp4,.mov,.webm,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.mp3,.m4a,.wav" onChange={e=>{endChooser();const file=e.target.files?.[0];if(file)selectFile(file);e.target.value='';}} /></Button>
         {uploading && <CircularProgress size={24} />}
         <TextField
           fullWidth

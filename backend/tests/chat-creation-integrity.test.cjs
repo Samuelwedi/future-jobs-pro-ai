@@ -96,7 +96,7 @@ function load(relative) {
     if (spec.startsWith('.')) {
       const rel = path.relative(path.join(root, 'src'), path.resolve(path.dirname(filename), spec + '.ts'));
       assert.ok(['utils/auth.ts', 'middleware/trialMiddleware.ts', 'services/complimentaryAccess.ts',
-        'services/chatTextReceipts.ts', 'services/chatHistory.ts', 'services/chatService.ts', 'services/chatFiles.ts', 'services/socketAuthorization.ts'].includes(rel), `Unexpected source import: ${spec}`);
+        'services/chatViews.ts', 'services/chatTextReceipts.ts', 'services/chatHistory.ts', 'services/chatService.ts', 'services/chatFiles.ts', 'services/socketAuthorization.ts'].includes(rel), `Unexpected source import: ${spec}`);
       return load(rel);
     }
     assert.ok(['express', 'multer', 'jsonwebtoken', 'node:stream', 'node:stream/promises', 'node:path', 'node:crypto'].includes(spec),

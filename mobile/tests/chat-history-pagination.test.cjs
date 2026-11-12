@@ -21,7 +21,7 @@ test('reconnect recovers actual outage gap old1–200/latest251–450 using the 
 
 test('older history is opt-in, one bounded response page per tap, deduped and exhaustion-aware', async () => {
   const f = await start(251, 450);
-  assert.deepEqual(JSON.parse(JSON.stringify(f.reads[0].options)), { limit: 200 });
+  assert.deepEqual(JSON.parse(JSON.stringify(f.reads[0].options)), { limit: 200, views: true });
   assert.equal(f.reads.length, 1); assert.equal(f.c.history.hasOlder, true);
   f.c.historyRef.current.older(); f.c.historyRef.current.older();
   assert.equal(f.reads.length, 2); assert.equal(f.reads[1].options.before, cursor(251));
@@ -212,7 +212,7 @@ test('real list callbacks preserve a scrolled-up reader and scroll only a pendin
   }
   visit(ast);
   let scrolls = 0;
-  const c = { nearBottom: { current: true }, scrollAfterLayout: { current: false }, keyboardVisible: true,
+  const c = { views: { scroll() {}, layout() {} }, nearBottom: { current: true }, scrollAfterLayout: { current: false }, keyboardVisible: true,
     flatListRef: { current: { scrollToEnd: () => scrolls++ } } };
   const onScroll = evaluate(`result = ${callbacks.onScroll}`, c);
   const onSize = evaluate(`result = ${callbacks.onContentSizeChange}`, c);
@@ -325,4 +325,27 @@ test('null-only refresh preserves both an advanced older cursor and the unfinish
   await respond(f, page(1, 200));
   assert.deepEqual(ids(f), [...rows(1, 200), ...nullRows(1, 1400)].map(row => row.id));
   assert.equal(f.c.history.gaps, 0); assert.equal(f.c.history.hasOlder, false); f.cleanup();
+});
+
+test('private metadata and access failures obey accepted history generation, revision and row validation', async () => {
+  for (const kind of ['superseded', 'denied', 'foreign']) {
+    const f = await start(251, 450), accepted = [], failed = [];
+    f.c.views.history = data => { accepted.push(data); return true; };
+    f.c.views.failed = error => failed.push(error);
+    f.c.historyRef.current.older(); const read = f.reads.at(-1);
+    if (kind !== 'foreign') f.c.historyRef.current.refresh('initial', true);
+    if (kind !== 'foreign') assert.equal(read.current(), false);
+    if (kind === 'denied') read.reject({ response: { status: 403 } });
+    else read.resolve({ ...page(51, 250), success: true, viewContext: { membershipInstanceId: 'new' }, ...(kind === 'foreign' ? { messages: [message('foreign', { company_id: 'foreign' })] } : {}) });
+    await settle(); assert.equal(accepted.length, 0); assert.equal(f.c.messages.length, 200);
+    assert.equal(failed.filter(error => error?.response?.status === 403).length, 0); f.cleanup();
+  }
+});
+test('a new membership on an older page clears old scope and restarts latest history without prior cursors', async () => {
+  const f = await start(251, 450); f.c.views.history = data => data?.viewContext?.membershipInstanceId === 'new';
+  f.c.historyRef.current.older(); await respond(f, { ...page(51, 250), success: true, viewContext: { membershipInstanceId: 'new' } });
+  assert.equal(f.c.messages.length, 0); assert.equal(f.reads.at(-1).options.before, undefined);
+  f.c.views.history = () => false; await respond(f, { ...page(601, 800), success: true });
+  assert.equal(f.c.history.gaps, 0); assert.deepEqual(ids(f), rows(601, 800).map(row => row.id));
+  f.c.historyRef.current.older(); assert.equal(f.reads.at(-1).options.before, cursor(601)); f.cleanup();
 });

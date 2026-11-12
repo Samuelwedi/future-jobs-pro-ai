@@ -10,17 +10,18 @@ function compile(file, requireFn) {
   return context.exports;
 }
 const utils = compile('utils/chatInbox.ts');
+const viewUtils = compile('utils/chatViews.ts');
 const { readInboxRooms, inboxTitle, inboxPreview, inboxTime, searchInbox } = utils;
 const owner = { id: 'owner', companyId: 'company', role: 'employee' };
 const room = (id = 'room', extra = {}) => ({ id, name: null, is_group: false, other_user_name: 'Alice Baker',
   avatar_url: null, other_user_avatar: null, last_message: 'See you tomorrow', last_message_type: 'text', last_message_at: '2026-11-11T12:00:00Z', ...extra });
 function deferred() { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
-const t = (key, vars) => vars ? key.replace('{name}', vars.name) : key;
+const t = (key, vars) => vars ? key.replace(/\{([^}]+)\}/g, (_, name) => vars[name]) : key;
 // Evaluate the complete screen with controlled hooks and a JSX tree. This is a
 // deterministic source harness, not React reconciliation or native-device QA.
 function fixture() {
   let slots = [], cursor = 0, dirty = false, unmounted = false;
-  const f = { user: { ...owner }, focused: true, authRevision: 0, requests: [], navigations: [], effects: [], frames: [] };
+  const f = { user: { ...owner }, focused: true, authRevision: 0, requests: [], countRequests: [], navigations: [], effects: [], frames: [] };
   const hook = () => cursor++;
   const react = {
     useState(initial) { const i = hook(); if (!slots[i]) slots[i] = { value: initial }; return [slots[i].value, value => {
@@ -33,6 +34,7 @@ function fixture() {
   const navigation = { navigate: (...args) => f.navigations.push(args), goBack: () => f.navigations.push(['back']) };
   const api = {
     captureSessionGuard() { const revision = f.authRevision; return () => revision === f.authRevision; },
+    getChatViewCounts(who, current) { const wait = deferred(), guard = api.captureSessionGuard(); f.countRequests.push({ who, current, resolve: data => wait.resolve({ data, isSessionCurrent: guard }), reject: wait.reject }); return wait.promise; },
     getChatRooms(who, current) { const wait = deferred(), guard = api.captureSessionGuard(); f.requests.push({ who, current,
       resolve: data => wait.resolve({ data, isSessionCurrent: guard }), reject: wait.reject }); return wait.promise; },
   };
@@ -52,6 +54,7 @@ function fixture() {
     if (name === '../context/LanguageContext') return { useLang: () => ({ t, lang: 'en' }) };
     if (name === '../services/api') return { api };
     if (name === '@expo/vector-icons') return { MaterialIcons: 'MaterialIcons' };
+    if (name === '../utils/chatViews') return viewUtils;
     if (name === '../utils/chatInbox') return utils;
     throw Error(name);
   }).default;
@@ -166,4 +169,27 @@ test('navigation is current-row-only and same-turn locked; stale rows cannot ope
 test('malformed response is an error rather than empty, and signed-out state cannot request or navigate', async () => {
   const f = fixture(); f.requests[0].resolve({ success: false, rooms: [] }); await f.flush(); assert.match(f.text(), /Could not load conversations/);
   f.user = null; f.render(); assert.match(f.text(), /Sign in/); assert.equal(f.requests.length, 1); assert.equal(f.input(), undefined);
+});
+
+test('private count labels distinguish exact99, capped99+, zero and old-server unknown without changing previews', async () => {
+  const id = '00000000-0000-4000-8000-000000000003', membershipInstanceId = '00000000-0000-4000-8000-000000000004';
+  for (const [count, capped, expected] of [[0, false, '0'], [99, false, '99'], [99, true, '99+'], [null, false, null]]) {
+    const f = fixture(); f.requests[0].resolve({ success: true, rooms: [room(id)] }); await f.flush();
+    assert.equal(f.countRequests.length, 1);
+    f.countRequests[0].resolve(count === null ? { success: true } : { success: true, viewState: { actorId: owner.id, companyId: owner.companyId, historyPolicy: 'unmarked_until_viewed', rooms: [{ roomId: id, membershipInstanceId, unviewedCount: count, unviewedCountCapped: capped }] } });
+    await f.flush(); const rowView = f.list().renderItem({ item: f.list().data[0] });
+    assert.match(rowView.props.accessibilityLabel, new RegExp(expected === null ? 'Read count unavailable' : `Messages not marked read: ${expected.replace('+', '\\+')}`));
+    assert.equal(f.list().data[0].last_message, 'See you tomorrow');
+  }
+});
+test('count responses are fenced by focus, auth and newer private acknowledgements; explicit denial removes inaccessible rooms', async () => {
+  for (const change of ['blur', 'auth', 'ack', 'denied']) {
+    const f = fixture(); f.requests[0].resolve({ success: true, rooms: [room()] }); await f.flush();
+    if (change === 'blur') { f.focused = false; f.render(); }
+    if (change === 'auth') f.authRevision++;
+    if (change === 'ack') viewUtils.invalidatePrivateViewCounts();
+    if (change === 'denied') f.countRequests[0].reject({ response: { status: 403 } });
+    else { assert.equal(f.countRequests[0].current(), false); f.countRequests[0].resolve({ success: true }); }
+    await f.flush(); if (change === 'denied') assert.equal(f.list(), undefined);
+  }
 });

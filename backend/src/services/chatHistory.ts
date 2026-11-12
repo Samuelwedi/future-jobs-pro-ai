@@ -4,9 +4,10 @@ import { hasComplimentaryAccess } from './complimentaryAccess';
 const MAX_PAGE_SIZE = 200;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-type HistoryOptions = { paginated: boolean; limit: number; beforeId: string | null };
+type HistoryOptions = { paginated: boolean; limit: number; beforeId: string | null; includeViews?: boolean };
 type HistoryIdentity = {
   userId: string; roomId: string; requestCompanyId: string | null; claimedCompanyId: string | null;
+  expiresAt?: number; notBefore?: number;
 };
 
 export class ChatHistoryError extends Error {
@@ -31,8 +32,12 @@ function decodeCursor(value: unknown): string {
 
 export function parseChatHistoryQuery(query: Record<string, unknown>): HistoryOptions {
   const keys = Object.keys(query);
-  if (keys.some(key => key !== 'limit' && key !== 'before')) {
-    throw new ChatHistoryError(400, 'CHAT_QUERY_INVALID', 'Only limit and before are supported.');
+  if (keys.some(key => key !== 'limit' && key !== 'before' && key !== 'views')) {
+    throw new ChatHistoryError(400, 'CHAT_QUERY_INVALID', 'Only limit, before and views=1 are supported.');
+  }
+  const includeViews = Object.prototype.hasOwnProperty.call(query, 'views');
+  if (includeViews && query.views !== '1') {
+    throw new ChatHistoryError(400, 'CHAT_QUERY_INVALID', 'views must be 1.');
   }
   let limit = MAX_PAGE_SIZE;
   if (Object.prototype.hasOwnProperty.call(query, 'limit')) {
@@ -43,7 +48,7 @@ export function parseChatHistoryQuery(query: Record<string, unknown>): HistoryOp
     limit = Number(query.limit);
   }
   const beforeId = Object.prototype.hasOwnProperty.call(query, 'before') ? decodeCursor(query.before) : null;
-  return { paginated: keys.length > 0, limit, beforeId };
+  return { paginated: keys.some(key => key === 'limit' || key === 'before'), limit, beforeId, ...(includeViews ? { includeViews: true } : {}) };
 }
 
 export async function readChatHistory(identity: HistoryIdentity, options: HistoryOptions) {
@@ -53,9 +58,22 @@ export async function readChatHistory(identity: HistoryIdentity, options: Histor
   const complimentarySponsor = !extra && sponsorId && sponsorCompany
     && hasComplimentaryAccess(sponsorId, sponsorCompany) ? sponsorId : null;
   const supportTicketId = /^support-ticket-([a-zA-Z0-9-]+)$/.exec(identity.roomId)?.[1] || null;
+  const includeViews = Boolean(options.includeViews) && !supportTicketId;
+  const recheckToken = () => {
+    const now = Date.now() / 1000;
+    if (includeViews && ((identity.expiresAt !== undefined && (!Number.isFinite(identity.expiresAt) || now >= identity.expiresAt))
+      || (identity.notBefore !== undefined && (!Number.isFinite(identity.notBefore) || now < identity.notBefore)))) {
+      throw new ChatHistoryError(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required.');
+    }
+  };
+  recheckToken();
   const result = await pool.query(`
     WITH actor AS (
       SELECT requester.id, requester.company_id, requester.role,
+        ${includeViews ? `COALESCE(c.subscription_current_period_end,c.subscription_expires_at) AS view_entitlement_end,
+          (requester.company_id::text=$8 AND EXISTS (SELECT 1 FROM users sponsor WHERE sponsor.id=$7::uuid
+            AND sponsor.company_id=requester.company_id AND COALESCE(sponsor.is_active,TRUE)=TRUE
+            AND LOWER(sponsor.role) IN ('boss','owner'))) AS view_complimentary,` : ''}
         COALESCE((to_jsonb(requester)->>'must_change_password')::boolean,FALSE) AS password_required,
         (
           (requester.company_id::text = $8 AND EXISTS (
@@ -85,11 +103,12 @@ export async function readChatHistory(identity: HistoryIdentity, options: Histor
         AND ($3::text IS NULL OR requester.company_id::text = $3)
         AND ($9::text IS NULL OR requester.company_id::text = $9)
     ), authorized_room AS (
-      SELECT cr.company_id FROM chat_rooms cr JOIN actor ON actor.company_id = cr.company_id
+      SELECT cr.company_id ${includeViews ? ", (SELECT crm.membership_instance_id FROM chat_room_members crm WHERE crm.room_id=cr.id AND crm.user_id=actor.id) AS membership_instance_id" : ''}
+      FROM chat_rooms cr JOIN actor ON actor.company_id = cr.company_id
       WHERE $6::text IS NULL AND cr.id = $1 AND NOT actor.password_required AND actor.entitled
         AND EXISTS (SELECT 1 FROM chat_room_members crm WHERE crm.room_id=cr.id AND crm.user_id=actor.id)
       UNION ALL
-      SELECT ticket.company_id FROM support_tickets ticket CROSS JOIN actor
+      SELECT ticket.company_id ${includeViews ? ', NULL::uuid AS membership_instance_id' : ''} FROM support_tickets ticket CROSS JOIN actor
       WHERE $6::text IS NOT NULL AND ticket.id::text = $6 AND NOT actor.password_required AND actor.entitled
         AND (ticket.user_id = actor.id OR actor.role IN ('admin','support_agent')
           OR (actor.role IN ('boss','manager') AND ticket.company_id = actor.company_id))
@@ -121,26 +140,33 @@ export async function readChatHistory(identity: HistoryIdentity, options: Histor
       COALESCE((SELECT entitled FROM actor),FALSE) AS __history_entitled,
       EXISTS(SELECT 1 FROM authorized_room) AS __history_allowed,
       ($4::uuid IS NULL OR EXISTS(SELECT 1 FROM anchor)) AS __history_cursor,
+      ${includeViews ? '(SELECT membership_instance_id FROM authorized_room) AS __view_membership, (SELECT company_id FROM authorized_room) AS __view_company, (SELECT view_entitlement_end FROM actor) AS __view_entitlement_end, (SELECT view_complimentary FROM actor) AS __view_complimentary,' : ''}
       page.*
     FROM (SELECT 1) seed LEFT JOIN page ON TRUE
     ORDER BY page.created_at DESC NULLS FIRST, page.id DESC`,
     [identity.roomId, identity.userId, identity.requestCompanyId, options.beforeId,
       options.limit + (options.paginated ? 1 : 0), supportTicketId, complimentarySponsor,
       complimentarySponsor ? sponsorCompany : null, identity.claimedCompanyId]);
+  recheckToken();
   const state = result.rows[0];
   if (!state?.__history_actor) throw new ChatHistoryError(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required.');
   if (state.__history_password) throw new ChatHistoryError(403, 'PASSWORD_CHANGE_REQUIRED', 'Change your temporary password before continuing.');
-  if (!state.__history_entitled) throw new ChatHistoryError(402, 'SUBSCRIPTION_REQUIRED', 'An active subscription or trial is required to use this feature.');
+  const viewEnd = includeViews && state.__view_entitlement_end ? new Date(state.__view_entitlement_end) : null;
+  if (!state.__history_entitled || (viewEnd && !state.__view_complimentary && (!Number.isFinite(viewEnd.getTime()) || viewEnd.getTime() <= Date.now()))) throw new ChatHistoryError(402, 'SUBSCRIPTION_REQUIRED', 'An active subscription or trial is required to use this feature.');
   if (!state.__history_allowed) throw new ChatHistoryError(403, 'CHAT_ACCESS_DENIED', 'Forbidden');
   if (!state.__history_cursor) return invalidCursor();
   const rows = result.rows.filter(row => row.id).map(row => {
-    const { __history_actor, __history_password, __history_entitled, __history_allowed, __history_cursor, ...message } = row;
+    const { __history_actor, __history_password, __history_entitled, __history_allowed, __history_cursor, __view_membership, __view_company, __view_entitlement_end, __view_complimentary, ...message } = row;
+    if (!includeViews) delete message.view_version;
     return message;
   });
   const hasMore = rows.length > options.limit;
   const messages = rows.slice(0, options.limit).reverse();
   // Cursors refer to this page, never an accumulated client-side history list.
-  return { success: true, messages, ...(options.paginated ? {
+  return { success: true, messages, ...(includeViews ? { viewContext: {
+    actorId: identity.userId, companyId: state.__view_company,
+    roomId: identity.roomId, membershipInstanceId: state.__view_membership,
+  } } : {}), ...(options.paginated ? {
     hasMore, nextCursor: hasMore ? encodeCursor(messages[0].id) : null,
   } : {}) };
 }

@@ -10,12 +10,13 @@ export const HISTORY_CATCHUP_PAGES = 3;
 export const emptyHistoryView: HistoryView = { busy: false, hasOlder: null, gaps: 0, problem: null };
 
 export function createChatHistory(options: {
-  read: (page: { limit: number; before?: string }) => Promise<any>;
+  read: (page: { limit: number; before?: string }, current: () => boolean) => Promise<any>;
+  accepted?: (data: any) => boolean;
   current: (generation: HistoryGeneration) => boolean;
   valid: (message: any) => boolean;
   merge: (messages: any[]) => void;
   publish: (view: HistoryView) => void;
-  failed: () => void;
+  failed: (cause?: unknown) => void;
   recovered: () => void;
 }) {
   let older: string | null | undefined;
@@ -52,18 +53,32 @@ export function createChatHistory(options: {
         const reading: Request = request;
         request = null;
         const readingRevision = revision;
-        const noPriorRows = known.size === 0;
+        let noPriorRows = known.size === 0;
         const anchors = new Set(datedKnown);
         const before = reading.kind === 'older' ? older : reading.kind === 'gap' ? reading.gap?.cursor : undefined;
         if (reading.kind !== 'latest' && !before) break;
         publish(reading.generation);
         try {
-          const data = await options.read({ limit: 200, ...(before ? { before } : {}) });
+          const readCurrent = () => current(reading.generation) && (reading.kind === 'latest' || readingRevision === revision);
+          const data = await options.read({ limit: 200, ...(before ? { before } : {}) }, readCurrent);
           // A newer refresh supersedes an older page without allowing its cursor to
           // overwrite newer state. The initial HTTP fallback remains session-scoped.
           if (!current(reading.generation) || (reading.kind !== 'latest' && readingRevision !== revision)) continue;
           if (!Array.isArray(data?.messages) || data.messages.some((row: any) => !options.valid(row))) {
             throw new Error('Invalid conversation response');
+          }
+          // Private metadata is subject to the same scope/revision/row fences.
+          // Legacy or malformed paging can still display authorized rows below,
+          // but cannot establish a private membership/version context.
+          const changedScope = options.accepted?.(data.success === true && metadataValid(data, before || undefined) ? data : null);
+          if (!current(reading.generation)) continue;
+          if (changedScope) {
+            known.clear(); datedKnown.clear(); anchors.clear(); gaps = []; older = undefined;
+            noPriorRows = true; resetOlder = false; problem = null; failedRequest = null;
+            if (reading.kind !== 'latest') {
+              revision++; pending = { kind: 'latest', generation: 'initial', rebase: true };
+              continue;
+            }
           }
           // Even a legacy server can show its authorized rows, but it cannot claim
           // history is complete or advance our trusted overlap anchors/cursors.
@@ -123,7 +138,7 @@ export function createChatHistory(options: {
           problem = invalid || problem === 'cursor' ? 'cursor' : 'load'; failedRequest = reading; budget = 0;
           if (invalid && reading.kind === 'older') resetOlder = true;
           if (invalid && reading.gap) reading.gap.cursor = null;
-          options.failed();
+          options.failed(cause);
         } finally {
           // Refresh has priority. Only the newest eligible refresh is retained.
           if (pending) { request = pending; pending = null; }

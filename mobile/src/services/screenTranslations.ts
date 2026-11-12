@@ -1,5 +1,9 @@
 // English source copy is the key; route names and user content are never translated.
 export const screenCopy: Record<string, [string, string]> = {
+  "Messages not marked read: {count}": ["Mensajes sin marcar como leídos: {count}", "Messages non marqués comme lus : {count}"],
+  "Read count unavailable": ["Recuento de lectura no disponible", "Nombre de messages non marqués comme lus indisponible"],
+  "Private to you. Previous views were not recorded.": ["Solo visible para ti. Las visualizaciones anteriores no se registraron.", "Visible uniquement par vous. Les consultations précédentes n’ont pas été enregistrées."],
+  "Conversation access is no longer available. Return to conversations to check access.": ["El acceso a la conversación ya no está disponible. Vuelve a las conversaciones para comprobar el acceso.", "L’accès à la conversation n’est plus disponible. Revenez aux conversations pour vérifier l’accès."],
   "Receipts & notes": ["Recibos y notas", "Reçus et notes"],
   "Expense or task note": ["Nota del gasto o de la tarea", "Note de frais ou de tâche"],
   "Choose receipt (PDF or photo)": ["Elegir recibo (PDF o foto)", "Choisir un reçu (PDF ou photo)"],

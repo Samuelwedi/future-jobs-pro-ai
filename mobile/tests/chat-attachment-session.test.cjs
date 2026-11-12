@@ -4,6 +4,7 @@ const ast=ts.createSourceFile('MediaAttachment.tsx',source,ts.ScriptTarget.Lates
 function handler(name,c){let value;function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)===name)value=n.initializer;ts.forEachChild(n,visit);}visit(ast);assert.ok(value,name);return vm.runInNewContext(ts.transpileModule('result = '+value.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,c);}
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 function setup(){const c={alive:{current:true},local:{current:''},downloading:{current:false},sharing:{current:false},uri:'',name:'file.pdf',mime:'application/pdf',path:'/chat/attachments/abc/content',API_URL:'https://example.test',t:s=>s,auth:true,events:[],api:{getToken:async()=> 'token'},FileSystem:{cacheDirectory:'file:///cache/'},Sharing:{}};
+ c.showViewer=value=>c.setOpen(value);
  c.current=()=>c.alive.current&&c.auth;c.setOpen=value=>c.events.push(['open',value]);c.setUri=value=>{c.uri=value;c.events.push(['uri',value]);};c.setError=value=>c.events.push(['error',value]);c.setBusy=value=>c.events.push(['busy',value]);
  c.FileSystem.deleteAsync=async uri=>c.events.push(['delete',uri]);c.FileSystem.downloadAsync=async()=>{c.events.push(['download']);return {status:200,headers:{'Content-Type':'application/pdf'}};};c.Sharing.isAvailableAsync=async()=>true;c.Sharing.shareAsync=async()=>c.events.push(['share']);return c;
 }

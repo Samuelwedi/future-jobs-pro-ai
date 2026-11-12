@@ -8,7 +8,7 @@ const exportsHistory={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(pa
 const evaluate=(code,c)=>vm.runInNewContext(ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,c);
 function fixture(){
  const calls=[],pending=[],callbacks={},listeners={},docListeners={},intervals=[];
- const c={roomId:'room',user:{id:'owner',companyId:'company',role:'employee',token:'token'},foreground:{current:{active:true,epoch:1}},sessionRef:{current:null},historyRef:{current:null},historyState:{current:exportsHistory.createHistoryState()},createHistoryController:exportsHistory.createHistoryController,scope:true,messages:[],scrolls:0,WS_URL:'https://example.test'};
+ const c={isSupport:false,viewsRef:{current:null},privateMembership:{current:null},parseViewHistory:()=>null,roomId:'room',user:{id:'owner',companyId:'company',role:'employee',token:'token'},foreground:{current:{active:true,epoch:1}},sessionRef:{current:null},historyRef:{current:null},historyState:{current:exportsHistory.createHistoryState()},createHistoryController:exportsHistory.createHistoryController,scope:true,messages:[],scrolls:0,WS_URL:'https://example.test'};
  c.isCurrent=()=>c.scope;c.setReady=v=>c.ready=v;c.setConnected=v=>c.connected=v;c.setLoading=v=>c.loading=v;c.setError=v=>c.error=v;c.setRoom=v=>c.room=v;c.setHistory=v=>c.history=v;c.accessChanged=()=>{c.scope=false;c.messages=[];};
  c.mergeMessages=incoming=>{c.messages=exportsHistory.mergeHistoryRows(c.messages,incoming);};c.messagesEndRef={current:{scrollIntoView:()=>c.scrolls++}};
  c.window={setInterval:fn=>{intervals.push(fn);return 1;},clearInterval:()=>{},setTimeout:fn=>fn(),addEventListener:(k,fn)=>listeners[k]=fn,removeEventListener:(k)=>delete listeners[k]};

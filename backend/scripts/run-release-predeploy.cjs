@@ -1,6 +1,6 @@
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
-const steps = ['run-project-archive-migration.cjs', 'run-attachment-schema-migration.cjs', 'run-task-evidence-migration.cjs', 'run-evidence-receipts-migration.cjs', 'migrate-chat-media.cjs', 'migrate-chat-text-requests.cjs', 'runVoiceNoteMigration.js', 'run-owner-operations-migration.js', 'run-email-verification-migration.cjs', 'run-lucy-workspace-migration.cjs'];
+const steps = ['run-project-archive-migration.cjs', 'run-attachment-schema-migration.cjs', 'run-task-evidence-migration.cjs', 'run-evidence-receipts-migration.cjs', 'migrate-chat-media.cjs', 'migrate-chat-text-requests.cjs', 'migrate-private-chat-views.cjs', 'runVoiceNoteMigration.js', 'run-owner-operations-migration.js', 'run-email-verification-migration.cjs', 'run-lucy-workspace-migration.cjs'];
 function run(runner = spawnSync) {
   for (const step of steps) {
     console.log(`Release migration: ${step}`);

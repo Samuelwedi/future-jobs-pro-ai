@@ -12,6 +12,7 @@ import { API_URL, api } from '../services/api';
 import { createChatHistory, emptyHistoryView, HistoryGeneration } from '../utils/chatHistory';
 import { chatTextOutbox } from '../services/chatTextOutbox';
 import { createChatTextIntent, ChatTextIntent, ChatTextRecord, ChatTextSnapshot, validChatTextReceipt } from '../services/chatTextOutboxStore';
+import { useChatViews } from '../hooks/useChatViews';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import * as DocumentPicker from 'expo-document-picker';
@@ -57,8 +58,10 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
   const safeInsets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const mounted = useRef(true);
+  const denied = useRef(false);
+  const roomScopeRevision = useRef(0);
   const authCurrent = useRef(api.captureSessionGuard()).current;
-  const isCurrent = () => mounted.current && scopeCurrent() && authCurrent();
+  const isCurrent = () => mounted.current && !denied.current && scopeCurrent() && authCurrent();
   const sessionRef = useRef<ChatSession | null>(null);
   const sendLock = useRef(false);
   const pendingAdmission = useRef<{ intent: ChatTextIntent; revision: number } | null>(null);
@@ -90,6 +93,18 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
   const scrollAfterLayout = useRef(false);
   const historyRef = useRef<ReturnType<typeof createChatHistory> | null>(null);
   const [history, setHistory] = useState(emptyHistoryView);
+  const views = useChatViews({ owner: user, roomId, current: () => isCurrent() && !denied.current,
+    session: () => sessionRef.current, rows: messages,
+    denied: () => {
+      denied.current = true; setMessages([]); setRoom(null); setOutbox({ records: [], problems: [] });
+      setReady(false); historyRef.current?.dispose(); socketRef.current?.disconnect();
+      setError(t('Conversation access is no longer available. Return to conversations to check access.'));
+    },
+    refreshHistory: rejected => {
+      setMessages(previous => previous.filter(row => !rejected.some(message => message.id === row.id && message.viewVersion === row.view_version)));
+      historyRef.current?.refresh('initial', true);
+    },
+  });
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () => {
@@ -105,7 +120,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     let active = true;
     let socket: Socket | null = null;
     let disposeSocket = () => {};
-    const current = () => active && isCurrent();
+    const current = () => active && isCurrent() && !denied.current;
     const connect = async () => {
       try {
         const session = await api.openChatSession(roomId, user, current);
@@ -121,12 +136,23 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
         const historyCurrent = (requestedGeneration: HistoryGeneration) => socketCurrent()
           && (requestedGeneration === 'initial' || requestedGeneration === generation);
         const historyController = createChatHistory({
-          read: page => session.readMessages(page),
+          read: (page, requestCurrent) => session.readMessages({ ...page, views: !roomId.startsWith('support-ticket-') }, requestCurrent),
+          accepted: data => {
+            const changed = views.history(data) === true;
+            if (changed) {
+              roomScopeRevision.current++;
+              setMessages([]); setRoom(null);
+            }
+            return changed;
+          },
           current: historyCurrent,
           valid: message => validMessage(message, roomId, user.companyId),
           merge: rows => setMessages(previous => mergeMessages(rows, previous)),
           publish: setHistory,
-          failed: () => setError(previous => previous || t("Conversation could not be loaded")),
+          failed: cause => {
+            views.failed(cause);
+            if (socketCurrent()) setError(previous => previous || t("Conversation could not be loaded"));
+          },
           recovered: () => setError(previous => previous === t("Conversation could not be loaded") ? '' : previous),
         });
         historyRef.current = historyController;
@@ -180,9 +206,11 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
           socket?.off('connect_error', onConnectError);
           socket?.off('new-message', onMessage);
         };
-        void session.readRoom().then(data => {
-          if (socketCurrent()) setRoom(data?.room || null);
-        }).catch(() => {});
+        const roomRequestRevision = roomScopeRevision.current;
+        const roomCurrent = () => socketCurrent() && roomScopeRevision.current === roomRequestRevision;
+        void session.readRoom(roomCurrent).then(data => {
+          if (roomCurrent()) setRoom(data?.room || null);
+        }).catch(cause => { if (roomCurrent()) views.failed(cause); });
         historyController.refresh('initial');
       } catch {
         if (current()) setError(t("Conversation could not be loaded"));
@@ -335,6 +363,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
     const session = sessionRef.current;
     if (mediaLock.current || mediaUncertainRef.current || !isCurrent() || !session?.isCurrent()) return;
     mediaLock.current = true;
+    views.covered(true);
     setUploading(true);
     setError('');
     let attempted = false;
@@ -377,6 +406,7 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
       }
     } finally {
       mediaLock.current = false;
+      views.covered(false);
       if (isCurrent() && session.isCurrent()) setUploading(false);
     }
   };
@@ -384,11 +414,11 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
   const renderItem = ({ item }: { item: any }) => {
     const isMine = item.sender_id === user?.id;
     return (
-      <View style={[styles.bubble, isMine ? styles.myBubble : styles.otherBubble]}>
+      <View collapsable={false} ref={view => views.rowRef(item.id, view)} style={[styles.bubble, isMine ? styles.myBubble : styles.otherBubble]}>
         {!isMine && item.sender_avatar && <Image source={{uri:item.sender_avatar}} style={{width:28,height:28,borderRadius:14,marginBottom:5}} />}
         {!isMine && <Text style={styles.sender}>{item.sender_name || `${item.first_name || ''} ${item.last_name || ''}`.trim() || t("Team member")}</Text>}
         {item.message?<Text style={styles.message}>{item.message}</Text>:null}
-        {item.attachment_id && <MediaAttachment sessionCurrent={isCurrent} path={`/chat/attachments/${item.attachment_id}/content`} name={item.attachment_name || 'attachment'} mime={item.attachment_type || 'application/octet-stream'}/>}
+        {item.attachment_id && <MediaAttachment sessionCurrent={isCurrent} onViewerVisibilityChange={visible => views.covered(visible, item.id)} path={`/chat/attachments/${item.attachment_id}/content`} name={item.attachment_name || 'attachment'} mime={item.attachment_type || 'application/octet-stream'}/>}
         <Text style={styles.time}>{item.created_at === null ? t('Time unavailable') : new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
       </View>
     );
@@ -404,6 +434,12 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
         {(room?.avatar_url||room?.other_user_avatar)?<Image source={{uri:room.avatar_url||room.other_user_avatar}} style={{width:40,height:40,borderRadius:20}}/>:null}
         {room?.can_edit_photo && <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Change group photo")} disabled={!ready || uploading || mediaUncertain} onPress={() => void chooseAttachment('photo')}><MaterialIcons name="add-a-photo" size={24} color="#67E8F9" /></TouchableOpacity>}
       </View>
+      {!roomId.startsWith('support-ticket-') && <View style={{ paddingHorizontal: 16, paddingVertical: 6 }}>
+        <Text accessibilityLiveRegion="polite" style={styles.historyText}>{views.count
+          ? t('Messages not marked read: {count}', { count: views.count.unviewedCountCapped ? '99+' : String(views.count.unviewedCount) })
+          : t('Read count unavailable')}</Text>
+        <Text style={{ color: '#AAA', fontSize: 12 }}>{t('Private to you. Previous views were not recorded.')}</Text>
+      </View>}
       {error?<Text style={{color:'#FF718B',paddingHorizontal:16,paddingVertical:8}}>{error}</Text>:null}
       {sendStatus ? <Text accessibilityLiveRegion="polite" style={styles.status}>{sendStatus}</Text> : null}
       {uncertainMessages.length > 0 ? <View style={{ paddingHorizontal: 16 }}>
@@ -455,19 +491,24 @@ function OwnedChat({ user, roomId, roomName, scopeCurrent }: {
           </TouchableOpacity> : history.hasOlder === false && history.gaps === 0 ? <Text style={styles.historyText}>{t("Beginning of conversation")}</Text> : null}
         </>}
       </View>
+      <View ref={views.viewport} collapsable={false} style={{ flex: 1, overflow: 'hidden' }} onLayout={views.layout}>
       <FlatList ref={flatListRef} data={messages} renderItem={renderItem} keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag"
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        viewabilityConfig={views.viewabilityConfig} onViewableItemsChanged={views.onViewableItemsChanged}
         scrollEventThrottle={16}
         onScroll={({ nativeEvent }) => {
+          views.scroll();
           nearBottom.current = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y < 48;
           if (!nearBottom.current) scrollAfterLayout.current = false;
         }}
         onContentSizeChange={() => {
+          views.layout();
           if (scrollAfterLayout.current && nearBottom.current) flatListRef.current?.scrollToEnd({ animated: true });
           scrollAfterLayout.current = false;
         }}
         onLayout={() => { if (keyboardVisible && nearBottom.current) flatListRef.current?.scrollToEnd({ animated: true }); }} />
+      </View>
       {uploading && <ActivityIndicator color="#00D4FF" />}
       <View style={[styles.inputBar, { paddingBottom: keyboardVisible ? 12 : Math.max(12, safeInsets.bottom) }]}>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Attach document")} disabled={!ready || uploading || mediaUncertain} onPress={() => void chooseAttachment('file')} style={{padding:8}}><MaterialIcons name="attach-file" size={24} color="#67E8F9" /></TouchableOpacity>

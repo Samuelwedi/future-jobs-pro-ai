@@ -3,6 +3,7 @@
 // Future Jobs Pro AI – Created by Samuel B.
 // ============================================
 
+import type { ViewContext, ViewedMessage } from '../utils/chatViews';
 import type { ChatTextRecord, ChatTextOwner } from './chatTextOutboxStore';
 import { uploadMetadata } from '../utils/uploadMetadata';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
@@ -255,10 +256,14 @@ class ApiService {
       }
     };
     const config = { expectedAuthToken: token!, expectedAuthRevision: revision, expectedCurrent: current, expectedBeforeDispatch: beforeDispatch, fenceUnauthorizedToCurrent: true } as EvidenceConfig;
-    const read = async (url: string) => {
-      assertCurrent();
-      const response = await this.client.get(url, config);
-      assertCurrent();
+    const read = async (url: string, requestCurrent: () => boolean = () => true) => {
+      const assertReadCurrent = () => { assertCurrent(); if (!requestCurrent()) throw evidenceError('CHAT_NOT_SENT', 'Conversation request changed.'); };
+      assertReadCurrent();
+      const response = await this.client.get(url, { ...config,
+        expectedCurrent: () => isCurrent() && requestCurrent(),
+        expectedBeforeDispatch: async () => { await beforeDispatch(); assertReadCurrent(); },
+      } as EvidenceConfig);
+      assertReadCurrent();
       return response.data;
     };
     const write = async (url: string, data: unknown, multipart = false) => {
@@ -284,7 +289,27 @@ class ApiService {
       assertCurrent();
       return response.data;
     };
-    return { token: token!, isCurrent, assertCurrent, read, write };
+    // Private view bookkeeping is foreground-only, never queued and never opens
+    // billing/login UI from its background response. Reuse owner/token fences.
+    const privateRead = async (url: string) => {
+      assertCurrent();
+      const response = await this.client.get(url, { ...config, quietChatText: true } as EvidenceConfig);
+      assertCurrent();
+      return response.data;
+    };
+    const acknowledgeViews = async (url: string, data: unknown, visible: () => boolean) => {
+      const assertVisible = () => { assertCurrent(); if (!visible()) throw evidenceError('CHAT_VIEW_PAUSED', 'Message is no longer visible.'); };
+      assertVisible();
+      if (!await checkOnlineStatus()) throw evidenceError('CHAT_VIEW_PAUSED', 'Offline. Views are not queued.');
+      assertVisible();
+      const response = await this.client.post(url, data, {
+        ...config, quietChatText: true, expectedCurrent: () => isCurrent() && visible(),
+        expectedBeforeDispatch: async () => { await beforeDispatch(); assertVisible(); },
+      } as EvidenceConfig);
+      assertVisible();
+      return response.data;
+    };
+    return { token: token!, isCurrent, assertCurrent, read, write, privateRead, acknowledgeViews };
   }
 
   // Auth refresh is a session-owned read. A late old-account 401 must not
@@ -375,16 +400,24 @@ class ApiService {
 
   async openChatSession(roomId: string, owner: { id: string; companyId: string; role: string }, current: () => boolean) {
     if (!roomId) throw evidenceError('CHAT_NOT_SENT', 'A conversation is required.');
-    const { token, isCurrent, assertCurrent, read, write } = await this.openChatTransport(owner, current);
+    const { token, isCurrent, assertCurrent, read, write, acknowledgeViews } = await this.openChatTransport(owner, current);
     return {
       token, isCurrent,
-      readMessages: (page?: { limit?: number; before?: string }) => {
+      readMessages: (page?: { limit?: number; before?: string; views?: boolean }, requestCurrent?: () => boolean) => {
         // No options preserves the legacy endpoint. Paging shares every existing
         // owner/session/pre-dispatch/401 fence and never enters the write queue.
-        const query = page ? `?limit=${page.limit ?? 200}${page.before ? `&before=${encodeURIComponent(page.before)}` : ''}` : '';
-        return read(`/chat/messages/${encodeURIComponent(roomId)}${query}`);
+        const query = page ? `?limit=${page.limit ?? 200}${page.before ? `&before=${encodeURIComponent(page.before)}` : ''}${page.views ? '&views=1' : ''}` : '';
+        return read(`/chat/messages/${encodeURIComponent(roomId)}${query}`, requestCurrent);
       },
-      readRoom: () => read(`/chat/room/${encodeURIComponent(roomId)}/details`),
+      acknowledgeViews: (context: ViewContext, messages: ViewedMessage[], visible: () => boolean) => {
+        if (context.actorId !== owner.id || context.companyId !== owner.companyId || context.roomId !== roomId
+          || !messages.length || messages.length > 100 || roomId.startsWith('support-ticket-')) throw evidenceError('CHAT_VIEW_PAUSED', 'Invalid private view scope.');
+        return acknowledgeViews(`/chat/room/${encodeURIComponent(roomId)}/views`, {
+          expectedActorId: context.actorId, expectedCompanyId: context.companyId,
+          membershipInstanceId: context.membershipInstanceId, messages: messages.map(row => ({ ...row })),
+        }, visible);
+      },
+      readRoom: (requestCurrent?: () => boolean) => read(`/chat/room/${encodeURIComponent(roomId)}/details`, requestCurrent),
       sendMessage: (message: string) => write('/chat/message', { roomId, message }),
       upload: (kind: 'attachments' | 'photo', asset: { uri: string; name: string; mimeType?: string }) => {
         assertCurrent();
@@ -395,6 +428,13 @@ class ApiService {
         return write(`/chat/room/${encodeURIComponent(roomId)}/${kind}`, form, true);
       },
     };
+  }
+
+  async getChatViewCounts(owner: { id: string; companyId: string; role: string }, current: () => boolean) {
+    const expected = { ...owner };
+    const transport = await this.openChatTransport(expected, current);
+    const data = await transport.privateRead(`/chat/views?expectedActorId=${encodeURIComponent(expected.id)}&expectedCompanyId=${encodeURIComponent(expected.companyId)}`);
+    return { data, isSessionCurrent: transport.isCurrent };
   }
 
   // A synchronous fence remains usable while AuthContext is awaiting storage.

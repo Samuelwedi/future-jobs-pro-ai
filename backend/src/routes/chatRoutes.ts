@@ -1,3 +1,4 @@
+import { parseViewStateQuery, parseViewRequest, readChatViewState, acknowledgeChatViews, chatViewFailure } from '../services/chatViews';
 import { hasTextRequestKey, parseTextRequest, parseTextStatus, saveKeyedText, readTextRequest, textRequestFailure } from '../services/chatTextReceipts';
 import { emitAuthorizedRoom } from '../services/socketAuthorization';
 import { verifyToken } from '../utils/auth';
@@ -151,6 +152,28 @@ router.get('/room/:roomId/requests/:requestKey', async (req: Request, res: Respo
   } catch (error) { const failure = textRequestFailure(error); return res.status(failure.status).json(failure.body); }
 });
 
+// Private viewer state only. No broadcast and no arbitrary actor lookup.
+router.get('/views', async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const decoded = verifyToken(req);
+    const input = parseViewStateQuery(req.query);
+    return res.json(await readChatViewState({ userId: decoded.id,
+      requestCompanyId: res.locals.subscriptionActor?.companyId || decoded.companyId || null,
+      claimedCompanyId: decoded.companyId || null, expiresAt: decoded.exp, notBefore: decoded.nbf }, input));
+  } catch (error) { const failure = chatViewFailure(error); return res.status(failure.status).json(failure.body); }
+});
+router.post('/room/:roomId/views', async (req: Request, res: Response) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    const decoded = verifyToken(req);
+    const input = parseViewRequest(req.params.roomId, req.body);
+    return res.json(await acknowledgeChatViews({ userId: decoded.id,
+      requestCompanyId: res.locals.subscriptionActor?.companyId || decoded.companyId || null,
+      claimedCompanyId: decoded.companyId || null, expiresAt: decoded.exp, notBefore: decoded.nbf }, input));
+  } catch (error) { const failure = chatViewFailure(error); return res.status(failure.status).json(failure.body); }
+});
+
 // Both history aliases share validation, authorization, ordering and cursors.
 async function roomHistory(req: Request, res: Response) {
   try {
@@ -158,13 +181,14 @@ async function roomHistory(req: Request, res: Response) {
     const rawQuery = String(req.originalUrl || req.url).split('?').slice(1).join('?');
     if (rawQuery.length > 1024) throw new ChatHistoryError(400, 'CHAT_QUERY_INVALID', 'History query is too long.');
     const options = parseChatHistoryQuery(req.query);
+    if (options.includeViews) res.set('Cache-Control', 'no-store');
     const result = await readChatHistory({
       userId: decoded.id,
       roomId: String(req.params.roomId || ''),
       // Bind even old tokens without a company claim to the gate's request-start
       // company. A transfer while this request is in flight must fail closed.
       requestCompanyId: res.locals.subscriptionActor?.companyId || decoded.companyId || null,
-      claimedCompanyId: decoded.companyId || null,
+      claimedCompanyId: decoded.companyId || null, expiresAt: decoded.exp, notBefore: decoded.nbf,
     }, options);
     return res.json(result);
   } catch (error) {

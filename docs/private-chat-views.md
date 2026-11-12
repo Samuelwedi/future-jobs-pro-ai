@@ -1,0 +1,20 @@
+# Private viewed messages
+
+Private viewed state is owned by the signed-in viewer. It is never a sender-facing read/delivery receipt, and it is never broadcast. No time viewed, device or last-active data is stored. Existing sender save receipts remain unchanged.
+
+## Client contract
+
+All routes below are under `/api`. Ordinary current room membership is required even for managers. Support is excluded. UUIDs are canonical lowercase strings.
+
+- `GET /chat/views?expectedActorId=<uuid>&expectedCompanyId=<uuid>` returns `{success:true,viewState:{actorId,companyId,rooms:[{roomId,membershipInstanceId,unviewedCount,unviewedCountCapped}],historyPolicy:'unmarked_until_viewed'}}`. Counts cover incoming messages visible under existing history policy, irrespective of whether their sender remains active/a member. `unviewedCount` is 0..99. The server probes 100: 99/true means 99+, 99/false means exactly 99. A missing room is not a zero count. Any failure, unsupported endpoint, stale scope or invalid response means unknown.
+- `GET /chat/room/:roomId?views=1` (also `/chat/messages/:roomId`) adds `viewContext:{actorId,companyId,roomId,membershipInstanceId}` from the same SQL authorization snapshot as history. Existing `limit` and `before` pagination is unchanged; `views=1` alone does not change legacy pagination. Messages include opaque `view_version` UUIDs. Support receives no view context/version. Requests without `views=1` preserve the legacy history shape.
+- `POST /chat/room/:roomId/views` accepts exactly `{expectedActorId,expectedCompanyId,membershipInstanceId,messages:[{id,viewVersion}]}` for 1..100 distinct IDs. Success is `{success:true,viewContext:{actorId,companyId,roomId,membershipInstanceId},acknowledged:[{id,viewVersion}]}`. Record only incoming messages actually visible on screen with versions obtained from history/save/socket payloads. A current authorized history context is needed before posting; socket data alone is not evidence of viewing. Retries of identical observed versions are idempotent.
+- Generic 409 `CHAT_VIEW_STALE` with `refreshRequired:true` covers deleted, changed, self-sent or inaccessible messages and membership incarnation mismatch. It never identifies a failing message. Refresh history/context before reobserving. 401/402/403 recheck current auth, tenant, password, entitlement and membership. 503 `CHAT_VIEW_UNCERTAIN` permits the exact same observed-version retry after an uncertain commit; other 503s leave counts unknown. Never turn an error into zero or acknowledge unseen messages.
+
+A membership removed/re-added gets a new server UUID and starts unmarked. Content, attachment metadata/content references, sender, room or company changes rotate server-owned message versions. Date repair and sender display-name/avatar changes do not. Messages inserted late with old/null dates still remain unmarked. There is no timestamp/UUID high-water mark and no historical backfill: explain that past views were not recorded. Multiple devices share only these private exact acknowledgements.
+
+## Deployment and verification
+
+`migrate-private-chat-views.cjs` is a checksum-ledger migration after existing chat-media/text receipts. It rejects partial, incompatible or duplicated legacy membership schemas rather than repairing/deduplicating them silently. Verification also rejects unexpected user triggers/rewrite rules on the participating tables, unexpected private-table columns/defaults, and weakened identity/version/cleanup constraints. An existing custom trigger or rule requires explicit review before rollout; it is never silently removed. A failure rolls back. Existing writers omit new server-managed fields. Message/membership IDs become immutable on update, and every insert gets fresh server-generated metadata even when a caller supplies old values.
+
+Local PGlite tests exercise SQL constraints, installed node-postgres array parser shapes, HTTP semantics, failures and serialized overlaps. PGlite is single-session: these tests do not verify true concurrent PostgreSQL lock behavior. Real multi-session PostgreSQL and live migration/deployment remain unverified unless separately reported.

@@ -198,3 +198,65 @@ test('group transport rejects invalid raw arrays without a POST or queued action
     assert.equal(checks, 0); assert.equal(f.sent.length, 0); assert.equal(f.queued.length, 0);
   }
 });
+
+test('private view acknowledgement is an immutable exact scope/version POST using quiet guarded transport, never a queue', async () => {
+  const f = setup(), session = await f.api.openChatSession('room/x', owner, () => true);
+  const context = { actorId: owner.id, companyId: owner.companyId, roomId: 'room/x', membershipInstanceId: 'membership' };
+  const messages = [{ id: 'message', viewVersion: 'version' }];
+  f.online = async () => { context.membershipInstanceId = 'mutated'; messages[0].viewVersion = 'mutated'; return true; };
+  await session.acknowledgeViews(context, messages, () => true);
+  assert.equal(f.sent[0].url, '/chat/room/room%2Fx/views');
+  assert.deepEqual(JSON.parse(JSON.stringify(f.sent[0].data)), { expectedActorId: 'owner', expectedCompanyId: 'company', membershipInstanceId: 'membership', messages: [{ id: 'message', viewVersion: 'version' }] });
+  assert.equal(f.sent[0].config.quietChatText, true); assert.equal(f.sent[0].config.fenceUnauthorizedToCurrent, true); assert.equal(f.queued.length, 0);
+});
+test('private views recheck foreground visibility and stored scope at actual dispatch; offline/changed-session work never queues', async () => {
+  for (const stage of ['network', 'dispatch']) for (const change of ['visibility', 'id', 'companyId', 'role', 'token', 'revision', 'ABA']) {
+    const f = setup(); let visible = true;
+    const session = await f.api.openChatSession('room', owner, () => true);
+    const mutate = async () => {
+      if (change === 'visibility') visible = false;
+      else if (['id', 'companyId', 'role'].includes(change)) f.read = async () => JSON.stringify({ ...owner, [change]: 'other' });
+      else if (change === 'token') f.api.token = 'other';
+      else if (change === 'revision') f.api.authRevision++;
+      else { await f.api.clearToken(); await f.api.setToken('token'); }
+    };
+    if (stage === 'network') f.online = async () => { await mutate(); return true; }; else f.beforeSend = mutate;
+    await assert.rejects(session.acknowledgeViews({ actorId: owner.id, companyId: owner.companyId, roomId: 'room', membershipInstanceId: 'membership' }, [{ id: 'm', viewVersion: 'v' }], () => visible));
+    assert.equal(f.sent.length, 0, `${stage}/${change}`); assert.equal(f.queued.length, 0);
+  }
+  const f = setup(), session = await f.api.openChatSession('room', owner, () => true); f.online = async () => false;
+  await assert.rejects(session.acknowledgeViews({ actorId: owner.id, companyId: owner.companyId, roomId: 'room', membershipInstanceId: 'membership' }, [{ id: 'm', viewVersion: 'v' }], () => true));
+  assert.equal(f.sent.length, 0); assert.equal(f.queued.length, 0);
+});
+test('private view denial preserves status for the caller and never navigates to payment/login, including stale401', async () => {
+  for (const status of [401, 402, 403, 409, 503]) {
+    const f = setup(); let subscription = 0, unauthorized = 0; f.api.setSubscriptionRequiredHandler(() => subscription++); f.api.setUnauthorizedHandler(() => unauthorized++);
+    const session = await f.api.openChatSession('room', owner, () => true);
+    f.response = async () => { throw { response: { status, data: { code: status === 409 ? 'CHAT_VIEW_STALE' : 'DENIED' } } }; };
+    await assert.rejects(session.acknowledgeViews({ actorId: owner.id, companyId: owner.companyId, roomId: 'room', membershipInstanceId: 'membership' }, [{ id: 'm', viewVersion: 'v' }], () => true), error => error.response.status === status);
+    assert.equal(unauthorized, 0); assert.equal(subscription, 0); assert.equal(f.api.token, 'token');
+    await f.api.setToken('replacement'); await assert.rejects(f.responseFailure({ response: { status: 401 }, config: f.sent[0].config }));
+    assert.equal(f.api.token, 'replacement'); assert.equal(unauthorized, 0);
+  }
+});
+test('history view metadata is opt-in, support never sends private views, and counts use immutable actor/company query', async () => {
+  const f = setup(), session = await f.api.openChatSession('room/x', owner, () => true);
+  await session.readMessages({ before: 'opaque', views: true }); assert.equal(f.sent[0].url, '/chat/messages/room%2Fx?limit=200&before=opaque&views=1');
+  await f.api.getChatViewCounts(owner, () => true); assert.equal(f.sent[1].url, '/chat/views?expectedActorId=owner&expectedCompanyId=company');
+  assert.equal(f.sent[1].config.quietChatText, true);
+  const support = await f.api.openChatSession('support-ticket-test', owner, () => true);
+  assert.throws(() => support.acknowledgeViews({ actorId: owner.id, companyId: owner.companyId, roomId: 'support-ticket-test', membershipInstanceId: 'membership' }, [{ id: 'm', viewVersion: 'v' }], () => true));
+});
+
+test('history per-request generation fences reach actual transport dispatch, late response and401/402 interception', async () => {
+  for (const stage of ['dispatch', 'response']) for (const status of [undefined, 401, 402]) {
+    const f = setup(); let current = true, unauthorized = 0, subscription = 0;
+    f.api.setUnauthorizedHandler(() => unauthorized++); f.api.setSubscriptionRequiredHandler(() => subscription++);
+    const session = await f.api.openChatSession('room', owner, () => true);
+    if (stage === 'dispatch') f.beforeSend = async () => { current = false; };
+    f.response = async () => { current = false; if (status) throw { response: { status } }; return { data: { success: true } }; };
+    await assert.rejects(session.readMessages({ limit: 200, before: 'old', views: true }, () => current));
+    assert.equal(f.sent.length, stage === 'dispatch' ? 0 : 1);
+    assert.equal(f.api.token, 'token'); assert.equal(unauthorized, 0); assert.equal(subscription, 0);
+  }
+});

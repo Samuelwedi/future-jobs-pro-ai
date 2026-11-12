@@ -7,11 +7,12 @@ import { useAuth } from '../context/AuthContext';
 import { useLang } from '../context/LanguageContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
+import { readViewCounts, privateViewRevision, subscribePrivateViewCounts, ViewCount, viewAccessDenied } from '../utils/chatViews';
 import { InboxRoom, inboxTitle, inboxPreview, inboxTime, readInboxRooms, searchInbox } from '../utils/chatInbox';
 
 type InboxState = {
   scope: string; request: number; status: 'loading' | 'ready' | 'error'; refreshing: boolean;
-  rooms: InboxRoom[]; isSessionCurrent: () => boolean;
+  views?: ViewCount[] | null; rooms: InboxRoom[]; isSessionCurrent: () => boolean;
 };
 
 export default function ChatListScreen() {
@@ -43,7 +44,18 @@ export default function ChatListScreen() {
       const response = await api.getChatRooms({ id: user.id, companyId: user.companyId, role: user.role }, current);
       if (!current() || !response.isSessionCurrent()) return;
       const rooms = readInboxRooms(response.data);
-      setState({ scope, request, status: 'ready', refreshing: false, rooms, isSessionCurrent: response.isSessionCurrent });
+      setState({ scope, request, status: 'ready', refreshing: false, rooms, views: null, isSessionCurrent: response.isSessionCurrent });
+      const revision = privateViewRevision();
+      const countCurrent = () => current() && privateViewRevision() === revision;
+      try {
+        const counts = await api.getChatViewCounts({ id: user.id, companyId: user.companyId, role: user.role }, countCurrent);
+        if (!countCurrent() || !counts.isSessionCurrent()) return;
+        const views = readViewCounts(counts.data, user);
+        setState({ scope, request, status: 'ready', refreshing: false, rooms, views, isSessionCurrent: response.isSessionCurrent });
+      } catch (cause) {
+        if (countCurrent() && viewAccessDenied(cause)) setState({ scope, request, status: 'error', refreshing: false, rooms: [], views: null, isSessionCurrent });
+        // Missing endpoints, old servers and transient errors remain unknown.
+      }
     } catch {
       if (current()) setState({ scope, request, status: 'error', refreshing: false, rooms: [], isSessionCurrent });
     }
@@ -53,7 +65,9 @@ export default function ChatListScreen() {
     focusActive.current = true;
     setSearch({ scope, value: '' });
     void loadRooms();
+    const unsubscribe = subscribePrivateViewCounts(() => { void loadRooms(); });
     return () => {
+      unsubscribe();
       focusActive.current = false;
       sequence.current++;
       navigationLock.current = false;
@@ -78,7 +92,9 @@ export default function ChatListScreen() {
     const title = inboxTitle(item, t);
     const avatar = item.is_group ? item.avatar_url : item.other_user_avatar;
     const time = inboxTime(item.last_message_at, lang);
-    return <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('Open conversation with {name}', { name: title })}
+    const count = visibleState?.views?.find(row => row.roomId === item.id);
+    const countLabel = count ? t('Messages not marked read: {count}', { count: count.unviewedCountCapped ? '99+' : String(count.unviewedCount) }) : t('Read count unavailable');
+    return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${t('Open conversation with {name}', { name: title })}. ${countLabel}`}
       style={styles.roomCard} onPress={() => openConversation(item)}>
       {avatar ? <Image source={{ uri: avatar }} style={styles.avatar} /> : <View style={styles.avatar}>
         <Text style={styles.avatarText}>{item.is_group ? '#' : title.charAt(0).toUpperCase()}</Text>
@@ -88,6 +104,7 @@ export default function ChatListScreen() {
           <Text numberOfLines={1} style={styles.roomName}>{title}</Text>
           {!!time && <Text style={styles.roomTime}>{time}</Text>}
         </View>
+        <Text style={styles.viewCount}>{countLabel}</Text>
         <Text numberOfLines={1} style={styles.roomSubtitle}>{inboxPreview(item, t)}</Text>
       </View>
     </TouchableOpacity>;
@@ -100,6 +117,7 @@ export default function ChatListScreen() {
       </TouchableOpacity>
       <Text style={styles.headerTitle}>{t('Messages')}</Text>
     </View>
+    {validScope && <Text style={styles.viewExplanation}>{t('Private to you. Previous views were not recorded.')}</Text>}
     {validScope && <View style={styles.searchRow}>
       <MaterialIcons name="search" size={22} color="#AAA" />
       <TextInput accessibilityLabel={t('Search conversations')} placeholder={t('Search conversations')}
@@ -146,6 +164,8 @@ const styles = StyleSheet.create({
   roomHeading: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 },
   roomName: { flexGrow: 1, flexShrink: 1, color: '#FFF', fontSize: 16, fontWeight: '600' },
   roomTime: { color: '#AAA', fontSize: 12 },
+  viewCount: { color: '#67E8F9', fontSize: 12, marginTop: 4 },
+  viewExplanation: { color: '#AAA', fontSize: 12, paddingHorizontal: 20, paddingTop: 8 },
   roomSubtitle: { color: '#AAA', fontSize: 14, marginTop: 5 },
   loading: { marginTop: 40 },
   noticeBox: { alignItems: 'center' },

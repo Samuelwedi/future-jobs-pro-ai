@@ -34,7 +34,7 @@ const message = (id, extra = {}) => ({ id, room_id: 'room', company_id: 'company
 function fixture() {
   const open = deferred(), room = deferred(), reads = [], joins = [], events = [], listeners = new Map();
   let inFlight = 0, maxInFlight = 0, disconnects = 0, sockets = 0;
-  const c = { roomId: 'room', user: { id: 'owner', companyId: 'company', role: 'employee' },
+  const c = { denied: { current: false }, roomScopeRevision: { current: 0 }, views: { history: () => false, failed: () => {} }, roomId: 'room', user: { id: 'owner', companyId: 'company', role: 'employee' },
     mounted: { current: true }, sessionRef: { current: null }, socketRef: { current: null },
     flatListRef: { current: { scrollToEnd: () => events.push(['scroll']) } },
     historyRef: { current: null }, nearBottom: { current: true }, scrollAfterLayout: { current: false }, createChatHistory,
@@ -57,8 +57,8 @@ function fixture() {
   c.io = () => { sockets++; return socket; };
   const session = { token: 'scoped-token', isCurrent: () => c.isCurrent() && c.sessionCurrent,
     readRoom: () => room.promise,
-    readMessages: options => {
-      const read = deferred(); read.options = options; reads.push(read); inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+    readMessages: (options, current) => {
+      const read = deferred(); read.options = options; read.current = current; reads.push(read); inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
       return read.promise.finally(() => { inFlight--; });
     },
   };
