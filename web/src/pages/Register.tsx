@@ -1,3 +1,4 @@
+import { setAuthSession } from '../services/authSession';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -27,8 +28,7 @@ export default function Register() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Registration failed');
       // Save token and redirect to dashboard
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      setAuthSession(data.token, data.user);
       navigate('/dashboard');
     } catch (err: any) {
       setError(err.message);

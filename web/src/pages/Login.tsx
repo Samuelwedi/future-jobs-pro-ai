@@ -1,3 +1,4 @@
+import { setAuthSession } from '../services/authSession';
 import React, { useState } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { AutoAwesome, Bolt, ErrorOutline, Lock, Mail, PlayCircleOutline, Shield, Visibility, VisibilityOff } from '@mui/icons-material';
@@ -18,8 +19,7 @@ export default function Login() {
       const response = await fetch(`${API_BASE}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim().toLowerCase(), password }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Login failed');
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      setAuthSession(data.token, data.user);
       navigate('/dashboard');
     } catch (err: any) { setError(err.message); } finally { setLoading(false); }
   };

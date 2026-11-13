@@ -1,3 +1,4 @@
+import { captureAuthSession, clearAuthSession, updateAuthUser } from '../services/authSession';
 import React, { lazy,Suspense,useState,useEffect } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
@@ -194,8 +195,8 @@ export default function Layout() {
   useEffect(()=>{
     let mounted=true;
     const refresh=async()=>{
-      const token=localStorage.getItem('token');if(!token){navigate('/login');return;}
-      try{const response=await fetch(`${API_BASE}/api/auth/session`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});if(response.status===401){handleLogout();return;}const data=await response.json();if(response.ok&&mounted){localStorage.setItem('user',JSON.stringify(data.user));setUser(data.user);window.dispatchEvent(new CustomEvent('auth-user-updated',{detail:data.user}));}}catch{}
+      const token=localStorage.getItem('token');if(!token){navigate('/login');return;}const session=captureAuthSession();
+      try{const response=await fetch(`${API_BASE}/api/auth/session`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});if(!mounted||!session.isCurrent())return;if(response.status===401){handleLogout();return;}const data=await response.json();if(response.ok&&mounted&&updateAuthUser(data.user,session.isCurrent)){setUser(data.user);}}catch{}
     };
     void refresh();const timer=window.setInterval(refresh,60000);window.addEventListener('focus',refresh);
     return()=>{mounted=false;window.clearInterval(timer);window.removeEventListener('focus',refresh);};
@@ -206,8 +207,7 @@ export default function Layout() {
   const handleCloseMenu = () => setAnchorEl(null);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    clearAuthSession();
     navigate('/login');
     handleCloseMenu();
   };

@@ -1,0 +1,16 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+function fixture(){
+ const values=new Map([['token','token-A'],['user',JSON.stringify({id:'A',companyId:'C',role:'employee'})]]),listeners={},redirects=[],pending=[];
+ const storage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+ const window={location:{origin:'https://fixture.invalid',pathname:'/dashboard',assign:p=>redirects.push(p)},addEventListener:(k,f)=>listeners[k]=f,dispatchEvent:()=>{}};
+ const context={localStorage:storage,window,Event:class{constructor(type){this.type=type}},CustomEvent:class{constructor(type){this.type=type}},exports:{}};
+ const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+ vm.runInNewContext(compile(fs.readFileSync(__dirname+'/../src/services/authSession.ts','utf8')),context);const auth=context.exports;
+ const apiContext={...context,exports:{},require:()=>auth,fetch:(url,options)=>new Promise(resolve=>pending.push({url,options,resolve}))};
+ vm.runInNewContext(compile(fs.readFileSync(__dirname+'/../src/services/api.ts','utf8').replaceAll('import.meta.env','({})')),apiContext);
+ return{auth,api:apiContext.exports.api,values,storage,listeners,redirects,pending};
+}
+test('same-token/account login ABA and cross-tab generation fence old work',()=>{const f=fixture(),old=f.auth.captureAuthSession();f.auth.setAuthSession('B',{id:'B'});f.auth.setAuthSession('token-A',{id:'A',companyId:'C',role:'employee'});assert(!old.isCurrent());const next=f.auth.captureAuthSession();f.listeners.storage({storageArea:f.storage,key:'auth-generation',oldValue:'a',newValue:'b'});assert(!next.isCurrent());});
+test('profile-only update retains session; identity update and logout invalidate it',()=>{const f=fixture(),old=f.auth.captureAuthSession();assert(f.auth.updateAuthUser({id:'A',companyId:'C',role:'employee',name:'new'}));assert(old.isCurrent());f.auth.updateAuthUser({id:'A',companyId:'D',role:'employee'});assert(!old.isCurrent());const next=f.auth.captureAuthSession();f.auth.clearAuthSession();assert(!next.isCurrent());assert(!f.values.has('token'));});
+for(const method of ['get','upload','download'])for(const status of [401,402])for(const stale of [false,true])test(`${method} ${status} ${stale?'stale':'current'} session redirect contract`,async()=>{const f=fixture(),p=f.api[method]('/test',{});assert.equal(f.pending[0].options.headers.Authorization,'Bearer token-A');if(stale)f.auth.setAuthSession('B',{id:'B'});f.pending[0].resolve({status,ok:false,headers:{get:()=> 'application/json'},json:async()=>({message:'denied'})});await assert.rejects(p);assert.deepEqual(f.redirects,stale?[]:[status===401?'/login':'/payment-required']);assert.equal(f.values.get('token'),stale?'B':status===401?undefined:'token-A');});
+test('successful request keeps existing payload and API-origin behavior',async()=>{const f=fixture(),p=f.api.get('/test');f.pending[0].resolve({status:200,ok:true,headers:{get:()=> 'application/json'},json:async()=>({ok:true})});assert.equal((await p).ok,true);assert.equal(f.pending[0].url,'https://fixture.invalid/test');assert.deepEqual(f.redirects,[]);});
