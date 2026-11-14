@@ -11,6 +11,8 @@ const key='attachment-fixture-key-001';
 const migration=fs.readFileSync(path.join(__dirname,'../migrations/20261111_attachment_receipts.sql'),'utf8');
 before(async()=>{
  db=new PGlite();await db.exec(`CREATE TABLE users(id TEXT PRIMARY KEY,company_id TEXT,role TEXT,is_active BOOLEAN);
+ CREATE TABLE companies(id TEXT PRIMARY KEY,is_active BOOLEAN,subscription_status TEXT,subscription_tier TEXT,subscription_provider TEXT,subscription_current_period_end TIMESTAMPTZ,subscription_expires_at TIMESTAMPTZ);
+ INSERT INTO companies VALUES('a',TRUE,'active','pro',NULL,NULL,NULL),('b',TRUE,'active','pro',NULL,NULL,NULL);
  CREATE TABLE projects(id TEXT PRIMARY KEY,company_id TEXT);CREATE TABLE tasks(id TEXT,company_id TEXT);
  CREATE TABLE time_entries(id TEXT,user_id TEXT);CREATE TABLE shifts(id TEXT,project_id TEXT,created_by TEXT);
  CREATE TABLE attachments(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),company_id TEXT,uploaded_by TEXT,

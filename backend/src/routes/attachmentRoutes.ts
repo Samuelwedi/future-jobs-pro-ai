@@ -8,6 +8,8 @@ import { deleteAttachment, listAttachments, saveAttachment, AttachmentTarget } f
 import { uploadAttachment } from '../services/cloudStorageService';
 import { validAttachmentKey, attachmentFingerprint, claimAttachment } from '../services/attachmentReceipts';
 import type { PoolClient } from 'pg';
+import { hasCompanyEntitlement, type SubscriptionActor } from '../middleware/trialMiddleware';
+import { hasComplimentaryAccess } from '../services/complimentaryAccess';
 
 const router = express.Router();
 const uploadDir = path.join(__dirname, '../../uploads/attachments');
@@ -47,6 +49,45 @@ async function validateTarget(companyId: string, value: AttachmentTarget, db: Pi
     }
   }
 }
+// One final catalog snapshot checks the actor and every target together. No new
+// management/assignment restriction: attachment reads retain existing company rights.
+async function finalReadScope(current: { id: string; companyId: string }, value: AttachmentTarget, ids: string[]) {
+  const configured = (process.env.COMPLIMENTARY_TESTER_IDENTITY || '').trim().toLowerCase();
+  const [sponsorId, configuredCompany, extra] = configured.split(':');
+  const sponsor = !extra && sponsorId && configuredCompany === current.companyId.toLowerCase()
+    && hasComplimentaryAccess(sponsorId, current.companyId) ? sponsorId : null;
+  const result = await pool.query(`SELECT u.id,
+      LOWER(COALESCE(c.subscription_status,'inactive')) AS subscription_status,
+      LOWER(COALESCE(c.subscription_tier,'trial')) AS subscription_tier,
+      NULLIF(c.subscription_provider,'') AS subscription_provider,
+      COALESCE(c.subscription_current_period_end,c.subscription_expires_at) AS entitlement_ends_at,
+      EXISTS(SELECT 1 FROM users sponsor WHERE sponsor.id::text=$9 AND sponsor.company_id=c.id
+        AND COALESCE(sponsor.is_active,TRUE)=TRUE AND LOWER(sponsor.role) IN ('boss','owner')) AS complimentary
+    FROM users u JOIN companies c ON c.id=u.company_id
+    WHERE u.id=$1 AND u.company_id=$2 AND COALESCE(u.is_active,TRUE)=TRUE
+      AND COALESCE(NULLIF(to_jsonb(c)->>'is_active','')::boolean,TRUE)=TRUE
+      AND COALESCE((to_jsonb(u)->>'must_change_password')::boolean,FALSE)=FALSE
+      AND ($3::text IS NULL OR EXISTS(SELECT 1 FROM projects p WHERE p.id::text=$3 AND p.company_id=$2))
+      AND ($4::text IS NULL OR EXISTS(SELECT 1 FROM tasks t WHERE t.id::text=$4 AND t.company_id=$2))
+      AND ($5::text IS NULL OR EXISTS(SELECT 1 FROM users subject WHERE subject.id::text=$5 AND subject.company_id=$2))
+      AND ($6::text IS NULL OR EXISTS(SELECT 1 FROM time_entries te JOIN users worker ON worker.id=te.user_id WHERE te.id::text=$6 AND worker.company_id=$2))
+      AND ($7::text IS NULL OR EXISTS(SELECT 1 FROM shifts s LEFT JOIN projects p ON p.id=s.project_id LEFT JOIN users creator ON creator.id=s.created_by WHERE s.id::text=$7 AND (p.company_id=$2 OR creator.company_id=$2)))
+      AND NOT EXISTS(SELECT 1 FROM unnest($8::text[]) wanted(id) WHERE NOT EXISTS(
+        SELECT 1 FROM attachments a WHERE a.id::text=wanted.id AND a.company_id=$2))`,
+    [current.id,current.companyId,value.projectId||null,value.taskId||null,value.subjectUserId||null,value.timeEntryId||null,value.shiftId||null,ids,sponsor]);
+  if (!result.rowCount) throw new Error('Attachment access changed');
+  const row=result.rows[0];
+  // Reuse the existing entitlement predicate, evaluated synchronously at send time.
+  return {id:current.id,companyId:current.companyId,role:'',name:'',mustChangePassword:false,
+    subscriptionStatus:row.subscription_status,subscriptionTier:row.subscription_tier,
+    subscriptionProvider:row.subscription_provider,complimentary:row.complimentary===true,
+    entitlementEndsAt:row.entitlement_ends_at ? new Date(row.entitlement_ends_at) : null} as SubscriptionActor;
+}
+function finalReadToken(req: Request, current: { id: string; companyId: string }, entitlement: SubscriptionActor) {
+  const token=verifyToken(req);
+  if (String(token.id) !== current.id || (token.companyId && token.companyId !== current.companyId)) throw new Error('Attachment token changed');
+  if (!hasCompanyEntitlement(entitlement, new Date(Date.now()))) throw new Error('Attachment entitlement changed');
+}
 // Reject unauthenticated/inactive accounts before accepting multipart bytes to disk.
 async function authenticateUpload(req: Request, res: Response, next: NextFunction) {
   try { res.locals.attachmentUploadActor = await actor(req); next(); }
@@ -82,7 +123,7 @@ router.post('/upload', authenticateUpload, upload.single('file'), async (req: Re
       const previous = await claimAttachment(scope, fingerprint, attachmentTarget);
       if (previous) {
         if (previous.fingerprint !== fingerprint) return res.status(409).json({ success: false, requestKey: req.body.requestKey, retryAllowed: false, message: 'Attachment key was already used for different content or metadata' });
-        return await respondReceipt(res, current, req.body.requestKey, previous);
+        return await respondReceipt(req, res, current, req.body.requestKey, previous);
       }
       receiptScope = scope;
     }
@@ -116,29 +157,46 @@ router.post('/upload', authenticateUpload, upload.single('file'), async (req: Re
     res.status(/authenticated/i.test(error.message) ? 401 : 400).json({ success: false, message: error.message });
   } finally { db?.release(); if (localPath) fs.unlink(localPath, () => undefined); }
 });
-async function respondReceipt(res: Response, current: { id: string; companyId: string }, requestKey: string, receipt: any) {
+async function respondReceipt(req: Request, res: Response, current: { id: string; companyId: string }, requestKey: string, receipt: any) {
   // Never disclose an old receipt after its actor or targets leave the original company.
   const live = await pool.query('SELECT id FROM users WHERE id=$1 AND company_id=$2 AND COALESCE(is_active,TRUE)=TRUE', [current.id,current.companyId]);
   if (!live.rowCount) throw new Error('Not authenticated');
   await validateTarget(current.companyId, receipt.target);
   if (receipt.state === 'completed') {
     const existing = await pool.query('SELECT id FROM attachments WHERE id=$1 AND company_id=$2', [receipt.response?.attachment?.id, current.companyId]);
-    if (!existing.rowCount) return res.status(410).json({ success: false, requestKey, state: 'unavailable', retryAllowed: false, message: 'The completed attachment is no longer available' });
+    if (!existing.rowCount) {
+      const entitlement=await finalReadScope(current, receipt.target, []);
+      finalReadToken(req, current, entitlement);
+      return res.status(410).json({ success: false, requestKey, state: 'unavailable', retryAllowed: false, message: 'The completed attachment is no longer available' });
+    }
+    const entitlement=await finalReadScope(current, receipt.target, [String(receipt.response?.attachment?.id)]);
+    finalReadToken(req, current, entitlement);
     return res.json(receipt.response);
   }
+  const entitlement=await finalReadScope(current, receipt.target, []);
+  finalReadToken(req, current, entitlement);
   return res.status(202).json({ success: false, requestKey, state: receipt.state, retryAllowed: false, message: 'Attachment is processing or uncertain. Check status; do not upload again.' });
 }
 router.get('/uploads/:requestKey', async (req: Request, res: Response) => {
+  res.set('Cache-Control','no-store');
   try {
     const current = await actor(req), key = req.params.requestKey;
     if (!validAttachmentKey(key)) return res.status(400).json({ success: false, message: 'Invalid attachment request key' });
     const receipt = await pool.query('SELECT state,response,target FROM attachment_upload_receipts WHERE company_id=$1 AND actor_id=$2 AND request_key=$3', [current.companyId,current.id,key]);
     if (!receipt.rowCount) return res.status(404).json({ success: false, requestKey: key, state: 'missing', retryAllowed: false });
-    return await respondReceipt(res, current, key, receipt.rows[0]);
+    return await respondReceipt(req, res, current, key, receipt.rows[0]);
   } catch (error: any) { res.status(/authenticated|token/i.test(error.message) ? 401 : 403).json({ success: false, retryAllowed: false, message: 'Attachment status is unavailable' }); }
 });
 router.get('/', async (req: Request, res: Response) => {
-  try { const current = await actor(req); const value = target(req.query); await validateTarget(current.companyId, value); res.json({ success: true, attachments: await listAttachments(current.companyId, value) }); }
+  res.set('Cache-Control','no-store');
+  try {
+    const current = await actor(req); const value = target(req.query);
+    await validateTarget(current.companyId, value);
+    const attachments = await listAttachments(current.companyId, value);
+    const entitlement=await finalReadScope(current, value, attachments.map(row => String(row.id)));
+    finalReadToken(req, current, entitlement); // Synchronous after the final await, immediately before disclosure.
+    res.json({ success: true, attachments });
+  }
   catch (error: any) { res.status(400).json({ success: false, message: error.message }); }
 });
 router.delete('/:id', async (req: Request, res: Response) => {
