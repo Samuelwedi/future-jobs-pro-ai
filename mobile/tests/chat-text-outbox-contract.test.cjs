@@ -46,7 +46,7 @@ test('actual backend and native canonical input validation agree on Unicode, whi
     if (clientAccepted) assert.equal(client.text, serverValue.message);
   }
 });
-test('verified baseline ordinary text was online-only and did not persist offline Send; current path does', async () => {
+test('pinned historical ordinary text implementation was online-only and did not persist offline Send', async () => {
   const baseline = execFileSync('git', ['show', '6b80edadd6c121aa7d72bda0a2ef2693ff3c3c76:mobile/src/services/api.ts'], { cwd: path.join(root, '..'), encoding: 'utf8' });
   let sent = 0, queued = 0; const client = { interceptors: { request: { use() {} }, response: { use() {} } }, post: async () => { sent++; return {}; } };
   const c = { exports: {}, __DEV__: false, process: { env: {} }, console, require: name => {
@@ -60,6 +60,15 @@ test('verified baseline ordinary text was online-only and did not persist offlin
   vm.runInNewContext(ts.transpileModule(baseline, { fileName: 'api.ts', compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText, c);
   const api = c.exports.api; api.token = 'token'; const session = await api.openChatSession('ordinary', owner, () => true);
   await assert.rejects(session.sendMessage('Hello'), { code: 'CHAT_NOT_SENT' }); assert.equal(sent, 0); assert.equal(queued, 0);
-  const f = setup(); f.online = false; await f.engine.enqueue(await f.intent('Hello', 'ordinary'), () => true); await f.drain();
+});
+test('current ordinary text implementation persists offline without dispatch and reconnects with the original intent', async () => {
+  const f = setup(); f.online = false; const intent = await f.intent('Hello', 'ordinary');
+  await f.engine.enqueue(intent, () => true); await f.drain();
   assert.equal((await f.records())[0].state, 'queued'); assert.equal(f.sent.length, 0);
+  const restarted = setup(f.data);
+  await restarted.drain();
+  assert.equal(restarted.sent.length, 1);
+  assert.equal(restarted.sent[0].body.requestKey, intent.requestKey);
+  assert.equal(restarted.sent[0].body.message, 'Hello');
+  assert.equal((await restarted.records())[0].state, 'saved');
 });

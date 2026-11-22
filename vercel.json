@@ -1,4 +1,5 @@
 {
+  "git": { "deploymentEnabled": { "review/future-jobs-offline-outbox-20261122": false } },
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "installCommand": "npm install --prefix web",
