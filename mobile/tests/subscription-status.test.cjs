@@ -9,10 +9,10 @@ function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function setup(){
  let hooks=[],index=0,tree,focus,cleanup,effects=[],effectCleanups=[],epoch=0,read=async endpoint=>endpoint==='status'?inactive:capabilities;
- const calls=[],alerts=[];let purchases=0,restores=0,managed=0,finished=0,iapCallbacks,verify=async()=>active;const product={id:'product',displayPrice:'$10',platform:'ios'};
+ const calls=[],alerts=[];let purchases=0,restores=0,managed=0,finished=0,iapCallbacks,verify=async()=>active,readPurchases=async()=>{};const product={id:'product',displayPrice:'$10',platform:'ios'};
  const React={createElement:(type,props,...children)=>({type,props:{...props,children}}),Fragment:'Fragment',useState(initial){const slot=index++;if(!(slot in hooks))hooks[slot]=typeof initial==='function'?initial():initial;return [hooks[slot],value=>hooks[slot]=typeof value==='function'?value(hooks[slot]):value];},useRef(initial){const slot=index++;return hooks[slot]??(hooks[slot]={current:initial});},useCallback:fn=>fn,useMemo:fn=>fn(),useEffect:fn=>{effects.push(fn);}};
  const api={post:async()=>verify(),captureSessionGuard(){const captured=epoch;return ()=>captured===epoch;},get:async url=>{calls.push(url);return read(url.split('/').pop());},readSubscription:async(endpoint,owner,current)=>{calls.push('/subscriptions/'+endpoint);assert.equal(current(),true);return read(endpoint);}};
- const iap={connected:true,subscriptions:[product],availablePurchases:[],fetchProducts:async()=>{},getAvailablePurchases:async()=>{restores++;},requestPurchase:async()=>{purchases++;}};
+ const iap={connected:true,subscriptions:[product],availablePurchases:[],fetchProducts:async()=>{},getAvailablePurchases:async()=>{restores++;return readPurchases();},requestPurchase:async()=>{purchases++;}};
  const context={exports:{},console,globalThis:{Promise},require:name=>{
   if(name==='react')return {default:React,...React};
   if(name==='react-native')return {ActivityIndicator:'ActivityIndicator',Alert:{alert:(...a)=>alerts.push(a)},Platform:{OS:'ios'},Linking:{openURL:async()=>{managed++;}},RefreshControl:'RefreshControl',ScrollView:'ScrollView',StyleSheet:{create:x=>x},Text:'Text',TouchableOpacity:'TouchableOpacity',View:'View'};
@@ -31,7 +31,7 @@ function setup(){
  function nodes(node=tree){if(node==null||typeof node!=='object')return [];if(Array.isArray(node))return node.flatMap(n=>nodes(n??null));return [node,...nodes(node.props?.children ?? null),...nodes(node.props?.refreshControl ?? null)];}
  function text(node=tree){if(node==null||typeof node==='boolean')return '';if(typeof node==='string'||typeof node==='number')return String(node);if(Array.isArray(node))return node.map(n=>text(n??null)).join(' ');return text(node.props?.children ?? null);}
  render();
- return {calls,alerts,api,iap,render,text,nodes,get iapCallbacks(){return iapCallbacks;},set verify(fn){verify=fn;},get finished(){return finished;},get managed(){return managed;},get purchases(){return purchases;},get restores(){return restores;},mountLifecycle(){const lifecycle=effects.find(fn=>fn.toString().includes('screenAlive.current'));if(lifecycle)effectCleanups.push(lifecycle());},unmount(){for(const cleanup of effectCleanups)cleanup?.();},set read(fn){read=fn;},replaceSession(){epoch++;},refresh(){nodes().find(n=>n.type==='RefreshControl').props.onRefresh();},focus(){cleanup=focus?.();},blur(){cleanup?.();}};
+ return {calls,alerts,api,iap,render,text,nodes,get iapCallbacks(){return iapCallbacks;},set verify(fn){verify=fn;},set readPurchases(fn){readPurchases=fn;},get finished(){return finished;},get managed(){return managed;},get purchases(){return purchases;},get restores(){return restores;},mountLifecycle(){const lifecycle=effects.find(fn=>fn.toString().includes('screenAlive.current'));if(lifecycle)effectCleanups.push(lifecycle());},unmount(){for(const cleanup of effectCleanups)cleanup?.();},set read(fn){read=fn;},replaceSession(){epoch++;},refresh(){nodes().find(n=>n.type==='RefreshControl').props.onRefresh();},focus(){cleanup=focus?.();},blur(){cleanup?.();}};
 }
 
 test('failed entitlement read is unavailable rather than ended and has an independent status retry',async()=>{
@@ -150,4 +150,30 @@ test('current backend trial, complimentary, Apple, Google and Stripe status shap
   ...['active','expired'].map(status=>({plan:'team_10',status,provider:'google',currentPeriodEnd:'2099-01-01'})),
   ...['active','trialing','canceled','incomplete','incomplete_expired','past_due','unpaid','paused'].map(status=>({tier:'team_10',status,provider:'stripe',currentPeriodEnd:'2099-01-01'}))];
  for(const subscription of fixtures){const f=setup();f.read=async endpoint=>endpoint==='status'?{success:true,subscription}:capabilities;f.focus();await settle();f.render();assert.doesNotMatch(f.text(),/Plan status unavailable|Subscription status could not be confirmed/,JSON.stringify(subscription));}
+});
+
+test('a late store restore never shows an alert after leaving or changing sessions',async()=>{
+ for(const mode of ['blur','refocus','unmount','session']){
+  for(const outcome of ['resolved','rejected']){
+   const f=setup(),pending=deferred();f.mountLifecycle();f.focus();await settle();f.render();
+   f.readPurchases=()=>pending.promise;
+   restoreButton(f).props.onPress();assert.equal(f.restores,1);
+   if(mode==='session')f.replaceSession();
+   else if(mode==='unmount')f.unmount();
+   else {f.blur();if(mode==='refocus'){f.focus();await settle();f.render();}}
+   if(outcome==='resolved')pending.resolve();else pending.reject(Error('store unavailable'));
+   await settle();assert.equal(f.alerts.length,0,mode+'/'+outcome);
+   if(mode==='refocus'){f.render();assert.equal(restoreButton(f).props.disabled,false);}
+  }
+ }
+});
+
+test('a restore still reports a store response or failure on the current screen and unlocks retry',async()=>{
+ for(const outcome of ['resolved','rejected']){
+  const f=setup();f.mountLifecycle();f.focus();await settle();f.render();
+  if(outcome==='rejected')f.readPurchases=async()=>{throw Error('store unavailable');};
+  restoreButton(f).props.onPress();assert.equal(f.restores,1);await settle();f.render();
+  assert.equal(f.alerts[0]?.[0],outcome==='resolved'?'Restore checked':'Restore failed');
+  assert.equal(restoreButton(f).props.disabled,false);
+ }
 });

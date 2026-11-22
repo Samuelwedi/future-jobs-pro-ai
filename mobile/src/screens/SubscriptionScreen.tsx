@@ -120,6 +120,7 @@ function planLabel(tier?: string): string {
   const screenAlive = useRef(true);
   const workspaceSession = useRef(api.captureSessionGuard());
   const screenFocused = useRef(false);
+  const focusEpoch = useRef(0);
   const statusRead = useRef(0);
   const statusReady = useRef(false);
   const checkedStatus = useRef<() => boolean>(() => false);
@@ -182,7 +183,7 @@ function planLabel(tier?: string): string {
   useFocusEffect(useCallback(() => {
     screenFocused.current = true;
     void loadStatus();
-    return () => { screenFocused.current = false; statusRead.current += 1; };
+    return () => { screenFocused.current = false; focusEpoch.current += 1; statusRead.current += 1; };
   }, [loadStatus]));
 
   const verifyAndFinish = useCallback(async (purchase: Purchase) => {
@@ -318,16 +319,21 @@ function planLabel(tier?: string): string {
 
   const restore = async () => {
     if (purchaseLock.current || renderedStatusRead !== statusRead.current || !checkedStatus.current() || !billing?.canPurchase || !connected) return;
+    const restoreFocus = focusEpoch.current;
+    const sessionCurrent = api.captureSessionGuard();
+    const stillMounted = () => screenAlive.current && workspaceSession.current() && sessionCurrent();
+    const stillViewing = () => stillMounted() && screenFocused.current && focusEpoch.current === restoreFocus;
     purchaseLock.current = true;
     setProcessingProductId('restore');
     try {
       await getAvailablePurchases({ onlyIncludeActiveItemsIOS: true });
-      Alert.alert(t("Restore checked"), t("Any available active store purchases will be verified. If none appear, confirm you are signed into the store account used to purchase."));
+      if (stillViewing()) Alert.alert(t("Restore checked"), t("Any available active store purchases will be verified. If none appear, confirm you are signed into the store account used to purchase."));
     } catch (error) {
-      purchaseLock.current = false; setProcessingProductId(null);
-      Alert.alert(t("Restore failed"), friendlyError(error));
+      if (stillViewing()) Alert.alert(t("Restore failed"), friendlyError(error));
     } finally {
-      purchaseLock.current = false; setProcessingProductId(null);
+      purchaseLock.current = false;
+      // A mounted screen can be revisited; release the spinner without a late alert.
+      if (stillMounted()) setProcessingProductId(null);
     }
   };
 
