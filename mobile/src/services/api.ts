@@ -25,7 +25,11 @@ const pendingEvidence = () => evidenceError('EVIDENCE_PENDING','Upload status is
 // Railway permanent backend
 const DEV_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
 const PROD_API_URL = 'https://future-jobs-pro-ai-production.up.railway.app/api';
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL || (__DEV__ ? DEV_API_URL : PROD_API_URL)).replace(/\/$/,'');
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL;
+if (process.env.EXPO_PUBLIC_FJ_PRIVATE_TEST === '1' && !configuredApiUrl) {
+  throw new Error('Private device test requires an explicit API URL.');
+}
+export const API_URL = (configuredApiUrl || (__DEV__ ? DEV_API_URL : PROD_API_URL)).replace(/\/$/,'');
 
 class ApiService {
   private client: AxiosInstance;

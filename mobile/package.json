@@ -7,6 +7,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "eas-build-pre-install": "node scripts/private-build-fence.cjs",
     "postinstall": "npx patch-package"
   },
   "dependencies": {

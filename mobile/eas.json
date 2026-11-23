@@ -16,6 +16,13 @@
         "simulator": true
       }
     },
+    "private-device-test": {
+      "environment": "preview",
+      "distribution": "store",
+      "env": { "EXPO_PUBLIC_FJ_PRIVATE_TEST": "1", "EXPO_NO_DOTENV": "1" },
+      "ios": { "autoIncrement": true },
+      "android": { "buildType": "app-bundle", "autoIncrement": true }
+    },
     "production": {
       "ios": {
         "distribution": "store",
