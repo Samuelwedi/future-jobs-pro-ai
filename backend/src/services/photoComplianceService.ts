@@ -2,7 +2,6 @@ import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import OpenAI from 'openai';
 
 export type PhotoMetadata = {
   fileName: string;
@@ -26,18 +25,6 @@ export type ComplianceCheckResult = {
   aiTags: string[];
 };
 
-type AiResult = {
-  isWorkRelated: boolean;
-  description: string;
-  tags: string[];
-  concerns: string[];
-};
-
-function client(): OpenAI | null {
-  const key = process.env.OPENAI_API_KEY?.trim();
-  return key && key !== 'your_openai_api_key_here' ? new OpenAI({ apiKey: key }) : null;
-}
-
 function clamp(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
@@ -54,52 +41,9 @@ async function brightness(imagePath: string): Promise<number> {
   return means.reduce((sum, value) => sum + value, 0) / Math.max(1, means.length) / 255;
 }
 
-function parseJsonObject(value: string): any {
-  const cleaned = value.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('Photo AI did not return JSON');
-  return JSON.parse(cleaned.slice(start, end + 1));
-}
-
-async function analyzeWithAI(imagePath: string, format: string): Promise<{ model: string; result: AiResult }> {
-  const openai = client();
-  if (!openai) throw new Error('OPENAI_API_KEY is not configured');
-  const model = process.env.OPENAI_PHOTO_MODEL?.trim() || 'gpt-5.6';
-  const encoded = await sharp(imagePath)
-    .rotate()
-    .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 82 })
-    .toBuffer();
-  const response = await openai.responses.create({
-    model,
-    input: [{
-      role: 'user',
-      content: [
-        {
-          type: 'input_text',
-          text: 'Analyze this job-site evidence photo. Return JSON only: {"isWorkRelated":boolean,"description":string,"tags":string[],"concerns":string[]}. Judge whether it visibly documents construction, repair, maintenance, inspection, delivery, or completed work. Do not infer facts that are not visible.',
-        },
-        {
-          type: 'input_image',
-          image_url: `data:image/jpeg;base64,${encoded.toString('base64')}`,
-          detail: 'auto',
-        },
-      ],
-    }],
-  });
-  const parsed = parseJsonObject(response.output_text || '');
-  return {
-    model,
-    result: {
-      isWorkRelated: parsed.isWorkRelated === true,
-      description: String(parsed.description || '').slice(0, 1000),
-      tags: Array.isArray(parsed.tags) ? parsed.tags.map(String).slice(0, 20) : [],
-      concerns: Array.isArray(parsed.concerns) ? parsed.concerns.map(String).slice(0, 20) : [],
-    },
-  };
-}
-
+// Keep evidence-photo assessment local. A configured provider or model is not
+// authorization to send a photo. Any future external analysis needs a separately
+// reviewed, photo-specific consent and server enforcement path.
 export async function analyzePhotoCompliance(photoPath: string): Promise<ComplianceCheckResult> {
   const image = sharp(photoPath);
   const source = await image.metadata();
@@ -138,26 +82,6 @@ export async function analyzePhotoCompliance(photoPath: string): Promise<Complia
     suggestions.push('Reduce exposure or move away from direct glare.');
   }
 
-  let aiAnalyzed = false;
-  let aiModel: string | null = null;
-  let aiDescription: string | null = null;
-  let aiTags: string[] = [];
-  try {
-    const ai = await analyzeWithAI(photoPath, metadata.format);
-    aiAnalyzed = true;
-    aiModel = ai.model;
-    aiDescription = ai.result.description;
-    aiTags = ai.result.tags;
-    if (!ai.result.isWorkRelated) {
-      score -= 25;
-      issues.push('AI review could not confirm visible job-related evidence.');
-      suggestions.push('Retake the photo with the work, equipment, damage, or completed result clearly framed.');
-    }
-    for (const concern of ai.result.concerns) issues.push(`AI observation: ${concern}`);
-  } catch (error: any) {
-    console.warn('Photo AI analysis unavailable; local quality checks were retained:', error.message);
-  }
-
   const verificationHash = crypto
     .createHash('sha256')
     .update(fs.readFileSync(photoPath))
@@ -171,9 +95,9 @@ export async function analyzePhotoCompliance(photoPath: string): Promise<Complia
     suggestions,
     metadata,
     verificationHash,
-    aiAnalyzed,
-    aiModel,
-    aiDescription,
-    aiTags,
+    aiAnalyzed: false,
+    aiModel: null,
+    aiDescription: null,
+    aiTags: [],
   };
 }
