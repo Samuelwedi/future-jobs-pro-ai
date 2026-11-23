@@ -545,6 +545,9 @@ router.get('/attachments/:id/content',async(req,res)=>{
    return {scope:policy.scope,file};
   });
   const {file,scope}=captured;
+  const rawSize=file.size_bytes;
+  const size=typeof rawSize==='number'||(typeof rawSize==='string'&&/^[1-9][0-9]*$/.test(rawSize))?Number(rawSize):NaN;
+  if(!Number.isSafeInteger(size)||size<1||size>CHAT_FILE_LIMIT)throw new Error('Attachment size is unavailable');
   identity.requestCompanyId=scope.actorCompanyId;
   stream=await readPrivateChatFile(file.storage_public_id);
   // Provider bytes remain unpiped during policy checks. Guard errors now, not
@@ -559,7 +562,7 @@ router.get('/attachments/:id/content',async(req,res)=>{
   });
   if(streamFailed||stream.destroyed)throw new Error('Attachment stream became unavailable');
   // Revalidation covers handoff, not continuous revocation of bytes already sent.
-  res.set({'Content-Type':file.mime_type,'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});
+  res.set({'Content-Type':file.mime_type,'Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','X-Chat-Attachment-Bytes':String(size)});
   await pipeline(stream,res);
  }catch(error){
   stream?.destroy();

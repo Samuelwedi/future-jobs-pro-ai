@@ -6,7 +6,7 @@ const source=p=>fs.readFileSync(path.join(__dirname,'../src',p),'utf8');
 function load(text,imports={},globals={}){const module={exports:{}};vm.runInNewContext(ts.transpileModule(text,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,exports:module.exports,require:n=>{assert.ok(Object.hasOwn(imports,n),'stub '+n);return imports[n];},...globals});return module.exports;}
 const trial=source('middleware/trialMiddleware.ts');const ta=ts.createSourceFile('trial.ts',trial,ts.ScriptTarget.Latest,true);
 function fixture(){
- const s={queries:[],held:0,releases:[],now:100000,actor:{id:'actor',company_id:'company',role:'employee',subscription_status:'active',password_required:false,entitlement_ends_at:null},room:{company_id:'company',is_group:true,created_by:'actor'},member:{membership_instance_id:'instance'},ticket:{company_id:'target',user_id:'actor'},sponsor:true,file:{room_id:'room',filename:'proof.pdf',mime_type:'application/pdf',storage_public_id:'private'}};
+ const s={queries:[],held:0,releases:[],now:100000,actor:{id:'actor',company_id:'company',role:'employee',subscription_status:'active',password_required:false,entitlement_ends_at:null},room:{company_id:'company',is_group:true,created_by:'actor'},member:{membership_instance_id:'instance'},ticket:{company_id:'target',user_id:'actor'},sponsor:true,file:{room_id:'room',filename:'proof.pdf',mime_type:'application/pdf',size_bytes:2048,storage_public_id:'private'}};
  class Clock extends Date{constructor(...args){super(...(args.length?args:[s.now]));}static now(){return s.now;}}
  const entitlement=load(ta.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name.text==='hasCompanyEntitlement').getText(ta),{}, {Date:Clock});
  const query=async(sql,args)=>{s.queries.push(sql);if(s.onQuery)await s.onQuery(sql);if(s.fail&&sql.includes(s.fail))throw Error('synthetic lookup failed');
@@ -35,11 +35,11 @@ test('lookup and rollback failures are unavailable, never allowed',async()=>{for
 test('token expiry during read rollback fails before handoff',async()=>{const f=fixture();f.s.expireOnRollback=true;await assert.rejects(f.capture(),e=>e.status===401);});
 const routes=source('routes/chatRoutes.ts'),ra=ts.createSourceFile('routes.ts',routes,ts.ScriptTarget.Latest,true);
 const download=ra.statements.find(n=>ts.isExpressionStatement(n)&&ts.isCallExpression(n.expression)&&n.expression.expression.getText(ra)==='router.get'&&n.expression.arguments[0]?.text==='/attachments/:id/content').expression.arguments.at(-1).getText(ra);
-for(const change of ['none','lookup','member','rejoin','file','expiry','streamError'])test('download stream handoff '+change,async()=>{const f=fixture();let destroyed=0,piped=0;const stream=new (require('node:events').EventEmitter)();stream.destroy=()=>{destroyed++;stream.destroyed=true;stream.emit('close');};
- const globals={...f.api,pool:f.pool,verifyToken:()=>({id:'actor',companyId:'company',exp:150}),readPrivateChatFile:async()=>{assert.equal(f.s.held,0);if(change==='lookup')f.s.fail='FROM users u';if(change==='member')f.s.member=null;if(change==='rejoin')f.s.member.membership_instance_id='new';if(change==='file')f.s.file={...f.s.file,storage_public_id:'replacement'};if(change==='expiry')f.s.now=200000;if(change==='streamError')f.s.onQuery=async sql=>{if(sql.includes('FROM users u'))stream.emit('error',Error('synthetic stream failure'));};return stream;},pipeline:async()=>{assert.equal(f.s.held,0);piped++;}};
+for(const change of ['none','lookup','member','rejoin','file','sizeChanged','expiry','streamError'])test('download stream handoff '+change,async()=>{const f=fixture();let destroyed=0,piped=0;const stream=new (require('node:events').EventEmitter)();stream.destroy=()=>{destroyed++;stream.destroyed=true;stream.emit('close');};
+ const globals={...f.api,pool:f.pool,CHAT_FILE_LIMIT:25*1024*1024,verifyToken:()=>({id:'actor',companyId:'company',exp:150}),readPrivateChatFile:async()=>{assert.equal(f.s.held,0);if(change==='lookup')f.s.fail='FROM users u';if(change==='member')f.s.member=null;if(change==='rejoin')f.s.member.membership_instance_id='new';if(change==='file')f.s.file={...f.s.file,storage_public_id:'replacement'};if(change==='sizeChanged')f.s.file={...f.s.file,size_bytes:4096};if(change==='expiry')f.s.now=200000;if(change==='streamError')f.s.onQuery=async sql=>{if(sql.includes('FROM users u'))stream.emit('error',Error('synthetic stream failure'));};return stream;},pipeline:async()=>{assert.equal(f.s.held,0);piped++;}};
  const fn=vm.runInNewContext(ts.transpileModule('('+download+')',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,globals);
- const res={locals:{subscriptionActor:{companyId:'company'}},headersSent:false,status(n){this.code=n;return this;},json(b){this.body=b;},set(){this.headersSent=true;},destroy(){}};
- await fn({params:{id:'file'}},res);assert.equal(piped,change==='none'?1:0);assert.equal(destroyed,change==='none'?0:1);if(change==='lookup')assert.equal(res.code,503);assert.equal(f.s.held,0);
+ const res={locals:{subscriptionActor:{companyId:'company'}},headersSent:false,status(n){this.code=n;return this;},json(b){this.body=b;},set(headers){this.headers=headers;this.headersSent=true;},destroy(){}};
+ await fn({params:{id:'file'}},res);assert.equal(piped,change==='none'?1:0);assert.equal(destroyed,change==='none'?0:1);if(change==='lookup')assert.equal(res.code,503);assert.equal(res.headers?.['X-Chat-Attachment-Bytes'],change==='none'?'2048':undefined);assert.equal(f.s.held,0);
 });
 
 function writeHandler(route){return ra.statements.find(n=>ts.isExpressionStatement(n)&&ts.isCallExpression(n.expression)&&n.expression.expression.getText(ra)==='router.post'&&n.expression.arguments[0]?.text===route).expression.arguments.at(-1).getText(ra);}
@@ -52,4 +52,33 @@ for(const photo of [false,true])for(const change of ['none','member','rejoin','l
  await fn({params:{roomId:'room'},chatUser:'actor',chatMediaIdentity:f.identity,chatMediaScope:scope,body:{},file:{originalname:'proof.pdf',buffer:Buffer.from('synthetic'),size:9},app:{get:()=>({})}},res);
  const allowed=change==='none'||(!photo&&change==='creator');assert.equal(uploaded,1);assert.equal(Boolean(res.body.success),allowed);assert.equal(deleted,allowed||['commit','rollback'].includes(change)?0:1);assert.equal(f.s.queries.includes('COMMIT'),allowed||change==='commit');assert.equal(f.s.held,0);assert.equal(emitted,!photo&&allowed?1:0);
  if(['lookup','commit','rollback'].includes(change))assert.ok([500,503].includes(res.code));else if(!allowed)assert.ok([401,403].includes(res.code));
+});
+
+test('authenticated decoded byte metadata survives HTTP compression',async()=>{
+ const f=fixture(),content=Buffer.alloc(2048,65);
+ f.s.file.mime_type='text/plain';
+ const app=require('express')();
+ app.use(require('compression')());
+ const globals={...f.api,pool:f.pool,CHAT_FILE_LIMIT:25*1024*1024,verifyToken:()=>({id:'actor',companyId:'company',exp:150}),
+  readPrivateChatFile:async()=>require('node:stream').Readable.from([content]),pipeline:require('node:stream/promises').pipeline};
+ const fn=vm.runInNewContext(ts.transpileModule('('+download+')',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,globals);
+ app.get('/api/chat/attachments/:id/content',fn);
+ const server=await new Promise((resolve,reject)=>{const srv=app.listen(0,'127.0.0.1',()=>resolve(srv));srv.once('error',reject);});
+ try {
+   const response=await fetch('http://127.0.0.1:'+server.address().port+'/api/chat/attachments/fixture/content',{headers:{'Accept-Encoding':'gzip'}});
+   assert.equal(response.status,200);assert.equal(response.headers.get('content-encoding'),'gzip');
+   assert.equal(response.headers.get('x-chat-attachment-bytes'),'2048');assert.deepEqual(Buffer.from(await response.arrayBuffer()),content);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test('out-of-policy attachment metadata fails before any provider read or byte header',async()=>{
+ for(const size of [null,0,1.5,Infinity,26214401,'3a','3.0',' 3']){
+  const f=fixture();f.s.file.size_bytes=size;
+  let reads=0;
+  const globals={...f.api,pool:f.pool,CHAT_FILE_LIMIT:25*1024*1024,verifyToken:()=>({id:'actor',companyId:'company',exp:150}),
+   readPrivateChatFile:async()=>{reads++;throw new Error('unexpected provider read');},pipeline:async()=>assert.fail('stream must not open')};
+  const fn=vm.runInNewContext(ts.transpileModule('('+download+')',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,globals);
+  const res={locals:{subscriptionActor:{companyId:'company'}},headersSent:false,status(n){this.code=n;return this;},json(b){this.body=b;},set(){assert.fail('byte header must not be sent');}};
+  await fn({params:{id:'file'}},res);assert.equal(reads,0);assert.ok(res.code>=400);
+ }
 });
