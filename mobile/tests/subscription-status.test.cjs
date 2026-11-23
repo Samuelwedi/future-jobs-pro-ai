@@ -7,19 +7,19 @@ const inactive={success:true,subscription:{tier:'trial',status:'inactive',provid
 const active={success:true,subscription:{tier:'team_10',status:'active',provider:'apple',currentPeriodEnd:'2099-01-01'}};
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
-function setup(){
+function setup(privateBuild, platform = 'ios'){
  let hooks=[],index=0,tree,focus,cleanup,effects=[],effectCleanups=[],epoch=0,read=async endpoint=>endpoint==='status'?inactive:capabilities;
- const calls=[],alerts=[];let purchases=0,restores=0,managed=0,finished=0,iapCallbacks,verify=async()=>active,readPurchases=async()=>{};const product={id:'product',displayPrice:'$10',platform:'ios'};
+ const calls=[],alerts=[];let goBacks=0,fetches=0,verifications=0,purchases=0,restores=0,managed=0,finished=0,iapCallbacks,verify=async()=>active,readPurchases=async()=>{};const product={id:'product',displayPrice:'$10',platform:'ios'};
  const React={createElement:(type,props,...children)=>({type,props:{...props,children}}),Fragment:'Fragment',useState(initial){const slot=index++;if(!(slot in hooks))hooks[slot]=typeof initial==='function'?initial():initial;return [hooks[slot],value=>hooks[slot]=typeof value==='function'?value(hooks[slot]):value];},useRef(initial){const slot=index++;return hooks[slot]??(hooks[slot]={current:initial});},useCallback:fn=>fn,useMemo:fn=>fn(),useEffect:fn=>{effects.push(fn);}};
- const api={post:async()=>verify(),captureSessionGuard(){const captured=epoch;return ()=>captured===epoch;},get:async url=>{calls.push(url);return read(url.split('/').pop());},readSubscription:async(endpoint,owner,current)=>{calls.push('/subscriptions/'+endpoint);assert.equal(current(),true);return read(endpoint);}};
- const iap={connected:true,subscriptions:[product],availablePurchases:[],fetchProducts:async()=>{},getAvailablePurchases:async()=>{restores++;return readPurchases();},requestPurchase:async()=>{purchases++;}};
- const context={exports:{},console,globalThis:{Promise},require:name=>{
+ const api={post:async()=>{verifications++;return verify();},captureSessionGuard(){const captured=epoch;return ()=>captured===epoch;},get:async url=>{calls.push(url);return read(url.split('/').pop());},readSubscription:async(endpoint,owner,current)=>{calls.push('/subscriptions/'+endpoint);assert.equal(current(),true);return read(endpoint);}};
+ const iap={connected:true,subscriptions:[product],availablePurchases:[],fetchProducts:async()=>{fetches++;},getAvailablePurchases:async()=>{restores++;return readPurchases();},requestPurchase:async()=>{purchases++;}};
+ const context={exports:{},console,process:{env:{EXPO_PUBLIC_FJ_PRIVATE_TEST:privateBuild}},globalThis:{Promise},require:name=>{
   if(name==='react')return {default:React,...React};
-  if(name==='react-native')return {ActivityIndicator:'ActivityIndicator',Alert:{alert:(...a)=>alerts.push(a)},Platform:{OS:'ios'},Linking:{openURL:async()=>{managed++;}},RefreshControl:'RefreshControl',ScrollView:'ScrollView',StyleSheet:{create:x=>x},Text:'Text',TouchableOpacity:'TouchableOpacity',View:'View'};
+  if(name==='react-native')return {ActivityIndicator:'ActivityIndicator',Alert:{alert:(...a)=>alerts.push(a)},Platform:{OS:platform},Linking:{openURL:async()=>{managed++;}},RefreshControl:'RefreshControl',ScrollView:'ScrollView',StyleSheet:{create:x=>x},Text:'Text',TouchableOpacity:'TouchableOpacity',View:'View'};
   if(name==='expo-linear-gradient')return {LinearGradient:'LinearGradient'};
   if(name==='@expo/vector-icons')return {Ionicons:'Ionicons',MaterialIcons:'MaterialIcons'};
   if(name==='expo-iap')return {useIAP:options=>{iapCallbacks=options;return iap;},ErrorCode:{UserCancelled:'cancelled'},finishTransaction:async()=>{finished++;}};
-  if(name==='@react-navigation/native')return {useNavigation:()=>({goBack(){},navigate(){}}),useFocusEffect:fn=>{focus=fn;}};
+  if(name==='@react-navigation/native')return {useNavigation:()=>({goBack(){goBacks++;},navigate(){}}),useFocusEffect:fn=>{focus=fn;}};
   if(name==='../services/api')return {api,API_URL:'https://fixture.invalid/api'};
   if(name==='../context/AuthContext')return {useAuth:()=>({user:{id:'owner',companyId:'company',role:'boss'}})};
   if(name==='../context/LanguageContext')return {useLang:()=>({t:s=>s,lang:'en'})};
@@ -31,7 +31,7 @@ function setup(){
  function nodes(node=tree){if(node==null||typeof node!=='object')return [];if(Array.isArray(node))return node.flatMap(n=>nodes(n??null));return [node,...nodes(node.props?.children ?? null),...nodes(node.props?.refreshControl ?? null)];}
  function text(node=tree){if(node==null||typeof node==='boolean')return '';if(typeof node==='string'||typeof node==='number')return String(node);if(Array.isArray(node))return node.map(n=>text(n??null)).join(' ');return text(node.props?.children ?? null);}
  render();
- return {calls,alerts,api,iap,render,text,nodes,get iapCallbacks(){return iapCallbacks;},set verify(fn){verify=fn;},set readPurchases(fn){readPurchases=fn;},get finished(){return finished;},get managed(){return managed;},get purchases(){return purchases;},get restores(){return restores;},mountLifecycle(){const lifecycle=effects.find(fn=>fn.toString().includes('screenAlive.current'));if(lifecycle)effectCleanups.push(lifecycle());},unmount(){for(const cleanup of effectCleanups)cleanup?.();},set read(fn){read=fn;},replaceSession(){epoch++;},refresh(){nodes().find(n=>n.type==='RefreshControl').props.onRefresh();},focus(){cleanup=focus?.();},blur(){cleanup?.();}};
+ return {calls,alerts,api,iap,render,text,nodes,get iapCallbacks(){return iapCallbacks;},get goBacks(){return goBacks;},get fetches(){return fetches;},get verifications(){return verifications;},set verify(fn){verify=fn;},set readPurchases(fn){readPurchases=fn;},get finished(){return finished;},get managed(){return managed;},get purchases(){return purchases;},get restores(){return restores;},mountLifecycle(){const lifecycle=effects.find(fn=>fn.toString().includes('screenAlive.current'));if(lifecycle)effectCleanups.push(lifecycle());},unmount(){for(const cleanup of effectCleanups)cleanup?.();},set read(fn){read=fn;},replaceSession(){epoch++;},refresh(){nodes().find(n=>n.type==='RefreshControl').props.onRefresh();},focus(){cleanup=focus?.();},blur(){cleanup?.();}};
 }
 
 test('failed entitlement read is unavailable rather than ended and has an independent status retry',async()=>{
@@ -175,5 +175,26 @@ test('a restore still reports a store response or failure on the current screen 
   restoreButton(f).props.onPress();assert.equal(f.restores,1);await settle();f.render();
   assert.equal(f.alerts[0]?.[0],outcome==='resolved'?'Restore checked':'Restore failed');
   assert.equal(restoreButton(f).props.disabled,false);
+ }
+});
+
+test('ordinary private builds do not mount IAP or expose checkout, restore or store settings',async()=>{
+ for(const platform of ['ios','android']){
+  const f=setup('1',platform);f.mountLifecycle();f.focus();await settle();f.render();
+  assert.match(f.text(),/Billing is disabled in this private test build/);
+  assert.equal(f.iapCallbacks,undefined);
+  const buttons=f.nodes().filter(n=>n.type==='TouchableOpacity');
+  assert.equal(buttons.length,1);
+  assert.equal(buttons[0].props.accessibilityLabel,'Go back');
+  buttons[0].props.onPress();
+  assert.equal(f.goBacks,1);
+  assert.deepEqual(f.calls,[]);
+  assert.deepEqual([f.fetches,f.purchases,f.restores,f.verifications,f.finished,f.managed],[0,0,0,0,0,0]);
+ }
+ for(const marker of [undefined,'0']){
+  const standard=setup(marker);standard.focus();await settle();standard.render();
+  assert.ok(standard.iapCallbacks);
+  assert.doesNotMatch(standard.text(),/Billing is disabled in this private test build/);
+  assert.ok(restoreButton(standard));
  }
 });

@@ -89,7 +89,31 @@ const ACTIVE_STATUSES = new Set(['active', 'trialing', 'in_trial', 'grace_period
 
 export default function SubscriptionScreen() {
   const { user } = useAuth();
+  // This bundle-level marker cannot be overridden by workspace capabilities.
+  // Never mount the component that initializes IAP or registers transaction listeners.
+  if (process.env.EXPO_PUBLIC_FJ_PRIVATE_TEST === '1') return <PrivateTestSubscription />;
   return <SubscriptionWorkspace key={`${user?.id || ''}:${user?.companyId || ''}:${user?.role || ''}`} />;
+}
+
+function PrivateTestSubscription() {
+  const { t } = useLang();
+  const navigation = useNavigation<any>();
+  return (
+    <LinearGradient colors={['#07111F', '#0B1830', '#09101B']} style={styles.background}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} onPress={() => navigation.goBack()} style={styles.iconButton}>
+            <MaterialIcons name="arrow-back" size={23} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.headerCopy}>
+            <Text style={styles.eyebrow}>FUTURE JOBS PRO AI</Text>
+            <Text accessibilityRole="header" style={styles.title}>{t("Company subscription")}</Text>
+          </View>
+        </View>
+        <Text style={styles.statusMeta}>{t("Billing is disabled in this private test build.")}</Text>
+      </ScrollView>
+    </LinearGradient>
+  );
 }
 
 function SubscriptionWorkspace() {
