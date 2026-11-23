@@ -422,7 +422,12 @@ router.get('/room/:roomId/details', async (req, res) => {
   const access=await roomAccess(userId,String(req.params.roomId));
   if(!access.allowed)return res.status(403).json({success:false,message:'Forbidden'});
   const result=await pool.query(`SELECT id,name,is_group,avatar_url,created_by,
-    (SELECT u.profile_pic FROM chat_room_members m JOIN users u ON u.id=m.user_id WHERE m.room_id=chat_rooms.id AND u.id<>$2 LIMIT 1) other_user_avatar
+    CASE WHEN chat_rooms.id ~ '^support-ticket-[a-zA-Z0-9-]+$' THEN
+      (SELECT u.profile_pic FROM chat_room_members m JOIN users u ON u.id=m.user_id WHERE m.room_id=chat_rooms.id AND u.id<>$2 LIMIT 1)
+    ELSE
+      (SELECT u.profile_pic FROM chat_room_members m JOIN users u ON u.id=m.user_id WHERE m.room_id=chat_rooms.id AND u.id<>$2
+       AND u.company_id=chat_rooms.company_id AND COALESCE(u.is_active,TRUE)=TRUE ORDER BY u.id LIMIT 1)
+    END AS other_user_avatar
     FROM chat_rooms WHERE id=$1`,[req.params.roomId,userId]);
   const room=result.rows[0];
   res.json({success:true,room:{...room,can_edit_photo:room.is_group&&String(room.created_by)===String(userId)}});
