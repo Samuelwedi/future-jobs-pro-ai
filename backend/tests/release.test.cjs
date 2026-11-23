@@ -148,6 +148,11 @@ test('registration creates one linked company trial atomically and exposes no te
  const email='new-owner@example.test';const r=await request('/auth/register',null,'POST',{firstName:'New',lastName:'Owner',email,password:'CorrectHorse123!'});assert.equal(r.status,201,JSON.stringify(r));
  const state=(await query(`SELECT u.company_id,c.subscription_status,c.subscription_tier,c.subscription_provider,c.subscription_current_period_end,u.trial_ends_at FROM users u JOIN companies c ON c.id=u.company_id WHERE u.email=$1`,[email])).rows[0];
  assert.equal(state.company_id,r.data.user.companyId);assert.equal(state.subscription_status,'trialing');assert.equal(state.subscription_tier,'trial');assert.equal(state.subscription_provider,'internal');assert.ok(new Date(state.subscription_current_period_end)>new Date());assert.ok(new Date(state.trial_ends_at)>new Date());
+ // A successful registration is not enough: its own issued token must pass the normal protected gate.
+ const home=await fetch(base+'/api/command/overview',{headers:{Authorization:'Bearer '+r.data.token}});
+ assert.equal(home.status,200,await home.text());
+ // Keep another company's expired session denied, including on a later request.
+ for(let count=0;count<2;count++) assert.equal((await request('/command/overview',ids.expiredUser)).status,402);
  assert.equal((await request('/auth/register',null,'POST',{firstName:'New',lastName:'Owner',email,password:'CorrectHorse123!'})).status,409);
  assert.equal((await request('/auth/test-email',null,'POST',{})).status,404);
 });

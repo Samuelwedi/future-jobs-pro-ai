@@ -98,11 +98,29 @@ export default function SubscriptionScreen() {
 function PrivateTestSubscription() {
   const { t } = useLang();
   const navigation = useNavigation<any>();
+  const { logout } = useAuth();
+  const signingOut = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const signOut = async () => {
+    if (signingOut.current) return;
+    signingOut.current = true;
+    setBusy(true);
+    setFailed(false);
+    try {
+      // Auth owns the transition to Login. Do not navigate with the old session.
+      await logout();
+    } catch {
+      signingOut.current = false;
+      setBusy(false);
+      setFailed(true);
+    }
+  };
   return (
     <LinearGradient colors={['#07111F', '#0B1830', '#09101B']} style={styles.background}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} onPress={() => navigation.goBack()} style={styles.iconButton}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={t("Go back")} disabled={busy} onPress={() => { if (!signingOut.current) navigation.goBack(); }} style={styles.iconButton}>
             <MaterialIcons name="arrow-back" size={23} color="#FFFFFF" />
           </TouchableOpacity>
           <View style={styles.headerCopy}>
@@ -111,6 +129,11 @@ function PrivateTestSubscription() {
           </View>
         </View>
         <Text style={styles.statusMeta}>{t("Billing is disabled in this private test build.")}</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: busy, busy }}
+          disabled={busy} onPress={() => { void signOut(); }} style={styles.privateSignOut}>
+          <Text style={styles.privateSignOutText}>{t("Sign out")}</Text>
+        </TouchableOpacity>
+        {failed && <Text accessibilityRole="alert" style={styles.statusMeta}>{t("Unable to sign out")}</Text>}
       </ScrollView>
     </LinearGradient>
   );
@@ -544,6 +567,8 @@ const styles = StyleSheet.create({
   statusCopy: { flex: 1 },
   statusLabel: { color: '#8292A9', fontSize: 10, fontWeight: '800', letterSpacing: 1.1 },
   statusTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', marginTop: 2 },
+  privateSignOut: { marginTop: 24, borderWidth: 1, borderColor: '#334155', borderRadius: 10, padding: 14 },
+  privateSignOutText: { color: '#FFFFFF', fontWeight: '600', textAlign: 'center' },
   statusMeta: { color: '#A9B6C8', fontSize: 12, marginTop: 3 },
   promiseRow: { marginVertical: 20, gap: 9 },
   promise: { flexDirection: 'row', alignItems: 'center', gap: 9 },

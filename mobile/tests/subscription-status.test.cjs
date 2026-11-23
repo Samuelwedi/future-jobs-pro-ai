@@ -9,7 +9,7 @@ function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function setup(privateBuild, platform = 'ios'){
  let hooks=[],index=0,tree,focus,cleanup,effects=[],effectCleanups=[],epoch=0,read=async endpoint=>endpoint==='status'?inactive:capabilities;
- const calls=[],alerts=[];let goBacks=0,fetches=0,verifications=0,purchases=0,restores=0,managed=0,finished=0,iapCallbacks,verify=async()=>active,readPurchases=async()=>{};const product={id:'product',displayPrice:'$10',platform:'ios'};
+ const calls=[],alerts=[];let logoutCalls=0,logout=async()=>{},goBacks=0,fetches=0,verifications=0,purchases=0,restores=0,managed=0,finished=0,iapCallbacks,verify=async()=>active,readPurchases=async()=>{};const product={id:'product',displayPrice:'$10',platform:'ios'};
  const React={createElement:(type,props,...children)=>({type,props:{...props,children}}),Fragment:'Fragment',useState(initial){const slot=index++;if(!(slot in hooks))hooks[slot]=typeof initial==='function'?initial():initial;return [hooks[slot],value=>hooks[slot]=typeof value==='function'?value(hooks[slot]):value];},useRef(initial){const slot=index++;return hooks[slot]??(hooks[slot]={current:initial});},useCallback:fn=>fn,useMemo:fn=>fn(),useEffect:fn=>{effects.push(fn);}};
  const api={post:async()=>{verifications++;return verify();},captureSessionGuard(){const captured=epoch;return ()=>captured===epoch;},get:async url=>{calls.push(url);return read(url.split('/').pop());},readSubscription:async(endpoint,owner,current)=>{calls.push('/subscriptions/'+endpoint);assert.equal(current(),true);return read(endpoint);}};
  const iap={connected:true,subscriptions:[product],availablePurchases:[],fetchProducts:async()=>{fetches++;},getAvailablePurchases:async()=>{restores++;return readPurchases();},requestPurchase:async()=>{purchases++;}};
@@ -21,7 +21,7 @@ function setup(privateBuild, platform = 'ios'){
   if(name==='expo-iap')return {useIAP:options=>{iapCallbacks=options;return iap;},ErrorCode:{UserCancelled:'cancelled'},finishTransaction:async()=>{finished++;}};
   if(name==='@react-navigation/native')return {useNavigation:()=>({goBack(){goBacks++;},navigate(){}}),useFocusEffect:fn=>{focus=fn;}};
   if(name==='../services/api')return {api,API_URL:'https://fixture.invalid/api'};
-  if(name==='../context/AuthContext')return {useAuth:()=>({user:{id:'owner',companyId:'company',role:'boss'}})};
+  if(name==='../context/AuthContext')return {useAuth:()=>({user:{id:'owner',companyId:'company',role:'boss'},logout:()=>{logoutCalls++;return logout();}})};
   if(name==='../context/LanguageContext')return {useLang:()=>({t:s=>s,lang:'en'})};
   if(name==='../config/subscriptionProducts')return {FALLBACK_PLAN_COPY:{team_10:{name:'Team 10',audience:'Team',icon:'people'}},STORE_PRODUCT_IDS:{team_10:'product'},ANDROID_STORE_PRODUCT_IDS:{team_10:'product'},planKeyForProduct:()=> 'team_10'};
   throw Error(name);
@@ -31,7 +31,7 @@ function setup(privateBuild, platform = 'ios'){
  function nodes(node=tree){if(node==null||typeof node!=='object')return [];if(Array.isArray(node))return node.flatMap(n=>nodes(n??null));return [node,...nodes(node.props?.children ?? null),...nodes(node.props?.refreshControl ?? null)];}
  function text(node=tree){if(node==null||typeof node==='boolean')return '';if(typeof node==='string'||typeof node==='number')return String(node);if(Array.isArray(node))return node.map(n=>text(n??null)).join(' ');return text(node.props?.children ?? null);}
  render();
- return {calls,alerts,api,iap,render,text,nodes,get iapCallbacks(){return iapCallbacks;},get goBacks(){return goBacks;},get fetches(){return fetches;},get verifications(){return verifications;},set verify(fn){verify=fn;},set readPurchases(fn){readPurchases=fn;},get finished(){return finished;},get managed(){return managed;},get purchases(){return purchases;},get restores(){return restores;},mountLifecycle(){const lifecycle=effects.find(fn=>fn.toString().includes('screenAlive.current'));if(lifecycle)effectCleanups.push(lifecycle());},unmount(){for(const cleanup of effectCleanups)cleanup?.();},set read(fn){read=fn;},replaceSession(){epoch++;},refresh(){nodes().find(n=>n.type==='RefreshControl').props.onRefresh();},focus(){cleanup=focus?.();},blur(){cleanup?.();}};
+ return {calls,alerts,api,iap,render,text,nodes,get logoutCalls(){return logoutCalls;},set logout(fn){logout=fn;},get iapCallbacks(){return iapCallbacks;},get goBacks(){return goBacks;},get fetches(){return fetches;},get verifications(){return verifications;},set verify(fn){verify=fn;},set readPurchases(fn){readPurchases=fn;},get finished(){return finished;},get managed(){return managed;},get purchases(){return purchases;},get restores(){return restores;},mountLifecycle(){const lifecycle=effects.find(fn=>fn.toString().includes('screenAlive.current'));if(lifecycle)effectCleanups.push(lifecycle());},unmount(){for(const cleanup of effectCleanups)cleanup?.();},set read(fn){read=fn;},replaceSession(){epoch++;},refresh(){nodes().find(n=>n.type==='RefreshControl').props.onRefresh();},focus(){cleanup=focus?.();},blur(){cleanup?.();}};
 }
 
 test('failed entitlement read is unavailable rather than ended and has an independent status retry',async()=>{
@@ -184,7 +184,8 @@ test('ordinary private builds do not mount IAP or expose checkout, restore or st
   assert.match(f.text(),/Billing is disabled in this private test build/);
   assert.equal(f.iapCallbacks,undefined);
   const buttons=f.nodes().filter(n=>n.type==='TouchableOpacity');
-  assert.equal(buttons.length,1);
+  assert.equal(buttons.length,2);
+  assert.equal(f.text(buttons[1]),'Sign out');
   assert.equal(buttons[0].props.accessibilityLabel,'Go back');
   buttons[0].props.onPress();
   assert.equal(f.goBacks,1);
@@ -197,4 +198,18 @@ test('ordinary private builds do not mount IAP or expose checkout, restore or st
   assert.doesNotMatch(standard.text(),/Billing is disabled in this private test build/);
   assert.ok(restoreButton(standard));
  }
+});
+
+test('private billing notice offers bounded sign-out without store or stale navigation',async()=>{
+ const f=setup('1'),pending=deferred();f.logout=()=>pending.promise;
+ const [back,signOut]=f.nodes().filter(n=>n.type==='TouchableOpacity');
+ signOut.props.onPress();signOut.props.onPress();back.props.onPress();
+ assert.equal(f.logoutCalls,1);assert.equal(f.goBacks,0);f.render();
+ assert.ok(f.nodes().filter(n=>n.type==='TouchableOpacity').every(n=>n.props.disabled));
+ pending.reject(Error('fixture'));await settle();f.render();
+ assert.match(f.text(),/Unable to sign out/);
+ f.logout=async()=>{};
+ f.nodes().filter(n=>n.type==='TouchableOpacity')[1].props.onPress();
+ await settle();assert.equal(f.logoutCalls,2);assert.equal(f.goBacks,0);assert.equal(f.iapCallbacks,undefined);
+ assert.deepEqual(f.calls,[]);
 });

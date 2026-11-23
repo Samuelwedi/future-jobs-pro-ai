@@ -901,6 +901,7 @@ export const screenCopy: Record<string, [string, string]> = {
   "Unable to open store": ["No se puede abrir la tienda","Impossible d’ouvrir la boutique"],
   "Open your app store subscription settings.": ["Abre los ajustes de suscripción de tu tienda de apps.","Ouvrez les réglages d’abonnement de votre boutique d’apps."],
   "Choose your workspace plan": ["Elige el plan de tu espacio de trabajo","Choisissez l’offre de votre espace de travail"],
+  "Unable to sign out": ["No se pudo cerrar la sesión","Impossible de se déconnecter"],
   "Billing is disabled in this private test build.": ["La facturación está desactivada en esta versión privada de prueba.","La facturation est désactivée dans cette version de test privée."],
   "Company subscription": ["Suscripción de empresa","Abonnement de l’entreprise"],
   "Manage existing subscription": ["Gestionar suscripción existente","Gérer l’abonnement existant"],

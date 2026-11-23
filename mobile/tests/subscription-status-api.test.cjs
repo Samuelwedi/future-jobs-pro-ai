@@ -45,3 +45,17 @@ test('a replacement session during awaited 401 cleanup is not signed out by the 
  f.api.token='replacement';f.api.authRevision++;
  await assert.rejects(pending,/401/);assert.equal(logouts,0);assert.equal(f.api.token,'replacement');
 });
+
+test('current protected 402 can reopen Subscription after Back, but not stack it while shown',async()=>{
+ const f=setup();let route='Home',navigations=0;
+ const navigationRef={isReady:()=>true,getCurrentRoute:()=>({name:route}),navigate(next){route=next;navigations++;}};
+ // Execute the exact callback expression from the app; only Navigation is simulated.
+ const app=fs.readFileSync(path.join(__dirname,'../App.tsx'),'utf8');
+ const source=app.match(/api\.setSubscriptionRequiredHandler\((\(\)=>\{[^\n]+?\})\);return/);
+ assert.ok(source);
+ const compiled=ts.transpileModule('('+source[1]+')',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+ f.api.setSubscriptionRequiredHandler(vm.runInNewContext(compiled,{navigationRef}));
+ const deny=async()=>{const error=Object.assign(Error('expired tenant'),{response:{status:402},config:{}});await assert.rejects(f.responseFailure(error),e=>e===error);};
+ await deny();assert.equal(route,'Subscription');await deny();assert.equal(navigations,1);
+ route='Home';await deny();assert.equal(navigations,2);assert.equal(route,'Subscription');
+});
