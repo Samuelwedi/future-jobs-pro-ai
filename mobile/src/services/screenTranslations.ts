@@ -1,5 +1,9 @@
 // English source copy is the key; route names and user content are never translated.
 export const screenCopy: Record<string, [string, string]> = {
+  "Checking saved upload status…": ["Comprobando el estado guardado del envío…", "Vérification de l’état enregistré de l’envoi…"],
+  "Transport sent. Waiting for server confirmation; not yet confirmed saved.": ["Transferencia enviada. Esperando confirmación del servidor; aún no se confirma que se haya guardado.", "Transfert envoyé. En attente de confirmation du serveur ; enregistrement non confirmé."],
+  "Transport sent: {percent}%. Waiting for server confirmation.": ["Transferencia enviada: {percent}%. Esperando confirmación del servidor.", "Transfert envoyé : {percent} %. En attente de confirmation du serveur."],
+  "Uploading; progress unavailable. Waiting for server confirmation.": ["Enviando; progreso no disponible. Esperando confirmación del servidor.", "Envoi en cours ; progression indisponible. En attente de confirmation du serveur."],
   "Open or share file": ["Abrir o compartir archivo", "Ouvrir ou partager le fichier"],
   "Save file to device": ["Guardar archivo en el dispositivo", "Enregistrer le fichier sur l’appareil"],
   "Open or share file…": ["Abrir o compartir archivo…", "Ouvrir ou partager le fichier…"],

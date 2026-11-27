@@ -1,3 +1,4 @@
+import { evidenceProgressCopy, type EvidenceProgress } from '../utils/evidenceProgress';
 import { useLang } from '../context/LanguageContext';
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -58,6 +59,8 @@ export default function CameraView() {
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const session = useRef(0);
   const previewActive = useRef(false);
+  const progressRequest=useRef(0);
+  const [uploadProgress,setUploadProgress]=useState<{session:number;request:number;identity:string;value:EvidenceProgress}|null>(null);
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { user } = useAuth();
@@ -111,6 +114,7 @@ export default function CameraView() {
     setPictureSize(undefined);
     setIsRecording(false);
     setIsProcessing(false);
+    setUploadProgress(null);
     return () => {
       session.current++;
       cameraRef.current?.stopRecording();
@@ -226,7 +230,9 @@ export default function CameraView() {
   const uploadFile = async (uri: string, isVideo: boolean = false, fileInfo?: { name: string; mimeType?: string }, expectedToken?:string|null) => {
     const uploadScope=currentScope.current;
     const uploadSession=session.current;
-    const isCurrent=()=>isMounted.current&&currentScope.current===uploadScope&&session.current===uploadSession&&previewActive.current;
+    const identity=currentCameraIdentity.current;
+    const request=++progressRequest.current;
+    const isCurrent=()=>isMounted.current&&currentScope.current===uploadScope&&session.current===uploadSession&&currentCameraIdentity.current===identity&&previewActive.current;
     setIsProcessing(true);
     try {
       const token=expectedToken===undefined?await api.getToken():expectedToken;
@@ -262,7 +268,11 @@ export default function CameraView() {
         '/photos/upload',
         capture.uri,
         capture.fields,
-        'file', false, capture.fileInfo, token, user?.id
+        'file', false, capture.fileInfo, token, user?.id,
+        value => {
+          if (isCurrent() && progressRequest.current===request && pendingCapture.current===capture)
+            setUploadProgress({session:uploadSession,request,identity,value});
+        }
       );
       if(!isCurrent())return;
       if (!response.success || response.requestKey!==capture.fields.requestKey) throw new Error(t('Upload status is pending or unavailable. Your capture is saved on this device. Check its status before taking another.'));
@@ -309,7 +319,10 @@ export default function CameraView() {
       const unresolved=error.code==='EVIDENCE_PENDING';
       Alert.alert(t(queued ? 'Upload queued' : unresolved ? 'Check upload status' : 'Upload Failed'), t(error.message || 'Could not upload. Please check your connection.'));
     } finally {
-      if (isCurrent()) setIsProcessing(false);
+      if (isCurrent() && progressRequest.current===request) {
+        setUploadProgress(null);
+        setIsProcessing(false);
+      }
     }
   };
 
@@ -558,6 +571,13 @@ export default function CameraView() {
           </View>
         )}
 
+        {isProcessing && previewActive.current && uploadProgress?.identity===cameraIdentity &&
+          uploadProgress.session===session.current && uploadProgress.request===progressRequest.current && (
+          <Text style={styles.captureHint} accessibilityRole="progressbar" accessibilityLiveRegion="polite"
+            accessibilityValue={{text:evidenceProgressCopy(uploadProgress.value,t)}}>
+            {evidenceProgressCopy(uploadProgress.value,t)}
+          </Text>
+        )}
         {hasPendingCapture && <Text style={styles.captureHint}>{t('Previous capture is saved on this device. Check upload status before taking another.')}</Text>}
         {captureRecoveryFailed && <Text style={styles.captureHint}>{t('Saved captures could not be checked. Reopen this screen before taking another.')}</Text>}
         {mode === 'video' && <Text style={styles.captureHint}>{t('Video records microphone audio.')}</Text>}

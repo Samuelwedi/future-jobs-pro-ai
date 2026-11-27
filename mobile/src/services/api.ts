@@ -1,3 +1,4 @@
+import type { EvidenceProgress } from '../utils/evidenceProgress';
 // ============================================
 // MOBILE API SERVICE (with DELETE support & 401 handling)
 // Future Jobs Pro AI – Created by Samuel B.
@@ -794,9 +795,10 @@ class ApiService {
     replay = false,
     fileInfo?: { name: string; mimeType?: string },
     expectedToken?: string | null,
-    expectedOwner?: string
+    expectedOwner?: string,
+    onProgress?: (progress: EvidenceProgress) => void
   ): Promise<T> {
-    if (isEvidenceUpload(url)) return this.uploadEvidence<T>(url,fileUri,extraFields,fieldName,replay,fileInfo,expectedToken,expectedOwner);
+    if (isEvidenceUpload(url)) return this.uploadEvidence<T>(url,fileUri,extraFields,fieldName,replay,fileInfo,expectedToken,expectedOwner,onProgress);
     const online = await checkOnlineStatus();
     if (!online && !replay) {
       console.log('📴 Offline – queuing upload:', url);
@@ -820,7 +822,7 @@ class ApiService {
     return response.data;
   }
 
-  private async uploadEvidence<T>(url:string,fileUri:string,extraFields:Record<string,string>,fieldName:string,replay:boolean,fileInfo?:{name:string;mimeType?:string},expectedToken?:string|null,expectedOwner?:string):Promise<T> {
+  private async uploadEvidence<T>(url:string,fileUri:string,extraFields:Record<string,string>,fieldName:string,replay:boolean,fileInfo?:{name:string;mimeType?:string},expectedToken?:string|null,expectedOwner?:string,onProgress?:(progress:EvidenceProgress)=>void):Promise<T> {
     // Capture auth and immutable metadata before the first await, including network/storage checks.
     const revision=this.authRevision;
     const initialToken=this.token;
@@ -837,7 +839,28 @@ class ApiService {
     const flightKey=`${owner}:${fields.requestKey}`;
     const inFlight=this.evidenceInFlight.get(flightKey);
     if(inFlight)return inFlight;
+    let transportActive=false;
+    let observing=true;
+    let lastLoaded=-1;
+    let lastTotal:number|undefined;
+    let inconsistentTotal=false;
+    const report=(progress:EvidenceProgress)=>{
+      if (!observing || replay || !onProgress) return;
+      try {
+        assertSession();
+        if (progress.loaded !== undefined) {
+          if (progress.loaded < lastLoaded) return;
+          lastLoaded=progress.loaded;
+        }
+        if (progress.total !== undefined) {
+          if (lastTotal !== undefined && lastTotal !== progress.total) inconsistentTotal=true;
+          lastTotal=progress.total;
+        }
+        onProgress(inconsistentTotal ? {phase:progress.phase,loaded:progress.loaded} : progress);
+      } catch { /* Telemetry cannot change receipt, queue or upload outcomes. */ }
+    };
     const task=(async()=>{
+      report({phase:'checking'});
       // The persisted original, not mutable screen state, is authoritative on every retry.
       const online=await checkOnlineStatus();
       assertSession();
@@ -885,12 +908,20 @@ class ApiService {
       Object.entries(saved.data as Record<string,string>).forEach(([key,value])=>formData.append(key,value));
       let response;
       try {
-        response=await this.client.post<T>(url,formData,{...config,timeout:25*60*1000,headers:{'Content-Type':'multipart/form-data'}} as EvidenceConfig);
+        report({phase:'uploading'});
+        transportActive=true;
+        response=await this.client.post<T>(url,formData,{
+          ...config,timeout:25*60*1000,
+          ...(onProgress && !replay ? {onUploadProgress:(event: { loaded?:number; total?:number; lengthComputable?:boolean })=>{
+            if (transportActive) try {report(transportProgress(event));} catch { /* Telemetry is advisory. */ }
+          }} : {}),
+          headers:{'Content-Type':'multipart/form-data'},
+        } as EvidenceConfig);
       }catch(error:any){
         assertSession();
         if(error.response?.status===401||error.response?.status===403)throw error;
         throw pendingEvidence();
-      }
+      }finally{transportActive=false;}
       assertSession();
       if(!completed(response))throw pendingEvidence();
       await completeQueuedEvidence(fields.requestKey,owner);
@@ -898,7 +929,7 @@ class ApiService {
       return response.data;
     })();
     this.evidenceInFlight.set(flightKey,task);
-    try{return await task;}finally{if(this.evidenceInFlight.get(flightKey)===task)this.evidenceInFlight.delete(flightKey);}
+    try{return await task;}finally{observing=false;if(this.evidenceInFlight.get(flightKey)===task)this.evidenceInFlight.delete(flightKey);}
   }
 
   async uploadFile<T>(url: string, fileUri: string, fieldName = 'file'): Promise<T> {
@@ -938,3 +969,11 @@ class ApiService {
 }
 
 export const api = new ApiService();
+
+// Native transport telemetry is not a receipt or provider-processing measurement.
+export function transportProgress(event: { loaded?: number; total?: number; lengthComputable?: boolean }): EvidenceProgress {
+  const loaded=event.loaded;
+  if (typeof loaded !== 'number' || !Number.isFinite(loaded) || loaded < 0) return {phase:'uploading'};
+  const total=event.total;
+  return {phase:'uploading',loaded,...(event.lengthComputable !== false && typeof total === 'number' && Number.isFinite(total) && total > 0 && loaded <= total ? {total} : {})};
+}

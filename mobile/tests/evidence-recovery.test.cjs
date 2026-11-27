@@ -6,11 +6,11 @@ const fields={requestKey,userId:'employee',projectId:'project'};
 const success={status:200,data:{success:true,requestKey,photoId:'photo'}};
 const missing={status:404,data:{code:'EVIDENCE_REQUEST_NOT_FOUND',requestKey}};
 function setup(){
- let queue=[],online=true,status=async()=>missing;
+ let queue=[],online=true,status=async()=>missing,post=async()=>success;
  const files=new Set(['file:///camera/original.mov']),copied=[],posts=[],gets=[];
  const client={interceptors:{request:{use(){}},response:{use(){}}},
   get:async(...args)=>{gets.push(args);return status();},
-  post:async(...args)=>{posts.push(args);return success;}};
+  post:async(...args)=>{posts.push(args);return post(...args);}};
  const context={exports:{},__DEV__:false,process:{env:{}},console,
   FormData:class {constructor(){this.entries=[];}append(...args){this.entries.push(args);}},
   require:name=>{
@@ -30,8 +30,8 @@ function setup(){
   }};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/services/api.ts'),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,context);
  const api=context.exports.api;api.token='token';
- return {files,copied,posts,gets,get queue(){return queue;},set status(value){status=value;},set online(value){online=value;},
-  upload:(uri='file:///camera/original.mov',replay=false)=>api.uploadFileWithData('/photos/upload',uri,fields,'file',replay,{name:'original.mov',mimeType:'video/quicktime'},'token','employee')};
+ return {files,copied,posts,gets,api,set post(value){post=value;},get queue(){return queue;},set status(value){status=value;},set online(value){online=value;},
+  upload:(uri='file:///camera/original.mov',replay=false,onProgress)=>api.uploadFileWithData('/photos/upload',uri,fields,'file',replay,{name:'original.mov',mimeType:'video/quicktime'},'token','employee',onProgress)};
 }
 test('completed receipt recovers after background sync deleted both queue entry and file',async()=>{
  const f=setup();f.status=async()=>success;
@@ -75,4 +75,57 @@ test('authorization denial never posts or silently treats receipt as missing',as
   const f=setup();f.status=async()=>{throw {response:{status}};};
   await assert.rejects(f.upload(),error=>error.response.status===status);assert.equal(f.posts.length,0);
  }
+});
+
+test('foreground progress is advisory, monotonic and ends after the transport settles',async()=>{
+ const f=setup(),seen=[];let report;
+ f.post=async(_url,_body,config)=>{
+  report=config.onUploadProgress;
+  report({loaded:10,total:100});
+  report({loaded:9,total:100});
+  report({loaded:50,total:100});
+  report({loaded:100,total:100});
+  assert.equal(f.queue.length,1,'transport 100% is not a server receipt');
+  return success;
+ };
+ assert.equal((await f.upload(undefined,false,p=>seen.push(JSON.stringify(p)))).photoId,'photo');
+ report({loaded:200,total:200});
+ assert.deepEqual(seen.map(x=>JSON.parse(x)),[
+  {phase:'checking'},{phase:'uploading'},{phase:'uploading',loaded:10,total:100},
+  {phase:'uploading',loaded:50,total:100},{phase:'uploading',loaded:100,total:100},
+ ]);
+ assert.equal(f.queue.length,0);
+});
+test('a changed total does not manufacture a percentage and a throwing observer cannot fail the receipt',async()=>{
+ const f=setup(),seen=[];
+ f.post=async(_url,_body,config)=>{
+  config.onUploadProgress(null);
+  config.onUploadProgress({loaded:10,total:100});
+  config.onUploadProgress({loaded:20,total:200});
+  config.onUploadProgress({loaded:200,total:200});
+  return success;
+ };
+ assert.equal((await f.upload(undefined,false,p=>{seen.push(JSON.stringify(p));throw Error('observer');})).photoId,'photo');
+ assert.deepEqual(seen.map(x=>JSON.parse(x)).slice(-3),[
+  {phase:'uploading',loaded:10,total:100},{phase:'uploading',loaded:20},{phase:'uploading',loaded:200},
+ ]);
+});
+test('auth revision change suppresses stale progress and keeps the original pending',async()=>{
+ const f=setup(),seen=[];
+ f.post=async(_url,_body,config)=>{
+  config.onUploadProgress({loaded:1,total:2});
+  f.api.authRevision++;
+  config.onUploadProgress({loaded:2,total:2});
+  return success;
+ };
+ await assert.rejects(f.upload(undefined,false,p=>seen.push(p.loaded)),e=>e.code==='EVIDENCE_ACCOUNT_CHANGED');
+ assert.deepEqual(seen,[undefined,undefined,1]);assert.equal(f.queue.length,1);
+});
+test('offline sync replay has no foreground progress observer',async()=>{
+ const f=setup(),seen=[];f.online=false;
+ await assert.rejects(f.upload(),e=>e.code==='EVIDENCE_QUEUED');
+ f.online=true;
+ f.post=async(_url,_body,config)=>{assert.equal(config.onUploadProgress,undefined);return success;};
+ assert.equal((await f.upload(f.queue[0].fileUri,true,p=>seen.push(p))).photoId,'photo');
+ assert.deepEqual(seen,[]);
 });

@@ -17,7 +17,7 @@ test('permission rejection releases the capture lock and does not launch the cam
 });
 test('unscored evidence is saved without inventing a failure score or a dispute guarantee',async()=>{
  const c=fixture();let score='unset',message;
- Object.assign(c,{ensureLocation:async()=>null,user:{id:'user'},projectId:'project',timeEntryId:'',watermarkTemplate:'standard',address:null,setLastScore:v=>score=v,goBack(){},api:{getToken:async()=>'token',uploadFileWithData:async()=>({success:true,requestKey:'evidence-test-key'}),recordAIEvent:async()=>{}},Alert:{alert:(title,body)=>message=body}});
+ Object.assign(c,{currentCameraIdentity:{current:'camera'},progressRequest:{current:0},setUploadProgress(){},ensureLocation:async()=>null,user:{id:'user'},projectId:'project',timeEntryId:'',watermarkTemplate:'standard',address:null,setLastScore:v=>score=v,goBack(){},api:{getToken:async()=>'token',uploadFileWithData:async()=>({success:true,requestKey:'evidence-test-key'}),recordAIEvent:async()=>{}},Alert:{alert:(title,body)=>message=body}});
  await handler('uploadFile',c)('photo.jpg',false);assert.equal(score,null);assert.match(message,/assessment is unavailable/);assert.doesNotMatch(message,/hold up in any dispute/);
 });
 
