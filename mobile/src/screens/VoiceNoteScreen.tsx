@@ -26,6 +26,7 @@ interface VoiceNoteResponse {
   audioUrl?: string;
   transcript: string | null;
   structuredData: {
+    extractionStatus?: "model_draft" | "unavailable";
     actions: string[];
     parts: string[];
     measurements: { value: number; unit: string; context: string }[];
@@ -375,6 +376,8 @@ function VoiceNoteContent() {
   }
 
   if (result) {
+    const draft = result.transcriptionStatus !== "skipped" && result.transcriptionStatus !== "edited"
+      && result.structuredData?.extractionStatus === "model_draft" ? result.structuredData : null;
     return (
       <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView style={styles.container} contentContainerStyle={styles.resultContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
@@ -383,8 +386,8 @@ function VoiceNoteContent() {
           <Text style={styles.summaryText}>{t("Audio saved in the project album. No transcript or AI summary was created.")}</Text>
         </View> : <>
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>{t("📧 Client Summary")}</Text>
-          <Text style={styles.summaryText}>{result.transcriptionStatus === 'edited' ? t("Transcript edited. Previous AI summary and extracted details were cleared.") : result.clientSummary}</Text>
+          <Text style={styles.cardLabel}>{t("AI draft summary")}</Text>
+          <Text style={styles.summaryText}>{result.transcriptionStatus === 'edited' ? t("Transcript edited. Previous AI summary and extracted details were cleared.") : draft && result.clientSummary ? result.clientSummary : t("AI details are unavailable. Review the full transcript.")}</Text>
         </View>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>{t("📝 Full Transcript")}</Text>
@@ -393,17 +396,17 @@ function VoiceNoteContent() {
             onSaved={saved => setResult(previous => previous && previous.voiceNoteId === saved.voiceNoteId ? {...previous, ...saved} : previous)} />
         </View>
         </>}
-        {!!result.structuredData?.actions?.length && (
+        {!!draft?.actions?.length && (
           <View style={styles.card}>
-            <Text style={styles.cardLabel}>{t("🔧 Actions")}</Text>
-            {result.structuredData.actions.map((a, i) => <Text key={i} style={styles.item}>• {a}</Text>)}
+            <Text style={styles.cardLabel}>{t("AI draft actions. Review before use.")}</Text>
+            {draft.actions.map((a, i) => <Text key={i} style={styles.item}>• {a}</Text>)}
           </View>
         )}
-        {!!result.structuredData?.parts?.length && (
+        {!!draft?.parts?.length && (
           <View style={styles.card}>
-            <Text style={styles.cardLabel}>{t("🧰 Parts/Equipment")}</Text>
+            <Text style={styles.cardLabel}>{t("AI draft parts and equipment")}</Text>
             <View style={styles.tagContainer}>
-              {result.structuredData.parts.map((p, i) => <View key={i} style={styles.tag}><Text style={styles.tagText}>{p}</Text></View>)}
+              {draft.parts.map((p, i) => <View key={i} style={styles.tag}><Text style={styles.tagText}>{p}</Text></View>)}
             </View>
           </View>
         )}

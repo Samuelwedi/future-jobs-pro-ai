@@ -1,6 +1,6 @@
 // ============================================
 // AUTO‑DISPUTE EVIDENCE GENERATOR
-// Creates legal‑grade evidence packages
+// Creates snapshots of recorded evidence for review
 // Created by: Samuel B.
 // ============================================
 
@@ -180,11 +180,19 @@ async function gatherPhotoEvidence(timeEntryId: string): Promise<any[]> {
 
 async function gatherVoiceNoteEvidence(timeEntryId: string): Promise<any[]> {
   const result = await pool.query(
-    `SELECT id, transcript, client_summary, duration_seconds
-     FROM voice_notes WHERE time_entry_id = $1 ORDER BY created_at ASC`,
+    `SELECT vn.id, vn.transcript, vn.duration_seconds
+       FROM voice_notes vn
+       JOIN time_entries te ON te.id = vn.time_entry_id
+       JOIN users u ON u.id = te.user_id AND u.company_id = vn.company_id
+      WHERE vn.time_entry_id = $1
+      ORDER BY vn.created_at ASC`,
     [timeEntryId]
   );
-  return result.rows;
+  return result.rows.map(row => {
+    const transcript = typeof row.transcript === 'string' && row.transcript.trim() ? row.transcript : null;
+    return { id: row.id, transcript, duration_seconds: row.duration_seconds,
+      transcript_status: transcript === null ? 'unavailable' : 'stored_unverified' };
+  });
 }
 
 async function gatherExternalData(timeEntryId: string): Promise<any> {
@@ -265,7 +273,7 @@ export async function generateDisputePDF(packageId: string, companyId: string): 
     document.fontSize(12).text('Integrity');
     document.fontSize(8).text(String(row.verification_hash || evidence.verificationHash || ''), { width: 500 });
     document.moveDown();
-    document.fontSize(9).text('This report is an application-generated snapshot of stored records. It does not replace legal review, and no unverified weather or traffic facts are represented as evidence.');
+    document.fontSize(9).text('This report is an application-generated snapshot of stored records. A checksum verifies the snapshot, not the underlying events. Stored voice transcripts are not independently verified. This report does not replace legal review.');
     document.end();
   });
 }

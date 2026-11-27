@@ -74,7 +74,7 @@ router.post('/assistant-transcribe', upload.single('audio'), async (req: Request
     return res.json({ success: true, transcript });
   } catch (error: any) {
     const unauthorized = error.message === 'Not authenticated';
-    console.error('Lucy transcription error:', error.message);
+    if (!unauthorized) console.error('Lucy transcription failed');
     return res.status(unauthorized ? 401 : 500).json({ success: false, message: unauthorized ? error.message : 'Could not transcribe speech' });
   } finally {
     if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
@@ -198,7 +198,7 @@ router.post('/process', upload.single('audio'), async (req: Request, res: Respon
     res.json(receiptClaim ? await completeVoiceReceipt(receiptClaim, save) : await save(pool));
 
   } catch (error: any) {
-    console.error('Voice processing failed', { requestId, stage, code: error.code, message: error.message });
+    console.error('Voice processing failed', { requestId, stage });
     if (receiptClaim) await markVoiceReceiptUncertain(receiptClaim).catch(() => undefined);
     if (validVoiceKey(req.body?.requestKey)) {
       const status = receiptClaim ? 500 : error instanceof VoiceReceiptError ? error.status : error.message === 'Not authenticated' ? 401 : error.message === 'Project not found in your company' ? 404 : 500;
@@ -276,7 +276,7 @@ router.post('/process-transcript', async (req: Request, res: Response) => {
     res.json(receiptClaim ? await completeVoiceReceipt(receiptClaim, save) : await save(pool));
 
   } catch (error: any) {
-    console.error('Transcript processing failed:', error.message);
+    console.error('Transcript processing failed');
     if (receiptClaim) await markVoiceReceiptUncertain(receiptClaim).catch(() => undefined);
     const status = receiptClaim ? 500 : error instanceof VoiceReceiptError ? error.status : error.message === 'Not authenticated' ? 401 : error.message === 'Project not found in your company' ? 404 : 500;
     if (validVoiceKey(req.body?.requestKey)) return res.status(status).json({ success: false,
