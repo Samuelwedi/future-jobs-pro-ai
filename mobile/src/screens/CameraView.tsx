@@ -69,6 +69,9 @@ export default function CameraView() {
   const scope = `${user?.id || ''}:${user?.companyId || ''}:${user?.role || ''}:${projectId}:${timeEntryId}`;
   const currentScope = useRef(scope);
   currentScope.current = scope;
+  // Only affect new camera photos; never recompress bytes already queued or sent.
+  const [dataSavingScope, setDataSavingScope] = useState<string | null>(null);
+  const dataSavingPhoto = dataSavingScope === scope;
   const pendingCapture = useRef<PendingCapture | null>(null);
   const [hasPendingCapture,setHasPendingCapture] = useState(false);
   const [captureRecoveryReady,setCaptureRecoveryReady] = useState(false);
@@ -154,6 +157,10 @@ export default function CameraView() {
     }).catch(()=>{if(active&&currentScope.current===scope)setCaptureRecoveryFailed(true);});
     return()=>{active=false;};
   },[scope]);
+
+  useEffect(() => {
+    setDataSavingScope(null);
+  }, [scope]);
 
   useEffect(() => {
     (async () => {
@@ -377,7 +384,7 @@ export default function CameraView() {
       }
       const asset = isVideo
         ? await cameraRef.current.recordAsync({ maxDuration: 1800, maxFileSize: MAX_VIDEO_BYTES })
-        : await cameraRef.current.takePictureAsync({ quality: 1, skipProcessing: false });
+        : await cameraRef.current.takePictureAsync({ quality: dataSavingPhoto ? 0.85 : 1, skipProcessing: false });
       recording.current = false;
       if (isCurrent()) setIsRecording(false);
       if(!isCurrent())return;
@@ -492,6 +499,28 @@ export default function CameraView() {
             <Text style={[styles.modeText, mode === 'video' && styles.modeTextActive]}>{t('🎬 Video')}</Text>
           </TouchableOpacity>
         </View>
+
+        {mode === 'photo' && (
+          <View>
+            <TouchableOpacity
+              style={[styles.templateToggle, dataSavingPhoto && styles.templateOptionSelected]}
+              accessibilityRole="switch"
+              accessibilityState={{checked: dataSavingPhoto, disabled: isProcessing || hasPendingCapture || !captureRecoveryReady}}
+              disabled={isProcessing || hasPendingCapture || !captureRecoveryReady}
+              onPress={() => {
+                if (captureLock.current || pendingCapture.current || currentScope.current !== scope) return;
+                setDataSavingScope(previous => previous === scope ? null : scope);
+              }}
+            >
+              <Text style={styles.templateToggleText}>
+                {t(dataSavingPhoto ? 'Photo data saver: On' : 'Photo data saver: Off')}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.captureHint}>
+              {t('Uses more JPEG compression without changing the camera resolution. Video is unchanged.')}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.cameraPreview}>
           {hasCameraPermission && isFocused && appActive && !cameraFailed && (mode === 'photo' || microphoneOwner === cameraIdentity) && (

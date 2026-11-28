@@ -4,7 +4,7 @@ const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),path=
 const source=fs.readFileSync(path.join(__dirname,'../src/screens/CameraView.tsx'),'utf8');
 const ast=ts.createSourceFile('CameraView.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 function handler(name,context){let expression;function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)===name)expression=n.initializer;ts.forEachChild(n,visit);}visit(ast);assert.ok(expression);return vm.runInNewContext(ts.transpileModule('result = '+expression.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context);}
-function fixture(){return {captureRecoveryReady:true,currentScope:{current:'scope'},pendingCapture:{current:null},setHasPendingCapture(){},api:{getToken:async()=>'token'},createEvidenceRequestKey:()=>'evidence-test-key',t:(s,v={})=>s.replace(/\{(\w+)\}/g,(_,k)=>v[k]??''),captureLock:{current:false},setIsProcessing(){},hasCameraPermission:true,hasAudioPermission:true,mode:'photo',isMounted:{current:true},Speech:{stop:async()=>{}},DeviceEventEmitter:{emit(){}},Alert:{alert(){}},recording:{current:false},cameraReady:true,cameraRef:{current:{}},session:{current:1},previewActive:{current:true},setIsRecording(){},MAX_VIDEO_BYTES:996147200,console};}
+function fixture(){return {captureRecoveryReady:true,currentScope:{current:'scope'},pendingCapture:{current:null},setHasPendingCapture(){},api:{getToken:async()=>'token'},createEvidenceRequestKey:()=>'evidence-test-key',t:(s,v={})=>s.replace(/\{(\w+)\}/g,(_,k)=>v[k]??''),captureLock:{current:false},setIsProcessing(){},hasCameraPermission:true,hasAudioPermission:true,dataSavingPhoto:false,mode:'photo',isMounted:{current:true},Speech:{stop:async()=>{}},DeviceEventEmitter:{emit(){}},Alert:{alert(){}},recording:{current:false},cameraReady:true,cameraRef:{current:{}},session:{current:1},previewActive:{current:true},setIsRecording(){},MAX_VIDEO_BYTES:996147200,console};}
 test('camera prevents simultaneous launches and releases lock after cancellation or failure',async()=>{
  const c=fixture();let release,calls=0;const pending=new Promise(r=>release=r);
  c.cameraRef.current.takePictureAsync=async()=>{calls++;await pending;return undefined;};
@@ -56,8 +56,22 @@ test('photo capture uses full quality and preserves the originating token',async
  await handler('captureInApp',c)();assert.equal(options.quality,1);assert.equal(options.skipProcessing,false);
  assert.deepEqual(Array.from(sent),['file:///photo.jpg',false,undefined,'token']);
 });
+test('opt-in smaller JPEG uses the embedded camera once and preserves its original captured URI',async()=>{
+ const c=fixture();c.dataSavingPhoto=true;let calls=0,sent;
+ c.cameraRef.current.takePictureAsync=async options=>{calls++;assert.equal(options.quality,0.85);assert.equal(options.skipProcessing,false);return {uri:'file:///smaller.jpg'};};
+ c.FileSystem={getInfoAsync:async()=>({exists:true,size:80})};
+ c.uploadFile=async(...args)=>sent=args;
+ await handler('captureInApp',c)();
+ assert.equal(calls,1);
+ assert.deepEqual(Array.from(sent),['file:///smaller.jpg',false,undefined,'token']);
+ c.pendingCapture.current={uri:'file:///saved-original.jpg',isVideo:false,fileInfo:{name:'original.jpg',mimeType:'image/jpeg'}};
+ await handler('captureInApp',c)();
+ assert.equal(calls,1);
+ assert.deepEqual(Array.from(sent),['file:///saved-original.jpg',false,c.pendingCapture.current.fileInfo]);
+});
+
 test('video records within evidence limits and stop never starts a second recording',async()=>{
- const c=fixture();c.mode='video';let resolve,options,stops=0,sent;
+ const c=fixture();c.mode='video';c.dataSavingPhoto=true;let resolve,options,stops=0,sent;
  c.cameraRef.current.recordAsync=value=>{options=value;return new Promise(r=>resolve=r);};
  c.cameraRef.current.stopRecording=()=>{stops++;resolve({uri:'file:///clip.mov'});};
  c.FileSystem={getInfoAsync:async()=>({exists:true,size:100})};c.uploadFile=async(...args)=>sent=args;
