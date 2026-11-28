@@ -1,4 +1,5 @@
 import { es, fr, enUS } from 'date-fns/locale';
+import ShiftAttachmentPanel from '../components/ShiftAttachmentPanel';
 import { useLang } from '../context/LanguageContext';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -63,7 +64,9 @@ export default function ScheduleScreen() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
+  const [selectedShift, setSelectedShiftState] = useState<Shift | null>(null);
+  const selectedShiftRef=useRef<Shift|null>(null);
+  const setSelectedShift=(next:Shift|null)=>{selectedShiftRef.current=next;setSelectedShiftState(next);};
   const [viewMode, setViewMode] = useState<'month' | 'week' | '3days' | 'day'>('month');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -161,7 +164,7 @@ export default function ScheduleScreen() {
     setLoading(true);
     void fetchShifts();
     if (canManage) void fetchEmployees();
-    return () => { requestNumber.current += 1; employeeRequestNumber.current += 1; focusActive.current = false; loadedSchedule.current = null; };
+    return () => { selectedShiftRef.current=null; requestNumber.current += 1; employeeRequestNumber.current += 1; focusActive.current = false; loadedSchedule.current = null; };
   }, [selectedDate, viewMode, selectedEmployeeId, currentMonth, user?.id, user?.companyId, user?.role, canManage]));
 
   const onRefresh = () => { setRefreshing(true); fetchShifts(); };
@@ -345,7 +348,10 @@ export default function ScheduleScreen() {
         keyboardDismissMode="on-drag"
         data={visibleShifts}
         renderItem={({ item }) => (
-          <TouchableOpacity style={styles.shiftCard} onPress={() => setSelectedShift(item)}>
+          <TouchableOpacity style={styles.shiftCard} onPress={() => {
+            const snap=loadedSchedule.current;
+            if(snap?.scope===currentScheduleScope.current&&snap.shifts.includes(item)&&snap.isSessionCurrent()&&focusActive.current) setSelectedShift(item);
+          }}>
             <Text style={styles.shiftDate}>{item.date ? formatShiftDate(item.date) : ''}</Text>
             <Text style={styles.shiftName}>{item.name}</Text>
             <Text style={styles.shiftProject}>{item.project_name}</Text>
@@ -398,18 +404,16 @@ export default function ScheduleScreen() {
                     <Text style={styles.detailValue}>{selectedShift.notes}</Text>
                   </>
                 )}
-                {selectedShift.attachment_url && (
-                  <>
-                    <Text style={styles.detailLabel}>{t("Attachment")}</Text>
-                    <TouchableOpacity
-                      style={styles.downloadBtn}
-                      onPress={() => Linking.openURL(selectedShift.attachment_url!)}
-                    >
-                      <MaterialIcons name="download" size={20} color="#00D4FF" />
-                      <Text style={styles.downloadBtnText}>{t("Open Attachment")}</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
+                {user?.id && user.companyId && selectedShift && <ShiftAttachmentPanel key={selectedShift.id}
+                  shiftId={selectedShift.id} legacyUrl={selectedShift.attachment_url}
+                  owner={{id:user.id,companyId:user.companyId,role:user.role}}
+                  isCurrent={()=>{
+                    const snapshot=loadedSchedule.current;
+                    return selectedShiftRef.current===selectedShift&&focusActive.current&&
+                      currentScheduleScope.current===scheduleScope&&snapshot?.scope===scheduleScope&&
+                      snapshot.shifts.includes(selectedShift)&&snapshot.isSessionCurrent();
+                  }}
+                />}
 
                 {/* ─── CLOCK‑IN BUTTON REPLACED WITH HOME NAVIGATION ─── */}
                 <TouchableOpacity

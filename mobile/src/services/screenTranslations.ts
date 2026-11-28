@@ -1,5 +1,11 @@
 // English source copy is the key; route names and user content are never translated.
 export const screenCopy: Record<string, [string, string]> = {
+  "Shift files": ["Archivos del turno", "Fichiers du quart"],
+  "Could not load files for this shift.": ["No se pudieron cargar los archivos del turno.", "Impossible de charger les fichiers de ce quart."],
+  "Preview unavailable. Use Open original instead.": ["Vista previa no disponible. Usa Abrir original.", "Aperçu indisponible. Utilisez Ouvrir l’original."],
+  "Preview image": ["Vista previa de la imagen", "Aperçu de l’image"],
+  "Open original": ["Abrir original", "Ouvrir l’original"],
+  "Close preview": ["Cerrar vista previa", "Fermer l’aperçu"],
   "AI draft summary": ["Resumen preliminar de IA", "Brouillon de résumé par IA"],
   "AI details are unavailable. Review the full transcript.": ["Los detalles de IA no están disponibles. Revisa la transcripción completa.", "Les détails générés par IA ne sont pas disponibles. Consultez la transcription complète."],
   "AI draft actions. Review before use.": ["Acciones preliminares de IA. Revísalas antes de usarlas.", "Brouillon d’actions proposé par IA. Vérifiez-le avant utilisation."],

@@ -11,7 +11,7 @@ import {
 } from '@mui/material';
 import { Add, Delete, DragIndicator, Repeat, AttachFile, UploadFile, Close } from '@mui/icons-material';
 import { API_BASE } from '../services/api';
-import ResourceAttachments from '../components/ResourceAttachments';
+import ShiftAttachments from '../components/ShiftAttachments';
 import { shiftRange } from '../utils/shiftRange';
 
 const localizer = momentLocalizer(moment);
@@ -527,7 +527,7 @@ export default function SchedulePage() {
               <Stack direction="row" flexWrap="wrap" gap={1} mt={pendingFiles.length?1.5:0}>{pendingFiles.map((file,index)=><Chip key={`${file.name}-${file.size}`} label={`${file.name} · ${(file.size/1024/1024).toFixed(1)} MB`} onDelete={()=>setPendingFiles(current=>current.filter((_,i)=>i!==index))} deleteIcon={<Close/>}/>)}</Stack>
             </Paper>}
 
-            {editingShift && <Box sx={{mt:2}}><ResourceAttachments target="shiftId" targetId={editingShift.id} title="Shift documents & media" compact /></Box>}
+            {dialogOpen && editingShift && <Box sx={{mt:2}}><ShiftAttachments key={editingShift.id} shiftId={editingShift.id} oldUrl={editingShift.attachment_url}/></Box>}
 
             <FormControl fullWidth sx={{ mt: 2 }}>
               <InputLabel sx={{ color: '#888' }}>Project</InputLabel>

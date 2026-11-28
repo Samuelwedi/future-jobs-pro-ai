@@ -8,6 +8,8 @@ import { deleteAttachment, listAttachments, saveAttachment, AttachmentTarget } f
 import { uploadAttachment } from '../services/cloudStorageService';
 import { validAttachmentKey, attachmentFingerprint, claimAttachment } from '../services/attachmentReceipts';
 import type { PoolClient } from 'pg';
+import { createShiftAttachmentPreviewHandler } from '../services/shiftAttachmentPreviewHttp';
+import { listScopedShiftAttachments, prepareShiftAttachmentPreview, readStoredShiftAttachmentPreview, writeShiftAttachmentPreview } from '../services/shiftAttachmentPreviewStore';
 
 const router = express.Router();
 const uploadDir = path.join(__dirname, '../../uploads/attachments');
@@ -91,8 +93,11 @@ router.post('/upload', authenticateUpload, upload.single('file'), async (req: Re
       if (latest.id !== current.id || latest.companyId !== current.companyId) throw new Error('Attachment authorization changed');
       await validateTarget(current.companyId, attachmentTarget);
     }
+    // Render only a capped, sanitized derivative from these admitted bytes, before cleanup.
+    // Receipt replay returns above, without a duplicate cloud upload or image transform.
+    const preview = await prepareShiftAttachmentPreview(pool,current.id,current.companyId,attachmentTarget,req.file,originalFileName);
     const url = await uploadAttachment(req.file.path, `future-jobs-pro-ai/${current.companyId}/attachments`);
-    if (receiptScope) {
+    if (receiptScope || preview) {
       db = await pool.connect();
       await db.query('BEGIN');
       const live = await db.query('SELECT id FROM users WHERE id=$1 AND company_id=$2 AND COALESCE(is_active,TRUE)=TRUE FOR SHARE', [current.id, current.companyId]);
@@ -100,12 +105,23 @@ router.post('/upload', authenticateUpload, upload.single('file'), async (req: Re
       await validateTarget(current.companyId, attachmentTarget, db, true);
     }
     const attachment = await saveAttachment(current.companyId, current.id, originalFileName, url, req.file.mimetype, req.file.size, attachmentTarget, category, db || pool);
+    if (db && preview && attachmentTarget.shiftId) {
+      // A render/storage problem must not make the original inaccessible.
+      await db.query('SAVEPOINT optional_shift_preview');
+      try {
+        await writeShiftAttachmentPreview(db,current.id,current.companyId,attachmentTarget.shiftId,String(attachment.id),preview);
+      } catch {
+        await db.query('ROLLBACK TO SAVEPOINT optional_shift_preview');
+        console.warn('Shift preview unavailable; keeping the admitted original');
+      }
+      await db.query('RELEASE SAVEPOINT optional_shift_preview');
+    }
     const response = { success: true, attachment, ...(receiptScope ? { requestKey: receiptScope[2] } : {}) };
     if (db && receiptScope) {
       const completed = await db.query("UPDATE attachment_upload_receipts SET state='completed',response=$4::jsonb WHERE company_id=$1 AND actor_id=$2 AND request_key=$3 AND state='processing' RETURNING request_key", [...receiptScope, JSON.stringify(response)]);
       if (!completed.rowCount) throw new Error('Attachment receipt completion failed');
-      await db.query('COMMIT');
     }
+    if (db) await db.query('COMMIT');
     res.status(201).json(response);
   } catch (error: any) {
     if (db) { await db.query('ROLLBACK').catch(() => undefined); db.release(); db = undefined; }
@@ -137,6 +153,22 @@ router.get('/uploads/:requestKey', async (req: Request, res: Response) => {
     return await respondReceipt(res, current, key, receipt.rows[0]);
   } catch (error: any) { res.status(/authenticated|token/i.test(error.message) ? 401 : 403).json({ success: false, retryAllowed: false, message: 'Attachment status is unavailable' }); }
 });
+router.get('/shift/:shiftId/files', async (req,res) => {
+  res.setHeader('Cache-Control','private, no-store');
+  let current;
+  try { current=await actor(req); } catch { return res.status(401).json({success:false}); }
+  if (req.get('X-Project-Actor')!==current.id || req.get('X-Project-Company')!==current.companyId) {
+    return res.status(403).json({success:false});
+  }
+  try {
+    const files=await listScopedShiftAttachments(pool,current.id,current.companyId,String(req.params.shiftId));
+    return res.json({success:true,files});
+  } catch { return res.status(503).json({success:false}); }
+});
+router.all('/shift/:shiftId/file/:attachmentId/preview', createShiftAttachmentPreviewHandler(
+  req => { try { return verifyToken(req).id; } catch { return undefined; } },
+  (current,company,shift,attachment,signal) => readStoredShiftAttachmentPreview(pool,current,company,shift,attachment,signal),
+));
 router.get('/', async (req: Request, res: Response) => {
   try { const current = await actor(req); const value = target(req.query); await validateTarget(current.companyId, value); res.json({ success: true, attachments: await listAttachments(current.companyId, value) }); }
   catch (error: any) { res.status(400).json({ success: false, message: error.message }); }

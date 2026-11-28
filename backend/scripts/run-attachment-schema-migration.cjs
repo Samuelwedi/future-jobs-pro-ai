@@ -13,6 +13,8 @@ async function migrate(client) {
     // CREATE TABLE IF NOT EXISTS does not repair an incompatible existing table.
     // Verify every attachment field consumed by the API before allowing deployment.
     await client.query('SELECT id, company_id, uploaded_by, shift_id, time_entry_id, project_id, task_id, subject_user_id, file_name, file_url, file_type, file_size, category, created_at FROM attachments LIMIT 0');
+    await client.query(fs.readFileSync(path.join(__dirname, '../migrations/20261128_shift_attachment_previews.sql'), 'utf8'));
+    await client.query('SELECT attachment_id, company_id, shift_id, jpeg FROM shift_attachment_previews LIMIT 0');
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');

@@ -234,6 +234,33 @@ class ApiService {
     return {data:response.data,isSessionCurrent};
   }
 
+  async shiftAttachment<T>(shiftId:string,owner:{id:string;companyId:string;role:string},current:()=>boolean,
+    signal:AbortSignal,attachmentId?:string):Promise<T> {
+    const revision=this.authRevision, token=this.token || await this.getToken();
+    const live=()=>!!token && token===this.token && revision===this.authRevision && current() && !signal.aborted;
+    if(!live())throw Error('Shift attachment view changed');
+    const stored=JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+    if(!live() || !owner.id || !owner.companyId || stored?.id!==owner.id ||
+       stored?.companyId!==owner.companyId || stored?.role!==owner.role)throw Error('Shift attachment account changed');
+    const path='/attachments/shift/'+encodeURIComponent(shiftId);
+    const config:EvidenceConfig={
+      expectedAuthToken:token!,expectedAuthRevision:revision,expectedCurrent:live,fenceUnauthorizedToCurrent:true,signal,
+      headers:{'X-Project-Actor':owner.id,'X-Project-Company':owner.companyId},
+      timeout:8000,
+    };
+    if(!attachmentId){
+      const result=await this.client.get<T>(path+'/files',config);
+      if(!live())throw Error('Shift attachment view changed');
+      return result.data;
+    }
+    const result=await this.client.get(path+'/file/'+encodeURIComponent(attachmentId)+'/preview',{...config,responseType:'arraybuffer'});
+    if(!live())throw Error('Shift attachment view changed');
+    const size=Number(result.headers['content-length']);
+    if(result.headers['content-type']!=='image/jpeg'||!(result.data instanceof ArrayBuffer)||
+      result.data.byteLength!==size||size<3||size>262144)throw Error('Invalid shift preview');
+    return result.data as T;
+  }
+
   async getChatRooms(owner: { id: string; companyId: string; role: string }, current: () => boolean): Promise<{ data: unknown; isSessionCurrent: () => boolean }> {
     const expectedOwner = { ...owner };
     const revision = this.authRevision;
