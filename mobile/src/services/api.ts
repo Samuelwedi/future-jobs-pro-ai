@@ -209,6 +209,31 @@ class ApiService {
     return { data: response.data, isSessionCurrent };
   }
 
+  async projectPhotos<T>(projectId: string, owner: { id: string; companyId: string; role: string }, current: () => boolean,
+    action: 'album' | 'targets' | { targetProjectId: string; photoId: string } = 'album',
+  ): Promise<{data:T; isSessionCurrent:()=>boolean}> {
+    const expected = {...owner};
+    const revision = this.authRevision;
+    const token = this.token || await this.getToken();
+    const isSessionCurrent = () => !!token && token === this.token && this.authRevision === revision;
+    const guard = () => { if (!token || !isSessionCurrent() || !current()) throw new Error('Project album changed'); };
+    guard();
+    const stored = JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+    guard();
+    if (!expected.id || !expected.companyId || stored?.id!==expected.id ||
+        stored?.companyId!==expected.companyId || stored?.role!==expected.role) throw new Error('Project account changed');
+    const config = {
+      expectedAuthToken: token, expectedAuthRevision: revision, expectedCurrent: current, fenceUnauthorizedToCurrent:true,
+      headers:{'X-Project-Actor':expected.id,'X-Project-Company':expected.companyId},
+    } as EvidenceConfig;
+    const path = '/photos/project/' + encodeURIComponent(projectId);
+    const response = typeof action === 'object'
+      ? await this.client.put<T>(`/photos/project/${encodeURIComponent(action.targetProjectId)}/photo/${encodeURIComponent(action.photoId)}/reference`, {sourceProjectId:projectId}, config)
+      : await this.client.get<T>(action==='targets' ? path+'/reference-targets' : path, config);
+    guard();
+    return {data:response.data,isSessionCurrent};
+  }
+
   async getChatRooms(owner: { id: string; companyId: string; role: string }, current: () => boolean): Promise<{ data: unknown; isSessionCurrent: () => boolean }> {
     const expectedOwner = { ...owner };
     const revision = this.authRevision;

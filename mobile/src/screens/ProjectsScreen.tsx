@@ -220,7 +220,7 @@ function ProjectsContent() {
       <View style={styles.projectMain}>
       <TouchableOpacity
         style={styles.projectInfo}
-        onPress={() => navigation.navigate('ProjectAlbum', { projectId: item.id, projectName: item.name })}
+        onPress={() => { if (user?.id && user.companyId) navigation.navigate('ProjectAlbum', { projectId: item.id, projectName: item.name, ownerId:user.id, companyId:user.companyId }); }}
       >
         <Text style={styles.projectName}>{item.name}</Text>
         {item.client_name && <Text style={styles.clientName}>{item.client_name}</Text>}

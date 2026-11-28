@@ -1,4 +1,5 @@
 import { validEvidenceKey, evidenceFingerprint, claimEvidence } from '../services/evidenceReceipts';
+import { buildProjectPhotoExport, MAX_PROJECT_EXPORT_PHOTOS } from '../services/projectPhotoExport';
 import type { PoolClient } from 'pg';
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
@@ -276,16 +277,175 @@ router.get('/company', async (req: Request, res: Response) => {
   } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 });
 
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const canFilePhotos = (role: string) => ['boss', 'manager', 'admin'].includes(role);
+
+router.get('/project/:projectId/reference-targets', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  try {
+    const current = await actor(req);
+    if (!current) return res.status(401).json({success:false, message:'Not authenticated'});
+    if (!canFilePhotos(current.role) || req.get('X-Project-Actor') !== current.userId ||
+        req.get('X-Project-Company') !== current.companyId) {
+      return res.status(403).json({success:false, message:'Manager access and the current account are required'});
+    }
+    const source = String(req.params.projectId).toLowerCase();
+    if (!uuid.test(source)) return res.status(404).json({success:false, message:'Project not found'});
+    const result = await pool.query(
+      `SELECT destination.id, destination.name
+       FROM projects source
+       JOIN users requester ON requester.id=$3 AND requester.company_id=source.company_id
+         AND COALESCE(requester.is_active, TRUE) AND LOWER(requester.role) IN ('boss','manager','admin')
+       JOIN projects destination ON destination.company_id=source.company_id
+         AND destination.id<>source.id AND destination.archived_at IS NULL
+       WHERE source.id=$1 AND source.company_id=$2 ORDER BY destination.name,destination.id LIMIT 1000`,
+      [source,current.companyId,current.userId],
+    );
+    return res.json({success:true, projects:result.rows});
+  } catch { return res.status(503).json({success:false, message:'Destination projects are unavailable'}); }
+});
+
+router.put('/project/:projectId/photo/:photoId/reference', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  let db: PoolClient | undefined;
+  try {
+    const current = await actor(req);
+    if (!current) return res.status(401).json({success:false, message:'Not authenticated'});
+    const projectId = String(req.params.projectId).toLowerCase();
+    const photoId = String(req.params.photoId).toLowerCase();
+    const expectedSource = typeof req.body?.sourceProjectId==='string' ? req.body.sourceProjectId.toLowerCase() : '';
+    if (!uuid.test(projectId) || !uuid.test(photoId)) return res.status(404).json({success:false, message:'Photo or project not found'});
+    if (!canFilePhotos(current.role) || req.get('X-Project-Actor') !== current.userId ||
+        req.get('X-Project-Company') !== current.companyId) {
+      return res.status(403).json({success:false, message:'Manager access and the current account are required'});
+    }
+    if (!uuid.test(expectedSource)) return res.status(400).json({success:false, message:'Original project is required'});
+    db = await pool.connect();
+    await db.query('BEGIN');
+    const liveActor = (await db.query(
+      "SELECT company_id, LOWER(COALESCE(role,'employee')) AS role FROM users WHERE id=$1 AND COALESCE(is_active,TRUE) FOR SHARE",
+      [current.userId],
+    )).rows[0];
+    if (liveActor?.company_id !== current.companyId || !canFilePhotos(liveActor.role)) {
+      await db.query('ROLLBACK');
+      return res.status(403).json({success:false, message:'Manager access and the current account are required'});
+    }
+    const stored = (await db.query(
+      "SELECT project_id FROM photos WHERE id=$1 AND company_id=$2 AND file_type='image' FOR SHARE",
+      [photoId, current.companyId],
+    )).rows[0];
+    if (!stored?.project_id) {
+      await db.query('ROLLBACK');
+      return res.status(404).json({success:false, message:'Photo or project not found'});
+    }
+    if (stored.project_id !== expectedSource) {
+      await db.query('ROLLBACK');
+      return res.status(409).json({success:false, message:'The original project changed. Refresh the album.'});
+    }
+    if (stored.project_id === projectId) {
+      await db.query('ROLLBACK');
+      return res.status(409).json({success:false, message:'This is the original project'});
+    }
+    const projects = await db.query(
+      `SELECT id FROM projects WHERE id=ANY($1::uuid[]) AND company_id=$2
+       AND (id<>$3 OR archived_at IS NULL) ORDER BY id FOR SHARE`,
+      [[projectId, stored.project_id], current.companyId, projectId],
+    );
+    if (projects.rowCount !== 2) {
+      await db.query('ROLLBACK');
+      return res.status(404).json({success:false, message:'Photo or project not found'});
+    }
+    await db.query(
+      `INSERT INTO project_photo_references(company_id, photo_id, source_project_id, project_id, copied_by)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (project_id, photo_id) DO NOTHING`,
+      [current.companyId, photoId, stored.project_id, projectId, current.userId],
+    );
+    // A conflicting stale link must not be reported as a successful copy.
+    const row = (await db.query(
+      `SELECT id,source_project_id,album_project_id,copied_by,copied_at
+       FROM project_photo_inventory WHERE company_id=$1 AND album_project_id=$2 AND id=$3 AND copied_at IS NOT NULL`,
+      [current.companyId, projectId, photoId],
+    )).rows[0];
+    if (!row) {
+      await db.query('ROLLBACK');
+      return res.status(409).json({success:false, message:'Photo filing has changed; refresh the album'});
+    }
+    await db.query('COMMIT');
+    return res.json({success:true, reference:row});
+  } catch {
+    if (db) await db.query('ROLLBACK').catch(() => undefined);
+    return res.status(503).json({success:false, message:'Photo filing is unavailable. Refresh the album before retrying.'});
+  } finally { db?.release(); }
+});
+
 router.get('/project/:projectId', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'private, no-store');
   try {
     const current = await actor(req);
     if (!current) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const actorHeader = req.get('X-Project-Actor'), companyHeader = req.get('X-Project-Company');
+    if ((actorHeader !== undefined || companyHeader !== undefined) &&
+        (actorHeader !== current.userId || companyHeader !== current.companyId)) {
+      return res.status(403).json({success:false, message:'Reopen the current project'});
+    }
+    const projectId = String(req.params.projectId).toLowerCase();
+    if (!uuid.test(projectId)) return res.status(404).json({success:false, message:'Project not found'});
     const result = await pool.query(
-      'SELECT * FROM photos WHERE project_id = $1 AND company_id = $2 ORDER BY taken_at DESC',
-      [String(req.params.projectId), current.companyId],
+      `SELECT p.*, i.album_project_id, i.copied_at
+       FROM project_photo_inventory i JOIN photos p USING (id, company_id)
+       JOIN users requester ON requester.id=$3 AND requester.company_id=i.company_id AND COALESCE(requester.is_active,TRUE)
+       WHERE i.album_project_id = $1 AND i.company_id = $2 ORDER BY p.taken_at DESC, p.id`,
+      [projectId, current.companyId, current.userId],
     );
     res.json({ success: true, photos: result.rows });
-  } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
+  } catch { res.status(503).json({success:false, message:'Project album is unavailable'}); }
+});
+
+let activeProjectPhotoExports = 0;
+router.post('/project/:projectId/export', async (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'private, no-store');
+  let ownsSlot = false;
+  try {
+    const current = await actor(req);
+    if (!current) return res.status(401).json({success:false, message:'Not authenticated'});
+    if (!canFilePhotos(current.role) || req.get('X-Project-Actor') !== current.userId ||
+        req.get('X-Project-Company') !== current.companyId) {
+      return res.status(403).json({success:false, message:'Manager access and the current account are required'});
+    }
+    const projectId = String(req.params.projectId).toLowerCase();
+    const ids = req.body?.photoIds;
+    if (!uuid.test(projectId) || !Array.isArray(ids) || !ids.length || ids.length > MAX_PROJECT_EXPORT_PHOTOS ||
+        !ids.every(id => typeof id === 'string' && uuid.test(id))) {
+      return res.status(400).json({success:false, message:'Select between 1 and 25 project photos'});
+    }
+    const selectedIds: string[] = [...new Set<string>(ids.map(id => id.toLowerCase()))];
+    const readSelection = async () => {
+      const result = await pool.query(
+        `SELECT p.id, p.user_id, p.s3_key, p.taken_at, p.verification_hash, i.source_project_id,
+                src.name AS source_project_name, i.copied_by, i.copied_at, alb.name AS album_name
+         FROM project_photo_inventory i JOIN photos p USING(id, company_id)
+         JOIN projects src ON src.id=i.source_project_id AND src.company_id=i.company_id
+         JOIN projects alb ON alb.id=i.album_project_id AND alb.company_id=i.company_id
+         JOIN users requester ON requester.id=$4 AND requester.company_id=i.company_id
+           AND COALESCE(requester.is_active,TRUE) AND LOWER(requester.role) IN ('boss','manager','admin')
+         WHERE i.company_id=$1 AND i.album_project_id=$2 AND p.id=ANY($3::uuid[]) AND p.file_type='image'
+         ORDER BY p.taken_at, p.id`,
+        [current.companyId, projectId, selectedIds, current.userId],
+      );
+      return result.rows;
+    };
+    const selected = await readSelection();
+    if (selected.length !== selectedIds.length) return res.status(404).json({success:false, message:'One or more photos are unavailable in this project'});
+    if (activeProjectPhotoExports >= 2) return res.status(429).json({success:false, message:'Photo exports are busy. Try again shortly.'});
+    activeProjectPhotoExports += 1; ownsSlot = true;
+    const bytes = await buildProjectPhotoExport({id:projectId, name:selected[0].album_name}, selected);
+    if (JSON.stringify(await readSelection()) !== JSON.stringify(selected)) {
+      return res.status(409).json({success:false, message:'The selection changed. Refresh the album before exporting.'});
+    }
+    return res.attachment(`project-photos-${projectId}.zip`).type('application/zip').send(bytes);
+  } catch {
+    return res.status(503).json({success:false, message:'Could not export every selected original photo. No partial file was returned.'});
+  } finally { if (ownsSlot) activeProjectPhotoExports -= 1; }
 });
 
 router.post('/report', async (req: Request, res: Response) => {

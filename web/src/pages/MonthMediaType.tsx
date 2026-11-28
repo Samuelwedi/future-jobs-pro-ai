@@ -23,6 +23,8 @@ interface MediaItem {
   transcript?: string;
   duration?: number;
   verification_hash?: string;
+  source_project_id?: string;
+  copied_at?: string | null;
 }
 
 export default function MonthMediaType() {
@@ -63,6 +65,17 @@ export default function MonthMediaType() {
   const [loadState, setLoadState] = useState<{ version: number; loading: boolean; error: string | null } | null>(null);
   const [downloadState, setDownloadState] = useState<{ version: number; id: string | null; error: string } | null>(null);
   const downloadRef = useRef<object | null>(null);
+  type Filing = {
+    selection: Selection; targets: {id:string;name:string}[]; target: string;
+    running: boolean; status: string; definitive: boolean;
+  };
+  const [filing, setFiling] = useState<Filing | null>(null);
+  const filingRef = useRef<Filing | null>(null);
+  const updateFiling = (next: Filing) => { filingRef.current=next; setFiling(next); };
+  const filingRequest = useRef<AbortController | null>(null);
+  const exportRequest = useRef<AbortController | null>(null);
+  const [exportStatus, setExportStatus] = useState<{selection:Selection; running:boolean; text:string} | null>(null);
+  const isManager = ['boss','manager','admin'].includes(owner?.role.toLowerCase() || '');
   const [playing, setPlaying] = useState<{ version: number; id: string } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const inlineMediaRef = useRef<HTMLMediaElement | null>(null);
@@ -88,7 +101,8 @@ export default function MonthMediaType() {
   const invalidate = (rerender = true) => {
     epoch.current.version++; sequence.current++; selectionSequence.current++;
     dataRef.current = null; selectionRef.current = null;
-    request.current?.controller.abort(); releasePlayback();
+    request.current?.controller.abort();
+    filingRequest.current?.abort(); exportRequest.current?.abort(); releasePlayback();
     if (rerender && mounted.current) refreshView(value => value + 1);
   };
   // Auth writers invalidate synchronously, including A -> B -> A. Route/focus
@@ -156,7 +170,8 @@ export default function MonthMediaType() {
   };
   const closeMedia = () => {
     if (!currentView() || !displayedSelection || selectionRef.current !== displayedSelection) return;
-    releasePlayback(); selectionSequence.current++; selectionRef.current = null; setSelection(null); setPlaying(null);
+    releasePlayback(); filingRequest.current?.abort(); exportRequest.current?.abort();
+    selectionSequence.current++; selectionRef.current = null; setSelection(null); setPlaying(null);
   };
   const handleDownload = async (item: MediaItem, fromSelection?: Selection) => {
     const current = () => canUseItem(item) && (!fromSelection || selectionRef.current === fromSelection);
@@ -172,6 +187,92 @@ export default function MonthMediaType() {
         if (mounted.current) refreshView(value => value + 1);
       }
     }
+  };
+  const scopeHeaders = () => ({
+    Authorization: `Bearer ${owner!.token}`,
+    'X-Project-Actor':owner!.id, 'X-Project-Company':owner!.company, 'Content-Type':'application/json',
+  });
+  const canManage = (selected: Selection) => isManager && !!projectId && selected.item.type === 'photo'
+    && canUseItem(selected.item) && selectionRef.current === selected;
+  const activeFiling = filing?.selection === displayedSelection && filing===filingRef.current ? filing : null;
+  const activeExport = exportStatus?.selection === displayedSelection ? exportStatus : null;
+  const loadFilingTargets = async (selected: Selection) => {
+    if (!canManage(selected) || selected.item.source_project_id !== projectId ||
+        (filingRequest.current && !filingRequest.current.signal.aborted)) return;
+    const controller=new AbortController(); filingRequest.current=controller;
+    const current=()=>canManage(selected) && filingRequest.current===controller && !controller.signal.aborted;
+    const empty={selection:selected, targets:[], target:'', running:true, status:'', definitive:false};
+    updateFiling(empty);
+    try {
+      const response=await fetch(`${API_BASE}/api/photos/project/${encodeURIComponent(projectId!)}/reference-targets`,{
+        signal:controller.signal, headers:scopeHeaders(), cache:'no-store',
+      });
+      if (!current()) return;
+      const body=await response.json();
+      if (!current()) return;
+      if (!response.ok || !Array.isArray(body?.projects)) throw new Error('Project list unavailable');
+      const targets: {id:string;name:string}[] = [];
+      const unique=new Set<string>();
+      for (const item of body.projects) {
+        if (!item || typeof item.id!=='string' || typeof item.name!=='string' || !item.name.trim() ||
+            !/^[0-9a-f-]{36}$/i.test(item.id) || item.id===projectId || item.archived_at || unique.has(item.id)) continue;
+        unique.add(item.id); targets.push({id:item.id,name:item.name});
+      }
+      updateFiling({...empty,targets,running:false,status:targets.length?'':'No other open projects.'});
+    } catch {
+      if (current()) updateFiling({...empty,running:false,status:'Could not load destination projects. Try again.'});
+    } finally { if(filingRequest.current===controller) filingRequest.current=null; }
+  };
+  const copyPhoto = async (state: Filing) => {
+    const {selection:selected,target}=state;
+    if (!canManage(selected) || selected.item.source_project_id!==projectId || filingRef.current!==state || state.running || state.definitive || !state.targets.some(p=>p.id===target) ||
+        (filingRequest.current && !filingRequest.current.signal.aborted)) return;
+    const controller=new AbortController(); filingRequest.current=controller;
+    const current=()=>canManage(selected) && filingRequest.current===controller && !controller.signal.aborted;
+    updateFiling({...state,running:true,status:''});
+    try {
+      const response=await fetch(`${API_BASE}/api/photos/project/${encodeURIComponent(target)}/photo/${encodeURIComponent(selected.item.id)}/reference`,{
+        headers:scopeHeaders(), method:'PUT', signal:controller.signal, cache:'no-store',
+        body:JSON.stringify({sourceProjectId:projectId}),
+      });
+      if (!current()) return;
+      const body=await response.json();
+      if (!current()) return;
+      const receipt=body?.reference;
+      if (!response.ok || !body?.success || receipt?.id!==selected.item.id ||
+          receipt.source_project_id!==projectId || receipt.album_project_id!==target || !receipt.copied_at) throw new Error('Not confirmed');
+      updateFiling({...state,running:false,status:'Photo copied. The original is still in this project.',definitive:true});
+    } catch {
+      if (current()) updateFiling({...state,running:false,status:'Could not confirm the copy. Check the destination or safely retry.',definitive:false});
+    } finally { if(filingRequest.current===controller) filingRequest.current=null; }
+  };
+  const exportPhoto = async (selected: Selection) => {
+    if (!canManage(selected) || (exportRequest.current && !exportRequest.current.signal.aborted)) return;
+    const controller=new AbortController(); exportRequest.current=controller;
+    const current=()=>canManage(selected) && exportRequest.current===controller && !controller.signal.aborted;
+    setExportStatus({selection:selected,running:true,text:''});
+    try {
+      const response=await fetch(`${API_BASE}/api/photos/project/${encodeURIComponent(projectId!)}/export`,{
+        headers:scopeHeaders(), method:'POST', signal:controller.signal, cache:'no-store',
+        body:JSON.stringify({photoIds:[selected.item.id]}),
+      });
+      if (!current()) return;
+      if (!response.ok || response.headers.get('content-type')?.split(';')[0]!=='application/zip') throw new Error('ZIP unavailable');
+      const blob=await response.blob();
+      if (!current()) return;
+      if (!blob.size || blob.size>34*1024*1024) throw new Error('Invalid ZIP');
+      const url=URL.createObjectURL(blob);
+      let anchor: HTMLAnchorElement | undefined;
+      try {
+        anchor=document.createElement('a'); anchor.href=url;
+        anchor.download=`project-photo-${selected.item.id.replace(/[^a-zA-Z0-9-]/g,'_')}.zip`;
+        document.body.appendChild(anchor);
+        if (current()) anchor.click();
+      } finally { anchor?.remove(); window.setTimeout(()=>URL.revokeObjectURL(url),60000); }
+      if (current()) setExportStatus({selection:selected,running:false,text:'Download started.'});
+    } catch {
+      if (current()) setExportStatus({selection:selected,running:false,text:'Could not export the original photo.'});
+    } finally { if(exportRequest.current===controller) exportRequest.current=null; }
   };
   const handlePlayAudio = async (item: MediaItem) => {
     if (!canUseItem(item) || !item.url || item.url === 'null') return;
@@ -324,6 +425,32 @@ export default function MonthMediaType() {
               {downloadError&&<Alert severity="error" sx={{mb:2}}>{downloadError}</Alert>}
               {selectedMedia.type === 'photo' && (
                 <img src={selectedMedia.url} alt="media" style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' }} />
+              )}
+              {selectedMedia.type === 'photo' && isManager && displayedSelection && (
+                <Box sx={{ display:'grid', gap:1, mt:2, color:'#FFF', justifyItems:'center' }}>
+                  {selectedMedia.copied_at && <Typography variant="caption">Reference from another project. The original stays there.</Typography>}
+                  <Button disabled={!!activeExport?.running} onClick={()=>void exportPhoto(displayedSelection)}>Export photo with original details</Button>
+                  {activeExport?.text && <Typography role="status">{activeExport.text}</Typography>}
+                  {selectedMedia.source_project_id===projectId && (
+                    <>
+                      <Button disabled={!!activeFiling?.running} onClick={()=>void loadFilingTargets(displayedSelection)}>Copy to another project</Button>
+                      {activeFiling && <>
+                        {activeFiling.targets.length>0 && <label>
+                          Destination project{' '}
+                          <select value={activeFiling.target} disabled={activeFiling.running} onChange={event=>{
+                            if(canManage(displayedSelection) && activeFiling===filingRef.current && !activeFiling.running) updateFiling({...activeFiling,target:event.target.value,status:'',definitive:false});
+                          }}>
+                            <option value="">Select a project</option>
+                            {activeFiling.targets.map(destination=><option key={destination.id} value={destination.id}>{destination.name}</option>)}
+                          </select>
+                        </label>}
+                        {activeFiling.target && <Button variant="contained" disabled={activeFiling.running || activeFiling.definitive}
+                          onClick={()=>void copyPhoto(activeFiling)}>Copy photo reference</Button>}
+                        {activeFiling.status && <Typography role="status">{activeFiling.status}</Typography>}
+                      </>}
+                    </>
+                  )}
+                </Box>
               )}
               {selectedMedia.type === 'video' && (
                 <video ref={inlineMediaRef as React.RefObject<HTMLVideoElement>} src={selectedMedia.url} controls autoPlay style={{ maxWidth: '100%', maxHeight: '80vh' }} />

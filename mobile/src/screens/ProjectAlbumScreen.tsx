@@ -1,7 +1,7 @@
 import { useLang } from '../context/LanguageContext';
 import { albumThumbnailSize } from '../utils/responsiveLayout';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,12 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  ScrollView,
+  AppState,
 
 } from 'react-native';
-import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -27,6 +30,11 @@ interface Photo {
   taken_at: string;
   compliance_score: number;
   taken_by?: string;
+  project_id?: string;
+  album_project_id?: string;
+  copied_at?: string | null;
+  file_type?: string;
+  company_id?: string;
 }
 
 export default function ProjectAlbumScreen() {
@@ -34,46 +42,127 @@ export default function ProjectAlbumScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
 
-  // ---------- SAFE PARAMS (prevents "Cannot read property 'projectId' of undefined") ----------
-  const projectId: string = route?.params?.projectId || '';
-  const projectName: string = route?.params?.projectName || t("Project Album");
-
+  const {user} = useAuth();
+  const focused = useIsFocused();
+  const projectId: string = typeof route.params?.projectId==='string' ? route.params.projectId : '';
+  const owner = user && {id:user.id,companyId:user.companyId,role:user.role};
+  const validRoute = !!owner?.id && !!owner.companyId && !!projectId
+    && route.params?.ownerId===owner.id && route.params?.companyId===owner.companyId;
+  const scope = JSON.stringify([route.key,projectId,owner?.id,owner?.companyId,owner?.role]);
+  const projectName: string = validRoute && typeof route.params?.projectName==='string' ? route.params.projectName : t("Project Album");
+  const live = useRef<string | null>(null);
+  const foreground = useRef(AppState.currentState === 'active');
+  const [appActive, setAppActive] = useState(foreground.current);
+  live.current = focused && validRoute && appActive ? scope : null;
+  const focus = useRef(false);
+  const sequence = useRef(0);
+  type Preview = { item:Photo };
+  const preview = useRef<Preview | null>(null);
+  const write = useRef<symbol | null>(null);
+  const canManage=!!owner && ['boss','manager','admin'].includes(owner.role.toLowerCase());
   const [gridWidth, setGridWidth] = useState(0);
   const itemSize = albumThumbnailSize(gridWidth, NUM_COLUMNS, SPACING);
-  const [photos, setPhotos] = useState<Photo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  type Album = {sequence:number; scope:string; rows:Photo[]; current?:()=>boolean; error?:boolean};
+  type Destination = {id:string;name:string};
+  type Filing = {preview:Preview; targets:Destination[]; target:string; running:boolean; message:string; copied:boolean};
+  const [album, setAlbum] = useState<Album | null>(null);
+  const [selected, setSelected] = useState<Preview | null>(null);
+  const [filing, setFiling] = useState<Filing | null>(null);
+  const visible = album?.scope===scope && album.sequence===sequence.current && live.current===scope
+    && (!album.current || album.current()) ? album : null;
+  const photos=visible?.rows || [];
+  const chosen=selected && selected===preview.current && photos.includes(selected.item) ? selected : null;
+  const selectedPhoto=chosen?.item || null;
+  const pickerRef=useRef<Filing | null>(null);
+  const updatePicker=(next:Filing | null) => {pickerRef.current=next; setFiling(next);};
+  const picker=filing && filing===pickerRef.current && filing.preview===chosen ? filing : null;
+  const loading = validRoute && appActive && !visible;
 
-  const fetchPhotos = async () => {
-    if (!projectId) {
-      setLoading(false);
-      return;
-    }
+  const closePreview = () => { preview.current=null; write.current=null; setSelected(null); updatePicker(null); };
+  const fetchPhotos = useCallback(async () => {
+    if (!owner || !focus.current || !foreground.current || live.current!==scope) return;
+    const request=++sequence.current;
+    const active=()=>focus.current && foreground.current && live.current===scope && sequence.current===request;
+    closePreview();
+    setAlbum(null);
     try {
-      const res = await api.get<{ success: boolean; photos: Photo[] }>(
-        `/photos/project/${projectId}`
-      );
-      // Keep only Cloudinary URLs (skip old local paths)
-      const cloudPhotos = (res.photos || []).filter(p => p.s3_key?.startsWith('http'));
-      setPhotos(cloudPhotos);
-    } catch (e) {
-      console.error('Failed to load album', e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      const response=await api.projectPhotos<{success:boolean;photos:Photo[]}>(projectId,owner,active);
+      if (!active() || !response.isSessionCurrent()) return;
+      if (!response.data.success || !Array.isArray(response.data.photos)) throw new Error('Invalid photo album');
+      // Old servers omit album_project_id; then only an original in this project is valid.
+      const rows=response.data.photos.filter(p=>p && typeof p.id==='string' && p.company_id===owner.companyId && typeof p.s3_key==='string' && /^https?:\/\//.test(p.s3_key)
+        && (!p.album_project_id ? p.project_id===projectId : p.album_project_id===projectId));
+      setAlbum({scope,sequence:request,rows,current:response.isSessionCurrent});
+    } catch {
+      if (active()) setAlbum({scope,sequence:request,rows:[],error:true});
     }
+  },[scope,validRoute,appActive]);
+
+  useFocusEffect(useCallback(() => {
+    focus.current=true; void fetchPhotos();
+    return () => { focus.current=false; sequence.current++; preview.current=null; write.current=null; pickerRef.current=null; };
+  }, [fetchPhotos]));
+
+  useEffect(() => {
+    const lifecycle=AppState.addEventListener('change', state=>{
+      const active=state==='active';
+      if (active===foreground.current) return;
+      foreground.current=active;
+      if (!active) { live.current=null; sequence.current++; closePreview(); setAlbum(null); }
+      setAppActive(active);
+    });
+    return ()=>lifecycle.remove();
+  },[]);
+
+  const previewCurrent = (value:Preview) => focus.current && foreground.current && live.current===scope && !!visible
+    && visible.sequence===sequence.current && visible.current?.()===true
+    && photos.includes(value.item) && preview.current===value;
+  const openPreview = (item:Photo) => {
+    if (!focus.current || !foreground.current || live.current!==scope || !visible || visible.sequence!==sequence.current
+        || visible.current?.()!==true || !photos.includes(item)) return;
+    write.current=null; const value={item}; preview.current=value; setSelected(value); updatePicker(null);
   };
-
-  useFocusEffect(useCallback(() => { fetchPhotos(); }, [projectId]));
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchPhotos();
+  const chooseDestination = async (selection:Preview) => {
+    const item=selection.item;
+    if (!owner || !canManage || !previewCurrent(selection) || item.project_id!==projectId || item.file_type!=='image' || write.current) return;
+    const attempt=Symbol(); write.current=attempt;
+    const current=()=>previewCurrent(selection) && write.current===attempt;
+    const blank={preview:selection,targets:[],target:'',running:true,message:'',copied:false};
+    updatePicker(blank);
+    try {
+      const result=await api.projectPhotos<{success:boolean;projects:Destination[]}>(projectId,owner,current,'targets');
+      if (!current() || !result.isSessionCurrent()) return;
+      if (!result.data.success || !Array.isArray(result.data.projects)) throw new Error('Invalid projects');
+      const targets=result.data.projects.filter(row=>row && typeof row.id==='string' && /^[0-9a-f-]{36}$/i.test(row.id)
+        && row.id!==projectId && typeof row.name==='string' && row.name.trim());
+      updatePicker({...blank,targets,running:false,message:targets.length?'':t('No other open projects.')});
+    } catch {
+      if (current()) updatePicker({...blank,running:false,message:t('Could not load destination projects. Try again.')});
+    } finally { if(write.current===attempt) write.current=null; }
+  };
+  const confirmCopy = async (choice:Filing) => {
+    const selection=choice.preview, item=selection.item;
+    if (!owner || !canManage || !previewCurrent(selection) || item.project_id!==projectId || item.file_type!=='image' ||
+        pickerRef.current!==choice || choice.running || choice.copied || !choice.targets.some(row=>row.id===choice.target) || write.current) return;
+    const attempt=Symbol(); write.current=attempt;
+    const current=()=>previewCurrent(selection) && write.current===attempt;
+    updatePicker({...choice,running:true,message:''});
+    try {
+      const result=await api.projectPhotos<{success:boolean;reference?:{id:string;source_project_id:string;album_project_id:string;copied_at:string}}>(
+        projectId,owner,current,{targetProjectId:choice.target,photoId:item.id},
+      );
+      if (!current() || !result.isSessionCurrent()) return;
+      const receipt=result.data.reference;
+      if (!result.data.success || receipt?.id!==item.id || receipt.source_project_id!==projectId ||
+          receipt.album_project_id!==choice.target || !receipt.copied_at) throw new Error('Copy not confirmed');
+      updatePicker({...choice,running:false,copied:true,message:t('Photo copied. The original is still in this project.')});
+    } catch {
+      if (current()) updatePicker({...choice,running:false,message:t('Could not confirm the copy. Check the destination or safely retry.')});
+    } finally { if(write.current===attempt) write.current=null; }
   };
 
   const renderPhoto = ({ item }: { item: Photo }) => (
-    <TouchableOpacity onPress={() => setSelectedPhoto(item)}>
+    <TouchableOpacity onPress={() => openPreview(item)}>
       <Image source={{ uri: item.s3_key }} style={[styles.photoThumb, { width: itemSize, height: itemSize }]} resizeMode="cover" />
       {item.compliance_score !== undefined && (
         <View
@@ -95,7 +184,7 @@ export default function ProjectAlbumScreen() {
     );
   }
 
-  if (!projectId) {
+  if (!validRoute) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -140,27 +229,55 @@ export default function ProjectAlbumScreen() {
         numColumns={NUM_COLUMNS}
         contentContainerStyle={styles.grid}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#00D4FF" />
+          <RefreshControl refreshing={false} onRefresh={()=>void fetchPhotos()} tintColor="#00D4FF" />
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>{t("No photos yet. Take some new photos!")}</Text>
+          visible?.error
+            ? <TouchableOpacity accessibilityRole="button" onPress={()=>void fetchPhotos()}><Text style={styles.empty}>{t('Could not load project photos. Tap to retry.')}</Text></TouchableOpacity>
+            : <Text style={styles.empty}>{t("No photos yet. Take some new photos!")}</Text>
         }
       />
 
       {/* Full‑screen photo modal */}
-      <Modal visible={!!selectedPhoto} onRequestClose={() => setSelectedPhoto(null)} animationType="fade" transparent>
+      <Modal visible={!!selectedPhoto} onRequestClose={()=>{if(chosen && preview.current===chosen) closePreview();}} animationType="fade" transparent>
         <View style={styles.fullscreenOverlay}>
-          <TouchableOpacity style={styles.closeBtn} accessibilityRole="button" accessibilityLabel={t("Close photo preview")} onPress={() => setSelectedPhoto(null)}>
+          <TouchableOpacity style={styles.closeBtn} accessibilityRole="button" accessibilityLabel={t("Close photo preview")} onPress={()=>{if(chosen && preview.current===chosen) closePreview();}}>
             <MaterialIcons name="close" size={30} color="#FFF" />
           </TouchableOpacity>
-          {selectedPhoto && (
+          {selectedPhoto && !picker && (
             <Image
               source={{ uri: selectedPhoto.s3_key }}
               style={styles.fullscreenImage}
               resizeMode="contain"
             />
           )}
-          {selectedPhoto?.taken_by && (
+          {selectedPhoto?.copied_at && <Text style={styles.fullscreenBy}>{t('Reference from another project. The original stays there.')}</Text>}
+          {selectedPhoto && !picker && canManage && selectedPhoto.project_id===projectId && selectedPhoto.file_type==='image' &&
+            <TouchableOpacity accessibilityRole="button" style={styles.photoAction} onPress={()=>chosen && void chooseDestination(chosen)}>
+              <Text style={styles.photoActionText}>{t('Copy to another project')}</Text>
+            </TouchableOpacity>}
+          {picker && <View style={styles.filing}>
+            <Text style={styles.photoActionText}>{t('Destination project')}</Text>
+            {picker.running && <ActivityIndicator color="#00D4FF" />}
+            <ScrollView style={styles.filingScroll} keyboardShouldPersistTaps="handled">
+              {picker.targets.map(destination=><TouchableOpacity key={destination.id} accessibilityRole="radio"
+                accessibilityState={{selected:picker.target===destination.id,disabled:picker.running}}
+                disabled={picker.running} style={[styles.photoAction,picker.target===destination.id&&styles.selectedTarget]}
+                onPress={()=>{ if(previewCurrent(picker.preview)&&pickerRef.current===picker&&!write.current) updatePicker({...picker,target:destination.id,message:'',copied:false}); }}>
+                <Text style={styles.photoActionText}>{destination.name}</Text>
+              </TouchableOpacity>)}
+            </ScrollView>
+            {!!picker.message && <Text accessibilityLiveRegion="polite" style={styles.photoActionText}>{picker.message}</Text>}
+            {!picker.running && !picker.targets.length && !!picker.message &&
+              <TouchableOpacity accessibilityRole="button" style={styles.photoAction} onPress={()=>void chooseDestination(picker.preview)}>
+                <Text style={styles.photoActionText}>{t('Retry')}</Text>
+              </TouchableOpacity>}
+            {!!picker.target && !picker.copied &&
+              <TouchableOpacity accessibilityRole="button" disabled={picker.running} style={styles.photoAction} onPress={()=>void confirmCopy(picker)}>
+                <Text style={styles.photoActionText}>{t('Copy photo reference')}</Text>
+              </TouchableOpacity>}
+          </View>}
+          {selectedPhoto?.taken_by && !picker && (
             <Text style={styles.fullscreenBy}>{t("Taken by:")} {selectedPhoto.taken_by}</Text>
           )}
         </View>
@@ -170,6 +287,12 @@ export default function ProjectAlbumScreen() {
 }
 
 const styles = StyleSheet.create({
+  filing: { width:'90%', maxWidth:520, maxHeight:'70%', padding:16, backgroundColor:'#18232D', borderRadius:14, gap:8 },
+  filingScroll: { flexGrow:0, maxHeight:240 },
+  photoAction: { minHeight:48, paddingHorizontal:14, paddingVertical:12, justifyContent:'center', borderRadius:10, backgroundColor:'#1B465C', marginBottom:6 },
+  photoActionText: { color:'#FFF', fontSize:16 },
+  selectedTarget:{ borderWidth:2, borderColor:'#00D4FF' },
+
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   header: {
     flexDirection: 'row',

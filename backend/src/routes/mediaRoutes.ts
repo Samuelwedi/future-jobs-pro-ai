@@ -3,13 +3,14 @@ import { pool } from '../config/database';
 import { verifyToken } from '../utils/auth';
 
 const router = express.Router();
+router.use((_req, res, next) => { res.setHeader('Cache-Control', 'private, no-store'); next(); });
 
 const getCompanyId = async (req: any): Promise<string | null> => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   try {
     const decoded = verifyToken(req);
-    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1', [decoded.id]);
+    const userRes = await pool.query('SELECT company_id FROM users WHERE id = $1 AND COALESCE(is_active, TRUE) = TRUE', [decoded.id]);
     return userRes.rows[0]?.company_id || null;
   } catch {
     return null;
@@ -30,9 +31,9 @@ router.get('/projects', async (req, res) => {
       FROM projects p
       WHERE p.company_id = $1
       AND EXISTS (
-        SELECT 1 FROM photos WHERE photos.project_id = p.id
+        SELECT 1 FROM project_photo_inventory WHERE album_project_id = p.id AND company_id = $1
         UNION
-        SELECT 1 FROM voice_notes WHERE voice_notes.project_id = p.id
+        SELECT 1 FROM voice_notes WHERE voice_notes.project_id = p.id AND company_id = $1
       )
       ORDER BY project_name
     `, [companyId]);
@@ -65,15 +66,15 @@ router.get('/project/:projectId/months', async (req, res) => {
     }
 
     const result = await pool.query(`
-      SELECT DISTINCT TO_CHAR(DATE_TRUNC('month', taken_at), 'YYYY-MM') as month
-      FROM photos
-      WHERE project_id = $1
+      SELECT DISTINCT TO_CHAR(DATE_TRUNC('month', ph.taken_at), 'YYYY-MM') as month
+      FROM project_photo_inventory i JOIN photos ph USING (id, company_id)
+      WHERE i.album_project_id = $1 AND i.company_id = $2
       UNION
       SELECT DISTINCT TO_CHAR(DATE_TRUNC('month', COALESCE(taken_at, created_at)), 'YYYY-MM') as month
       FROM voice_notes
-      WHERE project_id = $1
+      WHERE project_id = $1 AND company_id = $2
       ORDER BY month DESC
-    `, [projectId]);
+    `, [projectId, companyId]);
 
     console.log(`✅ Found ${result.rows.length} months:`, result.rows.map(r => r.month));
     res.json({ success: true, months: result.rows.map(r => r.month) });
@@ -93,7 +94,7 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
     }
     const { projectId, yearMonth } = req.params;
 
-    if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(yearMonth)) {
       console.warn('⚠️ Invalid month format:', yearMonth);
       return res.status(400).json({ success: false, message: 'Invalid month format. Use YYYY-MM' });
     }
@@ -118,9 +119,11 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         metadata,
         verification_hash,
         NULL::text as transcript,
-        NULL::text as duration
-      FROM photos
-      WHERE project_id = $1 
+        NULL::text as duration,
+        i.source_project_id,
+        i.copied_at
+      FROM project_photo_inventory i JOIN photos ph USING (id, company_id)
+      WHERE i.album_project_id = $1 AND i.company_id = $3
         AND taken_at >= $2::date 
         AND taken_at < ($2::date + INTERVAL '1 month')
         AND file_type = 'image'
@@ -135,9 +138,11 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         metadata,
         verification_hash,
         NULL::text as transcript,
-        NULL::text as duration
-      FROM photos
-      WHERE project_id = $1 
+        NULL::text as duration,
+        i.source_project_id,
+        i.copied_at
+      FROM project_photo_inventory i JOIN photos ph USING (id, company_id)
+      WHERE i.album_project_id = $1 AND i.company_id = $3
         AND taken_at >= $2::date 
         AND taken_at < ($2::date + INTERVAL '1 month')
         AND file_type = 'video'
@@ -152,22 +157,19 @@ router.get('/project/:projectId/month/:yearMonth', async (req, res) => {
         NULL::jsonb as metadata,
         NULL::text as verification_hash,
         transcript,
-        duration_seconds::text as duration
+        duration_seconds::text as duration,
+        project_id AS source_project_id,
+        NULL::timestamptz AS copied_at
       FROM voice_notes
-      WHERE project_id = $1 
+      WHERE project_id = $1 AND company_id = $3
         AND COALESCE(taken_at, created_at) >= $2::date 
         AND COALESCE(taken_at, created_at) < ($2::date + INTERVAL '1 month')
 
       ORDER BY taken_at DESC
     `;
 
-    const result = await pool.query(query, [projectId, startDate]);
+    const result = await pool.query(query, [projectId, startDate, companyId]);
     console.log(`✅ Found ${result.rows.length} media items for ${yearMonth}`);
-
-    // Log a sample if any
-    if (result.rows.length > 0) {
-      console.log('📝 Sample:', { type: result.rows[0].type, id: result.rows[0].id, url: result.rows[0].url?.substring(0, 50) });
-    }
 
     res.json({ success: true, media: result.rows });
   } catch (error) {
