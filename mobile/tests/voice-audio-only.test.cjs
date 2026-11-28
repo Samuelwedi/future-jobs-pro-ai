@@ -95,3 +95,12 @@ test('confirmed recovery and active processing remain visible when microphone pe
  assert.ok(source.indexOf('if (result) {')<source.indexOf('if (hasPermission === false)'));
  assert.ok(source.indexOf('if (isProcessing) {')<source.indexOf('if (hasPermission === null)'));
 });
+
+test('Save local recording follows the local-only path; the standard Stop still uses existing upload flow',async()=>{
+ const c=fixture();const receipt={phase:'prepared',mode:'audio-only'};
+ c.saveVoiceDraft=async(...args)=>{c.calls.push(['local',...args]);return {state:'prepared',receipt};};
+ await handler('processRecording',c)('file:///stopped.m4a',true);
+ assert.equal(c.calls.filter(x=>x[0]==='local').length,1);assert.equal(c.calls.some(x=>x[0]==='start'),false);
+ assert.equal(c.state.saved,receipt);assert.equal(c.state.retry,null);assert.equal(c.state.processing,false);
+ assert.match(source,/processRecording\(retryUri, true\)/);assert.match(source,/await processRecording\(uri\)/);
+});

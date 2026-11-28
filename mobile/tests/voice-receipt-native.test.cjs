@@ -72,3 +72,28 @@ test('durable preparation callback clears source fallback before ambiguous final
   assert.equal(prepared,true);assert.equal(sourceRetry,null);assert.equal(await f.pending(),undefined);assert.equal(f.count('post'),1);assert.ok(f.files.has(f.source));
  }
 });
+
+test('explicit local draft never checks connectivity or sends, and survives restart before explicit send',async()=>{
+ for(const online of [true,false]){
+  const f=fixture(); f.online=online;
+  const draft=await f.service.saveVoiceDraft(f.session,'project','shift','audio-transcribed',f.source,()=>true);
+  assert.equal(draft.state,'prepared');assert.equal(draft.receipt.phase,'prepared');
+  assert.equal(f.count('post'),0);assert.equal(f.count('status'),0);assert.equal(f.events.includes('online'),false);
+  f.reload();
+  const saved=await f.pending('project','shift');assert.equal(saved.requestKey,draft.receipt.requestKey);
+  assert.equal(saved.mode,'audio-transcribed');assert.ok(f.files.has(saved.fileUri));assert.equal(f.count('post'),0);
+  f.online=true;assert.equal((await f.recover('shift')).state,'completed');
+  assert.equal(f.count('post'),1);assert.equal(f.calls.find(x=>x[0]==='post')[1],saved.requestKey);
+ }
+});
+
+test('local draft refuses account changes and never sends a duplicate or a different target',async()=>{
+ const f=fixture();
+ const first=f.service.saveVoiceDraft(f.session,'project',null,'audio-only',f.source,()=>true);
+ assert.throws(()=>f.service.saveVoiceDraft(f.session,'project',null,'audio-only',f.source,()=>true),/already being checked/);
+ await first;assert.equal(await f.pending('other'),undefined);
+ await assert.rejects(f.service.saveVoiceDraft(f.session,'project',null,'audio-only',f.source,()=>true),/Check the saved/);
+ f.revision=1;
+ assert.throws(()=>f.service.saveVoiceDraft(f.session,'other',null,'audio-only',f.source,()=>true),/Account changed/);
+ assert.equal(f.count('post'),0);assert.equal(f.count('copy'),1);
+});

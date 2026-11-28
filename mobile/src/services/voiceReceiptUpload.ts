@@ -18,11 +18,22 @@ function flight(session: VoiceSession, projectId: string, timeEntryId: string | 
   if (flights.has(id)) throw new Error('This recording is already being checked. Please check its status shortly.');
   const task = work().finally(() => flights.delete(id)); flights.set(id, task); return task;
 }
+function prepareStored(session: VoiceSession, projectId: string, timeEntryId: string | null, mode: VoiceMode, sourceUri: string, current: () => boolean) {
+  return prepareVoice({ requestKey: `voice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
+    ownerId: session.ownerId, companyId: session.companyId, projectId, timeEntryId, mode,
+    fileInfo: { name: 'voice.m4a', mimeType: 'audio/mp4' } }, sourceUri, () => assertSession(session, current));
+}
+/** Keep the completed note on this device; only explicit saved-note recovery can send it. */
+export function saveVoiceDraft(session: VoiceSession, projectId: string, timeEntryId: string | null, mode: VoiceMode, sourceUri: string, current: () => boolean) {
+  return flight(session, projectId, timeEntryId, current, async () => {
+    const receipt = await prepareStored(session, projectId, timeEntryId, mode, sourceUri, current);
+    assertSession(session, current);
+    return { state: 'prepared', receipt };
+  });
+}
 export function startVoiceUpload(session: VoiceSession, projectId: string, timeEntryId: string | null, mode: VoiceMode, sourceUri: string, current: () => boolean, onPrepared: (receipt: VoiceReceipt) => void = () => undefined) {
   return flight(session, projectId, timeEntryId, current, async () => {
-    const record = await prepareVoice({ requestKey: `voice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
-      ownerId: session.ownerId, companyId: session.companyId, projectId, timeEntryId, mode,
-      fileInfo: { name: 'voice.m4a', mimeType: 'audio/mp4' } }, sourceUri, () => assertSession(session, current));
+    const record = await prepareStored(session, projectId, timeEntryId, mode, sourceUri, current);
     // The screen must relinquish the original-source retry before dispatch. Final
     // cleanup can remove this index even if its acknowledgment is subsequently lost.
     onPrepared(record);

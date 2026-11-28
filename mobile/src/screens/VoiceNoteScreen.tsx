@@ -16,7 +16,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { api, type VoiceSession } from '../services/api';
-import { getPendingVoice, startVoiceUpload, recoverVoiceUpload, type VoiceReceipt, type VoiceOutcome } from '../services/voiceReceiptUpload';
+import { getPendingVoice, startVoiceUpload, saveVoiceDraft, recoverVoiceUpload, type VoiceReceipt, type VoiceOutcome } from '../services/voiceReceiptUpload';
 import * as Haptics from 'expo-haptics';
 
 interface VoiceNoteResponse {
@@ -281,18 +281,20 @@ function VoiceNoteContent() {
     }
   };
 
-  const processRecording = async (audioUri: string) => {
+  const processRecording = async (audioUri: string, localOnly = false) => {
     const epoch = generation.current, session = recordingSession.current;
     if (!current(epoch) || !session) return;
     const active = () => current(epoch);
     setResult(null); setRetryUri(audioUri); setIsProcessing(true);
     try {
       api.assertVoiceSession(session);
-      const outcome = await startVoiceUpload(session, projectId, timeEntryId || null,
-        recordingMode.current ? 'audio-transcribed' : 'audio-only', audioUri, active, prepared => {
-          if (!active()) return;
-          setSavedReceipt(prepared); setRetryUri(null);
-        });
+      const mode = recordingMode.current ? 'audio-transcribed' : 'audio-only';
+      const outcome = localOnly
+        ? await saveVoiceDraft(session, projectId, timeEntryId || null, mode, audioUri, active)
+        : await startVoiceUpload(session, projectId, timeEntryId || null, mode, audioUri, active, prepared => {
+            if (!active()) return;
+            setSavedReceipt(prepared); setRetryUri(null);
+          });
       api.assertVoiceSession(session);
       if (!active()) return;
       showOutcome(outcome);
@@ -369,8 +371,8 @@ function VoiceNoteContent() {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#00D4FF" />
-        <Text style={styles.processingTitle}>{t(recordingMode.current ? "🤖 AI is Processing" : "Saving audio...")}</Text>
-        <Text style={styles.processingText}>{t(recordingMode.current ? "Transcribing and extracting information..." : "Saving without transcription or AI processing.")}</Text>
+        <Text style={styles.processingTitle}>{t("Saving or checking recording...")}</Text>
+        <Text style={styles.processingText}>{t("Wait for saved status to be confirmed.")}</Text>
       </View>
     );
   }
@@ -476,7 +478,7 @@ function VoiceNoteContent() {
         {retryUri && !isRecording && <TouchableOpacity accessibilityRole="button" style={styles.secondaryButton} onPress={() => {
           if (busy.current) return;
           busy.current = true;
-          void processRecording(retryUri).finally(() => { busy.current = false; });
+          void processRecording(retryUri, true).finally(() => { busy.current = false; });
         }}><Text style={styles.secondaryButtonText}>{t("Save local recording")}</Text></TouchableOpacity>}
         {isRecording && <TouchableOpacity accessibilityRole="button"
           accessibilityLabel={t(isPaused ? "Resume recording" : "Pause recording")}
