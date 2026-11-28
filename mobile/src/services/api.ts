@@ -470,6 +470,35 @@ class ApiService {
     return response.data;
   }
 
+  async projectRoster<T>(projectId: string, owner: { id: string; companyId: string; role: string }, current: () => boolean,
+    change?: { userId: string; assigned: boolean }): Promise<T> {
+    const token = this.token, revision = this.authRevision;
+    if (!token) throw new Error('Project team account changed');
+    const expected = { ...owner };
+    const assertCurrent = () => {
+      if (token !== this.token || revision !== this.authRevision || !current()) {
+        throw new Error('Project team account changed');
+      }
+    };
+    assertCurrent();
+    const stored = JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+    assertCurrent();
+    if (!expected.id || !expected.companyId || stored?.id !== expected.id ||
+      stored?.companyId !== expected.companyId || stored?.role !== expected.role) {
+      throw new Error('Project team account changed');
+    }
+    const url = `/projects/${encodeURIComponent(projectId)}/roster`;
+    const config: EvidenceConfig = {
+      expectedAuthToken: token, expectedAuthRevision: revision, expectedCurrent: current, fenceUnauthorizedToCurrent: true,
+      headers: { 'X-Project-Actor': expected.id, 'X-Project-Company': expected.companyId },
+    };
+    const response = !change ? await this.client.get<T>(url, config) :
+      await this.client.request<T>({ ...config, method: change.assigned ? 'put' : 'delete',
+        url: `${url}/${encodeURIComponent(change.userId)}` });
+    assertCurrent();
+    return response.data;
+  }
+
   private async clockRequestSession(owner: { id: string; companyId: string; role: string }, current: () => boolean) {
     const revision = this.authRevision;
     const token = this.token || await this.getToken();

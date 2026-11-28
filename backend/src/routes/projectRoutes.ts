@@ -145,6 +145,84 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
+function rosterError(status: number, message: string): never {
+  throw Object.assign(new Error(message), { status });
+}
+
+const rosterId = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;
+const rosterRoles = ['employee', 'worker', 'manager', 'boss', 'admin'];
+
+function sendRosterError(res: Response, error: any): void {
+  if (error?.code === '40P01' || error?.code === '40001') {
+    res.status(409).json({ success: false, message: 'Project team changed. Refresh before trying again.' });
+  } else if (error?.status === 401 || error?.status === 403 || error?.status === 404) {
+    sendError(res, error);
+  } else if (/token|authenticated/i.test(String(error?.message))) {
+    res.status(401).json({ success: false, message: 'Sign in to manage the project team.' });
+  } else {
+    res.status(503).json({ success: false, message: 'Project team is unavailable. Try again later.' });
+  }
+}
+
+async function findRosterProject(req: Request, client: PoolClient, current: Actor, id: string, writing: boolean) {
+  if (req.get('X-Project-Actor') !== current.id || req.get('X-Project-Company') !== current.companyId) {
+    rosterError(403, 'Project team account changed');
+  }
+  const project = await client.query(
+    'SELECT id FROM projects WHERE id=$1 AND company_id=$2 AND archived_at IS NULL ' + (writing ? 'FOR UPDATE' : 'FOR SHARE'),
+    [id, current.companyId],
+  );
+  if (!project.rowCount) rosterError(404, 'Project not found');
+}
+
+router.get('/:id/roster', async (req, res) => {
+  const id = String(req.params.id);
+  if (!rosterId.test(id)) return res.status(404).json({ success: false, message: 'Project not found' });
+  try {
+    const result = await managedWrite(req, async (client, current) => {
+      await findRosterProject(req, client, current, id, false);
+      return client.query(
+        `SELECT u.id, COALESCE(NULLIF(BTRIM(u.full_name), ''), NULLIF(BTRIM(CONCAT_WS(' ', u.first_name, u.last_name)), '')) AS name,
+                LOWER(u.role) AS role, (r.user_id IS NOT NULL) AS assigned
+           FROM users u LEFT JOIN project_roster r ON r.user_id=u.id AND r.company_id=u.company_id AND r.project_id=$2
+          WHERE u.company_id=$1 AND COALESCE(u.is_active, TRUE) AND LOWER(u.role)=ANY($3::text[])
+          ORDER BY (r.user_id IS NOT NULL) DESC, name NULLS LAST, u.id`,
+        [current.companyId, id, rosterRoles],
+      );
+    });
+    res.set('Cache-Control', 'private, no-store').json({ success: true, members: result.rows });
+  } catch (error) { sendRosterError(res, error); }
+});
+
+async function changeRoster(req: Request, res: Response, add: boolean) {
+  const id = String(req.params.id), userId = String(req.params.userId);
+  if (!rosterId.test(id) || !rosterId.test(userId)) {
+    return res.status(404).json({ success: false, message: 'Project or team member not found' });
+  }
+  try {
+    await managedWrite(req, async (client, current) => {
+      await findRosterProject(req, client, current, id, true);
+      if (!add) {
+        return client.query('DELETE FROM project_roster WHERE company_id=$1 AND project_id=$2 AND user_id=$3',
+          [current.companyId, id, userId]);
+      }
+      const target = await client.query(
+        `SELECT id FROM users WHERE id=$1 AND company_id=$2 AND COALESCE(is_active, TRUE)
+          AND LOWER(role)=ANY($3::text[]) FOR SHARE`, [userId, current.companyId, rosterRoles],
+      );
+      if (!target.rowCount) rosterError(404, 'Team member not found');
+      return client.query(
+        'INSERT INTO project_roster (company_id, project_id, user_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [current.companyId, id, userId],
+      );
+    });
+    res.set('Cache-Control', 'private, no-store').json({ success: true, assigned: add });
+  } catch (error) { sendRosterError(res, error); }
+}
+
+router.put('/:id/roster/:userId', (req, res) => changeRoster(req, res, true));
+router.delete('/:id/roster/:userId', (req, res) => changeRoster(req, res, false));
+
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const current = await actor(req);

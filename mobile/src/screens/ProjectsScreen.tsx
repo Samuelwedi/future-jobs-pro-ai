@@ -2,6 +2,7 @@ import { useLang } from '../context/LanguageContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {checkOnlineStatus} from '../services/offlineService';
 import { AdaptiveModal as Modal } from '../components/AdaptiveModal';
+import { ProjectRosterModal } from '../components/ProjectRosterModal';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -31,6 +32,8 @@ function ProjectsContent() {
   const [draftError, setDraftError] = useState(false);
   const createDraft = useRef({name: '', client: '', address: ''});
   const navigation = useNavigation<any>();
+  const [rosterProject, setRosterProject] = useState<{id: string; name: string} | null>(null);
+  useEffect(() => navigation.addListener('blur', () => setRosterProject(null)), [navigation]);
   const [projects, setProjects] = useState<any[]>([]);
   const [showArchived, setShowArchived] = useState(false);
   const archiveView = useRef(false);
@@ -237,6 +240,12 @@ function ProjectsContent() {
       </>}
       </View>}
       </View>
+      {canManage && !item.archived_at && <TouchableOpacity accessibilityRole="button" disabled={saving}
+        accessibilityLabel={t('Project team for {name}', {name: item.name})} style={styles.filesButton}
+        onPress={() => { if (mounted.current && !saveLock.current) setRosterProject({id: item.id, name: item.name}); }}>
+        <MaterialIcons name="group" size={20} color="#00D4FF" />
+        <Text style={styles.filesText}>{t('Project team')}</Text>
+      </TouchableOpacity>}
       <TouchableOpacity accessibilityRole="button" accessibilityLabel={t('View files for {name}', {name: item.name})}
         style={styles.filesButton}
         onPress={() => openProjectFiles(item)}>
@@ -297,6 +306,9 @@ function ProjectsContent() {
         <MaterialIcons name="add" size={28} color="#0A0A0A" />
       </TouchableOpacity>}
 
+      {rosterProject && canManage && user?.companyId && <ProjectRosterModal
+        key={rosterProject.id} owner={{id: user.id, companyId: user.companyId, role: user.role}}
+        project={rosterProject} close={() => setRosterProject(null)} />}
       {/* Modal for Create/Edit */}
       <Modal visible={modalVisible && canManage} onRequestClose={() => setModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
