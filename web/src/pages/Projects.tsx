@@ -13,7 +13,7 @@ import {
 import { getAuthRevision } from '../services/authSession';
 import {
   canManageProjects, confirmedProject, openProjectSession, projectOwnerKey, readProjectOwner,
-  type Project, type ProjectOwner, type ProjectStatus,
+  type Project, type ProjectOwner, type ProjectStatus, type RosterMember,
 } from '../services/projectSession';
 
 const uncertainSaveNotice = 'Save not confirmed. Nothing will retry automatically. Your draft is kept on this page. Check the project list, and copy any edits you need before reopening Projects to save again.';
@@ -83,11 +83,25 @@ function OwnedProjects({ owner, scopeCurrent }: { owner: ProjectOwner; scopeCurr
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Project | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [rosterProject, setRosterProject] = useState<Project | null>(null);
+  const [rosterMembers, setRosterMembers] = useState<RosterMember[]>([]);
+  const [rosterQuery, setRosterQuery] = useState('');
+  const [rosterPending, setRosterPending] = useState(false);
+  const [rosterWarning, setRosterWarning] = useState('');
+  type RosterView = { project: Project; busy: boolean; mustRefresh: boolean; members: RosterMember[] };
+  const rosterView = useRef<RosterView | null>(null);
+  const rosterInstance = rosterView.current;
+  const closeRoster = () => {
+    rosterView.current = null; setRosterProject(null); setRosterMembers([]);
+    setRosterQuery(''); setRosterPending(false); setRosterWarning('');
+  };
+  const dismissRoster = () => { if (rosterInstance && rosterInstance === rosterView.current) closeRoster(); };
   const dialogInstance = draft.current.instance;
   const isCurrent = () => mounted.current && !leaving.current && !denied.current && scopeCurrent();
   const canAct = () => isCurrent() && !pageHidden.current && document.visibilityState !== 'hidden';
   const accessChanged = () => {
     if (!isCurrent()) return;
+    closeRoster();
     denied.current = true; sequence.current++; rows.current = []; pendingArchive.current = null; uncertainSave.current = false;
     draft.current = { instance: null, open: false, editing: null, form: { ...emptyForm }, revision: draft.current.revision + 1 };
     setProjects([]); setDialogOpen(false); setForm(emptyForm); setEditing(null); setQuery(''); setStatusFilter('all'); setLoading(false); setSaving(false); setUncertain(false); setNotice('');
@@ -153,7 +167,7 @@ function OwnedProjects({ owner, scopeCurrent }: { owner: ProjectOwner; scopeCurr
         else { uncertainSave.current = true; setError(''); }
         setSaving(false);
       }
-      mutation.current = null; leave();
+      closeRoster(); mutation.current = null; leave();
     };
     const restore = (event: PageTransitionEvent) => {
       if (!event.persisted || !pageHidden.current || !mounted.current || !scopeCurrent()) return;
@@ -172,7 +186,7 @@ function OwnedProjects({ owner, scopeCurrent }: { owner: ProjectOwner; scopeCurr
 
   const changeArchiveView = (archived: boolean) => {
     if (!canAct() || mutation.current || archiveView.current === archived) return;
-    archiveView.current = archived; sequence.current++; rows.current = [];
+    closeRoster(); archiveView.current = archived; sequence.current++; rows.current = [];
     setShowArchived(archived); setProjects([]); setNotice(''); void loadProjects();
   };
   const refresh = () => pendingArchive.current ? void reconcileArchive() : void loadProjects();
@@ -183,13 +197,50 @@ function OwnedProjects({ owner, scopeCurrent }: { owner: ProjectOwner; scopeCurr
   }), [projects, query, statusFilter]);
 
   const canWrite = () => canAct() && canManage && !mutation.current && !pendingArchive.current && !uncertainSave.current;
+  const refreshRoster = async (view: RosterView | null, change?: RosterMember) => {
+    const generation = epoch.current;
+    if (!view || rosterView.current !== view || !canWrite() || view.busy ||
+        (change && (view.mustRefresh || !view.members.includes(change)))) return;
+    const transport = openProjectSession(owner, () => canAct() && epoch.current === generation && rosterView.current === view);
+    view.busy = true; setRosterPending(true); setRosterWarning('');
+    try {
+      if (change) {
+        await transport.setRoster(view.project.id, change.id, !change.assigned);
+        if (!transport.isCurrent()) return;
+      }
+      const result = await transport.readRoster(view.project.id);
+      if (!transport.isCurrent()) return;
+      view.mustRefresh = false; view.members = result;
+      setRosterMembers(result);
+      if (change && result.find(member => member.id === change.id)?.assigned !== !change.assigned) {
+        setRosterWarning('The assignment changed again. The refreshed team is shown below.');
+      }
+    } catch {
+      if (transport.isCurrent()) {
+        view.mustRefresh = true; view.members = []; setRosterMembers([]);
+        setRosterWarning('Could not confirm the project team. Refresh before making another change.');
+      }
+    } finally {
+      if (rosterView.current === view && epoch.current === generation && isCurrent()) {
+        view.busy = false; setRosterPending(false);
+      }
+    }
+  };
+  const openRoster = (project: Project) => {
+    if (!canWrite() || draft.current.open || rosterView.current || project.archived_at || !rows.current.includes(project)) return;
+    const view = {project, busy:false, mustRefresh:false, members:[]};
+    rosterView.current = view; setRosterProject(project);
+    setRosterMembers([]); setRosterQuery(''); void refreshRoster(view);
+  };
+  const visibleRoster = rosterMembers.filter(member =>
+    !rosterQuery.trim() || (member.name || '').toLocaleLowerCase().includes(rosterQuery.trim().toLocaleLowerCase()));
   const openCreate = () => {
-    if (!canWrite() || draft.current.open) return;
+    if (!canWrite() || draft.current.open || rosterView.current) return;
     draft.current = { instance: {}, open: true, editing: null, form: { ...emptyForm }, revision: draft.current.revision + 1 };
     setEditing(null); setForm(emptyForm); setDialogOpen(true);
   };
   const openEdit = (project: Project) => {
-    if (!canWrite() || draft.current.open || !rows.current.includes(project)) return;
+    if (!canWrite() || draft.current.open || rosterView.current || !rows.current.includes(project)) return;
     const next = {
       name: project.name, client_name: project.client_name || '', address: project.address || '', status: project.status,
       latitude: project.latitude == null ? '' : String(project.latitude), longitude: project.longitude == null ? '' : String(project.longitude),
@@ -247,7 +298,7 @@ function OwnedProjects({ owner, scopeCurrent }: { owner: ProjectOwner; scopeCurr
     }
   };
   const changeProjectArchive = async (project: Project, archived: boolean) => {
-    if (!canWrite() || draft.current.open || !rows.current.includes(project) || Boolean(project.archived_at) === archived) return;
+    if (!canWrite() || draft.current.open || rosterView.current || !rows.current.includes(project) || Boolean(project.archived_at) === archived) return;
     // Acquire the lock before confirmation as well as dispatch. Retained same-
     // turn handlers cannot open duplicate confirmations or reverse the intent.
     const lock = {}; mutation.current = lock;
@@ -378,6 +429,10 @@ function OwnedProjects({ owner, scopeCurrent }: { owner: ProjectOwner; scopeCurr
                       </Stack>
                       <Stack direction="row" spacing={1} mt={3} alignItems="flex-start"><LocationOnOutlined sx={{ color: '#00D4FF', fontSize: 19, mt: .2 }} /><Typography sx={{ color: '#A5B1BF', minHeight: 45 }}>{project.address || 'No job-site address'}</Typography></Stack>
                       <Typography variant="caption" sx={{ color: '#63758A' }}>Geofence: {project.geofence_radius || 100} m</Typography>
+                      {canManage && !project.archived_at && <Box sx={{mt:1}}>
+                        <Button aria-label={`Project team for ${project.name}`} disabled={saving || uncertain}
+                          onClick={() => openRoster(project)} sx={{color:'#00D4FF'}}>Project team</Button>
+                      </Box>}
                     </CardContent>
                     <CardActions sx={{ px: 2, pb: 2, justifyContent: 'space-between' }}>
                       <Button startIcon={<FolderOutlined />} onClick={() => openWorkspace(project)} sx={{ color: '#00D4FF' }}>Open workspace</Button>
@@ -390,6 +445,30 @@ function OwnedProjects({ owner, scopeCurrent }: { owner: ProjectOwner; scopeCurr
           </Grid>
         )}
       </Container>
+
+      {rosterProject && <Dialog open onClose={dismissRoster} fullWidth maxWidth="sm" aria-labelledby="project-roster-title">
+        <DialogTitle id="project-roster-title">Project team: {rosterProject.name}</DialogTitle>
+        <DialogContent dividers>
+          <Typography color="text.secondary" sx={{mb:2}}>Assignments are for planning. They do not change app access.</Typography>
+          <TextField fullWidth label="Search team by name" value={rosterQuery} onChange={e => { if (rosterInstance === rosterView.current && rosterInstance) setRosterQuery(e.target.value); }} />
+          {rosterWarning && <Alert severity="warning" sx={{mt:2}}>{rosterWarning}</Alert>}
+          {rosterPending ? <LinearProgress aria-label="Checking project team" sx={{mt:2}} /> :
+            visibleRoster.length ? visibleRoster.map(member => <Stack key={member.id} direction="row"
+              alignItems="center" justifyContent="space-between" gap={2} py={1.25} sx={{borderBottom:1,borderColor:'divider'}}>
+              <Box sx={{minWidth:0,overflowWrap:'anywhere'}}>
+                <Typography fontWeight={700}>{member.name || 'Team member'}</Typography>
+                <Typography color="text.secondary" variant="body2">{member.role}{member.assigned ? ' · Assigned' : ''}</Typography>
+              </Box>
+              <Button onClick={() => void refreshRoster(rosterInstance, member)} aria-label={`${member.assigned ? 'Remove' : 'Add'} ${member.name || 'team member'} ${member.assigned ? 'from' : 'to'} project`}>
+                {member.assigned ? 'Remove' : 'Add'}
+              </Button>
+            </Stack>) : !rosterWarning && <Typography color="text.secondary" sx={{mt:2}}>No team members found.</Typography>}
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={rosterPending} onClick={() => void refreshRoster(rosterInstance)}>Refresh team</Button>
+          <Button onClick={dismissRoster}>Close</Button>
+        </DialogActions>
+      </Dialog>}
 
       <Dialog open={dialogOpen} onClose={closeDialog} fullWidth maxWidth="sm" PaperProps={{ sx: { bgcolor: '#111821', color: '#FFF', border: '1px solid #293746' } }}>
         <DialogTitle sx={{ fontWeight: 800 }}>{editing ? 'Edit project' : 'Create project'}</DialogTitle>

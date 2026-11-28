@@ -317,3 +317,53 @@ test('access revocation after an uncertain save removes both draft and recovery 
     assert.match(f.text(),/access changed/); assert.equal(f.icon('Refresh projects').disabled,true); assert.doesNotMatch(f.text(),/Refresh to check again/); assert.doesNotMatch(f.text(),/Save not confirmed/); assert.equal(f.button('View draft'),undefined); assert.equal(f.input('Project name').value,'');
   }
 });
+
+const roster = (assigned=false) => response(200,{success:true,members:[{id:'worker-1',name:'Avery Worker',role:'employee',assigned}]});
+const rosterButton = (f, name) => f.nodes('Button').find(x=>x.props['aria-label']===`Project team for ${name}`)?.props;
+test('only boss, manager and admin get a project team control on unarchived cards', async () => {
+ for(const role of ['boss','manager','admin','employee','owner']){
+  const f=fixture({initialUser:{...owner,role}});await f.ready();
+  assert.equal(!!rosterButton(f,'Tower'),['boss','manager','admin'].includes(role));
+  f.view(true);f.reads.at(-1).resolve(list([archived()]));await f.flush();assert.equal(rosterButton(f,'Tower'),undefined);
+ }
+});
+test('web roster uses scoped headers and readback while leaving the member role intact',async()=>{
+ const f=fixture();await f.ready();rosterButton(f,'Tower').onClick();await f.flush();
+ const first=f.reads.at(-1);assert.match(first.url,/\/project-1\/roster$/);
+ assert.equal(first.init.headers.Authorization,'Bearer token');
+ assert.equal(first.init.headers['X-Project-Actor'],owner.id);assert.equal(first.init.headers['X-Project-Company'],owner.companyId);
+ assert.equal(first.init.cache,'no-store');
+ first.resolve(roster());await f.flush();
+ assert.match(f.text(),/Assignments are for planning/);f.change('Search team by name','no such person');assert.equal(f.button('Add'),undefined);
+ f.change('Search team by name','ave');const add=f.button('Add').onClick;add();add();await f.flush();
+ assert.equal(f.posts.length,1);assert.match(f.posts[0].url,/\/project-1\/roster\/worker-1$/);assert.equal(f.posts[0].init.method,'PUT');
+ f.posts[0].resolve(response(200,{success:true,assigned:true}));await f.flush();
+ assert.doesNotMatch(f.text(),/employee · Assigned/);f.reads.at(-1).resolve(roster(true));await f.flush();assert.match(f.text(),/employee · Assigned/);
+ f.button('Remove').onClick();await f.flush();assert.equal(f.posts[1].init.method,'DELETE');
+ f.posts[1].resolve(response(200,{success:true,assigned:false}));await f.flush();f.reads.at(-1).resolve(roster(false));await f.flush();
+ assert.ok(f.button('Add'));assert.doesNotMatch(f.text(),/employee · Assigned/);
+});
+test('ambiguous roster save forces refresh and never retries or uses a stale member snapshot',async()=>{
+ const f=fixture();await f.ready();rosterButton(f,'Tower').onClick();await f.flush();
+ f.reads.at(-1).resolve(roster());await f.flush();
+ const stale=f.button('Add').onClick;stale();
+ f.posts[0].resolve(response(503,{success:false}));await f.flush();
+ assert.match(f.text(),/Refresh before making another change/);stale();assert.equal(f.posts.length,1);
+ f.button('Refresh team').onClick();await f.flush();f.reads.at(-1).resolve(roster(true));await f.flush();
+ assert.ok(f.button('Remove'));stale();assert.equal(f.posts.length,1);
+});
+test('dismissed project roster cannot affect a different project and never repopulates itself',async()=>{
+ const f=fixture();await f.ready([project(),project({id:'p-2',name:'Annex'})]);
+ rosterButton(f,'Tower').onClick();await f.flush();f.reads.at(-1).resolve(roster());await f.flush();
+ const stale=f.button('Add').onClick, close=f.button('Close').onClick;stale();close();await f.flush();
+ rosterButton(f,'Annex').onClick();await f.flush();const next=f.reads.at(-1);next.resolve(roster());await f.flush();stale();close();
+ f.posts[0].resolve(response(200,{success:true,assigned:true}));await f.flush();
+ assert.equal(f.posts.length,1);assert.equal(f.reads.at(-1),next);assert.match(f.text(),/Project team: Annex/);assert.ok(f.button('Add'));
+});
+test('roster payload rejects duplicate or malformed rows and discards extraneous fields',async()=>{
+ const f=fixture();await f.ready();const valid={id:'ok',name:null,role:'worker',assigned:false};
+ assert.equal(Object.keys(f.projects.readProjectRoster({success:true,members:[{...valid,email:'discard'}]})[0]).join(','),'id,name,role,assigned');
+ for(const members of [[valid,valid],[{...valid,assigned:1}],[{...valid,role:'owner'}],[{...valid,name:45}]]) {
+  assert.throws(()=>f.projects.readProjectRoster({success:true,members}),/could not be verified/);
+ }
+});

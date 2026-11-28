@@ -77,6 +77,8 @@ export const corsOptions: CorsOptions = {
     'Content-Type',
     'Authorization',
     'X-Requested-With',
+    'X-Project-Actor',
+    'X-Project-Company',
   ],
 
   exposedHeaders: ['Content-Disposition'],

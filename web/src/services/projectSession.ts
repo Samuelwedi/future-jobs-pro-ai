@@ -10,6 +10,7 @@ export type Project = {
   status: ProjectStatus; archived_at: string | null;
   latitude?: number | null; longitude?: number | null; geofence_radius?: number | null;
 };
+export type RosterMember = Readonly<{id:string; name:string|null; role:string; assigned:boolean}>;
 export const canManageProjects = (owner: ProjectOwner) => ['boss', 'manager', 'admin'].includes(owner.role);
 const failure = (code: string, message: string, status?: number) => Object.assign(new Error(message), { code, status });
 export function readProjects(data: any, archived: boolean): Project[] {
@@ -24,6 +25,20 @@ export function readProjects(data: any, archived: boolean): Project[] {
   }
   return data.projects;
 }
+export function readProjectRoster(data: any): RosterMember[] {
+  const bad = () => failure('PROJECT_UNCERTAIN', 'Project team could not be verified.');
+  if (data?.success !== true || !Array.isArray(data.members)) throw bad();
+  const ids = new Set<string>();
+  return data.members.map((row: any) => {
+    if (!row || typeof row.id !== 'string' || !row.id || ids.has(row.id)
+      || (row.name !== null && typeof row.name !== 'string')
+      || !['employee','worker','manager','boss','admin'].includes(row.role)
+      || typeof row.assigned !== 'boolean') throw bad();
+    ids.add(row.id);
+    return {id:row.id,name:row.name,role:row.role,assigned:row.assigned};
+  });
+}
+
 export function confirmedProject(data: any, id?: string, archived?: boolean): boolean {
   try {
     const p = data?.project;
@@ -40,15 +55,16 @@ export function openProjectSession(owner: ProjectOwner, viewCurrent: () => boole
   const auth = captureAuthSession();
   const isCurrent = () => auth.isCurrent() && viewCurrent() && chatOwnerKey(readChatOwner()) === chatOwnerKey(captured);
   const assertCurrent = () => { if (!isCurrent()) throw failure('PROJECT_STALE', 'The account or page changed.'); };
-  async function request(path: string, method = 'GET', body?: unknown): Promise<any> {
+  async function request(path: string, method = 'GET', body?: unknown, projectRoster = false): Promise<any> {
     assertCurrent();
-    if (method !== 'GET' && !canManageProjects(captured)) throw failure('PROJECT_ACCESS_CHANGED', 'Manager access is required to change projects.', 403);
+    if ((method !== 'GET' || projectRoster) && !canManageProjects(captured)) throw failure('PROJECT_ACCESS_CHANGED', 'Manager access is required to change projects.', 403);
     if (navigator.onLine === false) throw failure('PROJECT_NOT_SENT', 'You are offline. Reconnect and try again.');
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 60000);
     try {
       const response = await fetch(`${API_BASE}${path}`, {
-        method, headers: { Authorization: `Bearer ${captured.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        method, headers: { Authorization: `Bearer ${captured.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+          ...(projectRoster ? {'X-Project-Actor':captured.id,'X-Project-Company':captured.companyId} : {}) },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}), signal: controller.signal, cache: 'no-store',
       });
       assertCurrent();
@@ -65,6 +81,11 @@ export function openProjectSession(owner: ProjectOwner, viewCurrent: () => boole
   }
   return {
     isCurrent,
+    readRoster: async (projectId: string) => readProjectRoster(await request(`/api/projects/${encodeURIComponent(projectId)}/roster`, 'GET', undefined, true)),
+    setRoster: async (projectId: string, memberId: string, assigned: boolean) => {
+      const response = await request(`/api/projects/${encodeURIComponent(projectId)}/roster/${encodeURIComponent(memberId)}`, assigned ? 'PUT' : 'DELETE', undefined, true);
+      if (response?.success !== true || response.assigned !== assigned) throw failure('PROJECT_UNCERTAIN', 'Assignment not confirmed.');
+    },
     list: async (archived: boolean) => readProjects(await request(`/api/projects?archived=${archived}`), archived),
     setArchived: (id: string, archived: boolean) => request(`/api/projects/${encodeURIComponent(id)}${archived ? '' : '/restore'}`, archived ? 'DELETE' : 'POST'),
     save: (id: string | undefined, body: unknown) => request(id ? `/api/projects/${encodeURIComponent(id)}` : '/api/projects', id ? 'PUT' : 'POST', body),

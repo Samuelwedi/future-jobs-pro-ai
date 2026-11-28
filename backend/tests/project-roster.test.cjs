@@ -30,7 +30,7 @@ before(async () => {
     INSERT INTO companies VALUES ('${company}'),('${other}');`);
   await db.exec(migration); await db.exec(migration);
   pool.connect = async () => ({ query, release() {} });
-  const app = express(); app.use('/projects', require('../src/routes/projectRoutes').default);
+  const app = express(); app.use(require('cors')(require('../src/config/cors').corsOptions)); app.use('/projects', require('../src/routes/projectRoutes').default);
   server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   base = `http://127.0.0.1:${server.address().port}/projects`;
 });
@@ -103,4 +103,16 @@ test('deactivation and moving a user do not expose their membership; roster clea
   await db.query('UPDATE users SET is_active=true,company_id=$1 WHERE id=$2',[other,worker]);
   assert.equal((await req('GET')).data.members.some(x=>x.id===worker),false);
   assert.equal((await req('DELETE',{target:worker})).status,200);assert.deepEqual(await saved(),[]);
+});
+
+test('browser preflight allows only configured origins to request the two scope headers',async()=>{
+  const headers={'Access-Control-Request-Method':'PUT',
+    'Access-Control-Request-Headers':'authorization,x-project-actor,x-project-company'};
+  const url=`${base}/${project}/roster/${worker}`;
+  const origin='http://127.0.0.1:5173';
+  const good=await fetch(url,{method:'OPTIONS',headers:{...headers,Origin:origin}});
+  assert.equal(good.status,204); assert.equal(good.headers.get('access-control-allow-origin'),origin);
+  for(const name of ['x-project-actor','x-project-company']) assert.ok(good.headers.get('access-control-allow-headers').toLowerCase().includes(name));
+  const denied=await fetch(url,{method:'OPTIONS',headers:{...headers,Origin:'https://unrelated.example.invalid'}});
+  assert.equal(denied.headers.get('access-control-allow-origin'),null);
 });
