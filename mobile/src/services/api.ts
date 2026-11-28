@@ -470,6 +470,25 @@ class ApiService {
     return response.data;
   }
 
+  async saveTeamJobDetails<T>(owner: { id: string; companyId: string; role: string }, target: string,
+    previous: unknown, details: unknown, current: () => boolean): Promise<T> {
+    const token = this.token, revision = this.authRevision;
+    if (!token) throw new Error('Team account changed');
+    const expected = { ...owner };
+    const check = () => {
+      if (!current() || token !== this.token || revision !== this.authRevision) throw new Error('Team account changed');
+    };
+    check();
+    const stored = JSON.parse(await SecureStore.getItemAsync('userData') || 'null');
+    check();
+    if (stored?.id !== expected.id || stored?.companyId !== expected.companyId || stored?.role !== expected.role) throw new Error('Team account changed');
+    const response = await this.client.put<T>(`/team/${encodeURIComponent(target)}/job-details`,
+      { expectedActorId: expected.id, expectedCompanyId: expected.companyId, previous, details },
+      { expectedAuthToken: token, expectedAuthRevision: revision, expectedCurrent: current, fenceUnauthorizedToCurrent: true } as EvidenceConfig);
+    check();
+    return response.data;
+  }
+
   async projectRoster<T>(projectId: string, owner: { id: string; companyId: string; role: string }, current: () => boolean,
     change?: { userId: string; assigned: boolean }): Promise<T> {
     const token = this.token, revision = this.authRevision;

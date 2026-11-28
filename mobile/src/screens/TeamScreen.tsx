@@ -11,7 +11,11 @@ import { api } from '../services/api';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
-interface Member {
+type JobDetails = {job_title: string | null; department: string | null; job_description: string | null};
+const memberJobDetails = (member: Partial<JobDetails>): JobDetails => ({
+  job_title: member.job_title ?? null, department: member.department ?? null, job_description: member.job_description ?? null,
+});
+interface Member extends Partial<JobDetails> {
   id: string;
   email: string;
   first_name: string;
@@ -23,6 +27,11 @@ interface Member {
 }
 
 export default function TeamScreen() {
+  const { user } = useAuth();
+  return <TeamContent key={JSON.stringify([user?.id,user?.companyId,user?.role])} />;
+}
+
+function TeamContent() {
   const { t } = useLang();
   const { user, refreshUser } = useAuth();
   const navigation = useNavigation();
@@ -40,6 +49,47 @@ export default function TeamScreen() {
   const role = String(user?.role || '').toLowerCase();
   const canManage = ['boss', 'manager', 'admin'].includes(role);
   const canChangeRoles = ['boss', 'admin'].includes(role);
+  const [jobEdit, setJobEdit] = useState<{member: Member; previous: JobDetails; draft: JobDetails} | null>(null);
+  const [jobError, setJobError] = useState(false);
+  const jobView = useRef(0);
+  const alive = useRef(true);
+  const closeJobDetails = () => { jobView.current++; setJobEdit(null); setJobError(false); };
+  useEffect(() => {
+    alive.current = true;
+    const off = navigation.addListener('blur', closeJobDetails);
+    return () => { alive.current = false; jobView.current++; off(); };
+  }, [navigation]);
+  const canEditDetails = (member: Member) => member.is_active !== false && (
+    member.role === 'boss' ? role === 'boss' && member.id === user?.id :
+      ['employee','worker'].includes(member.role) ? canManage :
+      ['admin','manager'].includes(member.role) && canChangeRoles
+  );
+  const openJobDetails = (member: Member) => {
+    if (mutationLock.current || !canEditDetails(member)) return;
+    const previous = memberJobDetails(member);
+    jobView.current++; setJobError(false); setJobEdit({member,previous,draft:{...previous}});
+  };
+  const saveJobDetails = async () => {
+    if (!jobEdit || !user?.id || !user.companyId || mutationLock.current || jobError) return;
+    const epoch = jobView.current, session = api.captureSessionGuard();
+    const current = () => alive.current && epoch === jobView.current && session();
+    mutationLock.current = true; setBusy(true);
+    try {
+      const reply = await api.saveTeamJobDetails<{success:boolean; details:JobDetails & {id:string}}>(
+        {id:user.id,companyId:user.companyId,role:user.role}, jobEdit.member.id, jobEdit.previous, jobEdit.draft, current);
+      if (!current()) return;
+      const saved = reply.details;
+      if (reply.success !== true || !saved || saved.id !== jobEdit.member.id ||
+          (['job_title','department','job_description'] as const).some(key => saved[key] !== null && typeof saved[key] !== 'string')) throw new Error('Unconfirmed save');
+      teamRead.current++; setLoading(false); setRefreshing(false);
+      setMembers(rows => rows.map(row => row.id === saved.id ? {...row,...memberJobDetails(saved)} : row));
+      closeJobDetails();
+    } catch {
+      if (current()) setJobError(true);
+    } finally {
+      mutationLock.current = false; if (alive.current && session()) setBusy(false);
+    }
+  };
   const runMutation = async (work: () => Promise<void>) => {
     if (mutationLock.current) return;
     mutationLock.current = true; setBusy(true);
@@ -48,13 +98,17 @@ export default function TeamScreen() {
     finally { mutationLock.current = false; setBusy(false); }
   };
 
+  const teamRead = useRef(0);
   const fetchMembers = async () => {
+    const read = ++teamRead.current, session = api.captureSessionGuard();
+    const current = () => alive.current && read === teamRead.current && session();
     setError('');
     try {
-      const res = await api.get<{ success: boolean; members: Member[] }>(`/team/members/${user?.companyId}`);
-      setMembers(res.members || []);
-    } catch { setError(t("Could not load your team. Pull down to try again.")); }
-    finally { setLoading(false); setRefreshing(false); }
+      if (!user?.companyId) throw new Error('No company');
+      const res = await api.get<{ success: boolean; members: Member[] }>(`/team/members/${encodeURIComponent(user.companyId)}`);
+      if (current()) setMembers(res.members || []);
+    } catch { if (current()) setError(t("Could not load your team. Pull down to try again.")); }
+    finally { if (alive.current && read === teamRead.current) {setLoading(false); setRefreshing(false);} }
   };
 
   useEffect(() => { fetchMembers(); }, []);
@@ -146,12 +200,17 @@ export default function TeamScreen() {
       <View style={{ flex: 1 }}>
         <Text style={styles.memberName}>{item.first_name} {item.last_name}</Text>
         <Text style={styles.memberEmail}>{item.email}</Text>
+        {item.job_title ? <Text style={styles.memberEmail}>{t('Job title')}: {item.job_title}</Text> : null}
+        {item.department ? <Text style={styles.memberEmail}>{t('Department')}: {item.department}</Text> : null}
+        {item.job_description ? <Text style={styles.memberEmail}>{t('Job description')}: {item.job_description}</Text> : null}
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-          <Text style={[styles.roleBadge, item.role === 'boss' && styles.roleBoss, item.role === 'manager' && styles.roleManager]}>{t(({boss:'Boss',manager:'Manager',employee:'Employee'} as Record<string,string>)[item.role] || item.role)}</Text>
+          <Text style={[styles.roleBadge, item.role === 'boss' && styles.roleBoss, item.role === 'manager' && styles.roleManager]}>{t('Access')}: {t(({boss:'Boss',manager:'Manager',employee:'Employee'} as Record<string,string>)[item.role] || item.role)}</Text>
           {item.needs_password_change && <Text style={styles.needsPwBadge}>{t("Needs Password")}</Text>}
         </View>
       </View>
       <View style={styles.actions}>
+        {canEditDetails(item) && <TouchableOpacity disabled={busy} accessibilityRole="button" accessibilityLabel={t("Edit job details")}
+          onPress={() => openJobDetails(item)}><MaterialIcons name="badge" size={24} color="#00D4FF" /></TouchableOpacity>}
         {canChangeRoles && item.id !== user?.id && item.role !== 'boss' && <TouchableOpacity disabled={busy} accessibilityLabel={t("Change role")} onPress={() => handleChangeRole(item)}>
           <MaterialIcons name="swap-horiz" size={24} color="#00D4FF" />
         </TouchableOpacity>}
@@ -192,6 +251,28 @@ export default function TeamScreen() {
         <MaterialIcons name="person-add" size={28} color="#0A0A0A" />
       </TouchableOpacity>}
 
+      {jobEdit && <Modal visible onRequestClose={() => !busy && closeJobDetails()} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <ScrollView style={{flexGrow:0,maxHeight:'100%'}} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+            <Text style={styles.modalTitle}>{t('Job details')}</Text>
+            <Text style={styles.memberEmail}>{t('These details do not change account access.')}</Text>
+            {([['job_title','Job title',100],['department','Department',100],['job_description','Job description',500]] as const).map(([key,label,max]) =>
+              <View key={key}>
+                <Text style={styles.memberEmail}>{t(label)}</Text>
+                <TextInput accessibilityLabel={t(label)} style={styles.input} value={jobEdit.draft[key] ?? ''}
+                  maxLength={max} editable={!busy && !jobError} multiline={key === 'job_description'}
+                  onChangeText={value => setJobEdit(d => d ? {...d,draft:{...d.draft,[key]:value}} : null)} />
+              </View>)}
+            {jobError && <Text accessibilityRole="alert" style={{color:'#FDA4AF'}}>{t('Could not confirm the save. Close and refresh the team before trying again.')}</Text>}
+            <TouchableOpacity accessibilityRole="button" disabled={busy || jobError} onPress={() => void saveJobDetails()} style={styles.input}>
+              <Text style={styles.memberEmail}>{t(busy ? 'Saving…' : 'Save job details')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={() => {closeJobDetails(); if (jobError) void fetchMembers();}} style={styles.input}>
+              <Text style={styles.memberEmail}>{t('Close')}</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>}
       <Modal visible={modalVisible} onRequestClose={() => !busy && setModalVisible(false)} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <ScrollView style={{ flexGrow: 0, maxHeight: '100%' }} contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">

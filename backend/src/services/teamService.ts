@@ -84,7 +84,10 @@ export async function inviteEmployee(
 
 export async function getCompanyMembers(companyId: string) {
   const result = await pool.query(
-    'SELECT id, email, first_name, last_name, role, created_at FROM users WHERE company_id = $1 ORDER BY role, created_at DESC',
+    `SELECT id, email, first_name, last_name, role, created_at, COALESCE(is_active,TRUE) AS is_active,
+       to_jsonb(u)->>'job_title' AS job_title, to_jsonb(u)->>'department' AS department,
+       to_jsonb(u)->>'job_description' AS job_description
+       FROM users u WHERE company_id = $1 ORDER BY role, created_at DESC`,
     [companyId]
   );
   return result.rows;

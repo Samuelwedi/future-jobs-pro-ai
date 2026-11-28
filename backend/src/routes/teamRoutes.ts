@@ -1,3 +1,4 @@
+import { updateTeamJobDetails } from '../services/teamJobDetails';
 import { companyActor,manages } from '../middleware/companyActor';
 import { verifyToken } from '../utils/auth';
 import express, { Request, Response } from 'express';
@@ -95,6 +96,17 @@ router.get('/members/:companyId', async (req: Request, res: Response) => {
     res.json({ success: true, members });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Job labels do not delegate permissions or modify tax, payroll, or roster records.
+router.put('/:userId/job-details', async (req, res) => {
+  try {
+    const details = await updateTeamJobDetails(String(res.locals.actor.id), getUserId(req), req.body);
+    res.json({ success: true, details });
+  } catch (error: any) {
+    const status = [400,403,404,409].includes(error?.status) ? error.status : 503;
+    res.status(status).json({ success: false, message: status === 503 ? 'Job details are unavailable. Try again later.' : error.message });
   }
 });
 
