@@ -60,10 +60,14 @@ export async function analyzePhotoCompliance(photoPath: string): Promise<Complia
   const issues: string[] = [];
   const suggestions: string[] = [];
 
-  if (metadata.width < 1280 || metadata.height < 720) {
+  // The minimum is a pixel footprint, not a required camera orientation.
+  // Keep raw dimensions in evidence metadata regardless of how the device rotated it.
+  const longerEdge = Math.max(metadata.width, metadata.height);
+  const shorterEdge = Math.min(metadata.width, metadata.height);
+  if (longerEdge < 1280 || shorterEdge < 720) {
     score -= 20;
     issues.push(`Low resolution: ${metadata.width}×${metadata.height}`);
-    suggestions.push('Capture at 1280×720 or higher, preferably 1920×1080.');
+    suggestions.push('Capture with a long edge of at least 1280 pixels and a short edge of at least 720 pixels.');
   }
   const focus = await sharpness(photoPath);
   if (focus < 0.45) {

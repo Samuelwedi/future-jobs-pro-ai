@@ -72,3 +72,44 @@ test('actual local still-photo scoring detects low resolution, limited quality a
   assert.equal(result.suggestions.length,3);
   assert.equal(result.aiAnalyzed,false);
 });
+
+test('equivalent JPEG pixels pass the resolution floor in landscape and portrait', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(),'fj-photo-orientation-'));
+  t.after(() => fs.rmSync(directory,{recursive:true,force:true}));
+  const { analyzePhotoCompliance } = loadLocalService();
+  const width = 1280, height = 720;
+  const pixels = Buffer.alloc(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) pixels[y * width + x] = ((x >> 4) + (y >> 4)) % 2 ? 200 : 55;
+  }
+  const make = () => sharp(pixels,{raw:{width,height,channels:1}});
+  const landscape = path.join(directory,'landscape.jpg');
+  const portrait = path.join(directory,'rotated.jpg');
+  const tagged = path.join(directory,'tagged.jpg');
+  await make().jpeg({quality:82}).toFile(landscape);
+  await make().rotate(90).jpeg({quality:82}).toFile(portrait);
+  await make().withMetadata({orientation:6}).jpeg({quality:82}).toFile(tagged);
+  for (const [file, dimensions] of [[landscape,[1280,720]], [portrait,[720,1280]], [tagged,[1280,720]]]) {
+    const result = await analyzePhotoCompliance(file);
+    assert.equal(result.score, 100, path.basename(file));
+    assert.equal(result.passed, true);
+    assert.ok(!result.issues.some(s => s.startsWith('Low resolution')));
+    // Keep stored raw metadata and byte-based evidence hashing intact.
+    assert.deepEqual([result.metadata.width,result.metadata.height], dimensions);
+    const hash = crypto.createHash('sha256').update(fs.readFileSync(file))
+      .update(JSON.stringify(result.metadata)).digest('hex');
+    assert.equal(result.verificationHash, hash);
+  }
+});
+
+test('a small or unusually narrow JPEG still has a low-resolution warning', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(),'fj-photo-narrow-'));
+  t.after(() => fs.rmSync(directory,{recursive:true,force:true}));
+  const { analyzePhotoCompliance } = loadLocalService();
+  for (const [width,height] of [[1279,720],[720,1279],[2048,719],[719,2048],[640,360]]) {
+    const file = path.join(directory,`${width}x${height}.jpg`);
+    await sharp({create:{width,height,channels:3,background:'#888888'}}).jpeg().toFile(file);
+    const result = await analyzePhotoCompliance(file);
+    assert.ok(result.issues.some(s => s === `Low resolution: ${width}×${height}`), path.basename(file));
+  }
+});
